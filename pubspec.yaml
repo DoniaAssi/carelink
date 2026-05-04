@@ -1,0 +1,39 @@
+name: carelink
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any
+  cupertino_icons: ^1.0.8
+  http: ^1.2.1
+  geolocator: ^10.0.0
+  geocoding: ^3.0.0
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.1
+  image_picker: ^1.1.2
+  google_sign_in: ^7.2.0
+  flutter_facebook_auth: ^7.1.6
+  sign_in_with_apple: ^7.0.1
+  shared_preferences: ^2.5.3
+  google_fonts: ^8.0.2
+  speech_to_text: ^7.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - lib/assets/images/login_hero_reference.png

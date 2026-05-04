@@ -1,0 +1,13 @@
+-- Allow the same phone number on multiple user rows (e.g. family members).
+-- Email must stay unique (enforced in app + typical DB unique on email).
+--
+-- If registration still fails with "Duplicate entry ... for key 'phone'" (or similar),
+-- the database has a UNIQUE index on `user`.`phone`. Find its name, then drop it:
+--
+--   SHOW INDEX FROM `user` WHERE Column_name = 'phone' AND Non_unique = 0;
+--
+-- Then (replace phone_unique with the Key_name from the result):
+--
+--   ALTER TABLE `user` DROP INDEX `phone_unique`;
+--
+-- If no unique index is listed for phone, you do not need to run anything.

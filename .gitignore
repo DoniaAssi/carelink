@@ -1,0 +1,8 @@
+﻿node_modules/
+.dart_tool/
+build/
+backend/.env
+
+# Local / IDE — do not push
+.pub-cache/
+.tmp/
