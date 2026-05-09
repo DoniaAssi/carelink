@@ -7,8 +7,9 @@ class ApiService {
   // غيّري هذا الـ IP إلى IPv4 تبع جهازك إذا كنتِ تشغلين التطبيق على هاتف حقيقي
   static const String _machineIp = '192.168.1.5';
 
-  // إذا كنتِ تستخدمين Android Emulator خليها true
-  static const bool _useAndroidEmulator = false;
+  // إذا كنتِ تستخدمين Android Emulator خليها true.
+  // إذا كنتِ تستخدمين جهاز حقيقي، ضعيها false وحددي عنوان IP صحيح في _machineIp.
+  static const bool _useAndroidEmulator = true;
 
   static const String _androidEmulatorBase = 'http://10.0.2.2:3000';
   static const String _webBase = 'http://localhost:3000';
@@ -52,7 +53,7 @@ class ApiService {
         : rawUrl;
   }
 
-  Map<String, String> get _jsonHeaders => const {
+  static const Map<String, String> _jsonHeaders = <String, String>{
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   };
@@ -531,7 +532,7 @@ class ApiService {
   Future<List<dynamic>> getNotifications(String userId) async {
     final response = await _sendRequest(
       http.get(
-        _endpoint('/patient/notifications/$userId'),
+        _endpoint('/notifications/$userId'),
         headers: _jsonHeaders,
       ),
     );

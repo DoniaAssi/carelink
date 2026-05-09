@@ -115,7 +115,7 @@ class PaymentService {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/nurse/payment-methods/$providerId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: const <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode({
           'type': type,
           'details': details,
@@ -141,7 +141,7 @@ class PaymentService {
     try {
       final response = await http.put(
         Uri.parse('$baseUrl/nurse/payment-methods/$providerId/$methodId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: const <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode({
           'type': type,
           'details': details,
@@ -181,7 +181,7 @@ class PaymentService {
     try {
       final response = await http.put(
         Uri.parse('$baseUrl/nurse/payments/$providerId/$transactionId/status'),
-        headers: {'Content-Type': 'application/json'},
+        headers: const <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode({
           'status': 'paid',
         }),

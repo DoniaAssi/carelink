@@ -274,9 +274,10 @@ class _NursePaymentsState extends State<NursePayments> {
   }
 
   Widget _buildPaymentHistoryCard(Map<String, dynamic> payment) {
-    final statusColor = payment['status'] == 'completed'
+    final status = payment['status']?.toString().toLowerCase() ?? '';
+    final statusColor = status == 'completed' || status == 'paid'
         ? const Color(0xFF28a745)
-        : payment['status'] == 'pending'
+        : status == 'pending'
             ? const Color(0xFFffc107)
             : const Color(0xFFdc3545);
 
@@ -342,7 +343,7 @@ class _NursePaymentsState extends State<NursePayments> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      payment['status'].toUpperCase(),
+                      status.toUpperCase(),
                       style: TextStyle(
                         color: statusColor,
                         fontSize: 10,
@@ -392,7 +393,7 @@ class _NursePaymentsState extends State<NursePayments> {
               ),
             ],
           ),
-          if (payment['status'] == 'pending') ...[
+          if (status == 'pending') ...[
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,

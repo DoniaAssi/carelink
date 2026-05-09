@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 
@@ -2196,7 +2197,7 @@ class _MapLocationPickerSheetState extends State<_MapLocationPickerSheet> {
   Future<List<_PlaceSearchResult>> _fetchPlacesFromNominatim(
     String query,
   ) async {
-    final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+    final uri = Uri.https('nominatim.openstreetmap.org', '/search', <String, String>{
       'q': query,
       'format': 'jsonv2',
       'addressdetails': '1',
@@ -2206,7 +2207,7 @@ class _MapLocationPickerSheetState extends State<_MapLocationPickerSheet> {
 
     final response = await http.get(
       uri,
-      headers: const {
+      headers: const <String, String>{
         'Accept': 'application/json',
         'User-Agent': 'carelink.app',
       },

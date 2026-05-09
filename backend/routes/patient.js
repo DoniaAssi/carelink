@@ -43,7 +43,25 @@ async function recomputeProviderOverallRating(providerUserId) {
 function normalizeDateTime(date, time) {
   if (!date || !time) return null;
   const trimmedDate = date.toString().trim();
-  const trimmedTime = time.toString().trim();
+  let trimmedTime = time.toString().trim();
+  const match12 = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(trimmedTime);
+  if (match12) {
+    let hour = Number(match12[1]);
+    const minute = match12[2];
+    const period = match12[3].toUpperCase();
+    if (hour < 1 || hour > 12) return null;
+    hour %= 12;
+    if (period === 'PM') hour += 12;
+    trimmedTime = `${String(hour).padStart(2, '0')}:${minute}:00`;
+  } else {
+    const match24 = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(trimmedTime);
+    if (!match24) return null;
+    const hour = Number(match24[1]);
+    const minute = Number(match24[2]);
+    const second = match24[3] == null ? 0 : Number(match24[3]);
+    if (hour > 23 || minute > 59 || second > 59) return null;
+    trimmedTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+  }
   return `${trimmedDate} ${trimmedTime}`;
 }
 
@@ -1253,20 +1271,49 @@ router.post('/appointments', async (req, res) => {
     );
 
     try {
+      const [patientRows] = await db.query(
+        'SELECT fullName FROM user WHERE userId = ?',
+        [patientUserId]
+      );
+      const patientName = patientRows.length > 0
+        ? patientRows[0].fullName.toString().trim()
+        : 'المريض';
+      const appointmentText = `${finalDate} ${finalTime}`;
+      const providerPatientName =
+        patientRows.length > 0 && patientRows[0].fullName.toString().trim()
+          ? patientRows[0].fullName.toString().trim()
+          : 'Patient';
+      const patientBookingTitle = 'Booking request sent';
+      const patientBookingBody =
+        `Your booking request for ${appointmentText} was sent to the care provider.`;
+      const providerBookingTitle = 'New booking request';
+      const providerBookingBody =
+        `${providerPatientName} booked ${finalServiceType} at ${appointmentText}. Review service requests to accept or decline.`;
+
       await insertNotification({
         userId: patientUserId,
         type: 'appointment',
         title: 'تم إرسال طلب الحجز',
-        body: 'طلبك قيد مراجعة مقدم الخدمة. ستصلك إشعاراً عند القبول أو الرفض.',
+        body: `طلبك للحجز في ${appointmentText} تم إرساله، وسيتابع مقدم الخدمة الرد عليه.`,
         relatedRequestId: requestId
       });
       await insertNotification({
         userId: finalDoctorUserId,
         type: 'appointment',
         title: 'طلب موعد جديد',
-        body: 'لديك طلب موعد جديد. افتحي طلبات الخدمة للقبول أو الرفض.',
+        body: `المريض ${patientName} حجز موعدًا في ${appointmentText}. راجع قسم طلبات الخدمة لتأكيد أو رفض الموعد.`,
         relatedRequestId: requestId
       });
+      await db.execute(
+        `UPDATE usernotification SET title = ?, body = ?
+         WHERE relatedRequestId = ? AND userId = ?`,
+        [patientBookingTitle, patientBookingBody, requestId, patientUserId]
+      );
+      await db.execute(
+        `UPDATE usernotification SET title = ?, body = ?
+         WHERE relatedRequestId = ? AND userId = ?`,
+        [providerBookingTitle, providerBookingBody, requestId, finalDoctorUserId]
+      );
     } catch (_) {
       // usernotification table may not be migrated yet
     }

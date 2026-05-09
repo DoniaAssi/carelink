@@ -7,6 +7,7 @@ const patientRoutes = require('./routes/patient');
 const medicalRecordRoutes = require('./routes/medicalRecordRoutes');
 const paymentRoutes = require('./routes/payments');
 const nurseRoutes = require('./routes/nurse');
+const notificationsRoutes = require('./routes/notifications');
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use('/patient', patientRoutes);
 app.use('/medical-records', medicalRecordRoutes);
 app.use('/payments', paymentRoutes);
 app.use('/nurse', nurseRoutes);
+app.use('/notifications', notificationsRoutes);
 
 const PORT = process.env.PORT || 3000;
 

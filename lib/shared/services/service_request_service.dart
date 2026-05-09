@@ -52,7 +52,7 @@ class ServiceRequestService {
     try {
       final response = await http.post(
         Uri.parse('$_phpBaseUrl/api/patient/create_request.php'),
-        headers: {'Content-Type': 'application/json'},
+        headers: const <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode({
           'patientId': patientId,
           'providerId': providerId,
@@ -86,7 +86,7 @@ class ServiceRequestService {
     try {
       final response = await http.put(
         Uri.parse('$baseUrl/nurse/requests/$requestId/status'),
-        headers: {'Content-Type': 'application/json'},
+        headers: const <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode({
           'status': apiStatus,
           if (providerUserId != null) 'providerUserId': providerUserId,
@@ -108,6 +108,62 @@ class ServiceRequestService {
     } catch (e) {
       // ignore: avoid_print
       print('Update status error: $e');
+      if (e is Exception) rethrow;
+      return false;
+    }
+  }
+
+  static Future<bool> startVisit(
+    String requestId, {
+    required String providerUserId,
+  }) async {
+    return _postVisitAction(
+      '$baseUrl/nurse/requests/$requestId/start',
+      {'providerUserId': providerUserId},
+      'Failed to start visit',
+    );
+  }
+
+  static Future<bool> endVisit(
+    String requestId, {
+    required String providerUserId,
+    required List<Map<String, dynamic>> nursingActivities,
+  }) async {
+    return _postVisitAction(
+      '$baseUrl/nurse/requests/$requestId/end',
+      {
+        'providerUserId': providerUserId,
+        'nursingActivities': nursingActivities,
+      },
+      'Failed to end visit',
+    );
+  }
+
+  static Future<bool> _postVisitAction(
+    String url,
+    Map<String, dynamic> body,
+    String fallbackMessage,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: const <String, String>{'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return true;
+      }
+      String message = fallbackMessage;
+      try {
+        final data = jsonDecode(response.body);
+        if (data is Map && data['error'] != null) {
+          message = data['error'].toString();
+        }
+      } catch (_) {}
+      throw Exception(message);
+    } catch (e) {
+      // ignore: avoid_print
+      print('$fallbackMessage: $e');
       if (e is Exception) rethrow;
       return false;
     }

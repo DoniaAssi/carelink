@@ -5,7 +5,9 @@ import 'package:http/http.dart' as http;
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/features/notifications/notifications_screen.dart';
 import 'nurse_payments.dart';
+import 'nurse_availability.dart';
 import 'nurse_profile.dart';
 import 'nurse_recommendations.dart';
 import 'nurse_service_requests.dart';
@@ -55,14 +57,36 @@ class _NurseDashboardState extends State<NurseDashboard> {
       );
       if (response.statusCode < 200 || response.statusCode >= 300) return;
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+      var week = _parseDouble(data['weeklyEarnings']);
+      try {
+        final summaryResponse = await http.get(
+          Uri.parse(
+            '${ApiService.baseUrl}/nurse/payments/${widget.user.userId}/summary',
+          ),
+        );
+        if (summaryResponse.statusCode >= 200 &&
+            summaryResponse.statusCode < 300) {
+          final summary = jsonDecode(summaryResponse.body) as Map<String, dynamic>;
+          week = _parseDouble(summary['thisWeek']);
+        }
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         pendingRequests = _parseInt(data['pendingRequests']);
         todaysVisits = _parseInt(data['todaysVisits']);
         completedVisits = _parseInt(data['completedVisits']);
-        weeklyEarnings = _parseDouble(data['weeklyEarnings']);
+        weeklyEarnings = week;
       });
     } catch (_) {}
+  }
+
+  void _openNotifications() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NotificationsScreen(userId: widget.user.userId),
+      ),
+    );
   }
 
   @override
@@ -78,7 +102,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
           NurseModeControls(providerUserId: widget.user.userId),
           IconButton(
             icon: const Icon(Icons.notifications_none_rounded),
-            onPressed: () {},
+            onPressed: _openNotifications,
           ),
         ],
       ),
@@ -102,7 +126,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
             ),
             BottomNavigationBarItem(
               icon: const Icon(Icons.assignment_rounded),
-              label: NurseUi.label('Requests', 'الطلبات'),
+              label: NurseUi.label('Services', 'الخدمات'),
             ),
             BottomNavigationBarItem(
               icon: const Icon(Icons.edit_note_rounded),
@@ -111,6 +135,10 @@ class _NurseDashboardState extends State<NurseDashboard> {
             BottomNavigationBarItem(
               icon: const Icon(Icons.payments_rounded),
               label: NurseUi.label('Payments', 'الدفع'),
+            ),
+            BottomNavigationBarItem(
+              icon: const Icon(Icons.notifications_rounded),
+              label: NurseUi.label('Notifications', 'الإشعارات'),
             ),
             BottomNavigationBarItem(
               icon: const Icon(Icons.settings_rounded),
@@ -143,6 +171,8 @@ class _NurseDashboardState extends State<NurseDashboard> {
       case 3:
         return NursePayments(user: widget.user);
       case 4:
+        return NotificationsScreen(userId: widget.user.userId);
+      case 5:
         return NurseSettings(user: widget.user);
       default:
         return _buildDashboard();
@@ -301,10 +331,10 @@ class _NurseDashboardState extends State<NurseDashboard> {
           const SizedBox(height: 10),
           _buildQuickActionCard(
             icon: Icons.assignment_rounded,
-            title: NurseUi.label('Service Requests', 'طلبات الخدمة'),
+            title: NurseUi.label('My Assigned Services', 'الخدمات المعيّنة'),
             subtitle: NurseUi.label(
-              'Accept or reject new requests',
-              'قبول أو رفض الطلبات الجديدة',
+              'Accept requests, start visits, and submit reports',
+              'قبول الطلبات وبدء الزيارات وإرسال التقارير',
             ),
             onTap: () => setState(() => selectedIndex = 1),
           ),
@@ -327,6 +357,23 @@ class _NurseDashboardState extends State<NurseDashboard> {
               'عرض الأرباح والمدفوعات',
             ),
             onTap: () => setState(() => selectedIndex = 3),
+          ),
+          const SizedBox(height: 10),
+          _buildQuickActionCard(
+            icon: Icons.schedule_rounded,
+            title: NurseUi.label('Availability', 'أوقات الفراغ'),
+            subtitle: NurseUi.label(
+              'Set the time you are free',
+              'حددي الوقت الذي تكونين فيه متاحة',
+            ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => NurseAvailability(user: widget.user),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 10),
           _buildQuickActionCard(

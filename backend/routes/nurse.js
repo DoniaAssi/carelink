@@ -7,6 +7,7 @@ const medicalRecordService = require('../services/medicalRecordService');
 const router = express.Router();
 
 const columnCache = new Map();
+const DEFAULT_VISIT_PAYMENT_AMOUNT = 25;
 
 async function hasColumn(tableName, columnName) {
   const key = `${tableName}.${columnName}`;
@@ -15,6 +16,20 @@ async function hasColumn(tableName, columnName) {
     const [rows] = await db.query(`SHOW COLUMNS FROM ${tableName} LIKE ?`, [
       columnName,
     ]);
+    const exists = rows.length > 0;
+    columnCache.set(key, exists);
+    return exists;
+  } catch (_) {
+    columnCache.set(key, false);
+    return false;
+  }
+}
+
+async function hasTable(tableName) {
+  const key = `table.${tableName}`;
+  if (columnCache.has(key)) return columnCache.get(key);
+  try {
+    const [rows] = await db.query(`SHOW TABLES LIKE ?`, [tableName]);
     const exists = rows.length > 0;
     columnCache.set(key, exists);
     return exists;
@@ -52,6 +67,21 @@ async function ensureAuxTables() {
       KEY idx_provider_cert (providerUserId)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
+}
+
+async function ensureServiceVisitWorkflowColumns() {
+  const additions = [
+    ['actualStartedAt', 'DATETIME NULL'],
+    ['actualEndedAt', 'DATETIME NULL'],
+    ['actualDurationMinutes', 'INT NOT NULL DEFAULT 0'],
+    ['nursingActivities', 'TEXT NULL'],
+  ];
+  for (const [column, type] of additions) {
+    if (!(await hasColumn('servicerequest', column))) {
+      await db.query(`ALTER TABLE servicerequest ADD COLUMN ${column} ${type}`);
+      columnCache.set(`servicerequest.${column}`, true);
+    }
+  }
 }
 
 const DEFAULT_SETTINGS = {
@@ -172,14 +202,36 @@ router.get('/dashboard/:userId', async (req, res) => {
 
     let weeklyEarnings = 0;
     try {
-      const [[pay]] = await db.query(
-        `SELECT COALESCE(SUM(amount), 0) AS s FROM payment
-         WHERE providerUserId = ?
-           AND paymentStatus IN ('paid', 'pending')
-           AND YEARWEEK(createdAt, 1) = YEARWEEK(CURDATE(), 1)`,
-        [userId],
-      );
-      weeklyEarnings = Number(pay?.s || 0);
+      await syncProviderPayments(userId);
+      const queryParts = [];
+      const params = [];
+      if (await hasTable('payment')) {
+        queryParts.push(
+          `SELECT amount, paymentStatus AS status, createdAt
+           FROM payment
+           WHERE providerUserId = ?`
+        );
+        params.push(userId);
+      }
+      if (await hasTable('payments')) {
+        queryParts.push(
+          `SELECT amount, status AS status, created_at AS createdAt
+           FROM payments
+           WHERE provider_id = ?`
+        );
+        params.push(userId);
+      }
+      if (queryParts.length) {
+        const [[pay]] = await db.query(
+          `SELECT COALESCE(SUM(amount), 0) AS s FROM (
+             ${queryParts.join(' UNION ALL ')}
+           ) AS allp
+           WHERE status IN ('paid', 'pending')
+             AND YEARWEEK(createdAt, 1) = YEARWEEK(CURDATE(), 1)`,
+          params,
+        );
+        weeklyEarnings = Number(pay?.s || 0);
+      }
     } catch (_) {}
 
     res.json({
@@ -195,9 +247,23 @@ router.get('/dashboard/:userId', async (req, res) => {
 
 /** --- Service requests (list + status) --- */
 async function listRequestsForProvider(providerUserId, statusQ) {
+  await ensureServiceVisitWorkflowColumns();
   const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
   const hasCreatedAt = await hasColumn('servicerequest', 'createdAt');
+  const hasReasonForVisit = await hasColumn('servicerequest', 'reasonForVisit');
+  const hasPatientLat = await hasColumn('patient', 'gpsLat');
+  const hasPatientLng = await hasColumn('patient', 'gpsLng');
+  const hasPatientAddress = await hasColumn('patient', 'addressText');
+  const hasMedicalDob = await hasColumn('medicalrecord', 'dateOfBirth');
+  const hasPaymentTable = await hasTable('payment');
   const createdExpr = hasCreatedAt ? 'sr.createdAt' : 'sr.scheduledAt';
+  const visitAddressSel = hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress";
+  const reasonSel = hasReasonForVisit ? 'sr.reasonForVisit' : "'' AS reasonForVisit";
+  const patientLatSel = hasPatientLat ? 'pat.gpsLat' : 'NULL AS gpsLat';
+  const patientLngSel = hasPatientLng ? 'pat.gpsLng' : 'NULL AS gpsLng';
+  const patientAddressSel = hasPatientAddress ? 'pat.addressText' : "'' AS patientAddress";
+  const dobSel = hasMedicalDob ? 'mr.dateOfBirth' : 'NULL AS dateOfBirth';
+  const priceSel = hasPaymentTable ? 'p.amount' : 'NULL AS amount';
 
   const params = [providerUserId];
   let statusClause = '';
@@ -214,14 +280,30 @@ async function listRequestsForProvider(providerUserId, statusQ) {
         sr.serviceType,
         sr.status,
         sr.notes,
+        ${reasonSel},
         sr.location,
         sr.scheduledAt,
-        ${hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress"},
+        sr.confirmedAt,
+        sr.completedAt,
+        sr.actualStartedAt,
+        sr.actualEndedAt,
+        sr.actualDurationMinutes,
+        sr.nursingActivities,
+        ${visitAddressSel},
         ${createdExpr} AS createdAt,
-        pu.fullName AS patientName
+        pu.fullName AS patientName,
+        pu.phone AS patientPhone,
+        ${patientLatSel},
+        ${patientLngSel},
+        ${patientAddressSel},
+        ${dobSel},
+        ${priceSel}
      FROM servicerequest sr
-     LEFT JOIN user pu ON sr.patientUserId = pu.userId
-     WHERE sr.providerUserId = ?${statusClause}
+     LEFT JOIN user pu ON BINARY sr.patientUserId = BINARY pu.userId
+     LEFT JOIN patient pat ON BINARY pat.userId = BINARY sr.patientUserId
+     LEFT JOIN medicalrecord mr ON BINARY mr.patientUserId = BINARY sr.patientUserId
+     ${hasPaymentTable ? 'LEFT JOIN payment p ON BINARY p.requestId = BINARY sr.requestId' : ''}
+     WHERE BINARY sr.providerUserId = BINARY ?${statusClause}
      ORDER BY sr.scheduledAt DESC
      LIMIT 500`,
     params,
@@ -234,12 +316,31 @@ async function listRequestsForProvider(providerUserId, statusQ) {
     patientId: r.patientUserId,
     providerId: r.providerUserId,
     patientName: r.patientName || '',
+    patientPhone: r.patientPhone || '',
+    patientAge: r.dateOfBirth ? Math.max(0, new Date().getFullYear() - new Date(r.dateOfBirth).getFullYear()) : 0,
     serviceType: r.serviceType || '',
-    location: (r.visitAddress && String(r.visitAddress).trim()) || r.location || '',
+    location: (r.visitAddress && String(r.visitAddress).trim()) || r.location || r.patientAddress || '',
+    patientAddress: r.patientAddress || '',
+    gpsLat: r.gpsLat,
+    gpsLng: r.gpsLng,
     status: r.status,
     notes: r.notes,
+    reasonForVisit: r.reasonForVisit || '',
+    medicalCondition: r.reasonForVisit || r.notes || '',
     scheduledAt: r.scheduledAt,
     scheduledDate: r.scheduledAt,
+    expectedDurationHours: 2,
+    price: r.amount == null ? 0 : Number(r.amount || 0),
+    actualStartedAt: r.actualStartedAt,
+    actualEndedAt: r.actualEndedAt,
+    actualDurationMinutes: Number(r.actualDurationMinutes || 0),
+    nursingActivities: (() => {
+      try {
+        return r.nursingActivities ? JSON.parse(r.nursingActivities) : [];
+      } catch (_) {
+        return [];
+      }
+    })(),
     createdAt: r.createdAt,
   }));
 }
@@ -260,7 +361,9 @@ router.get('/requests/:providerId', async (req, res) => {
     }
 
     let normalizedStatus = statusQ.toLowerCase();
-    if (normalizedStatus === 'scheduled') normalizedStatus = 'confirmed';
+    if (normalizedStatus === 'scheduled' || normalizedStatus === 'assigned') {
+      normalizedStatus = 'confirmed';
+    }
 
     const rows = await listRequestsForProvider(
       providerId,
@@ -285,10 +388,17 @@ router.put('/requests/:requestId/status', async (req, res) => {
       .json({ error: 'providerUserId and status are required' });
   }
 
-  const allowed = new Set(['confirmed', 'cancelled', 'completed']);
+  const allowed = new Set([
+    'confirmed',
+    'cancelled',
+    'in_progress',
+    'waiting_report',
+    'completed',
+  ]);
   if (!allowed.has(next)) {
     return res.status(400).json({
-      error: 'status must be one of: confirmed, cancelled, completed',
+      error:
+        'status must be one of: confirmed, cancelled, in_progress, waiting_report, completed',
     });
   }
 
@@ -322,10 +432,22 @@ router.put('/requests/:requestId/status', async (req, res) => {
           .json({ error: 'From pending, only confirmed or cancelled' });
       }
     } else if (current === 'confirmed') {
-      if (next !== 'completed' && next !== 'cancelled') {
+      if (next !== 'in_progress' && next !== 'cancelled' && next !== 'completed') {
         return res
           .status(400)
-          .json({ error: 'From confirmed, only completed or cancelled' });
+          .json({ error: 'From confirmed, only in_progress, completed or cancelled' });
+      }
+    } else if (current === 'in_progress') {
+      if (next !== 'waiting_report' && next !== 'completed') {
+        return res
+          .status(400)
+          .json({ error: 'From in_progress, only waiting_report or completed' });
+      }
+    } else if (current === 'waiting_report') {
+      if (next !== 'completed') {
+        return res
+          .status(400)
+          .json({ error: 'From waiting_report, only completed' });
       }
     } else {
       return res.status(400).json({ error: 'Unexpected current status' });
@@ -335,6 +457,11 @@ router.put('/requests/:requestId/status', async (req, res) => {
       `UPDATE servicerequest SET status = ? WHERE requestId = ? AND providerUserId = ?`,
       [next, requestId, providerUserId],
     );
+    if (next === 'confirmed') {
+      try {
+        await ensurePaymentForRequest(requestId);
+      } catch (_) {}
+    }
 
     const titles = {
       confirmed: { title: 'تم قبول الموعد', en: 'Appointment accepted' },
@@ -359,6 +486,95 @@ router.put('/requests/:requestId/status', async (req, res) => {
     } catch (_) {}
 
     res.json({ success: true, requestId, status: next });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/requests/:requestId/start', async (req, res) => {
+  const { requestId } = req.params;
+  const providerUserId = (req.body?.providerUserId || '').toString().trim();
+  if (!providerUserId) {
+    return res.status(400).json({ error: 'providerUserId is required' });
+  }
+  try {
+    await ensureServiceVisitWorkflowColumns();
+    const [rows] = await db.query(
+      `SELECT requestId, patientUserId, providerUserId, status, actualStartedAt
+       FROM servicerequest
+       WHERE BINARY requestId = BINARY ?`,
+      [requestId],
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Request not found' });
+    const row = rows[0];
+    if (row.providerUserId !== providerUserId) {
+      return res.status(403).json({ error: 'Not allowed for this provider' });
+    }
+    const current = (row.status || '').toString().toLowerCase();
+    if (!['confirmed', 'in_progress'].includes(current)) {
+      return res.status(400).json({ error: 'Only assigned visits can be started' });
+    }
+    await db.execute(
+      `UPDATE servicerequest
+       SET status = 'in_progress',
+           actualStartedAt = COALESCE(actualStartedAt, NOW())
+       WHERE BINARY requestId = BINARY ? AND BINARY providerUserId = BINARY ?`,
+      [requestId, providerUserId],
+    );
+    try {
+      await insertNotification({
+        userId: row.patientUserId,
+        type: 'appointment',
+        title: 'بدأت الزيارة',
+        body: 'الممرض بدأ زيارة الخدمة الآن.',
+        relatedRequestId: requestId,
+      });
+    } catch (_) {}
+    res.json({ success: true, requestId, status: 'in_progress' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/requests/:requestId/end', async (req, res) => {
+  const { requestId } = req.params;
+  const providerUserId = (req.body?.providerUserId || '').toString().trim();
+  const nursingActivities = Array.isArray(req.body?.nursingActivities)
+    ? req.body.nursingActivities
+    : [];
+  if (!providerUserId) {
+    return res.status(400).json({ error: 'providerUserId is required' });
+  }
+  try {
+    await ensureServiceVisitWorkflowColumns();
+    const [rows] = await db.query(
+      `SELECT requestId, providerUserId, status, actualStartedAt
+       FROM servicerequest
+       WHERE BINARY requestId = BINARY ?`,
+      [requestId],
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Request not found' });
+    const row = rows[0];
+    if (row.providerUserId !== providerUserId) {
+      return res.status(403).json({ error: 'Not allowed for this provider' });
+    }
+    const current = (row.status || '').toString().toLowerCase();
+    if (current !== 'in_progress') {
+      return res.status(400).json({ error: 'Only in-progress visits can be ended' });
+    }
+    await db.execute(
+      `UPDATE servicerequest
+       SET status = 'waiting_report',
+           actualEndedAt = NOW(),
+           actualDurationMinutes = GREATEST(
+             0,
+             TIMESTAMPDIFF(MINUTE, COALESCE(actualStartedAt, NOW()), NOW())
+           ),
+           nursingActivities = ?
+       WHERE BINARY requestId = BINARY ? AND BINARY providerUserId = BINARY ?`,
+      [JSON.stringify(nursingActivities), requestId, providerUserId],
+    );
+    res.json({ success: true, requestId, status: 'waiting_report' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -454,6 +670,9 @@ router.post('/recommendations/:nurseUserId/:recommendationId/accept', async (req
       [recommendationId, nurseUserId],
     );
     try {
+      await ensurePaymentForRequest(recommendationId);
+    } catch (_) {}
+    try {
       await insertNotification({
         userId: row.patientUserId,
         type: 'appointment',
@@ -469,20 +688,171 @@ router.post('/recommendations/:nurseUserId/:recommendationId/accept', async (req
 });
 
 /** --- Visit reports (nurse UI shape ↔ visit_reports table) --- */
+async function ensureVisitReportUiColumns() {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS visit_reports (
+      id CHAR(36) NOT NULL PRIMARY KEY,
+      patient_id CHAR(36) NOT NULL,
+      provider_id CHAR(36) NOT NULL,
+      appointment_id CHAR(36) NULL,
+      vital_signs TEXT NULL,
+      diagnosis TEXT NULL,
+      treatment_plan TEXT NULL,
+      recommendations TEXT NULL,
+      follow_up_required TINYINT(1) NOT NULL DEFAULT 0,
+      follow_up_date DATE NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_vr_patient (patient_id),
+      KEY idx_vr_provider (provider_id),
+      KEY idx_vr_appt (appointment_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  if (!(await hasColumn('visit_reports', 'visit_date'))) {
+    try {
+      await db.execute(`ALTER TABLE visit_reports ADD COLUMN visit_date DATE NULL`);
+      columnCache.set('visit_reports.visit_date', true);
+    } catch (_) {}
+  }
+  if (!(await hasColumn('visit_reports', 'medications_prescribed'))) {
+    try {
+      await db.execute(
+        `ALTER TABLE visit_reports ADD COLUMN medications_prescribed TEXT NULL`
+      );
+      columnCache.set('visit_reports.medications_prescribed', true);
+    } catch (_) {}
+  }
+  if (!(await hasColumn('visit_reports', 'duration_hours'))) {
+    try {
+      await db.execute(
+        `ALTER TABLE visit_reports ADD COLUMN duration_hours INT NOT NULL DEFAULT 0`
+      );
+      columnCache.set('visit_reports.duration_hours', true);
+    } catch (_) {}
+  }
+  if (!(await hasColumn('visit_reports', 'manual_patient_name'))) {
+    try {
+      await db.execute(
+        `ALTER TABLE visit_reports ADD COLUMN manual_patient_name VARCHAR(255) NULL`
+      );
+      columnCache.set('visit_reports.manual_patient_name', true);
+    } catch (_) {}
+  }
+}
+
+async function ensurePaymentTable() {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS payment (
+      paymentId CHAR(36) NOT NULL PRIMARY KEY,
+      requestId CHAR(36) NOT NULL,
+      patientUserId CHAR(36) NOT NULL,
+      providerUserId CHAR(36) NOT NULL,
+      amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+      paymentMethod VARCHAR(64) NOT NULL DEFAULT 'cash',
+      paymentStatus VARCHAR(32) NOT NULL DEFAULT 'pending',
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_payment_request (requestId),
+      KEY idx_payment_provider (providerUserId),
+      KEY idx_payment_patient (patientUserId)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  const additions = [
+    ['paymentMethod', `ALTER TABLE payment ADD COLUMN paymentMethod VARCHAR(64) NOT NULL DEFAULT 'cash'`],
+    ['paymentStatus', `ALTER TABLE payment ADD COLUMN paymentStatus VARCHAR(32) NOT NULL DEFAULT 'pending'`],
+    ['createdAt', `ALTER TABLE payment ADD COLUMN createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`],
+    ['updatedAt', `ALTER TABLE payment ADD COLUMN updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`],
+  ];
+  for (const [column, sql] of additions) {
+    if (await hasColumn('payment', column)) continue;
+    try {
+      await db.execute(sql);
+      columnCache.set(`payment.${column}`, true);
+    } catch (_) {}
+  }
+  try {
+    await db.execute(`ALTER TABLE payment ADD UNIQUE KEY uq_payment_request (requestId)`);
+  } catch (_) {}
+}
+
+async function ensurePaymentForRequest(requestId) {
+  await ensurePaymentTable();
+  const hasHourly = await hasColumn('careprovider', 'hourlyRate');
+  const hasFee = await hasColumn('careprovider', 'consultationFee');
+  const rateExpr =
+    hasHourly && hasFee
+      ? 'COALESCE(c.hourlyRate, c.consultationFee, 0)'
+      : hasHourly
+        ? 'COALESCE(c.hourlyRate, 0)'
+        : hasFee
+          ? 'COALESCE(c.consultationFee, 0)'
+          : '0';
+  const [rows] = await db.query(
+    `SELECT sr.requestId, sr.patientUserId, sr.providerUserId,
+            ${rateExpr} AS rate
+     FROM servicerequest sr
+     LEFT JOIN careprovider c ON c.userId = sr.providerUserId
+     WHERE sr.requestId = ?
+     LIMIT 1`,
+    [requestId],
+  );
+  if (!rows.length) return;
+  const r = rows[0];
+  const amount = Number(r.rate || 0) || DEFAULT_VISIT_PAYMENT_AMOUNT;
+  await db.execute(
+    `INSERT INTO payment
+       (paymentId, requestId, patientUserId, providerUserId, amount, paymentMethod, paymentStatus, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, 'cash', 'pending', NOW(), NOW())
+     ON DUPLICATE KEY UPDATE
+       providerUserId = VALUES(providerUserId),
+       patientUserId = VALUES(patientUserId),
+       amount = CASE WHEN amount = 0 THEN VALUES(amount) ELSE amount END,
+       updatedAt = NOW()`,
+    [randomUUID(), r.requestId, r.patientUserId, r.providerUserId, amount],
+  );
+}
+
+async function syncProviderPayments(providerId) {
+  const [rows] = await db.query(
+    `SELECT requestId
+     FROM servicerequest
+     WHERE providerUserId = ?
+       AND status IN ('confirmed', 'completed')
+     ORDER BY scheduledAt DESC
+     LIMIT 200`,
+    [providerId],
+  );
+  for (const row of rows) {
+    await ensurePaymentForRequest(row.requestId);
+  }
+}
+
+function toDateOnly(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    const raw = value.toString().slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+  }
+  return d.toISOString().slice(0, 10);
+}
+
 function mapVisitReportRow(r) {
   const scheduled =
+    r.scheduledAt ||
     r.visit_date ||
     (r.created_at ? String(r.created_at).slice(0, 10) : '') ||
     new Date().toISOString();
   return {
     id: r.id,
+    requestId: r.appointment_id || '',
     providerId: r.provider_id,
     patientId: r.patient_id,
-    patientName: r.patientName || '',
-    serviceType: '',
-    location: '',
+    patientName: r.patientName || r.manual_patient_name || '',
+    serviceType: r.serviceType || '',
+    location:
+      (r.visitAddress && String(r.visitAddress).trim()) || r.location || '',
     scheduledDate: scheduled,
-    durationHours: 0,
+    durationHours: Number(r.duration_hours || 0),
     visitSummary: r.diagnosis || '',
     vitalSigns: r.vital_signs || '',
     medications: r.medications_prescribed || '',
@@ -494,29 +864,97 @@ function mapVisitReportRow(r) {
   };
 }
 
+function mapLegacyVisitReportRow(r) {
+  const scheduled =
+    r.scheduledAt ||
+    r.createdAt ||
+    r.created_at ||
+    new Date().toISOString();
+  return {
+    id: `legacy:${r.reportId}`,
+    requestId: r.requestId || '',
+    providerId: r.providerUserId || '',
+    patientId: r.patientUserId || '',
+    patientName: r.patientName || '',
+    serviceType: r.serviceType || 'Visit Report',
+    location: r.location || '',
+    scheduledDate: scheduled,
+    durationHours: 0,
+    visitSummary: r.notes || r.diagnosis || '',
+    vitalSigns: '',
+    medications: '',
+    observations: r.diagnosis || '',
+    recommendations: '',
+    status: 'completed',
+    createdAt: scheduled,
+    updatedAt: scheduled,
+  };
+}
+
 router.get('/reports/:providerId', async (req, res) => {
   const { providerId } = req.params;
   try {
-    if (!(await medicalRecordService.tableExists('visit_reports'))) {
-      return res.json([]);
-    }
+    await ensureVisitReportUiColumns();
     const hasMed = await hasColumn('visit_reports', 'medications_prescribed');
     const medSel = hasMed ? 'vr.medications_prescribed' : "'' AS medications_prescribed";
+    const hasDuration = await hasColumn('visit_reports', 'duration_hours');
+    const durationSel = hasDuration ? 'vr.duration_hours' : '0 AS duration_hours';
+    const hasManualName = await hasColumn('visit_reports', 'manual_patient_name');
+    const manualNameSel = hasManualName ? 'vr.manual_patient_name' : "'' AS manual_patient_name";
+    const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
+    const visitAddressSel = hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress";
 
-    const [rows] = await db.query(
+    let [rows] = await db.query(
       `SELECT vr.id, vr.patient_id, vr.provider_id, vr.appointment_id,
               vr.vital_signs, vr.diagnosis, vr.treatment_plan, vr.recommendations,
-              ${medSel},
+              ${medSel}, ${durationSel}, ${manualNameSel},
               vr.created_at, vr.visit_date,
-              u.fullName AS patientName
+              u.fullName AS patientName,
+              sr.serviceType, sr.location, ${visitAddressSel}, sr.scheduledAt
        FROM visit_reports vr
-       LEFT JOIN user u ON u.userId = vr.patient_id
-       WHERE vr.provider_id = ?
+       LEFT JOIN user u ON BINARY u.userId = BINARY vr.patient_id
+       LEFT JOIN servicerequest sr ON BINARY sr.requestId = BINARY vr.appointment_id
+       WHERE BINARY vr.provider_id = BINARY ?
        ORDER BY vr.created_at DESC
        LIMIT 200`,
       [providerId],
     );
-    res.json(rows.map(mapVisitReportRow));
+    if (!rows.length) {
+      [rows] = await db.query(
+        `SELECT vr.id, vr.patient_id, vr.provider_id, vr.appointment_id,
+                vr.vital_signs, vr.diagnosis, vr.treatment_plan, vr.recommendations,
+                ${medSel}, ${durationSel}, ${manualNameSel},
+                vr.created_at, vr.visit_date,
+                u.fullName AS patientName,
+                sr.serviceType, sr.location, ${visitAddressSel}, sr.scheduledAt
+         FROM visit_reports vr
+         LEFT JOIN user u ON BINARY u.userId = BINARY vr.patient_id
+         LEFT JOIN servicerequest sr ON BINARY sr.requestId = BINARY vr.appointment_id
+         ORDER BY vr.created_at DESC
+         LIMIT 200`,
+      );
+    }
+    let out = rows.map(mapVisitReportRow);
+    if (!out.length && (await hasTable('visitreport'))) {
+      const [legacyRows] = await db.query(
+        `SELECT r.reportId, r.notes, r.diagnosis,
+                v.visitId, v.requestId,
+                sr.patientUserId, sr.providerUserId, sr.serviceType,
+                sr.location, sr.scheduledAt, sr.status,
+                u.fullName AS patientName
+         FROM visitreport r
+         LEFT JOIN visit v ON BINARY v.visitId = BINARY r.visitId
+         LEFT JOIN servicerequest sr ON BINARY sr.requestId = BINARY v.requestId
+         LEFT JOIN user u ON BINARY u.userId = BINARY sr.patientUserId
+         WHERE BINARY sr.providerUserId = BINARY ?
+            OR sr.providerUserId IS NULL
+         ORDER BY sr.scheduledAt DESC
+         LIMIT 200`,
+        [providerId],
+      );
+      out = legacyRows.map(mapLegacyVisitReportRow);
+    }
+    res.json(out);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -529,6 +967,10 @@ router.post('/reports/:providerId', async (req, res) => {
   const reportId = (b.reportId || b.id || '').toString().trim();
   const patientId = (b.patientId || '').toString().trim();
   const appointmentId = (b.requestId || b.appointmentId || '').toString().trim();
+  const serviceType = (b.serviceType || '').toString().trim();
+  const location = (b.location || '').toString().trim();
+  const scheduledDate = toDateOnly(b.scheduledDate || b.visitDate);
+  const durationHours = Number.parseInt(b.durationHours, 10) || 0;
   const visitSummary = (b.visitSummary || '').toString().trim();
   const observations = (b.observations || '').toString().trim();
   const vitalSigns = (b.vitalSigns || '').toString().trim();
@@ -536,12 +978,39 @@ router.post('/reports/:providerId', async (req, res) => {
   const recommendations = (b.recommendations || '').toString().trim();
 
   try {
-    if (!(await medicalRecordService.tableExists('visit_reports'))) {
-      return res.status(503).json({ error: 'visit_reports table missing' });
-    }
+    await ensureVisitReportUiColumns();
 
     if (reportId) {
+      if (reportId.startsWith('legacy:')) {
+        const legacyId = reportId.substring('legacy:'.length);
+        if (!(await hasTable('visitreport'))) {
+          return res.status(404).json({ error: 'Legacy report table missing' });
+        }
+        await db.execute(
+          `UPDATE visitreport SET notes = ?, diagnosis = ?
+           WHERE BINARY reportId = BINARY ?`,
+          [visitSummary || observations, observations || visitSummary, legacyId],
+        );
+        const [legacyRows] = await db.query(
+          `SELECT r.reportId, r.notes, r.diagnosis,
+                  v.visitId, v.requestId,
+                  sr.patientUserId, sr.providerUserId, sr.serviceType,
+                  sr.location, sr.scheduledAt, sr.status,
+                  u.fullName AS patientName
+           FROM visitreport r
+           LEFT JOIN visit v ON BINARY v.visitId = BINARY r.visitId
+           LEFT JOIN servicerequest sr ON BINARY sr.requestId = BINARY v.requestId
+           LEFT JOIN user u ON BINARY u.userId = BINARY sr.patientUserId
+           WHERE BINARY r.reportId = BINARY ?
+           LIMIT 1`,
+          [legacyId],
+        );
+        return res.json(mapLegacyVisitReportRow(legacyRows[0]));
+      }
       const hasMedUp = await hasColumn('visit_reports', 'medications_prescribed');
+      const hasVisitDateUp = await hasColumn('visit_reports', 'visit_date');
+      const hasDurationUp = await hasColumn('visit_reports', 'duration_hours');
+      const hasManualNameUp = await hasColumn('visit_reports', 'manual_patient_name');
       const sets = [
         'diagnosis = ?',
         'treatment_plan = ?',
@@ -558,37 +1027,101 @@ router.post('/reports/:providerId', async (req, res) => {
         sets.push('medications_prescribed = ?');
         vals.push(medications);
       }
+      if (hasVisitDateUp && scheduledDate) {
+        sets.push('visit_date = ?');
+        vals.push(scheduledDate);
+      }
+      if (hasDurationUp) {
+        sets.push('duration_hours = ?');
+        vals.push(durationHours);
+      }
+      if (hasManualNameUp) {
+        sets.push('manual_patient_name = ?');
+        vals.push((b.patientName || '').toString().trim());
+      }
       vals.push(reportId, providerId);
       await db.execute(
-        `UPDATE visit_reports SET ${sets.join(', ')} WHERE id = ? AND provider_id = ?`,
+        `UPDATE visit_reports SET ${sets.join(', ')}
+         WHERE BINARY id = BINARY ? AND BINARY provider_id = BINARY ?`,
         vals,
       );
+      if (appointmentId && (serviceType || location || scheduledDate)) {
+        const requestSets = [];
+        const requestVals = [];
+        if (serviceType) {
+          requestSets.push('serviceType = ?');
+          requestVals.push(serviceType);
+        }
+        if (location) {
+          requestSets.push('location = ?');
+          requestVals.push(location);
+          if (await hasColumn('servicerequest', 'visitAddress')) {
+            requestSets.push('visitAddress = ?');
+            requestVals.push(location);
+          }
+        }
+        if (scheduledDate) {
+          requestSets.push('scheduledAt = ?');
+          requestVals.push(`${scheduledDate} 00:00:00`);
+        }
+        if (requestSets.length) {
+          requestVals.push(appointmentId, providerId);
+          await db.execute(
+            `UPDATE servicerequest SET ${requestSets.join(', ')}
+             WHERE BINARY requestId = BINARY ? AND BINARY providerUserId = BINARY ?`,
+            requestVals,
+          );
+        }
+      }
+      if (appointmentId) {
+        await db.execute(
+          `UPDATE servicerequest
+           SET status = 'completed', completedAt = COALESCE(completedAt, NOW())
+           WHERE BINARY requestId = BINARY ? AND BINARY providerUserId = BINARY ?`,
+          [appointmentId, providerId],
+        );
+      }
       const medSelUp = hasMedUp
         ? 'vr.medications_prescribed'
         : "'' AS medications_prescribed";
+      const durationSelUp = hasDurationUp
+        ? 'vr.duration_hours'
+        : '0 AS duration_hours';
+      const manualNameSelUp = hasManualNameUp
+        ? 'vr.manual_patient_name'
+        : "'' AS manual_patient_name";
+      const hasVisitAddressUp = await hasColumn('servicerequest', 'visitAddress');
+      const visitAddressSelUp = hasVisitAddressUp
+        ? 'sr.visitAddress'
+        : "'' AS visitAddress";
       const [updated] = await db.query(
         `SELECT vr.id, vr.patient_id, vr.provider_id, vr.vital_signs, vr.diagnosis,
-                vr.treatment_plan, vr.recommendations, ${medSelUp},
-                vr.created_at, vr.visit_date, u.fullName AS patientName
+                vr.appointment_id, vr.treatment_plan, vr.recommendations,
+                ${medSelUp}, ${durationSelUp}, ${manualNameSelUp},
+                vr.created_at, vr.visit_date, u.fullName AS patientName,
+                sr.serviceType, sr.location, ${visitAddressSelUp}, sr.scheduledAt
          FROM visit_reports vr
-         LEFT JOIN user u ON u.userId = vr.patient_id
-         WHERE vr.id = ?`,
+         LEFT JOIN user u ON BINARY u.userId = BINARY vr.patient_id
+         LEFT JOIN servicerequest sr ON BINARY sr.requestId = BINARY vr.appointment_id
+         WHERE BINARY vr.id = BINARY ?`,
         [reportId],
       );
       return res.json(mapVisitReportRow(updated[0]));
     }
 
-    if (!patientId || !appointmentId) {
+    if (!patientId) {
       return res.status(400).json({
-        error: 'patientId and requestId (appointment) are required for new reports',
+        error: 'patientId is required for new reports',
       });
     }
 
-    const okLink = await medicalRecordService.appointmentLinksPatientProvider(
-      appointmentId,
-      patientId,
-      providerId,
-    );
+    const okLink = appointmentId
+      ? await medicalRecordService.appointmentLinksPatientProvider(
+          appointmentId,
+          patientId,
+          providerId,
+        )
+      : true;
     if (!okLink) {
       return res.status(400).json({
         error: 'requestId does not match this patient and provider',
@@ -604,20 +1137,70 @@ router.post('/reports/:providerId', async (req, res) => {
       treatment_plan: observations,
       recommendations,
       follow_up_required: false,
+      visit_date: scheduledDate,
       medications_prescribed: medications,
     });
+    if (await hasColumn('visit_reports', 'manual_patient_name')) {
+      await db.execute(`UPDATE visit_reports SET manual_patient_name = ? WHERE BINARY id = BINARY ?`, [
+        (b.patientName || '').toString().trim(),
+        row.id,
+      ]);
+    }
+    if (durationHours > 0 && (await hasColumn('visit_reports', 'duration_hours'))) {
+      await db.execute(`UPDATE visit_reports SET duration_hours = ? WHERE BINARY id = BINARY ?`, [
+        durationHours,
+        row.id,
+      ]);
+    }
+    if (appointmentId) {
+      await db.execute(
+        `UPDATE servicerequest
+         SET status = 'completed', completedAt = COALESCE(completedAt, NOW())
+         WHERE BINARY requestId = BINARY ? AND BINARY providerUserId = BINARY ?`,
+        [appointmentId, providerId],
+      );
+      try {
+        const [requestRows] = await db.query(
+          `SELECT patientUserId FROM servicerequest WHERE BINARY requestId = BINARY ? LIMIT 1`,
+          [appointmentId],
+        );
+        if (requestRows.length) {
+          await insertNotification({
+            userId: requestRows[0].patientUserId,
+            type: 'visit_completed',
+            title: 'تم إنهاء الخدمة',
+            body: 'تم إرسال تقرير الزيارة وأصبحت الخدمة مكتملة. يمكنك تقييم الممرض الآن.',
+            relatedRequestId: appointmentId,
+          });
+        }
+      } catch (_) {}
+    }
 
     const hasMedIns = await hasColumn('visit_reports', 'medications_prescribed');
     const medSelIns = hasMedIns
       ? 'vr.medications_prescribed'
       : "'' AS medications_prescribed";
+    const hasDurationIns = await hasColumn('visit_reports', 'duration_hours');
+    const durationSelIns = hasDurationIns
+      ? 'vr.duration_hours'
+      : '0 AS duration_hours';
+    const hasVisitAddressIns = await hasColumn('servicerequest', 'visitAddress');
+    const visitAddressSelIns = hasVisitAddressIns
+      ? 'sr.visitAddress'
+      : "'' AS visitAddress";
+    const hasManualNameIns = await hasColumn('visit_reports', 'manual_patient_name');
+    const manualNameSelIns = hasManualNameIns
+      ? 'vr.manual_patient_name'
+      : "'' AS manual_patient_name";
     const [full] = await db.query(
       `SELECT vr.id, vr.patient_id, vr.provider_id, vr.vital_signs, vr.diagnosis,
-              vr.treatment_plan, vr.recommendations, ${medSelIns},
-              vr.created_at, vr.visit_date, u.fullName AS patientName
+              vr.appointment_id, vr.treatment_plan, vr.recommendations, ${medSelIns},
+              ${durationSelIns}, ${manualNameSelIns}, vr.created_at, vr.visit_date, u.fullName AS patientName,
+              sr.serviceType, sr.location, ${visitAddressSelIns}, sr.scheduledAt
        FROM visit_reports vr
-       LEFT JOIN user u ON u.userId = vr.patient_id
-       WHERE vr.id = ?`,
+       LEFT JOIN user u ON BINARY u.userId = BINARY vr.patient_id
+       LEFT JOIN servicerequest sr ON BINARY sr.requestId = BINARY vr.appointment_id
+       WHERE BINARY vr.id = BINARY ?`,
       [row.id],
     );
     res.status(201).json(mapVisitReportRow(full[0]));
@@ -789,20 +1372,41 @@ router.put('/availability/:providerId', async (req, res) => {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
-    await conn.execute(`DELETE FROM availabilityslot WHERE providerUserId = ?`, [
-      providerId,
-    ]);
+    const hasSlotId = await hasColumn('availabilityslot', 'slotId');
+    const hasSlotUnderscore = await hasColumn('availabilityslot', 'slot_id');
+    if (hasSlotId || hasSlotUnderscore) {
+      await conn.execute(`DELETE FROM availabilityslot WHERE providerUserId = ? OR providerUserId IS NULL OR providerUserId = ''`, [
+        providerId,
+      ]);
+    } else {
+      await conn.execute(`DELETE FROM availabilityslot WHERE providerUserId = ?`, [
+        providerId,
+      ]);
+    }
     for (const s of slots) {
       const day = (s.day ?? s['day'] ?? '').toString().trim();
       const startTime = (s.startTime ?? s['start'] ?? '').toString().trim();
       const endTime = (s.endTime ?? s['end'] ?? '').toString().trim();
       if (!day || !startTime || !endTime) continue;
-      const slotId = randomUUID();
-      await conn.execute(
-        `INSERT INTO availabilityslot (slotId, providerUserId, day, startTime, endTime)
-         VALUES (?, ?, ?, ?, ?)`,
-        [slotId, providerId, day, startTime, endTime],
-      );
+      if (hasSlotId) {
+        await conn.execute(
+          `INSERT INTO availabilityslot (slotId, providerUserId, day, startTime, endTime)
+           VALUES (?, ?, ?, ?, ?)`,
+          [randomUUID(), providerId, day, startTime, endTime],
+        );
+      } else if (hasSlotUnderscore) {
+        await conn.execute(
+          `INSERT INTO availabilityslot (slot_id, providerUserId, day, startTime, endTime)
+           VALUES (?, ?, ?, ?, ?)`,
+          [randomUUID(), providerId, day, startTime, endTime],
+        );
+      } else {
+        await conn.execute(
+          `INSERT INTO availabilityslot (providerUserId, day, startTime, endTime)
+           VALUES (?, ?, ?, ?)`,
+          [providerId, day, startTime, endTime],
+        );
+      }
     }
     await conn.commit();
     res.json({ success: true });
@@ -906,19 +1510,48 @@ router.delete('/payment-methods/:providerId/:methodId', async (req, res) => {
 router.get('/payments/:providerId', async (req, res) => {
   const { providerId } = req.params;
   try {
-    const [rows] = await db.query(
-      `SELECT p.paymentId AS id, p.providerUserId AS providerId,
-              sr.serviceType AS service, pu.fullName AS patientName,
-              p.amount, p.paymentStatus AS status, p.paymentMethod AS paymentMethod,
-              p.createdAt AS date
-       FROM payment p
-       LEFT JOIN servicerequest sr ON sr.requestId = p.requestId
-       LEFT JOIN user pu ON pu.userId = p.patientUserId
-       WHERE p.providerUserId = ?
-       ORDER BY p.createdAt DESC
-       LIMIT 200`,
-      [providerId],
-    );
+    await syncProviderPayments(providerId);
+    const queryParts = [];
+    const params = [];
+    if (await hasTable('payment')) {
+      queryParts.push(
+        `SELECT p.paymentId AS id, p.providerUserId AS providerId,
+                sr.serviceType AS service, pu.fullName AS patientName,
+                p.amount, p.paymentStatus AS status, p.paymentMethod AS paymentMethod,
+                p.createdAt AS date
+         FROM payment p
+         LEFT JOIN servicerequest sr ON sr.requestId = p.requestId
+         LEFT JOIN user pu ON pu.userId = p.patientUserId
+         WHERE p.providerUserId = ?`
+      );
+      params.push(providerId);
+    }
+    if (await hasTable('payments')) {
+      queryParts.push(
+        `SELECT CAST(p.id AS CHAR(36)) AS id, p.provider_id AS providerId,
+                sr.serviceType AS service, pu.fullName AS patientName,
+                p.amount, p.status AS status, p.method AS paymentMethod,
+                p.created_at AS date
+         FROM payments p
+         LEFT JOIN servicerequest sr ON sr.requestId = p.appointment_id
+         LEFT JOIN user pu ON pu.userId = p.patient_id
+         WHERE p.provider_id = ?`
+      );
+      params.push(providerId);
+    }
+
+    let rows = [];
+    if (queryParts.length) {
+      const [result] = await db.query(
+        `SELECT * FROM (
+           ${queryParts.join(' UNION ALL ')}
+         ) AS allp
+         ORDER BY date DESC
+         LIMIT 200`,
+        params,
+      );
+      rows = result;
+    }
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -928,19 +1561,44 @@ router.get('/payments/:providerId', async (req, res) => {
 router.get('/payments/:providerId/summary', async (req, res) => {
   const { providerId } = req.params;
   try {
-    const [[m]] = await db.query(
-      `SELECT
-        COALESCE(SUM(CASE
-          WHEN YEAR(createdAt) = YEAR(CURDATE()) AND MONTH(createdAt) = MONTH(CURDATE())
-          THEN amount ELSE 0 END), 0) AS monthSum,
-        COALESCE(SUM(CASE
-          WHEN YEARWEEK(createdAt, 1) = YEARWEEK(CURDATE(), 1)
-          THEN amount ELSE 0 END), 0) AS weekSum,
-        COALESCE(SUM(CASE WHEN DATE(createdAt) = CURDATE() THEN amount ELSE 0 END), 0) AS daySum
-       FROM payment
-       WHERE providerUserId = ? AND paymentStatus IN ('paid','pending')`,
-      [providerId],
-    );
+    await syncProviderPayments(providerId);
+    const queryParts = [];
+    const params = [];
+    if (await hasTable('payment')) {
+      queryParts.push(
+        `SELECT amount, paymentStatus AS status, createdAt
+         FROM payment
+         WHERE providerUserId = ?`
+      );
+      params.push(providerId);
+    }
+    if (await hasTable('payments')) {
+      queryParts.push(
+        `SELECT amount, status AS status, created_at AS createdAt
+         FROM payments
+         WHERE provider_id = ?`
+      );
+      params.push(providerId);
+    }
+
+    let m = { monthSum: 0, weekSum: 0, daySum: 0 };
+    if (queryParts.length) {
+      const [[result]] = await db.query(
+        `SELECT
+           COALESCE(SUM(CASE
+             WHEN YEAR(createdAt) = YEAR(CURDATE()) AND MONTH(createdAt) = MONTH(CURDATE())
+             THEN amount ELSE 0 END), 0) AS monthSum,
+           COALESCE(SUM(CASE
+             WHEN YEARWEEK(createdAt, 1) = YEARWEEK(CURDATE(), 1)
+             THEN amount ELSE 0 END), 0) AS weekSum,
+           COALESCE(SUM(CASE WHEN DATE(createdAt) = CURDATE() THEN amount ELSE 0 END), 0) AS daySum
+         FROM (
+           ${queryParts.join(' UNION ALL ')}
+         ) AS allp`,
+        params,
+      );
+      m = result;
+    }
     res.json({
       thisMonth: Number(m?.monthSum || 0),
       thisWeek: Number(m?.weekSum || 0),
@@ -955,17 +1613,26 @@ router.put('/payments/:providerId/:transactionId/status', async (req, res) => {
   const { providerId, transactionId } = req.params;
   const st = ((req.body || {}).status || 'paid').toString().toLowerCase();
   try {
-    const hasUpdated = await hasColumn('payment', 'updatedAt');
-    if (hasUpdated) {
+    if (await hasTable('payment')) {
+      const hasUpdated = await hasColumn('payment', 'updatedAt');
+      if (hasUpdated) {
+        await db.execute(
+          `UPDATE payment SET paymentStatus = ?, updatedAt = NOW()
+           WHERE paymentId = ? AND providerUserId = ?`,
+          [st, transactionId, providerId],
+        );
+      } else {
+        await db.execute(
+          `UPDATE payment SET paymentStatus = ?
+           WHERE paymentId = ? AND providerUserId = ?`,
+          [st, transactionId, providerId],
+        );
+      }
+    }
+    if (await hasTable('payments')) {
       await db.execute(
-        `UPDATE payment SET paymentStatus = ?, updatedAt = NOW()
-         WHERE paymentId = ? AND providerUserId = ?`,
-        [st, transactionId, providerId],
-      );
-    } else {
-      await db.execute(
-        `UPDATE payment SET paymentStatus = ?
-         WHERE paymentId = ? AND providerUserId = ?`,
+        `UPDATE payments SET status = ?
+         WHERE id = ? AND provider_id = ?`,
         [st, transactionId, providerId],
       );
     }
