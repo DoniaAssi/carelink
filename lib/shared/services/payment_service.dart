@@ -6,7 +6,7 @@ import 'package:carelink/shared/models/payment_method.dart';
 import 'package:carelink/shared/models/payment_transaction.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
-/// Patient flows use [createPayment] / [payForBooking] (**`/api/payments/*`** DEMO ledger).
+/// Patient Visa demo ledger: **`POST /api/payments/create`** then **`confirm`** with test cards only.
 /// Nurse screens use static helpers that talk to `/nurse/...` on [ApiService.baseUrl].
 class PaymentService {
   PaymentService({ApiService? api}) : _api = api ?? ApiService();
@@ -15,7 +15,62 @@ class PaymentService {
 
   static String get baseUrl => ApiService.baseUrl;
 
-  /// Creates a booking payment row, then confirms electronic methods (**DEMO** — no PSP).
+  /// Creates a pending **`visa_card`** row, validates demo PAN server-side, never stores PAN/CVV.
+  Future<Map<String, dynamic>> payWithVisaDemo({
+    required String appointmentId,
+    required String patientUserId,
+    required String providerUserId,
+    double? amountHint,
+    required String cardholderName,
+    required String cardNumber,
+    required String expiryMmYy,
+    required String cvv,
+    String? billingEmail,
+  }) async {
+    final created = await _api.postJson(
+      '/api/payments/create',
+      {
+        'appointmentId': appointmentId,
+        'patientUserId': patientUserId,
+        'providerUserId': providerUserId,
+        'paymentMethod': 'visa_card',
+        if (amountHint != null) 'amount': amountHint,
+      },
+      errorFallback: 'Payment could not be started',
+    );
+
+    final paymentId = (created['paymentId'] ?? '').toString().trim();
+    final confirmBody = <String, dynamic>{
+      if (paymentId.isNotEmpty) 'paymentId': paymentId,
+      'appointmentId': appointmentId,
+      'patientUserId': patientUserId,
+      'cardholderName': cardholderName.trim(),
+      'cardNumber': cardNumber.replaceAll(RegExp(r'\s'), ''),
+      'expiry': expiryMmYy.trim(),
+      'cvv': cvv.trim(),
+      if (billingEmail != null && billingEmail.trim().isNotEmpty)
+        'billingEmail': billingEmail.trim(),
+    };
+
+    final confirmed = await _api.postJson(
+      '/api/payments/confirm',
+      confirmBody,
+      errorFallback: 'Payment failed. Please try another test Visa card.',
+    );
+
+    final merged = <String, dynamic>{
+      ...created,
+      ...confirmed,
+      'success': true,
+      'paymentStatus': (confirmed['paymentStatus'] ?? created['paymentStatus'])
+          ?.toString() ??
+          '',
+    };
+    merged['status'] = merged['paymentStatus'];
+    return merged;
+  }
+
+  /// @deprecated Use [payWithVisaDemo] with the Visa checkout sheet.
   Future<Map<String, dynamic>> payForBooking({
     required String appointmentId,
     required String patientUserId,
@@ -23,55 +78,21 @@ class PaymentService {
     double? amountHint,
     required String paymentMethod,
   }) async {
-    final method = paymentMethod.trim().toLowerCase();
-    final payload = <String, dynamic>{
-      'appointmentId': appointmentId,
-      'patientUserId': patientUserId,
-      'providerUserId': providerUserId,
-      'paymentMethod': method,
-    };
-    if (amountHint != null) payload['amount'] = amountHint;
-    final created = await _api.postJson(
+    return _api.postJson(
       '/api/payments/create',
-      payload,
+      {
+        'appointmentId': appointmentId,
+        'patientUserId': patientUserId,
+        'providerUserId': providerUserId,
+        'paymentMethod': 'visa_card',
+        if (amountHint != null) 'amount': amountHint,
+      },
       errorFallback: 'Payment could not be processed',
     );
-
-    final createdStatus =
-        (created['paymentStatus'] ?? '').toString().toLowerCase();
-    final electronic =
-        method == 'mock_card' ||
-        method == 'card' ||
-        method == 'wallet';
-
-    Map<String, dynamic>? confirmed;
-    if (electronic && createdStatus == 'pending') {
-      confirmed = await _api.postJson(
-        '/api/payments/confirm',
-        {
-          'appointmentId': appointmentId,
-          'patientUserId': patientUserId,
-        },
-        errorFallback: 'Payment confirmation failed',
-      );
-    }
-
-    final merged = <String, dynamic>{
-      ...created,
-      if (confirmed != null) ...confirmed,
-      'success': true,
-      'paymentStatus': (confirmed?['paymentStatus'] ?? created['paymentStatus'])
-              ?.toString() ??
-          '',
-    };
-
-    merged['status'] = merged['paymentStatus'];
-    return merged;
   }
 
   /// [appointmentId] is the UUID returned by `POST /patient/appointments`.
-  ///
-  /// [method]: `cash` | `cash_on_visit` | `card` | `wallet` | `mock_card`.
+  /// Opens Visa checkout in UI — this helper is not used directly; prefer [payWithVisaDemo].
   Future<Map<String, dynamic>> createPayment({
     required String appointmentId,
     required String patientId,

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart'
+    show carelinkLocaleThemeChipRow;
 import 'chat_screen.dart';
 
 class MessagesScreen extends StatefulWidget {
@@ -99,7 +101,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
               cursorColor: AppColors.primary,
               style: TextStyle(color: p.inkDark, fontWeight: FontWeight.w600),
               decoration: InputDecoration(
-                hintText: 'Search messages...',
+                hintText: context.tr('patient.searchMessagesHint'),
                 hintStyle: TextStyle(color: p.inkMuted),
                 prefixIcon: Icon(Icons.search, color: p.inkDark),
                 filled: true,
@@ -137,7 +139,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   : filteredMessages.isEmpty
                   ? Center(
                       child: Text(
-                        'No messages found',
+                        context.tr('patient.messages.noneFound'),
                         style: TextStyle(color: p.inkMuted, fontSize: 15),
                       ),
                     )
@@ -147,7 +149,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
                         final item = filteredMessages[index];
 
                         final String name =
-                            (item['name'] ?? item['doctorName'] ?? 'Doctor')
+                            (item['name'] ??
+                                    item['doctorName'] ??
+                                    context.tr('patient.role.doctor'))
                                 .toString();
 
                         final String message =
@@ -275,7 +279,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Messages',
+              context.tr('patient.messages.header'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -287,14 +291,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
           ),
           const SizedBox(width: 8),
           Container(
-            width: 40,
-            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             decoration: BoxDecoration(
               color: p.surfaceSoft,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: p.stroke),
             ),
-            child: CarelinkThemeIconButton(color: p.inkDark),
+            child: carelinkLocaleThemeChipRow(iconColor: p.inkDark, gap: 4),
           ),
         ],
       ),

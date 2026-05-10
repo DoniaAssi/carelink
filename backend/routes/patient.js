@@ -8,7 +8,14 @@ const bookingPaymentService = require('../services/bookingPaymentService');
 const router = express.Router();
 
 const BOOKING_STATUSES = ['pending', 'confirmed', 'completed', 'cancelled'];
-const PAYMENT_STATUSES = ['unpaid', 'pending', 'paid', 'failed', 'refunded'];
+const PAYMENT_STATUSES = [
+  'unpaid',
+  'pending',
+  'paid',
+  'failed',
+  'declined',
+  'refunded',
+];
 const columnCache = new Map();
 const tableCache = new Map();
 
@@ -45,6 +52,25 @@ async function providerReviewExistsSql() {
   }
   if (!parts.length) return '0';
   return `(${parts.join(' OR ')})`;
+}
+
+/** Optional card metadata from ledger for schedule / lists. */
+async function appointmentLedgerCardSelectSql() {
+  if (!(await hasTable('payment'))) return '';
+  const hasLast4 = await hasColumn('payment', 'cardLast4');
+  const hasBrand = await hasColumn('payment', 'cardBrand');
+  const parts = [];
+  if (hasLast4) {
+    parts.push(
+      '(SELECT py.cardLast4 FROM payment py WHERE py.requestId = sr.requestId LIMIT 1) AS paymentCardLast4',
+    );
+  }
+  if (hasBrand) {
+    parts.push(
+      '(SELECT py.cardBrand FROM payment py WHERE py.requestId = sr.requestId LIMIT 1) AS paymentCardBrand',
+    );
+  }
+  return parts.length ? `,\n          ${parts.join(',\n          ')}` : '';
 }
 
 async function appointmentRatingSqlFragments() {
@@ -858,6 +884,7 @@ router.get('/appointments/upcoming/:patientUserId', async (req, res) => {
     const hasPaymentMethod = await hasColumn('servicerequest', 'paymentMethod');
     const hasPaymentStatus = await hasColumn('servicerequest', 'paymentStatus');
     const hasCompletedAt = await hasColumn('servicerequest', 'completedAt');
+    const ledgerExtras = await appointmentLedgerCardSelectSql();
     const { ratingSelect, ratingJoin } = await appointmentRatingSqlFragments();
 
     const [rows] = await db.query(
@@ -876,7 +903,7 @@ router.get('/appointments/upcoming/:patientUserId', async (req, res) => {
           ${hasIsUrgent ? 'sr.isUrgent' : '0 AS isUrgent'},
           ${hasAdditionalNotes ? 'sr.additionalNotes' : "'' AS additionalNotes"},
           ${hasPaymentMethod ? 'sr.paymentMethod' : "'' AS paymentMethod"},
-          ${hasPaymentStatus ? 'sr.paymentStatus' : "'' AS paymentStatus"},
+          ${hasPaymentStatus ? 'sr.paymentStatus' : "'' AS paymentStatus"}${ledgerExtras},
           ${hasCompletedAt ? 'sr.completedAt' : 'NULL AS completedAt'},
           sr.scheduledAt,
           sr.providerUserId AS doctorUserId,
@@ -926,6 +953,7 @@ router.get('/appointments/history/:patientUserId', async (req, res) => {
     const hasPaymentMethod = await hasColumn('servicerequest', 'paymentMethod');
     const hasPaymentStatus = await hasColumn('servicerequest', 'paymentStatus');
     const hasCompletedAt = await hasColumn('servicerequest', 'completedAt');
+    const ledgerExtras = await appointmentLedgerCardSelectSql();
     const { ratingSelect, ratingJoin } = await appointmentRatingSqlFragments();
 
     const [rows] = await db.query(
@@ -944,7 +972,7 @@ router.get('/appointments/history/:patientUserId', async (req, res) => {
           ${hasIsUrgent ? 'sr.isUrgent' : '0 AS isUrgent'},
           ${hasAdditionalNotes ? 'sr.additionalNotes' : "'' AS additionalNotes"},
           ${hasPaymentMethod ? 'sr.paymentMethod' : "'' AS paymentMethod"},
-          ${hasPaymentStatus ? 'sr.paymentStatus' : "'' AS paymentStatus"},
+          ${hasPaymentStatus ? 'sr.paymentStatus' : "'' AS paymentStatus"}${ledgerExtras},
           ${hasCompletedAt ? 'sr.completedAt' : 'NULL AS completedAt'},
           sr.scheduledAt,
           sr.providerUserId AS doctorUserId,
@@ -1001,6 +1029,7 @@ router.get('/appointments/:patientUserId', async (req, res) => {
     const hasPaymentMethod = await hasColumn('servicerequest', 'paymentMethod');
     const hasPaymentStatus = await hasColumn('servicerequest', 'paymentStatus');
     const hasCompletedAt = await hasColumn('servicerequest', 'completedAt');
+    const ledgerExtras = await appointmentLedgerCardSelectSql();
     const { ratingSelect, ratingJoin } = await appointmentRatingSqlFragments();
 
     const params = [patientUserId];
@@ -1026,7 +1055,7 @@ router.get('/appointments/:patientUserId', async (req, res) => {
           ${hasIsUrgent ? 'sr.isUrgent' : '0 AS isUrgent'},
           ${hasAdditionalNotes ? 'sr.additionalNotes' : "'' AS additionalNotes"},
           ${hasPaymentMethod ? 'sr.paymentMethod' : "'' AS paymentMethod"},
-          ${hasPaymentStatus ? 'sr.paymentStatus' : "'' AS paymentStatus"},
+          ${hasPaymentStatus ? 'sr.paymentStatus' : "'' AS paymentStatus"}${ledgerExtras},
           ${hasCompletedAt ? 'sr.completedAt' : 'NULL AS completedAt'},
           sr.scheduledAt,
           sr.providerUserId AS doctorUserId,
@@ -1081,6 +1110,7 @@ router.get('/appointments/details/:appointmentId', async (req, res) => {
     );
     const hasCompletedAt = await hasColumn('servicerequest', 'completedAt');
 
+    const ledgerExtras = await appointmentLedgerCardSelectSql();
     const { ratingSelect, ratingJoin } = await appointmentRatingSqlFragments();
 
     const [rows] = await db.query(
@@ -1100,7 +1130,7 @@ router.get('/appointments/details/:appointmentId', async (req, res) => {
           ${hasIsUrgent ? 'sr.isUrgent' : '0 AS isUrgent'},
           ${hasAdditionalNotes ? 'sr.additionalNotes' : "'' AS additionalNotes"},
           ${hasPaymentMethod ? 'sr.paymentMethod' : "'' AS paymentMethod"},
-          ${hasPaymentStatus ? 'sr.paymentStatus' : "'' AS paymentStatus"},
+          ${hasPaymentStatus ? 'sr.paymentStatus' : "'' AS paymentStatus"}${ledgerExtras},
           ${hasProviderCurrentLat ? 'sr.providerCurrentLat' : 'NULL AS providerCurrentLat'},
           ${hasProviderCurrentLng ? 'sr.providerCurrentLng' : 'NULL AS providerCurrentLng'},
           ${

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
 
 class ChatScreen extends StatefulWidget {
   final String name;
@@ -78,10 +79,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final p = CarelinkPalette.of(context);
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        centerTitle: true,
-        title: CarelinkAppBarTitle(widget.name),
-        actions: carelinkAppBarActions(),
+      appBar: carelinkPatientAppBar(
+        context,
+        title: CarelinkAppBarTitle.forPatient(context, widget.name),
       ),
       body: Column(
         children: [
@@ -136,7 +136,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: TextField(
                     controller: controller,
                     decoration: InputDecoration(
-                      hintText: 'Type a message...',
+                      hintText: context.tr('patient.chat.hintMessage'),
                       filled: true,
                       fillColor: AppColors.background,
                       border: OutlineInputBorder(

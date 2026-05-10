@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/app_nav.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/features/patient/widgets/visa_demo_checkout_sheet.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
 import 'package:carelink/shared/widgets/secure_payment_notice.dart';
-import 'package:carelink/shared/services/payment_service.dart';
+import 'patient_visa_payment_copy.dart';
 import 'payment_success_screen.dart';
 
-/// Checkout step after a booking is created. [appointmentId] is the backend UUID.
+/// After booking: pay with **Visa** (demo test cards) via CareLink ledger.
 class PaymentScreen extends StatefulWidget {
   const PaymentScreen({
     super.key,
@@ -23,6 +25,7 @@ class PaymentScreen extends StatefulWidget {
     required this.amount,
     this.serviceType,
     this.location,
+    this.currencyCode = 'JOD',
   });
 
   final String appointmentId;
@@ -35,51 +38,46 @@ class PaymentScreen extends StatefulWidget {
   final double amount;
   final String? serviceType;
   final String? location;
+  final String currencyCode;
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
 
 class _PaymentScreenState extends State<PaymentScreen> {
-  final PaymentService _paymentService = PaymentService();
-  String? _method;
-  bool _submitting = false;
+  bool _opening = false;
 
-  static const _methods = [
-    _PayOption('cash', 'Cash', 'Pay in person when you visit', Icons.payments_outlined),
-    _PayOption('card', 'Card', 'Simulated — no real charge', Icons.credit_card_rounded),
-    _PayOption('wallet', 'Wallet', 'Simulated — no real charge', Icons.account_balance_wallet_outlined),
-  ];
-
-  Future<void> _pay() async {
-    final method = _method;
-    if (method == null) {
-      _toast('Please choose how you want to pay.');
+  Future<void> _openVisaCheckout() async {
+    if (widget.amount <= 0) {
+      _toast(context.tr('payment.amountPositive'));
       return;
     }
-
-    setState(() => _submitting = true);
+    setState(() => _opening = true);
     try {
-      final result = await _paymentService.createPayment(
+      final result = await showVisaDemoCheckoutSheet(
+        context: context,
         appointmentId: widget.appointmentId,
-        patientId: widget.patientId,
-        providerId: widget.providerId,
+        patientUserId: widget.patientId,
+        providerUserId: widget.providerId,
         amount: widget.amount,
-        method: method,
+        currencyCode: widget.currencyCode,
+        providerName: widget.providerName,
+        serviceName: widget.serviceType ?? 'Care visit',
       );
-
-      if (result['success'] != true) {
-        throw Exception(
-          result['error']?.toString() ?? 'Payment was not accepted',
-        );
-      }
+      if (!mounted || result == null) return;
 
       final status =
-          (result['status'] ?? result['paymentStatus'] ?? '').toString();
+          (result['paymentStatus'] ?? result['status'] ?? '').toString();
+      if (status.toLowerCase() != 'paid') {
+        _toast(context.tr('payment.notCompleted'));
+        return;
+      }
+
       final rawAmt = result['amount'];
       final paidAmount = rawAmt is num
           ? rawAmt.toDouble()
           : double.tryParse(rawAmt?.toString() ?? '') ?? widget.amount;
+      final last4 = (result['cardLast4'] ?? '').toString().trim();
 
       if (!mounted) return;
       Navigator.pushReplacement(
@@ -93,18 +91,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
             appointmentDate: widget.appointmentDate,
             appointmentTime: widget.appointmentTime,
             location: widget.location,
-            paymentMethod: method,
+            paymentMethod: 'visa_card',
             paymentStatus: status,
             amount: paidAmount,
+            currencyCode: widget.currencyCode,
+            visaLast4: last4.isNotEmpty ? last4 : null,
           ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
       final msg = e.toString().replaceFirst('Exception: ', '');
-      _toast(msg.isEmpty ? 'Something went wrong.' : msg);
+      _toast(msg.isEmpty ? context.tr('payment.genericError') : msg);
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (mounted) setState(() => _opening = false);
     }
   }
 
@@ -130,19 +130,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        title: const CarelinkAppBarTitle('Payment'),
-        actions: carelinkAppBarActions(),
+      appBar: carelinkPatientAppBar(
+        context,
+        title: CarelinkAppBarTitle.forPatient(
+          context,
+          context.tr('patient.title.payment'),
+        ),
       ),
       body: Stack(
         children: [
           ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
             children: [
-              const CarelinkBrandLogo(height: 36),
+              CarelinkBrandLogo(
+                height: 36,
+                fallbackTextColor: p.inkDark,
+                forceDarkLogo: p.isDark,
+              ),
               const SizedBox(height: 16),
               Text(
-                'Complete payment',
+                context.tr('payment.completeTitle'),
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
@@ -151,7 +158,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Choose a method. Card and wallet are simulated until a gateway is connected.',
+                PatientVisaPaymentCopy.unpaidPayWithVisa(context),
+                style: TextStyle(
+                  color: p.inkDark,
+                  fontSize: 14,
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                context.tr('payment.completeSubtitleDemo'),
                 style: TextStyle(color: p.inkMuted, fontSize: 13.5, height: 1.35),
               ),
               const SizedBox(height: 20),
@@ -162,45 +179,47 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 date: widget.appointmentDate,
                 time: widget.appointmentTime,
                 amount: widget.amount,
+                currencyCode: widget.currencyCode,
                 serviceType: widget.serviceType,
               ),
-              const SizedBox(height: 20),
-              Text(
-                'Payment method',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                  color: p.inkDark,
-                ),
-              ),
-              const SizedBox(height: 10),
-              ..._methods.map(
-                (o) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _MethodTile(
-                    palette: p,
-                    option: o,
-                    selected: _method == o.id,
-                    onTap: _submitting ? null : () => setState(() => _method = o.id),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Icon(Icons.credit_card_rounded, color: AppColors.primary, size: 26),
+                  const SizedBox(width: 10),
+                  Text(
+                    context.tr('payment.visaCheckout'),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 17,
+                      color: p.inkDark,
+                    ),
                   ),
-                ),
+                ],
               ),
+              const SizedBox(height: 8),
+              Text(
+                context.tr('payment.visaOnlyNote'),
+                style: TextStyle(fontSize: 13, color: p.inkMuted, height: 1.35),
+              ),
+              const SizedBox(height: 16),
               const SecurePaymentNotice(),
             ],
           ),
-          if (_submitting)
+          if (_opening)
             Container(
               color: Colors.black26,
-              child: const Center(
+              child: Center(
                 child: Card(
                   child: Padding(
-                    padding: EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(24),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircularProgressIndicator(color: AppColors.primary),
-                        SizedBox(height: 14),
-                        Text('Processing…'),
+                        const CircularProgressIndicator(
+                            color: AppColors.primary),
+                        const SizedBox(height: 14),
+                        Text(context.tr('payment.openingCheckout')),
                       ],
                     ),
                   ),
@@ -212,32 +231,39 @@ class _PaymentScreenState extends State<PaymentScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: FilledButton(
-            onPressed: _submitting ? null : _pay,
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${widget.amount.toStringAsFixed(2)} ${widget.currencyCode}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                  color: p.inkDark,
+                ),
               ),
-            ),
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed: _opening ? null : _openVisaCheckout,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
             child: Text(
-              'Pay \$${widget.amount.toStringAsFixed(2)}',
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-            ),
+              context.tr('payment.payWithVisa'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
-}
-
-class _PayOption {
-  const _PayOption(this.id, this.title, this.subtitle, this.icon);
-  final String id;
-  final String title;
-  final String subtitle;
-  final IconData icon;
 }
 
 class _SummaryCard extends StatelessWidget {
@@ -248,6 +274,7 @@ class _SummaryCard extends StatelessWidget {
     required this.date,
     required this.time,
     required this.amount,
+    required this.currencyCode,
     this.serviceType,
   });
 
@@ -257,6 +284,7 @@ class _SummaryCard extends StatelessWidget {
   final String date;
   final String time;
   final double amount;
+  final String currencyCode;
   final String? serviceType;
 
   @override
@@ -335,7 +363,7 @@ class _SummaryCard extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                '\$${amount.toStringAsFixed(2)}',
+                '${amount.toStringAsFixed(2)} $currencyCode',
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 18,
@@ -368,77 +396,6 @@ class _SummaryCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _MethodTile extends StatelessWidget {
-  const _MethodTile({
-    required this.palette,
-    required this.option,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final CarelinkPalette palette;
-  final _PayOption option;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = palette;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: p.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected ? AppColors.primary : p.stroke,
-              width: selected ? 2 : 1,
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          child: Row(
-            children: [
-              Icon(
-                option.icon,
-                color: selected ? AppColors.primary : p.inkMuted,
-                size: 26,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      option.title,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: p.inkDark,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      option.subtitle,
-                      style: TextStyle(color: p.inkMuted, fontSize: 12.5),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                selected ? Icons.radio_button_checked : Icons.radio_button_off,
-                color: selected ? AppColors.primary : p.inkMuted,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

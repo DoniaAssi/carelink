@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:carelink/core/carelink_palette.dart';
+
 /// Brand logos: [carelink_logo_light] (وضع فاتح) و [carelink_logo_dark] (وضع داكن).
 class CarelinkBrandLogo extends StatelessWidget {
   const CarelinkBrandLogo({
@@ -70,22 +72,47 @@ class CarelinkAppBarTitle extends StatelessWidget {
     super.key,
     this.logoHeight = 24,
     this.forceDarkLogo = false,
+    this.titleColor,
+    this.logoFallbackColor,
   });
 
   final String title;
   final double logoHeight;
   final bool forceDarkLogo;
+  final Color? titleColor;
+  final Color? logoFallbackColor;
+
+  factory CarelinkAppBarTitle.forPatient(
+    BuildContext context,
+    String title, {
+    double logoHeight = 24,
+  }) {
+    final p = CarelinkPalette.of(context);
+    return CarelinkAppBarTitle(
+      title,
+      logoHeight: logoHeight,
+      titleColor: p.inkDark,
+      logoFallbackColor: p.inkDark,
+      forceDarkLogo: p.isDark,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(context).appBarTheme.titleTextStyle;
-    final fg = Theme.of(context).appBarTheme.foregroundColor;
+    final theme = Theme.of(context);
+    final baseTitle =
+        theme.appBarTheme.titleTextStyle ?? theme.textTheme.titleLarge;
+    final defaultFg =
+        theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface;
+    final fg = titleColor ?? defaultFg;
+    final style = (baseTitle ?? const TextStyle()).copyWith(color: fg);
+    final logoFb = logoFallbackColor ?? fg;
     return Row(
       mainAxisSize: MainAxisSize.max,
       children: [
         CarelinkBrandLogo(
           height: logoHeight,
-          fallbackTextColor: fg,
+          fallbackTextColor: logoFb,
           forceDarkLogo: forceDarkLogo,
         ),
         const SizedBox(width: 8),
@@ -110,18 +137,27 @@ class CarelinkAppBarTitleWithSubtitle extends StatelessWidget {
     required this.subtitle,
     this.logoHeight = 30,
     this.forceDarkLogo = false,
+    this.titleColor,
+    this.subtitleColor,
+    this.logoFallbackColor,
   });
 
   final String title;
   final String subtitle;
   final double logoHeight;
   final bool forceDarkLogo;
+  final Color? titleColor;
+  final Color? subtitleColor;
+  final Color? logoFallbackColor;
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
-    final fg = t.appBarTheme.foregroundColor ?? t.colorScheme.onSurface;
+    final defaultFg = t.appBarTheme.foregroundColor ?? t.colorScheme.onSurface;
+    final fg = titleColor ?? defaultFg;
+    final subFg = subtitleColor ?? fg.withValues(alpha: 0.72);
     final baseTitle = t.appBarTheme.titleTextStyle;
+    final logoFb = logoFallbackColor ?? fg;
     return Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
@@ -129,7 +165,7 @@ class CarelinkAppBarTitleWithSubtitle extends StatelessWidget {
       children: [
         CarelinkBrandLogo(
           height: logoHeight,
-          fallbackTextColor: fg,
+          fallbackTextColor: logoFb,
           forceDarkLogo: forceDarkLogo,
         ),
         const SizedBox(width: 8),
@@ -145,6 +181,7 @@ class CarelinkAppBarTitleWithSubtitle extends StatelessWidget {
                 style: baseTitle?.copyWith(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
+                  color: fg,
                 ),
               ),
               const SizedBox(height: 2),
@@ -155,7 +192,7 @@ class CarelinkAppBarTitleWithSubtitle extends StatelessWidget {
                 style: baseTitle?.copyWith(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
-                  color: fg.withValues(alpha: 0.72),
+                  color: subFg,
                 ),
               ),
             ],

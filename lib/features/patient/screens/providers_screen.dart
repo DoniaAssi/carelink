@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/location_service.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
@@ -124,7 +126,10 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Failed to load providers.';
+        _errorMessage =
+            CarelinkL10n(localeController.locale).t(
+          'patient.providers.loadFailedShort',
+        );
       });
     }
   }
@@ -272,19 +277,27 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     return values;
   }
 
-  String _sortLabel(ProviderSortOption option) {
+  String _sortLabel(BuildContext c, ProviderSortOption option) {
     switch (option) {
       case ProviderSortOption.smartMatch:
-        return 'Smart match';
+        return c.tr('patient.sortSmart');
       case ProviderSortOption.nearest:
-        return 'Nearest';
+        return c.tr('patient.sortNearest');
       case ProviderSortOption.ratingHighToLow:
-        return 'Top Rated';
+        return c.tr('patient.sortTopRated');
       case ProviderSortOption.availableNow:
-        return 'Available Now';
+        return c.tr('patient.filterAvailableNow');
       case ProviderSortOption.priceLowToHigh:
-        return 'Lowest Price';
+        return c.tr('patient.sortPriceLow');
     }
+  }
+
+  String _dropdownItemLabel(BuildContext c, String e) {
+    if (e == 'all') return c.tr('patient.filterAll');
+    final low = e.toLowerCase();
+    if (low == 'doctor') return c.tr('patient.role.doctor');
+    if (low == 'nurse') return c.tr('patient.role.nurse');
+    return e;
   }
 
   Future<void> _openFilters() async {
@@ -321,7 +334,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Filter Providers',
+                        context.tr('patient.providers.filterTitle'),
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
@@ -330,16 +343,18 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                       ),
                       const SizedBox(height: 14),
                       _dropdownField(
+                        context: context,
                         p: p,
-                        label: 'Provider Type',
+                        label: context.tr('patient.providers.providerType'),
                         value: tempRole,
                         items: const ['all', 'doctor', 'nurse'],
                         onChanged: (v) => setSheetState(() => tempRole = v),
                       ),
                       const SizedBox(height: 10),
                       _dropdownField(
+                        context: context,
                         p: p,
-                        label: 'Specialization',
+                        label: context.tr('patient.providers.specializationLabel'),
                         value: tempSpecialization,
                         items: ['all', ..._specializations],
                         onChanged: (v) =>
@@ -347,8 +362,9 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                       ),
                       const SizedBox(height: 10),
                       _dropdownField(
+                        context: context,
                         p: p,
-                        label: 'Service Type',
+                        label: context.tr('patient.providers.serviceTypeLabel'),
                         value: tempServiceType,
                         items: ['all', ..._serviceTypes],
                         onChanged: (v) =>
@@ -361,7 +377,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                         onChanged: (v) =>
                             setSheetState(() => tempAvailable = v),
                         title: Text(
-                          'Available now only',
+                          context.tr('patient.providers.availableNowSwitch'),
                           style: TextStyle(
                             color: p.inkDark,
                             fontWeight: FontWeight.w500,
@@ -375,7 +391,12 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Min rating: ${tempMinRating.toStringAsFixed(1)}',
+                        context.tr(
+                          'patient.providers.minRating',
+                          args: {
+                            'value': tempMinRating.toStringAsFixed(1),
+                          },
+                        ),
                         style: TextStyle(
                           color: p.inkDark,
                           fontWeight: FontWeight.w600,
@@ -403,7 +424,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Max distance',
+                        context.tr('patient.providers.maxDistance'),
                         style: TextStyle(
                           color: p.inkDark,
                           fontWeight: FontWeight.w600,
@@ -416,7 +437,12 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                         runSpacing: 6,
                         children: [null, 2.0, 5.0, 10.0].map((km) {
                           final selected = tempMaxDistance == km;
-                          final label = km == null ? 'Any' : '${km.toInt()} km';
+                          final label = km == null
+                              ? context.tr('patient.providers.pickAnyOption')
+                              : context.tr(
+                                  'patient.providers.kmOnly',
+                                  args: {'n': '${km.toInt()}'},
+                                );
                           return _filterChoiceChip(
                             p: p,
                             label: label,
@@ -428,7 +454,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'Max price (if available)',
+                        context.tr('patient.providers.maxPrice'),
                         style: TextStyle(
                           color: p.inkDark,
                           fontWeight: FontWeight.w600,
@@ -442,7 +468,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                         children: [null, 50.0, 100.0, 150.0].map((price) {
                           final selected = tempMaxPrice == price;
                           final label = price == null
-                              ? 'Any'
+                              ? context.tr('patient.providers.pickAnyOption')
                               : '\$${price.toInt()}';
                           return _filterChoiceChip(
                             p: p,
@@ -481,7 +507,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                                 _applyFiltersAndSort();
                                 Navigator.pop(context);
                               },
-                              child: const Text('Reset'),
+                              child: Text(context.tr('patient.action.reset')),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -511,7 +537,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                                 _applyFiltersAndSort();
                                 Navigator.pop(context);
                               },
-                              child: const Text('Apply'),
+                              child: Text(context.tr('patient.action.apply')),
                             ),
                           ),
                         ],
@@ -552,6 +578,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   }
 
   Widget _dropdownField({
+    required BuildContext context,
     required CarelinkPalette p,
     required String label,
     required String value,
@@ -594,7 +621,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                 (e) => DropdownMenuItem(
                   value: e,
                   child: Text(
-                    e == 'all' ? 'All' : e,
+                    _dropdownItemLabel(context, e),
                     style: TextStyle(color: p.inkDark),
                   ),
                 ),
@@ -613,10 +640,12 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     final p = CarelinkPalette.of(context);
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('Find Providers'),
-        actions: carelinkAppBarActions(),
+      appBar: carelinkPatientAppBar(
+        context,
+        title: CarelinkAppBarTitle.forPatient(
+            context,
+            context.tr('patient.title.findProviders'),
+          ),
       ),
       body: SafeArea(
         child: RefreshIndicator(
@@ -636,9 +665,9 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                   ],
                 ),
                 const SizedBox(height: 14),
-                _sortRow(p),
+                _sortRow(context, p),
                 const SizedBox(height: 12),
-                _statusRow(p),
+                _statusRow(context, p),
                 const SizedBox(height: 16),
                 _buildBody(p),
               ],
@@ -665,7 +694,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
         style: TextStyle(color: p.inkDark, fontSize: 14),
         cursorColor: AppColors.primary,
         decoration: InputDecoration(
-          hintText: 'Search doctor, nurse, specialty… — طبيب، ممرض، تخصص',
+          hintText: context.tr('patient.providers.searchHint'),
           hintStyle: TextStyle(
             color: p.inkMuted,
             fontSize: 14,
@@ -699,7 +728,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     );
   }
 
-  Widget _sortRow(CarelinkPalette p) {
+  Widget _sortRow(BuildContext context, CarelinkPalette p) {
     return Wrap(
       spacing: 8,
       runSpacing: 6,
@@ -707,7 +736,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
         final selected = _sortOption == option;
         return ChoiceChip(
           label: Text(
-            _sortLabel(option),
+            _sortLabel(context, option),
             style: TextStyle(
               color: selected ? Colors.white : p.inkDark,
               fontWeight: FontWeight.w600,
@@ -728,9 +757,12 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     );
   }
 
-  Widget _statusRow(CarelinkPalette p) {
+  Widget _statusRow(BuildContext context, CarelinkPalette p) {
     return Text(
-      'Results: ${_visibleProviders.length} providers',
+      context.tr(
+        'patient.providers.resultsLine',
+        args: {'n': '${_visibleProviders.length}'},
+      ),
       style: TextStyle(
         fontSize: 13,
         color: p.inkMuted,
@@ -754,7 +786,10 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     }
 
     if (_visibleProviders.isEmpty) {
-      return _errorCard(p, 'No providers match your search/filter options.');
+      return _errorCard(
+        p,
+        context.tr('patient.providers.noMatchFilters'),
+      );
     }
 
     final bestRated = _visibleProviders.reduce(
@@ -787,12 +822,29 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _infoChip(p, 'Closest: ${nearest.fullName.split(' ').first}'),
               _infoChip(
                 p,
-                'Top rated: ${bestRated.overallRating.toStringAsFixed(1)}',
+                context.tr(
+                  'patient.providers.closestChip',
+                  args: {'name': nearest.fullName.split(' ').first},
+                ),
               ),
-              _infoChip(p, 'Available now: $availableNow'),
+              _infoChip(
+                p,
+                context.tr(
+                  'patient.providers.topRatedChip',
+                  args: {
+                    'rating': bestRated.overallRating.toStringAsFixed(1),
+                  },
+                ),
+              ),
+              _infoChip(
+                p,
+                context.tr(
+                  'patient.providers.availableNowChip',
+                  args: {'count': '$availableNow'},
+                ),
+              ),
             ],
           ),
         ),
@@ -903,7 +955,9 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          provider.isAvailable ? 'Available' : 'Busy',
+                          provider.isAvailable
+                              ? context.tr('patient.availability.available')
+                              : context.tr('patient.availability.busy'),
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -920,7 +974,9 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                   const SizedBox(height: 4),
                   Text(
                     provider.specialization.isEmpty
-                        ? (isDoctor ? 'Doctor' : 'Nurse')
+                        ? (isDoctor
+                              ? context.tr('patient.role.doctor')
+                              : context.tr('patient.role.nurse'))
                         : provider.specialization,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -936,7 +992,14 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                         Icons.star_rounded,
                         provider.overallRating.toStringAsFixed(1),
                       ),
-                      _metric(p, Icons.location_on_rounded, '$distance m'),
+                      _metric(
+                        p,
+                        Icons.location_on_rounded,
+                        context.tr(
+                          'patient.distanceMeters',
+                          args: {'m': '$distance'},
+                        ),
+                      ),
                       if (provider.consultationFee != null)
                         _metric(
                           p,
@@ -1009,7 +1072,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                 foregroundColor: Colors.white,
               ),
               onPressed: _fetchProviders,
-              child: const Text('Try Again'),
+              child: Text(context.tr('patient.action.tryAgain')),
             ),
           ],
         ],

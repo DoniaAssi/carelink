@@ -28,7 +28,15 @@ router.post('/confirm', async (req, res) => {
     const out = await confirmDemoPayment(req.body || {});
     res.status(200).json(out);
   } catch (err) {
-    res.status(err.status || 500).json({ success: false, error: err.message });
+    const code = err.status || 500;
+    if (err.body && typeof err.body === 'object') {
+      return res.status(code).json({
+        success: false,
+        error: err.message,
+        ...err.body,
+      });
+    }
+    res.status(code).json({ success: false, error: err.message });
   }
 });
 

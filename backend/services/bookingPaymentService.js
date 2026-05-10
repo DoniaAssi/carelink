@@ -1,18 +1,29 @@
 'use strict';
 
 /**
- * CareLink booking payments — uses the **`payment`** table (`requestId` = appointment/booking UUID).
- *
- * DEMO / MOCK: Electronic methods (`mock_card`, `card`, `wallet`) are created **`pending`** and
- * become **`paid`** only via **`confirmDemoPayment`**. Never store card numbers — only method + amounts.
+ * CareLink booking payments — **`payment`** table (`requestId` = appointment UUID).
+ * Visa/Card demo only: create pending row, then **`confirmVisaDemoPayment`** with test PAN rules.
+ * Never persist full PAN, CVV, or expiry — only last4, brand, status, transactionId.
  */
 
 const { randomUUID } = require('crypto');
 const db = require('../db');
 
-const PAYMENT_STATUSES = ['unpaid', 'pending', 'paid', 'failed', 'refunded'];
+const PAYMENT_STATUSES = [
+  'unpaid',
+  'pending',
+  'paid',
+  'failed',
+  'declined',
+  'refunded',
+];
 const DEFAULT_VISIT_PAYMENT_AMOUNT = 25;
-const DEMO_TX_PREFIX = 'demo_carelink_';
+const DEMO_VISA_TX_PREFIX = 'DEMO-VISA-';
+
+/** Normalized PAN (digits only) — Stripe-style test Visa only. */
+const DEMO_VISA_SUCCESS = '4242424242424242';
+const DEMO_VISA_FAIL = '4000000000000002';
+const DEMO_VISA_DECLINED = '4000000000009995';
 
 /** @returns {string} */
 function paymentCurrency() {
@@ -78,7 +89,7 @@ async function ensurePaymentTable() {
       patientUserId CHAR(36) NOT NULL,
       providerUserId CHAR(36) NOT NULL,
       amount DECIMAL(10,2) NOT NULL DEFAULT 0,
-      paymentMethod VARCHAR(64) NOT NULL DEFAULT 'cash',
+      paymentMethod VARCHAR(64) NOT NULL DEFAULT 'visa_card',
       paymentStatus VARCHAR(32) NOT NULL DEFAULT 'pending',
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -88,13 +99,17 @@ async function ensurePaymentTable() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
   const additions = [
-    ['paymentMethod', `ALTER TABLE payment ADD COLUMN paymentMethod VARCHAR(64) NOT NULL DEFAULT 'cash'`],
+    ['paymentMethod', `ALTER TABLE payment ADD COLUMN paymentMethod VARCHAR(64) NOT NULL DEFAULT 'visa_card'`],
     ['paymentStatus', `ALTER TABLE payment ADD COLUMN paymentStatus VARCHAR(32) NOT NULL DEFAULT 'pending'`],
     ['createdAt', `ALTER TABLE payment ADD COLUMN createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`],
     ['updatedAt', `ALTER TABLE payment ADD COLUMN updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`],
     ['transactionId', `ALTER TABLE payment ADD COLUMN transactionId VARCHAR(128) NULL`],
     ['paidAt', `ALTER TABLE payment ADD COLUMN paidAt DATETIME NULL`],
     ['currency', `ALTER TABLE payment ADD COLUMN currency VARCHAR(8) NOT NULL DEFAULT '${paymentCurrency().replace(/'/g, "''")}'`],
+    ['cardBrand', `ALTER TABLE payment ADD COLUMN cardBrand VARCHAR(32) NULL`],
+    ['cardLast4', `ALTER TABLE payment ADD COLUMN cardLast4 CHAR(4) NULL`],
+    ['failureReason', `ALTER TABLE payment ADD COLUMN failureReason VARCHAR(512) NULL`],
+    ['billingEmail', `ALTER TABLE payment ADD COLUMN billingEmail VARCHAR(255) NULL`],
   ];
   for (const [column, sql] of additions) {
     if (await hasColumn('payment', column)) continue;
@@ -171,15 +186,72 @@ async function syncServiceRequestPayment(appointmentId, method, status) {
   );
 }
 
-function normalizeElectronicMethod(raw) {
-  const m = (raw || '').toString().trim().toLowerCase();
-  if (m === 'mock_card' || m === 'mock-card') return 'mock_card';
-  if (m === 'card' || m === 'wallet') return m;
+/** Accept only Visa demo ledger method. Legacy `mock_card` / `card` map to visa_card. */
+function normalizePaymentMethod(raw) {
+  const m = (raw || '').toString().trim().toLowerCase().replace(/-/g, '_');
+  if (m === 'visa' || m === 'visa_card' || m === 'visacard') return 'visa_card';
+  if (
+    m === 'mock_card' ||
+    m === 'card' ||
+    m === 'credit_card' ||
+    m === 'debitcard'
+  ) {
+    return 'visa_card';
+  }
   return m;
 }
 
-function isCashLike(m) {
-  return m === 'cash' || m === 'cash_on_visit';
+function isForbiddenCashMethod(m) {
+  return (
+    m === 'cash' ||
+    m === 'cash_on_visit' ||
+    m === 'pay_later' ||
+    m === 'wallet' ||
+    m === 'demo_cash'
+  );
+}
+
+function digitsOnly(s) {
+  return (s ?? '').toString().replace(/\D/g, '');
+}
+
+function classifyDemoPan(panDigits) {
+  if (panDigits === DEMO_VISA_SUCCESS) return 'success';
+  if (panDigits === DEMO_VISA_FAIL) return 'failed';
+  if (panDigits === DEMO_VISA_DECLINED) return 'declined';
+  return 'invalid';
+}
+
+function validateExpiryMmYy(expiryRaw) {
+  const t = (expiryRaw ?? '').toString().replace(/\s/g, '');
+  let mm;
+  let yyShort;
+  const slash = /^(\d{2})\/(\d{2})$/.exec(t);
+  if (slash) {
+    mm = Number(slash[1]);
+    yyShort = Number(slash[2]);
+  } else if (/^\d{4}$/.test(t)) {
+    mm = Number(t.slice(0, 2));
+    yyShort = Number(t.slice(2, 4));
+  } else {
+    throw httpError(400, 'Expiry must be MM/YY.');
+  }
+  if (mm < 1 || mm > 12) {
+    throw httpError(400, 'Invalid expiry month.');
+  }
+  const fullYear = 2000 + yyShort;
+  const lastMs = new Date(fullYear, mm, 0, 23, 59, 59).getTime();
+  if (lastMs < Date.now()) {
+    throw httpError(400, 'Card has expired.');
+  }
+}
+
+function validateCvvInput(cvv) {
+  const d = digitsOnly(cvv);
+  if (!d || d.length < 3 || d.length > 4) {
+    throw httpError(400, 'CVV must be 3 or 4 digits.');
+  }
+  return d;
 }
 
 /**
@@ -218,7 +290,7 @@ async function createApiPayment(body) {
     .toString()
     .trim();
 
-  const paymentMethodRaw = (body.paymentMethod ?? body.method ?? 'mock_card')
+  const paymentMethodRaw = (body.paymentMethod ?? body.method ?? 'visa_card')
     .toString()
     .trim();
 
@@ -230,6 +302,9 @@ async function createApiPayment(body) {
   const hasTransactionId = await hasColumn('payment', 'transactionId');
   const hasPaidAt = await hasColumn('payment', 'paidAt');
   const hasCurrency = await hasColumn('payment', 'currency');
+  const hasCardBrand = await hasColumn('payment', 'cardBrand');
+  const hasCardLast4 = await hasColumn('payment', 'cardLast4');
+  const hasFailReason = await hasColumn('payment', 'failureReason');
 
   const [appointments] = await db.query(
     `SELECT requestId, patientUserId, providerUserId, status
@@ -256,22 +331,21 @@ async function createApiPayment(body) {
     throw httpError(409, 'Cannot create payment for a cancelled appointment');
   }
 
-  const normalizedMethod = normalizeElectronicMethod(paymentMethodRaw);
-  const methodFinal = isCashLike(normalizedMethod)
-    ? normalizedMethod === 'cash_on_visit'
-      ? 'cash_on_visit'
-      : 'cash'
-    : normalizedMethod;
-
-  const electronic = ['mock_card', 'card', 'wallet'].includes(methodFinal);
-  if (!electronic && !isCashLike(methodFinal)) {
+  let methodFinal = normalizePaymentMethod(
+    paymentMethodRaw || 'visa_card',
+  );
+  if (isForbiddenCashMethod(methodFinal)) {
     throw httpError(
       400,
-      'paymentMethod must be mock_card, card, wallet, cash, or cash_on_visit',
+      'Only Visa/Card checkout is supported. Use paymentMethod "visa_card".',
     );
   }
-  let statusInsert = 'pending';
-  if (isCashLike(methodFinal)) statusInsert = 'unpaid';
+  if (methodFinal !== 'visa_card') {
+    throw httpError(
+      400,
+      'paymentMethod must be visa_card for CareLink checkout.',
+    );
+  }
 
   const finalAmount = await resolveFinalAmount(
     appointmentId,
@@ -279,7 +353,23 @@ async function createApiPayment(body) {
     body.amount ?? body.clientAmountHint,
   );
 
+  if (!(Number.isFinite(finalAmount) && finalAmount > 0)) {
+    throw httpError(
+      400,
+      'amount must be greater than zero. Ensure the provider fee is set.',
+    );
+  }
+
   const currency = paymentCurrency();
+  const statusInsert = 'pending';
+  const metaClearParts = [
+    hasCardBrand ? 'cardBrand = NULL' : null,
+    hasCardLast4 ? 'cardLast4 = NULL' : null,
+    hasFailReason ? 'failureReason = NULL' : null,
+  ].filter(Boolean);
+  const metaClearSql = metaClearParts.length
+    ? `, ${metaClearParts.join(', ')}`
+    : '';
 
   const [existingRows] = await db.query(
     `SELECT paymentId, paymentStatus, paymentMethod FROM payment WHERE requestId = ?`,
@@ -308,7 +398,7 @@ async function createApiPayment(body) {
       await db.execute(
         `UPDATE payment SET
           amount = ?, paymentMethod = ?, paymentStatus = ?,
-          transactionId = NULL, paidAt = NULL,
+          transactionId = NULL, paidAt = NULL${metaClearSql},
           ${hasCurrency ? 'currency = ?, ' : ''}
           patientUserId = ?, providerUserId = ?, updatedAt = NOW()
          WHERE requestId = ?`,
@@ -326,7 +416,7 @@ async function createApiPayment(body) {
       ];
       await db.execute(
         `UPDATE payment SET
-          amount = ?, paymentMethod = ?, paymentStatus = ?,
+          amount = ?, paymentMethod = ?, paymentStatus = ?${metaClearSql},
           ${hasCurrency ? 'currency = ?, ' : ''}
           patientUserId = ?, providerUserId = ?, updatedAt = NOW()
          WHERE requestId = ?`,
@@ -338,7 +428,7 @@ async function createApiPayment(body) {
 
     return {
       demo: true,
-      mode: electronic ? 'create_pending_then_confirm' : 'cash_manual',
+      mode: 'visa_pending_then_confirm',
       paymentId: ex.paymentId,
       appointmentId,
       bookingId: appointmentId,
@@ -348,9 +438,8 @@ async function createApiPayment(body) {
       currency,
       paymentMethod: methodFinal,
       paymentStatus: statusInsert,
-      message: electronic
-        ? 'Payment record saved as pending — call POST /api/payments/confirm to complete DEMO checkout.'
-        : 'Cash-style payment logged as unpaid until collected at visit.',
+      message:
+        'Pending Visa checkout — call POST /api/payments/confirm with card details (demo test cards only).',
     };
   }
 
@@ -399,7 +488,7 @@ async function createApiPayment(body) {
 
   return {
     demo: true,
-    mode: electronic ? 'create_pending_then_confirm' : 'cash_manual',
+    mode: 'visa_pending_then_confirm',
     paymentId,
     appointmentId,
     bookingId: appointmentId,
@@ -409,42 +498,108 @@ async function createApiPayment(body) {
     currency,
     paymentMethod: methodFinal,
     paymentStatus: statusInsert,
-    message: electronic
-      ? 'DEMO: payment pending — call POST /api/payments/confirm to mark paid.'
-      : 'Recorded as unpaid (cash-style).',
+    message:
+      'DEMO Visa: payment pending — POST /api/payments/confirm with test card to complete.',
   };
 }
 
+/**
+ * DEMO Visa checkout — PAN/CVV/expiry validated in-memory only; never persisted.
+ * Body must include patientUserId and (paymentId or appointmentId/requestId), plus card fields.
+ */
 async function confirmDemoPayment(body) {
-  if (!assertNoSensitivePaymentKeys(body)) {
+  const payload = body || {};
+  const paymentIdOpt = (payload.paymentId ?? '').toString().trim();
+  const appointmentIdRaw = (
+    payload.appointmentId ??
+    payload.requestId ??
+    payload.bookingId ??
+    ''
+  )
+    .toString()
+    .trim();
+  const patientUserId = (payload.patientUserId ?? payload.patientId ?? '')
+    .toString()
+    .trim();
+
+  const cardholderName = (
+    payload.cardholderName ??
+    payload.cardHolderName ??
+    ''
+  )
+    .toString()
+    .trim();
+  const cardNumber = payload.cardNumber ?? payload.card?.number ?? '';
+  const expiryRaw = payload.expiry ?? payload.expiryMmYy ?? '';
+  const cvvRaw = payload.cvv ?? payload.cvc ?? '';
+
+  if (!patientUserId) {
+    throw httpError(400, 'patientUserId is required');
+  }
+  if (!paymentIdOpt && !appointmentIdRaw) {
+    throw httpError(400, 'paymentId or appointmentId is required');
+  }
+  if (!cardholderName) {
+    throw httpError(400, 'Cardholder name is required');
+  }
+
+  const panDigits = digitsOnly(cardNumber);
+  if (!panDigits) {
+    throw httpError(400, 'Card number is required');
+  }
+
+  const outcome = classifyDemoPan(panDigits);
+  if (outcome === 'invalid') {
     throw httpError(
       400,
-      'Sensitive payment data must not be sent to this API.',
+      'Use a valid test Visa card number for demo mode.',
     );
   }
-  const appointmentId = (body.appointmentId ?? body.bookingId ?? '').toString().trim();
-  const patientUserId = (body.patientUserId ?? body.patientId ?? '').toString().trim();
 
-  if (!appointmentId || !patientUserId) {
-    throw httpError(400, 'appointmentId and patientUserId are required');
-  }
+  validateExpiryMmYy(expiryRaw);
+  validateCvvInput(cvvRaw);
 
   await ensurePaymentTable();
   const hasTransactionId = await hasColumn('payment', 'transactionId');
   const hasPaidAt = await hasColumn('payment', 'paidAt');
+  const hasCardBrand = await hasColumn('payment', 'cardBrand');
+  const hasCardLast4 = await hasColumn('payment', 'cardLast4');
+  const hasFailReason = await hasColumn('payment', 'failureReason');
+  const hasBillingEmail = await hasColumn('payment', 'billingEmail');
 
-  const [rows] = await db.query(
-    `SELECT p.paymentId, p.paymentMethod, p.paymentStatus, p.amount
-     FROM payment p
-     JOIN servicerequest sr ON sr.requestId = p.requestId
-     WHERE p.requestId = ? AND p.patientUserId = ?
-     LIMIT 1`,
-    [appointmentId, patientUserId],
-  );
+  let rows;
+  if (paymentIdOpt) {
+    const [r] = await db.query(
+      `SELECT p.paymentId, p.requestId, p.paymentMethod, p.paymentStatus, p.amount, p.patientUserId
+       FROM payment p
+       WHERE p.paymentId = ? AND p.patientUserId = ?
+       LIMIT 1`,
+      [paymentIdOpt, patientUserId],
+    );
+    rows = r;
+  } else {
+    const [r] = await db.query(
+      `SELECT p.paymentId, p.requestId, p.paymentMethod, p.paymentStatus, p.amount, p.patientUserId
+       FROM payment p
+       JOIN servicerequest sr ON sr.requestId = p.requestId
+       WHERE p.requestId = ? AND p.patientUserId = ?
+       LIMIT 1`,
+      [appointmentIdRaw, patientUserId],
+    );
+    rows = r;
+  }
 
-  if (!rows.length) throw httpError(404, 'No payment record found for this appointment');
+  if (!rows.length) {
+    throw httpError(404, 'No payment record found for this appointment');
+  }
 
   const p = rows[0];
+  const appointmentId = p.requestId;
+  const charged = Number(p.amount);
+  if (!Number.isFinite(charged) || charged <= 0) {
+    throw httpError(400, 'Invalid payment amount on record');
+  }
+
   if ((p.paymentStatus || '').toLowerCase() === 'paid') {
     return {
       demo: true,
@@ -453,48 +608,109 @@ async function confirmDemoPayment(body) {
       paymentId: p.paymentId,
       appointmentId,
       paymentStatus: 'paid',
-      message: 'Payment was already confirmed.',
+      message: 'Payment was already successful.',
     };
   }
 
-  const method = (p.paymentMethod || '').toLowerCase();
-  if (isCashLike(method)) {
-    throw httpError(
-      400,
-      'Cash payments are finalized at visit — DEMO confirm applies to card/mock/wallet only.',
+  const last4 = panDigits.slice(-4);
+  const brandVal = 'Visa';
+  const emailVal = (payload.billingEmail ?? '').toString().trim();
+
+  if (outcome === 'success') {
+    const txn = `${DEMO_VISA_TX_PREFIX}${randomUUID()}`;
+
+    const setParts = [
+      "paymentStatus = 'paid'",
+      "paymentMethod = 'visa_card'",
+      hasTransactionId ? 'transactionId = ?' : null,
+      hasPaidAt ? 'paidAt = NOW()' : null,
+      hasCardBrand ? 'cardBrand = ?' : null,
+      hasCardLast4 ? 'cardLast4 = ?' : null,
+      hasFailReason ? 'failureReason = NULL' : null,
+      hasBillingEmail && emailVal ? 'billingEmail = ?' : null,
+      'updatedAt = NOW()',
+    ].filter(Boolean);
+
+    const vals = [];
+    if (hasTransactionId) vals.push(txn);
+    if (hasCardBrand) vals.push(brandVal);
+    if (hasCardLast4) vals.push(last4);
+    if (hasBillingEmail && emailVal) vals.push(emailVal);
+    vals.push(p.paymentId);
+
+    await db.execute(
+      `UPDATE payment SET ${setParts.join(', ')} WHERE paymentId = ?`,
+      vals,
     );
+
+    await syncServiceRequestPayment(appointmentId, 'visa_card', 'paid');
+
+    return {
+      demo: true,
+      success: true,
+      paymentId: p.paymentId,
+      appointmentId,
+      bookingId: appointmentId,
+      amount: charged,
+      currency: paymentCurrency(),
+      paymentMethod: 'visa_card',
+      paymentStatus: 'paid',
+      cardBrand: brandVal,
+      cardLast4: last4,
+      transactionId: hasTransactionId ? txn : undefined,
+      message: 'Payment successful',
+    };
   }
 
-  const txn = `${DEMO_TX_PREFIX}${randomUUID().replace(/-/g, '')}`;
+  const failStatus = outcome === 'declined' ? 'declined' : 'failed';
+  const failMsg =
+    outcome === 'declined'
+      ? 'Demo: issuer declined this test Visa (4000 0000 0000 9995).'
+      : 'Demo: payment failed for this test Visa (4000 0000 0000 0002).';
 
-  if (hasTransactionId && hasPaidAt) {
-    await db.execute(
-      `UPDATE payment SET paymentStatus = 'paid', transactionId = ?, paidAt = NOW(), updatedAt = NOW()
-       WHERE paymentId = ?`,
-      [txn, p.paymentId],
-    );
-  } else {
-    await db.execute(
-      `UPDATE payment SET paymentStatus = 'paid', updatedAt = NOW()
-       WHERE paymentId = ?`,
-      [p.paymentId],
-    );
-  }
+  const setFail = [
+    `paymentStatus = '${failStatus}'`,
+    "paymentMethod = 'visa_card'",
+    hasTransactionId ? 'transactionId = NULL' : null,
+    hasPaidAt ? 'paidAt = NULL' : null,
+    hasCardBrand ? 'cardBrand = ?' : null,
+    hasCardLast4 ? 'cardLast4 = ?' : null,
+    hasFailReason ? 'failureReason = ?' : null,
+    hasBillingEmail && emailVal ? 'billingEmail = ?' : null,
+    'updatedAt = NOW()',
+  ].filter(Boolean);
 
-  await syncServiceRequestPayment(appointmentId, method, 'paid');
+  const failVals = [];
+  if (hasCardBrand) failVals.push(brandVal);
+  if (hasCardLast4) failVals.push(last4);
+  if (hasFailReason) failVals.push(failMsg);
+  if (hasBillingEmail && emailVal) failVals.push(emailVal);
+  failVals.push(p.paymentId);
 
-  return {
+  await db.execute(
+    `UPDATE payment SET ${setFail.join(', ')} WHERE paymentId = ?`,
+    failVals,
+  );
+
+  await syncServiceRequestPayment(appointmentId, 'visa_card', 'unpaid');
+
+  const err = httpError(
+    outcome === 'declined' ? 402 : 402,
+    outcome === 'declined'
+      ? 'Payment declined. Please try another test Visa card.'
+      : 'Payment failed. Please try another test Visa card.',
+  );
+  err.body = {
     demo: true,
-    success: true,
-    transactionId: hasTransactionId ? txn : undefined,
+    success: false,
     paymentId: p.paymentId,
     appointmentId,
-    bookingId: appointmentId,
-    amount: Number(p.amount),
-    currency: paymentCurrency(),
-    paymentStatus: 'paid',
-    message: 'DEMO: payment marked paid (no real money moved).',
+    paymentStatus: failStatus,
+    cardBrand: brandVal,
+    cardLast4: last4,
+    failureReason: failMsg,
   };
+  throw err;
 }
 
 async function getAppointmentPayment(appointmentId, patientUserId) {
@@ -517,9 +733,10 @@ async function getAppointmentPayment(appointmentId, patientUserId) {
 
   const [payRows] = await db.query(
     `SELECT paymentId, requestId AS appointmentId, patientUserId, providerUserId,
-            amount, paymentMethod, paymentStatus, transactionId, paidAt, createdAt, updatedAt
+            amount, COALESCE(currency, ?) AS currency, paymentMethod, paymentStatus,
+            transactionId, paidAt, cardBrand, cardLast4, failureReason, createdAt, updatedAt
      FROM payment WHERE requestId = ?`,
-    [appointmentId],
+    [paymentCurrency(), appointmentId],
   );
 
   const cur = paymentCurrency();
@@ -536,12 +753,14 @@ async function getAppointmentPayment(appointmentId, patientUserId) {
       paymentStatus: null,
       canPay: true,
       message:
-        'No payment row yet — use POST /api/payments/create to start DEMO checkout.',
+        'No payment row yet — POST /api/payments/create with visa_card to start Visa checkout.',
     };
   }
 
   const pr = payRows[0];
   const paid = String(pr.paymentStatus || '').toLowerCase() === 'paid';
+
+  const rowCur = pr.currency ? String(pr.currency) : cur;
 
   return {
     demo: true,
@@ -552,11 +771,14 @@ async function getAppointmentPayment(appointmentId, patientUserId) {
     patientUserId: pr.patientUserId,
     providerUserId: pr.providerUserId,
     amount: Number(pr.amount),
-    currency: cur,
+    currency: rowCur,
     paymentMethod: pr.paymentMethod,
     paymentStatus: pr.paymentStatus,
     transactionId: pr.transactionId,
     paidAt: pr.paidAt,
+    cardBrand: pr.cardBrand ?? null,
+    cardLast4: pr.cardLast4 ?? null,
+    failureReason: pr.failureReason ?? null,
     updatedAt: pr.updatedAt,
     canPay: !paid && !['cancelled', 'canceled'].includes(await appointmentStatusQuick(appointmentId)),
   };
@@ -583,6 +805,9 @@ async function listPatientPayments(patientUserId) {
         p.paymentMethod,
         p.paymentStatus,
         p.transactionId,
+        p.cardBrand,
+        p.cardLast4,
+        p.failureReason,
         p.paidAt,
         p.createdAt,
         sr.scheduledAt,
@@ -597,149 +822,45 @@ async function listPatientPayments(patientUserId) {
   return rows;
 }
 
-/** Mirrors legacy `POST /patient/payments` behaviour (existing mobile clients). */
+/** Legacy `POST /patient/payments` — delegates to [createApiPayment] (Visa demo only). */
 async function createLegacyPatientPayment(body) {
-  const {
-    appointmentId,
-    patientUserId,
-    providerUserId,
-    amount,
-    paymentMethod,
-    status,
-  } = body || {};
-
   if (!assertNoSensitivePaymentKeys(body)) {
     throw httpError(
       400,
-      'Sensitive payment data must not be sent to this API. Use TLS and a PCI-compliant provider; only method and amount are stored here.',
+      'Sensitive payment data must not be sent to this API.',
     );
   }
-
-  if (
-    !appointmentId ||
-    !patientUserId ||
-    !providerUserId ||
-    amount == null ||
-    !paymentMethod
-  ) {
+  const appointmentId = (body?.appointmentId ?? '').toString().trim();
+  const patientUserId = (body?.patientUserId ?? '').toString().trim();
+  const providerUserId = (body?.providerUserId ?? '').toString().trim();
+  if (!appointmentId || !patientUserId || !providerUserId) {
     throw httpError(
       400,
-      'appointmentId, patientUserId, providerUserId, amount and paymentMethod are required',
+      'appointmentId, patientUserId, and providerUserId are required',
     );
   }
-
-  const parsedAmount = Number(amount);
-  if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
-    throw httpError(400, 'amount must be a valid number');
-  }
-
-  const normalizedMethod = paymentMethod.toString().trim().toLowerCase();
-  const allowZero =
-    normalizedMethod === 'cash' ||
-    normalizedMethod === 'card' ||
-    normalizedMethod === 'cash_on_visit';
-  if (!allowZero && parsedAmount <= 0) {
-    throw httpError(400, 'amount must be a positive number');
-  }
-
-  await ensurePaymentTable();
-  const hasPaymentMethodSr = await hasColumn('servicerequest', 'paymentMethod');
-  const hasPaymentStatusSr = await hasColumn('servicerequest', 'paymentStatus');
-  const hasTransactionId = await hasColumn('payment', 'transactionId');
-  const hasPaidAt = await hasColumn('payment', 'paidAt');
-
-  const [appointments] = await db.query(
-    `SELECT requestId
-     FROM servicerequest
-     WHERE requestId = ? AND patientUserId = ? AND providerUserId = ?`,
-    [appointmentId, patientUserId, providerUserId],
+  const methodIn = normalizePaymentMethod(
+    (body?.paymentMethod ?? 'visa_card').toString().trim(),
   );
-
-  if (appointments.length === 0) {
-    throw httpError(404, 'Related appointment not found');
+  if (methodIn !== 'visa_card' || isForbiddenCashMethod(methodIn)) {
+    throw httpError(
+      400,
+      'Only Visa card checkout (visa_card) is supported.',
+    );
   }
-
-  const [existingPayment] = await db.query(
-    'SELECT paymentId FROM payment WHERE requestId = ?',
-    [appointmentId],
-  );
-
-  if (existingPayment.length > 0) {
-    throw httpError(409, 'Payment already exists for this appointment');
+  if (body?.status) {
+    throw httpError(
+      400,
+      'Do not send payment status — it is set by the Visa checkout flow.',
+    );
   }
-
-  const serverAmt = await resolveServerAmount(
-    appointmentId,
-    providerUserId,
-  );
-  const finalAmount =
-    serverAmt > 0 ? serverAmt : Math.round(parsedAmount * 100) / 100;
-
-  const computedStatus = status
-    ? toStatus(status, PAYMENT_STATUSES, 'unpaid')
-    : normalizedMethod === 'cash' || normalizedMethod === 'cash_on_visit'
-      ? 'unpaid'
-      : normalizedMethod === 'card'
-        ? 'pending'
-        : 'paid';
-
-  const paymentId = randomUUID();
-  const baseParams = [
-    paymentId,
+  return createApiPayment({
     appointmentId,
     patientUserId,
     providerUserId,
-    finalAmount,
-    normalizedMethod,
-    computedStatus,
-  ];
-
-  if (hasTransactionId && hasPaidAt) {
-    await db.execute(
-      `INSERT INTO payment
-       (paymentId, requestId, patientUserId, providerUserId, amount, paymentMethod, paymentStatus, transactionId, paidAt, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NOW(), NOW())`,
-      baseParams,
-    );
-  } else {
-    await db.execute(
-      `INSERT INTO payment
-       (paymentId, requestId, patientUserId, providerUserId, amount, paymentMethod, paymentStatus, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-      baseParams,
-    );
-  }
-
-  if (hasPaymentMethodSr || hasPaymentStatusSr) {
-    const updates = [];
-    const updateValues = [];
-    if (hasPaymentMethodSr) {
-      updates.push('paymentMethod = ?');
-      updateValues.push(normalizedMethod);
-    }
-    if (hasPaymentStatusSr) {
-      updates.push('paymentStatus = ?');
-      updateValues.push(computedStatus);
-    }
-    if (updates.length) {
-      updateValues.push(appointmentId);
-      await db.execute(
-        `UPDATE servicerequest SET ${updates.join(', ')} WHERE requestId = ?`,
-        updateValues,
-      );
-    }
-  }
-
-  return {
-    message: 'Payment stored successfully',
-    paymentId,
-    appointmentId,
-    bookingId: appointmentId,
-    paymentStatus: computedStatus,
-    amount: finalAmount,
-    currency: paymentCurrency(),
-    demoAmountSource: serverAmt > 0 ? 'provider_rate' : 'client_supplied_or_default',
-  };
+    paymentMethod: 'visa_card',
+    amount: body?.amount,
+  });
 }
 
 module.exports = {

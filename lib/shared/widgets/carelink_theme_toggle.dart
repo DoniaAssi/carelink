@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/core/theme_controller.dart';
 
@@ -22,7 +23,11 @@ class CarelinkLocaleIconButton extends StatelessWidget {
       listenable: localeController,
       builder: (context, child) {
         final arabic = localeController.isArabic;
-        final tip = tooltip ?? (arabic ? 'English' : 'Arabic');
+        final l10n = CarelinkL10n(localeController.locale);
+        final tip = tooltip ??
+            (arabic
+                ? l10n.t('language.switchToEnglish')
+                : l10n.t('language.switchToArabic'));
         final button = IconButton(
           onPressed: () => localeController.toggle(),
           icon: Icon(Icons.language_rounded, color: color),
@@ -102,10 +107,11 @@ class CarelinkThemeIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: themeController,
+      listenable: Listenable.merge([themeController, localeController]),
       builder: (context, child) {
         final isDark = themeController.isDark;
-        final tip = isDark ? 'Light mode' : 'Dark mode';
+        final l10n = CarelinkL10n(localeController.locale);
+        final tip = l10n.t(isDark ? 'theme.light' : 'theme.dark');
         final button = IconButton(
           onPressed: () => themeController.toggle(),
           icon: Icon(
@@ -128,5 +134,9 @@ class CarelinkThemeIconButton extends StatelessWidget {
 }
 
 List<Widget> carelinkAppBarActions([List<Widget>? other]) {
-  return [if (other != null) ...other, const CarelinkThemeIconButton()];
+  return [
+    if (other != null) ...other,
+    const CarelinkLocaleIconButton(),
+    const CarelinkThemeIconButton(),
+  ];
 }

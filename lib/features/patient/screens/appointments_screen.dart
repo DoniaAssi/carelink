@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart'
+    show carelinkLocaleThemeChipRow;
 import 'package:carelink/shared/services/api_service.dart';
 import 'booking_details_screen.dart';
 
@@ -64,26 +68,29 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   List<AppointmentModel> get _activeList =>
       currentTab == 0 ? upcoming : history;
 
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'Date unavailable';
-    final month = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    final suffix = date.hour >= 12 ? 'PM' : 'AM';
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '${date.day} ${month[date.month - 1]} ${date.year} - $hour:$minute $suffix';
+  String _formatDate(BuildContext context, DateTime? date) {
+    if (date == null) return context.tr('patient.dateUnavailable');
+    final loc = localeController.locale.toLanguageTag();
+    try {
+      return DateFormat.yMMMd(loc).add_jm().format(date.toLocal());
+    } catch (_) {
+      return DateFormat.yMMMd('en').add_jm().format(date.toLocal());
+    }
+  }
+
+  String _statusLabel(BuildContext context, String raw) {
+    switch (raw.toLowerCase()) {
+      case 'pending':
+        return context.tr('patient.status.pending');
+      case 'confirmed':
+        return context.tr('patient.status.confirmed');
+      case 'completed':
+        return context.tr('patient.status.completed');
+      case 'cancelled':
+        return context.tr('patient.status.cancelled');
+      default:
+        return raw;
+    }
   }
 
   Color _statusColor(String status) {
@@ -118,9 +125,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Expanded(child: _tabButton('Upcoming', 0)),
+                  Expanded(
+                    child:
+                        _tabButton(context.tr('patient.tab.upcoming'), 0),
+                  ),
                   const SizedBox(width: 10),
-                  Expanded(child: _tabButton('History', 1)),
+                  Expanded(child: _tabButton(context.tr('patient.tab.history'), 1)),
                 ],
               ),
               const SizedBox(height: 16),
@@ -132,7 +142,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
               else if (errorMessage != null)
                 _emptyCard(errorMessage!)
               else if (_activeList.isEmpty)
-                _emptyCard('No appointments available.')
+                _emptyCard(context.tr('patient.noAppointments'))
               else
                 Column(
                   children: _activeList.map((item) {
@@ -181,7 +191,8 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                                 children: [
                                   Text(
                                     item.providerName.isEmpty
-                                        ? 'Provider'
+                                        ? context
+                                            .tr('patient.providerFallback')
                                         : item.providerName,
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
@@ -190,7 +201,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    _formatDate(item.scheduledAt),
+                                    _formatDate(context, item.scheduledAt),
                                     style: TextStyle(
                                       color: p.inkMuted,
                                       fontSize: 13,
@@ -202,7 +213,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                                           item.patientRatingStars! < 1)) ...[
                                     const SizedBox(height: 8),
                                     Text(
-                                      'Tap to rate this visit',
+                                      context.tr('patient.rateVisitHint'),
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w700,
@@ -225,7 +236,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
-                                item.status,
+                                _statusLabel(context, item.status),
                                 style: TextStyle(
                                   color: _statusColor(item.status),
                                   fontWeight: FontWeight.w700,
@@ -328,7 +339,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Appointments',
+              context.tr('patient.appointments.header'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -340,14 +351,13 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           ),
           const SizedBox(width: 8),
           Container(
-            width: 40,
-            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             decoration: BoxDecoration(
               color: p.surfaceSoft,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: p.stroke),
             ),
-            child: CarelinkThemeIconButton(color: p.inkDark),
+            child: carelinkLocaleThemeChipRow(iconColor: p.inkDark, gap: 4),
           ),
         ],
       ),

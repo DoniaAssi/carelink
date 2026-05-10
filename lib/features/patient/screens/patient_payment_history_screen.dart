@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
+import 'package:carelink/features/patient/payment/patient_visa_payment_copy.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
-/// Lists booking payments from `GET /api/payments/patient/:id` (DEMO ledger).
+/// Lists booking payments from `GET /patient/payments/:patientUserId` (DEMO ledger).
 class PatientPaymentHistoryScreen extends StatefulWidget {
   const PatientPaymentHistoryScreen({super.key, required this.patientUserId});
 
@@ -55,21 +57,22 @@ class _PatientPaymentHistoryScreenState extends State<PatientPaymentHistoryScree
     return '${id.substring(0, 8)}…';
   }
 
-  static String _statusLabel(dynamic v) {
-    final s = (v ?? '').toString().toLowerCase();
+  String _paymentStatusUi(BuildContext context, String raw) {
+    final s = raw.toLowerCase().trim();
+    if (s.isEmpty) return '\u2014';
     switch (s) {
       case 'paid':
-        return 'Paid';
+        return context.tr('patient.pay.paid');
       case 'pending':
-        return 'Pending';
+        return context.tr('patient.status.pending');
       case 'unpaid':
-        return 'Unpaid';
+        return context.tr('patient.pay.unpaid');
       case 'failed':
-        return 'Failed';
+        return context.tr('patient.health.payStatus.failed');
       case 'refunded':
-        return 'Refunded';
+        return context.tr('patient.pay.refunded');
       default:
-        return s.isEmpty ? '—' : s;
+        return raw;
     }
   }
 
@@ -78,10 +81,12 @@ class _PatientPaymentHistoryScreenState extends State<PatientPaymentHistoryScree
     final p = CarelinkPalette.of(context);
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('Payment history'),
-        actions: carelinkAppBarActions(),
+      appBar: carelinkPatientAppBar(
+        context,
+        title: CarelinkAppBarTitle.forPatient(
+          context,
+          context.tr('patient.title.paymentHistory'),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -101,7 +106,7 @@ class _PatientPaymentHistoryScreenState extends State<PatientPaymentHistoryScree
                             const CarelinkBrandLogo(height: 32),
                             const SizedBox(height: 24),
                             Text(
-                              'No payments yet.',
+                              context.tr('patient.paymentHistory.empty'),
                               textAlign: TextAlign.center,
                               style: TextStyle(color: p.inkMuted, fontSize: 15),
                             ),
@@ -118,11 +123,18 @@ class _PatientPaymentHistoryScreenState extends State<PatientPaymentHistoryScree
                             );
                             final amt = r['amount'];
                             final cur = (r['currency'] ?? '').toString();
-                            final prov =
-                                (r['providerName'] ?? 'Provider').toString();
-                            final method =
-                                (r['paymentMethod'] ?? '').toString();
-                            final st = _statusLabel(r['paymentStatus']);
+                            final prov = (r['providerName'] ?? '')
+                                    .toString()
+                                    .trim()
+                                    .isNotEmpty
+                                ? r['providerName'].toString()
+                                : context.tr('patient.providerFallback');
+                            final rawPay =
+                                (r['paymentStatus'] ?? '').toString();
+                            final st = _paymentStatusUi(context, rawPay);
+                            final isPaid =
+                                rawPay.toLowerCase().trim() == 'paid';
+                            final last4 = (r['cardLast4'] ?? '').toString();
                             final amtStr = amt == null
                                 ? '—'
                                 : '${amt is num ? amt.toStringAsFixed(2) : amt} ${cur.trim()}';
@@ -154,19 +166,40 @@ class _PatientPaymentHistoryScreenState extends State<PatientPaymentHistoryScree
                                     ),
                                   ),
                                   const SizedBox(height: 8),
+                                  Text(
+                                    isPaid
+                                        ? PatientVisaPaymentCopy.paidLine(
+                                            context,
+                                            last4,
+                                          )
+                                        : PatientVisaPaymentCopy.unpaidPayWithVisa(context),
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: isPaid
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
+                                      color: p.inkDark,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
                                   Wrap(
                                     spacing: 10,
                                     runSpacing: 6,
                                     children: [
-                                      _chip(p, 'Status', st),
-                                      if (method.isNotEmpty)
-                                        _chip(p, 'Method', method),
+                                      _chip(
+                                        p,
+                                        context.tr('patient.detail.status'),
+                                        st,
+                                      ),
                                       if ((r['appointmentId'] ?? '')
                                           .toString()
                                           .isNotEmpty)
                                         _chip(
                                           p,
-                                          'Visit',
+                                          context.tr(
+                                            'patient.payHist.chip.visit',
+                                          ),
                                           _shortId(
                                             r['appointmentId']!.toString(),
                                           ),

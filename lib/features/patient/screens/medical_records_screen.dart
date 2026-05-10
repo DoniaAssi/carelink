@@ -1,10 +1,11 @@
 ﻿import 'package:flutter/material.dart';
 
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
 import 'edit_profile_screen.dart';
 import 'patient_medical_records_screen.dart';
 import 'patient_visit_reports_panel.dart';
@@ -105,22 +106,31 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen>
 
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('Health record'),
-        actions: carelinkAppBarActions(),
+      appBar: carelinkPatientAppBar(
+        context,
+        title: CarelinkAppBarTitle.forPatient(
+          context,
+          context.tr('patient.title.healthRecord'),
+        ),
         bottom: TabBar(
           controller: _tabController,
           labelColor: AppColors.primary,
           unselectedLabelColor: p.inkMuted,
           indicatorColor: AppColors.primary,
+          dividerColor: p.stroke,
           isScrollable: true,
-          tabs: const [
-            Tab(text: 'Records', icon: Icon(Icons.history_edu_outlined, size: 18)),
-            Tab(text: 'Profile', icon: Icon(Icons.person_outline, size: 18)),
+          tabs: [
             Tab(
-              text: 'Timeline',
-              icon: Icon(Icons.receipt_long_outlined, size: 18),
+              text: context.tr('patient.healthTab.records'),
+              icon: const Icon(Icons.history_edu_outlined, size: 18),
+            ),
+            Tab(
+              text: context.tr('patient.healthTab.profile'),
+              icon: const Icon(Icons.person_outline, size: 18),
+            ),
+            Tab(
+              text: context.tr('patient.healthTab.timeline'),
+              icon: const Icon(Icons.receipt_long_outlined, size: 18),
             ),
           ],
         ),
@@ -163,7 +173,7 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen>
       padding: const EdgeInsets.all(20),
       children: [
         Text(
-          'Baseline medical profile',
+          context.tr('patient.healthBaseline.title'),
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w800,
@@ -172,16 +182,14 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen>
         ),
         const SizedBox(height: 8),
         Text(
-          'Keep chronic conditions, allergies, and medications up to date. '
-          'These support safer care and better recommendations. '
-          'Official diagnoses after visits appear in the Records tab.',
+          context.tr('patient.healthBaseline.body'),
           style: TextStyle(color: p.inkMuted, height: 1.4),
         ),
         const SizedBox(height: 20),
         FilledButton.icon(
           onPressed: _openEditProfile,
           icon: const Icon(Icons.edit_outlined),
-          label: const Text('Edit profile & health baseline'),
+          label: Text(context.tr('patient.healthBaseline.editCta')),
           style: FilledButton.styleFrom(
             backgroundColor: AppColors.primary,
             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -190,24 +198,25 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen>
         const SizedBox(height: 24),
         _profileCard(
           p,
-          'Age / DOB',
+          context.tr('patient.profileCard.ageDob'),
           dob.isEmpty ? '—' : dob,
         ),
-        _profileCard(p, 'Gender', gender.isEmpty ? '—' : gender,
+        _profileCard(p, context.tr('patient.field.gender'),
+            gender.isEmpty ? '—' : gender,
         ),
         _profileCard(
           p,
-          'Chronic conditions',
+          context.tr('patient.profileCard.chronicConditions'),
           chronic.isEmpty ? '—' : chronic,
         ),
         _profileCard(
           p,
-          'Allergies',
+          context.tr('patient.profileCard.allergies'),
           allergies.isEmpty ? '—' : allergies,
         ),
         _profileCard(
           p,
-          'Current medications',
+          context.tr('patient.profileCard.medications'),
           meds.isEmpty ? '—' : meds,
         ),
       ],

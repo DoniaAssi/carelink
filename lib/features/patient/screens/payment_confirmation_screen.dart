@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
 import 'package:carelink/shared/widgets/secure_payment_notice.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/features/patient/payment/patient_visa_payment_copy.dart';
 import 'package:carelink/features/patient/payment/payment_screen.dart';
 
 class PaymentConfirmationScreen extends StatefulWidget {
@@ -53,11 +55,15 @@ class PaymentConfirmationScreen extends StatefulWidget {
 class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   bool isLoading = false;
 
-  String get _displayReason => widget.notes.trim().isEmpty
-      ? 'General consultation'
-      : widget.notes.trim();
+  String _displayReason(BuildContext context) {
+    final t = widget.notes.trim();
+    if (t.isEmpty) return context.tr('patient.payConfirm.defaultReason');
+    return t;
+  }
 
   Future<void> _confirm() async {
+    final bookingNotes = _displayReason(context);
+    final bookingMissingMsg = context.tr('patient.payConfirm.bookingMissingId');
     setState(() => isLoading = true);
     try {
       final booking = await ApiService().createBooking(
@@ -65,7 +71,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
         providerId: widget.provider.userId,
         date: widget.date,
         time: widget.time,
-        notes: _displayReason,
+        notes: bookingNotes,
         serviceType: widget.serviceType,
         visitAddress: widget.visitAddress,
         visitLatitude: widget.visitLatitude,
@@ -81,7 +87,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
 
       final appointmentId = (booking['appointmentId'] ?? '').toString();
       if (appointmentId.isEmpty) {
-        throw Exception('Booking created but appointment id is missing');
+        throw Exception(bookingMissingMsg);
       }
 
       if (!mounted) return;
@@ -117,16 +123,18 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     final p = CarelinkPalette.of(context);
     final specialization = widget.provider.specialization.trim().isEmpty
         ? (widget.provider.role.toLowerCase() == 'doctor'
-              ? 'General Medical Care'
-              : 'Home Nursing Care')
+              ? context.tr('patient.payConfirm.specialtyGeneralMedical')
+              : context.tr('patient.payConfirm.specialtyHomeNursing'))
         : widget.provider.specialization;
 
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('Appointment'),
-        actions: carelinkAppBarActions(),
+      appBar: carelinkPatientAppBar(
+        context,
+        title: CarelinkAppBarTitle.forPatient(
+          context,
+          context.tr('patient.title.appointment'),
+        ),
       ),
       bottomNavigationBar: SafeArea(
         top: false,
@@ -136,9 +144,12 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             children: [
               Expanded(
                 child: Text(
-                  'Total\n\$ ${widget.amount.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: AppColors.textDark,
+                  context.tr(
+                    'patient.payConfirm.footerTotal',
+                    args: {'amount': widget.amount.toStringAsFixed(2)},
+                  ),
+                  style: TextStyle(
+                    color: p.inkDark,
                     fontWeight: FontWeight.w700,
                     fontSize: 16,
                     height: 1.2,
@@ -167,9 +178,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                               color: Colors.white,
                             ),
                           )
-                        : const Text(
-                            'Book & pay',
-                            style: TextStyle(
+                        : Text(
+                            context.tr('payment.payWithVisa'),
+                            style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
                               fontSize: 15,
@@ -261,19 +272,30 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
               ),
             ),
             const SizedBox(height: 14),
-            _sectionHeader('Date', action: 'Change'),
+            _sectionHeader(
+              context.tr('patient.payConfirm.sectionDate'),
+              action: context.tr('patient.payConfirm.change'),
+            ),
             const SizedBox(height: 6),
             _lineRow(
               icon: Icons.calendar_month_outlined,
               text: '${widget.date} | ${widget.time}',
             ),
             const SizedBox(height: 14),
-            _sectionHeader('Reason', action: 'Change'),
+            _sectionHeader(
+              context.tr('patient.payConfirm.sectionReason'),
+              action: context.tr('patient.payConfirm.change'),
+            ),
             const SizedBox(height: 6),
-            _lineRow(icon: Icons.edit_note_rounded, text: _displayReason),
+            _lineRow(
+              icon: Icons.edit_note_rounded,
+              text: _displayReason(context),
+            ),
             if ((widget.visitAddress ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 14),
-              _sectionHeader('Visit Location'),
+              _sectionHeader(
+                context.tr('patient.payConfirm.sectionVisitLocation'),
+              ),
               const SizedBox(height: 6),
               _lineRow(
                 icon: Icons.location_on_outlined,
@@ -290,7 +312,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             if ((widget.serviceType ?? '').trim().isNotEmpty ||
                 widget.isUrgent) ...[
               const SizedBox(height: 14),
-              _sectionHeader('Request Info'),
+              _sectionHeader(
+                context.tr('patient.payConfirm.sectionRequestInfo'),
+              ),
               const SizedBox(height: 6),
               if ((widget.serviceType ?? '').trim().isNotEmpty)
                 _lineRow(
@@ -300,13 +324,13 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
               if (widget.isUrgent)
                 _lineRow(
                   icon: Icons.priority_high_rounded,
-                  text: 'Urgent case',
+                  text: context.tr('patient.payConfirm.urgentCase'),
                 ),
             ],
             const SizedBox(height: 14),
-            const Text(
-              'Payment Detail',
-              style: TextStyle(
+            Text(
+              context.tr('patient.title.paymentDetail'),
+              style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textDark,
@@ -314,33 +338,43 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             ),
             const SizedBox(height: 8),
             _paymentLine(
-              'Consultation',
+              context.tr('patient.payConfirm.lineConsultation'),
               '\$${widget.consultationFee.toStringAsFixed(2)}',
             ),
             _paymentLine(
-              'Admin Fee',
+              context.tr('patient.payConfirm.lineAdminFee'),
               '\$${widget.adminFee.toStringAsFixed(2)}',
             ),
             _paymentLine(
-              'Additional Discount',
+              context.tr('patient.payConfirm.lineDiscount'),
               widget.discount == 0
-                  ? '-'
+                  ? context.tr('patient.payConfirm.dashPlaceholder')
                   : '\$${widget.discount.toStringAsFixed(2)}',
             ),
             const Divider(height: 20, color: Color(0xFFE1E8EB)),
             _paymentLine(
-              'Total',
+              context.tr('patient.payConfirm.lineTotal'),
               '\$${widget.amount.toStringAsFixed(2)}',
               valueColor: AppColors.primary,
               bold: true,
             ),
             const SizedBox(height: 14),
-            const Text(
-              'Next, choose how you pay (cash, card, or wallet).',
-              style: TextStyle(
-                color: Color(0xFF74858E),
-                fontSize: 13.5,
-                height: 1.35,
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: p.surfaceSoft,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: p.stroke),
+              ),
+              child: Text(
+                PatientVisaPaymentCopy.unpaidNextStep(context),
+                style: TextStyle(
+                  color: p.inkDark,
+                  fontSize: 13.5,
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             const SizedBox(height: 14),

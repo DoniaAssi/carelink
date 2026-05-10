@@ -1,7 +1,7 @@
 const { randomUUID } = require('crypto');
 const db = require('../db');
 
-const ALLOWED_METHODS = new Set(['cash', 'card', 'wallet']);
+const ALLOWED_METHODS = new Set(['visa_card']);
 
 const DISALLOWED_KEY_NORM = new Set([
   'cardnumber',
@@ -59,13 +59,10 @@ function rejectSensitiveKeys(body) {
 /**
  * Simulated gateway — swap for Stripe/PayPal confirmation + idempotency keys.
  */
-function buildSimulatedOutcome(method) {
-  if (method === 'cash') {
-    return { status: 'pending', transactionRef: null };
-  }
+function buildSimulatedOutcome() {
   return {
     status: 'paid',
-    transactionRef: `sim_${randomUUID().replace(/-/g, '')}`,
+    transactionRef: `DEMO-VISA-${randomUUID()}`,
   };
 }
 
@@ -122,7 +119,7 @@ async function createPayment(req, res) {
   const method = methodRaw.toString().trim().toLowerCase();
   if (!ALLOWED_METHODS.has(method)) {
     return res.status(400).json({
-      error: 'method must be one of: cash, card, wallet',
+      error: 'method must be visa_card',
     });
   }
 
@@ -151,7 +148,7 @@ async function createPayment(req, res) {
       });
     }
 
-    const { status, transactionRef } = buildSimulatedOutcome(method);
+    const { status, transactionRef } = buildSimulatedOutcome();
 
     const [result] = await db.execute(
       `INSERT INTO payments

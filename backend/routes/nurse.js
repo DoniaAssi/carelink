@@ -767,7 +767,7 @@ async function ensurePaymentTable() {
       patientUserId CHAR(36) NOT NULL,
       providerUserId CHAR(36) NOT NULL,
       amount DECIMAL(10,2) NOT NULL DEFAULT 0,
-      paymentMethod VARCHAR(64) NOT NULL DEFAULT 'cash',
+      paymentMethod VARCHAR(64) NOT NULL DEFAULT 'visa_card',
       paymentStatus VARCHAR(32) NOT NULL DEFAULT 'pending',
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -777,7 +777,7 @@ async function ensurePaymentTable() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
   const additions = [
-    ['paymentMethod', `ALTER TABLE payment ADD COLUMN paymentMethod VARCHAR(64) NOT NULL DEFAULT 'cash'`],
+    ['paymentMethod', `ALTER TABLE payment ADD COLUMN paymentMethod VARCHAR(64) NOT NULL DEFAULT 'visa_card'`],
     ['paymentStatus', `ALTER TABLE payment ADD COLUMN paymentStatus VARCHAR(32) NOT NULL DEFAULT 'pending'`],
     ['createdAt', `ALTER TABLE payment ADD COLUMN createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`],
     ['updatedAt', `ALTER TABLE payment ADD COLUMN updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`],
@@ -821,7 +821,7 @@ async function ensurePaymentForRequest(requestId) {
   await db.execute(
     `INSERT INTO payment
        (paymentId, requestId, patientUserId, providerUserId, amount, paymentMethod, paymentStatus, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, 'cash', 'pending', NOW(), NOW())
+     VALUES (?, ?, ?, ?, ?, 'visa_card', 'pending', NOW(), NOW())
      ON DUPLICATE KEY UPDATE
        providerUserId = VALUES(providerUserId),
        patientUserId = VALUES(patientUserId),

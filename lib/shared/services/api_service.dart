@@ -868,19 +868,12 @@ class ApiService {
     );
   }
 
+  /// DEMO booking ledger rows for one patient (`bookingPaymentService.listPatientPayments`).
+  ///
+  /// Uses **`GET /patient/payments/:id`** (mounted with patient routes — always deployed).
+  /// `/api/payments/patient/:id` is equivalent when `paymentsApi` is mounted on the server.
   Future<List<dynamic>> getPatientPaymentsApi(String patientUserId) async {
-    final response = await _sendRequest(
-      http.get(
-        _endpoint('/api/payments/patient/$patientUserId'),
-        headers: _jsonHeaders,
-      ),
-    );
-
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return jsonDecode(response.body) as List<dynamic>;
-    }
-
-    throw Exception(_extractErrorMessage(response, 'Failed to load payments'));
+    return getPayments(patientUserId);
   }
 
   Future<List<dynamic>> getProviders() async {

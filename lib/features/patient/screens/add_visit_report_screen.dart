@@ -2,6 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
+import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
+import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
 
 /// After a visit: provider submits structured report (linked to booking when possible).
@@ -38,10 +43,6 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
   final _allergiesNoted = TextEditingController();
   bool _followRequired = false;
   bool _saving = false;
-
-  Color get _primary => const Color(MedicalRecordsBrand.primary);
-  Color get _bg => const Color(MedicalRecordsBrand.background);
-  Color get _ink => const Color(MedicalRecordsBrand.textDark);
 
   @override
   void initState() {
@@ -100,7 +101,7 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
     final tx = _treatment.text.trim();
     if (dx.isEmpty && tx.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add diagnosis or treatment plan.')),
+        SnackBar(content: Text(context.tr('patient.visitReport.needDiagnosis'))),
       );
       return;
     }
@@ -110,7 +111,9 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
       vitals = jsonDecode(_vitalsJson.text.trim());
     } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vital signs must be valid JSON.')),
+        SnackBar(
+          content: Text(context.tr('patient.visitReport.vitalsInvalidJson')),
+        ),
       );
       return;
     }
@@ -155,12 +158,15 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final p = CarelinkPalette.of(context);
     return Scaffold(
-      backgroundColor: _bg,
-      appBar: AppBar(
-        backgroundColor: _primary,
-        foregroundColor: Colors.white,
-        title: const Text('Visit report'),
+      backgroundColor: p.pageBg,
+      appBar: carelinkPatientAppBar(
+        context,
+        title: CarelinkAppBarTitle.forPatient(
+            context,
+            context.tr('patient.title.visitReport'),
+          ),
       ),
       body: Form(
         key: _formKey,
@@ -169,7 +175,7 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
           children: [
             Text(
               'Patient: ${widget.patientUserId}',
-              style: TextStyle(color: _ink.withValues(alpha: 0.7)),
+              style: TextStyle(color: p.inkMuted),
             ),
             if (widget.appointmentId != null)
               Padding(
@@ -178,14 +184,17 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
                   'Appointment: ${widget.appointmentId}',
                   style: TextStyle(
                     fontSize: 12,
-                    color: _ink.withValues(alpha: 0.6),
+                    color: p.inkMuted,
                   ),
                 ),
               ),
             TextFormField(
               controller: _visitDate,
               readOnly: true,
-              decoration: _dec('Visit date').copyWith(
+              style: TextStyle(color: p.inkDark),
+              decoration:
+                  _dec(context, context.tr('patient.visitReport.visitDate'))
+                      .copyWith(
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.calendar_month),
                   onPressed: _pickVisitDate,
@@ -194,45 +203,75 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
             ),
             TextFormField(
               controller: _medicationsPrescribed,
-              decoration: _dec('Medications prescribed (optional)'),
+              style: TextStyle(color: p.inkDark),
+              decoration: _dec(
+                context,
+                context.tr('patient.visitReport.medsPrescribed'),
+              ),
               maxLines: 3,
             ),
             TextFormField(
               controller: _allergiesNoted,
-              decoration: _dec('Allergies noted this visit (optional)'),
+              style: TextStyle(color: p.inkDark),
+              decoration: _dec(context, 'Allergies noted this visit (optional)'),
               maxLines: 2,
             ),
             TextFormField(
               controller: _vitalsJson,
-              decoration: _dec('Vital signs (JSON)'),
+              decoration: _dec(
+                context,
+                context.tr('patient.visitReport.vitalsJsonLabel'),
+              ),
               maxLines: 4,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: p.inkDark,
+              ),
             ),
             TextFormField(
               controller: _diagnosis,
-              decoration: _dec('Diagnosis'),
+              style: TextStyle(color: p.inkDark),
+              decoration: _dec(
+                context,
+                context.tr('patient.visitReport.diagnosis'),
+              ),
               maxLines: 3,
             ),
             TextFormField(
               controller: _treatment,
-              decoration: _dec('Treatment plan'),
+              style: TextStyle(color: p.inkDark),
+              decoration: _dec(
+                context,
+                context.tr('patient.visitReport.treatmentPlan'),
+              ),
               maxLines: 4,
             ),
             TextFormField(
               controller: _recommendations,
-              decoration: _dec('Recommendations'),
+              style: TextStyle(color: p.inkDark),
+              decoration: _dec(
+                context,
+                context.tr('patient.visitReport.recommendations'),
+              ),
               maxLines: 3,
             ),
             SwitchListTile(
               value: _followRequired,
               onChanged: (v) => setState(() => _followRequired = v),
-              title: const Text('Follow-up required'),
-              activeThumbColor: _primary,
+              title: Text(
+                'Follow-up required',
+                style: TextStyle(color: p.inkDark),
+              ),
+              activeThumbColor: AppColors.primary,
             ),
             TextFormField(
               controller: _followUp,
               readOnly: true,
-              decoration: _dec('Follow-up date').copyWith(
+              style: TextStyle(color: p.inkDark),
+              decoration:
+                  _dec(context, context.tr('patient.visitReport.followUpDate'))
+                      .copyWith(
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.calendar_month),
                   onPressed: _pickFollowUp,
@@ -243,7 +282,7 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
             FilledButton(
               onPressed: _saving ? null : _save,
               style: FilledButton.styleFrom(
-                backgroundColor: _primary,
+                backgroundColor: AppColors.primary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
               child: _saving
@@ -255,7 +294,7 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
                         color: Colors.white,
                       ),
                     )
-                  : const Text('Submit report'),
+                  : Text(context.tr('patient.visitReport.submit')),
             ),
           ]
               .map(
@@ -270,10 +309,25 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
     );
   }
 
-  InputDecoration _dec(String l) => InputDecoration(
-        labelText: l,
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-      );
+  InputDecoration _dec(BuildContext context, String l) {
+    final p = CarelinkPalette.of(context);
+    return InputDecoration(
+      labelText: l,
+      labelStyle: TextStyle(color: p.inkMuted),
+      filled: true,
+      fillColor: p.surfaceSoft,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: p.stroke),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: p.stroke),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+      ),
+    );
+  }
 }

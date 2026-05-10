@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
+import 'package:carelink/features/patient/payment/patient_visa_payment_copy.dart';
 import 'package:carelink/features/patient/payment/payment_screen.dart';
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
 
@@ -89,9 +91,12 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
 
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        title: const CarelinkAppBarTitle('Review booking'),
-        actions: carelinkAppBarActions(),
+      appBar: carelinkPatientAppBar(
+        context,
+        title: CarelinkAppBarTitle.forPatient(
+          context,
+          context.tr('patient.title.reviewBooking'),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
@@ -140,11 +145,12 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'You will choose cash, card, or wallet on the next step.',
+            PatientVisaPaymentCopy.unpaidNextStep(context),
             style: TextStyle(
-              color: p.inkMuted,
+              color: p.inkDark,
               fontSize: 13.5,
               height: 1.35,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -167,7 +173,7 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
                       strokeWidth: 2,
                     ),
                   )
-                : const Text('Continue to payment'),
+                : Text(context.tr('payment.payWithVisa')),
           ),
         ),
       ),

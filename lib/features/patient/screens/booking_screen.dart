@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
+import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/core/carelink_date_picker.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart'
+    show carelinkLocaleThemeChipRow;
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
@@ -52,28 +56,22 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   String _monthYear(DateTime date) {
-    const monthNames = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-    return '${monthNames[date.month - 1]} ${date.year}';
+    final loc = localeController.locale.toLanguageTag();
+    try {
+      return DateFormat.yMMMM(loc).format(date);
+    } catch (_) {
+      return DateFormat.yMMMM('en').format(date);
+    }
   }
 
   String _shortDay(DateTime? d) {
-    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final weekday = _safeWeekday(d);
-    if (weekday == null || weekday < 1 || weekday > 7) return '--';
-    return names[weekday - 1];
+    if (d == null) return '--';
+    final loc = localeController.locale.toLanguageTag();
+    try {
+      return DateFormat.E(loc).format(d);
+    } catch (_) {
+      return DateFormat.E('en').format(d);
+    }
   }
 
   DateTime get _today {
@@ -84,7 +82,7 @@ class _BookingScreenState extends State<BookingScreen> {
   void _continue() {
     if (_selectedTimeLabel == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please choose date and time first')),
+        SnackBar(content: Text(context.tr('patient.booking.pickDateTime'))),
       );
       return;
     }
@@ -193,7 +191,7 @@ class _BookingScreenState extends State<BookingScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Choose your preferred date and time',
+                          context.tr('patient.booking.chooseDateTimeSubtitle'),
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
                             color: p.inkDark,
@@ -202,7 +200,7 @@ class _BookingScreenState extends State<BookingScreen> {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          'Available times are shown in your local time',
+                          context.tr('patient.booking.timesShownLocal'),
                           style: TextStyle(color: p.inkMuted, fontSize: 12),
                         ),
                       ],
@@ -574,14 +572,13 @@ class _BookingScreenState extends State<BookingScreen> {
           ),
           const SizedBox(width: 8),
           Container(
-            width: 40,
-            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             decoration: BoxDecoration(
               color: p.surfaceSoft,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: p.stroke),
             ),
-            child: CarelinkThemeIconButton(color: p.inkDark),
+            child: carelinkLocaleThemeChipRow(iconColor: p.inkDark, gap: 4),
           ),
         ],
       ),

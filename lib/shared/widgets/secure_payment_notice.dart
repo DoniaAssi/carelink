@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 
 /// بيان توضيحي للمريض: دفع إلكتروني آمن (لا تخزين لأرقام البطاقة، اتصال مشفّر).
@@ -37,7 +38,7 @@ class SecurePaymentNotice extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'دفع إلكتروني آمن',
+                  context.tr('securePayment.title'),
                   style: TextStyle(
                     fontSize: compact ? 13.5 : 14.5,
                     fontWeight: FontWeight.w800,
@@ -51,17 +52,22 @@ class SecurePaymentNotice extends StatelessWidget {
           SizedBox(height: compact ? 6 : 8),
           _bullet(
             p,
-            'اتصال مشفّر (HTTPS) بين التطبيق والخادم.',
+            context.tr('securePayment.b1'),
             compact,
           ),
           _bullet(
             p,
-            'لا يُخزّن تطبيق CareLink أرقام البطاقات أو رمز CVV — يُحفظ المبلغ ووسيلة الدفع فقط.',
+            context.tr('securePayment.b2'),
             compact,
           ),
           _bullet(
             p,
-            'الدفع بالبطاقة الإلكترونية: حالة "قيد المعالجة" حتى تُربَط قناة دفع معتمدة (Stripe وغيرها).',
+            context.tr('securePayment.b3'),
+            compact,
+          ),
+          _bullet(
+            p,
+            context.tr('securePayment.b4'),
             compact,
           ),
         ],

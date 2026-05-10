@@ -14,7 +14,6 @@ import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
 import 'package:carelink/features/onboarding/intro_screen.dart';
 import 'package:carelink/features/patient/screens/patient_home_screen.dart';
 import 'package:carelink/shared/models/user.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -59,16 +58,8 @@ class CareLinkApp extends StatelessWidget {
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,
           themeMode: themeController.themeMode,
-          builder: (context, child) {
-            return Stack(
-              fit: StackFit.expand,
-              clipBehavior: Clip.none,
-              children: [
-                child ?? const SizedBox.shrink(),
-                carelinkGlobalLocaleOverlay(context),
-              ],
-            );
-          },
+          builder: (context, child) =>
+              child ?? const SizedBox.shrink(),
           initialRoute: '/intro',
           routes: {
             '/intro': (context) => const IntroScreen(),

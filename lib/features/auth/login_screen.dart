@@ -13,6 +13,7 @@ import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/auth_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'package:carelink/features/admin/screens/admin_home_screen.dart';
 import 'package:carelink/features/doctor/screens/doctor_home_screen.dart';
 import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
@@ -956,28 +957,55 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     SizedBox(
                       height: 48,
-                      child: Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: Padding(
-                          padding: const EdgeInsetsDirectional.only(start: 6),
-                          child: IconButton(
-                            onPressed: () {
-                              appNavigatorKey.currentState
-                                  ?.pushNamedAndRemoveUntil(
-                                    '/intro',
-                                    (route) => false,
-                                  );
-                            },
-                            icon: const Icon(Icons.arrow_back_rounded),
-                            color: p.inkDark,
-                            iconSize: 24,
-                            visualDensity: VisualDensity.compact,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 42,
-                              height: 42,
+                      child: Padding(
+                        padding: const EdgeInsetsDirectional.only(start: 6, end: 8),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              onPressed: () {
+                                appNavigatorKey.currentState
+                                    ?.pushNamedAndRemoveUntil(
+                                      '/intro',
+                                      (route) => false,
+                                    );
+                              },
+                              icon: const Icon(Icons.arrow_back_rounded),
+                              color: p.inkDark,
+                              iconSize: 24,
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 42,
+                                height: 42,
+                              ),
+                              padding: EdgeInsets.zero,
                             ),
-                            padding: EdgeInsets.zero,
-                          ),
+                            const Spacer(),
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: (p.isDark
+                                        ? const Color(0xFF123640)
+                                        : Colors.white)
+                                    .withValues(alpha: p.isDark ? 0.75 : 0.92),
+                                borderRadius: BorderRadius.circular(22),
+                                border: Border.all(
+                                  color:
+                                      AppColors.border.withValues(alpha: 0.85),
+                                ),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsetsDirectional.only(
+                                  start: 4,
+                                  end: 2,
+                                  top: 2,
+                                  bottom: 2,
+                                ),
+                                child: carelinkLocaleThemeChipRow(
+                                  iconColor: p.inkDark,
+                                  gap: 0,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),

@@ -6,6 +6,7 @@ import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/intro_tokens.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'package:carelink/features/auth/login_screen.dart';
 
 /// Diameter of the hub–spoke diagram: ~90% width, cap by height; reference = large centerpiece.
@@ -234,6 +235,19 @@ class _TopHeader extends StatelessWidget {
           forceDarkLogo: t.isDark,
         ),
         const Spacer(),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: t.surface.withValues(alpha: t.isDark ? 0.78 : 0.92),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: t.stroke),
+          ),
+          child: Padding(
+            padding:
+                const EdgeInsetsDirectional.only(start: 4, end: 2, top: 2, bottom: 2),
+            child: carelinkLocaleThemeChipRow(iconColor: t.text, gap: 0),
+          ),
+        ),
+        const SizedBox(width: 8),
         Flexible(child: _TrustPill(compact: w < 360)),
       ],
     );

@@ -48,8 +48,8 @@ class _AiAppointmentScreenState extends State<AiAppointmentScreen> {
         symptoms: r.symptoms,
         isUrgent: r.isUrgent,
         additionalNotes: r.additionalNotes,
-        paymentMethod: 'card',
-        paymentStatus: 'paid',
+        paymentMethod: 'visa_card',
+        paymentStatus: 'unpaid',
       );
       final appointmentId = (booking['appointmentId'] ?? '').toString();
 
@@ -57,11 +57,11 @@ class _AiAppointmentScreenState extends State<AiAppointmentScreen> {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Payment successful'),
+          title: const Text('Booking created'),
           content: Text(
             appointmentId.isEmpty
-                ? 'Booking stored locally for demo.'
-                : 'Appointment $appointmentId confirmed.',
+                ? 'Booking stored locally for demo. Complete Visa checkout from your schedule when ready.'
+                : 'Appointment $appointmentId created. Pay with Visa when you open the visit (demo test cards).',
           ),
           actions: [
             TextButton(

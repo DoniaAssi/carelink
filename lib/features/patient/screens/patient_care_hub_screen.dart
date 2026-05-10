@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
 import 'appointments_screen.dart';
 import 'booking_details_screen.dart';
 import 'medical_records_screen.dart';
@@ -71,7 +74,27 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
 
   String _formatVisitDate(DateTime? d) {
     if (d == null) return '—';
-    return '${d.day}/${d.month}/${d.year}  ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    final loc = localeController.locale.toLanguageTag();
+    try {
+      return DateFormat.yMMMd(loc).add_jm().format(d.toLocal());
+    } catch (_) {
+      return DateFormat.yMMMd('en').add_jm().format(d.toLocal());
+    }
+  }
+
+  String _statusLabel(BuildContext context, String raw) {
+    switch (raw.toLowerCase()) {
+      case 'pending':
+        return context.tr('patient.status.pending');
+      case 'confirmed':
+        return context.tr('patient.status.confirmed');
+      case 'completed':
+        return context.tr('patient.status.completed');
+      case 'cancelled':
+        return context.tr('patient.status.cancelled');
+      default:
+        return raw;
+    }
   }
 
   @override
@@ -81,12 +104,10 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
 
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        backgroundColor: p.isDark ? const Color(0xFF06313A) : AppColors.primary,
-        foregroundColor: Colors.white,
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('My care'),
-        actions: carelinkAppBarActions(),
+      appBar: carelinkPatientAppBar(
+        context,
+        title:
+            CarelinkAppBarTitle.forPatient(context, context.tr('patient.title.myCare')),
       ),
       body: RefreshIndicator(
         color: AppColors.primary,
@@ -97,15 +118,16 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _introCard(p),
+              _introCard(context, p),
               const SizedBox(height: 16),
               LayoutBuilder(
                 builder: (context, constraints) {
                   final first = _hubTile(
                     p,
                     icon: Icons.calendar_view_month_rounded,
-                    title: 'Appointment schedule',
-                    subtitle: 'Filter by status, open each booking',
+                    title: context.tr('patient.careHub.scheduleTitle'),
+                    subtitle:
+                        context.tr('patient.careHub.scheduleSubtitle'),
                     onTap: () {
                       Navigator.push(
                         context,
@@ -118,8 +140,8 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                   final second = _hubTile(
                     p,
                     icon: Icons.folder_open_rounded,
-                    title: 'Medical records',
-                    subtitle: 'Electronic file, add or edit entries',
+                    title: context.tr('patient.careHub.recordsTitle'),
+                    subtitle: context.tr('patient.careHub.recordsSubtitle'),
                     onTap: () {
                       Navigator.push(
                         context,
@@ -145,9 +167,10 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
               ),
               const SizedBox(height: 12),
               _linkRow(
+                context,
                 p,
                 icon: Icons.receipt_long_rounded,
-                label: 'Visit reports (long-term)',
+                label: context.tr('patient.careHub.linkVisitReports'),
                 onTap: () {
                   Navigator.push(
                     context,
@@ -160,9 +183,10 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
               ),
               const SizedBox(height: 10),
               _linkRow(
+                context,
                 p,
                 icon: Icons.event_note_rounded,
-                label: 'Upcoming & history (simple list)',
+                label: context.tr('patient.careHub.linkSimpleList'),
                 onTap: () {
                   Navigator.push(
                     context,
@@ -174,7 +198,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
               ),
               const SizedBox(height: 20),
               Text(
-                'Documented visits',
+                context.tr('patient.careHub.documentedTitle'),
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
@@ -183,7 +207,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Completed and cancelled visits stay listed for your records.',
+                context.tr('patient.careHub.documentedSubtitle'),
                 style: TextStyle(fontSize: 12, color: p.inkMuted, height: 1.35),
               ),
               const SizedBox(height: 12),
@@ -195,7 +219,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                   ),
                 )
               else if (_recentVisits.isEmpty)
-                _emptyVisits(p)
+                _emptyVisits(context, p)
               else
                 ..._recentVisits.map((v) {
                   return Padding(
@@ -245,7 +269,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                                     Text(
                                       v.providerName.isNotEmpty
                                           ? v.providerName
-                                          : 'Provider',
+                                          : context.tr('patient.providerFallback'),
                                       style: TextStyle(
                                         fontWeight: FontWeight.w700,
                                         color: p.inkDark,
@@ -276,7 +300,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                                   ),
                                 ),
                                 child: Text(
-                                  v.status,
+                                  _statusLabel(context, v.status),
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
@@ -298,7 +322,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
     );
   }
 
-  Widget _introCard(CarelinkPalette p) {
+  Widget _introCard(BuildContext context, CarelinkPalette p) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -318,7 +342,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Appointments & health file',
+            context.tr('patient.careHub.introTitle'),
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w800,
@@ -327,8 +351,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Plan visits, maintain your medical file, and use Visit reports for a '
-            'long-term timeline (symptoms & notes per visit).',
+            context.tr('patient.careHub.introBody'),
             style: TextStyle(fontSize: 13, height: 1.45, color: p.inkMuted),
           ),
         ],
@@ -401,6 +424,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
   }
 
   Widget _linkRow(
+    BuildContext context,
     CarelinkPalette p, {
     required IconData icon,
     required String label,
@@ -438,7 +462,12 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                   ),
                 ),
               ),
-              Icon(Icons.chevron_right_rounded, color: p.inkMuted),
+              Icon(
+                Directionality.of(context) == TextDirection.rtl
+                    ? Icons.chevron_left_rounded
+                    : Icons.chevron_right_rounded,
+                color: p.inkMuted,
+              ),
             ],
           ),
         ),
@@ -446,7 +475,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
     );
   }
 
-  Widget _emptyVisits(CarelinkPalette p) {
+  Widget _emptyVisits(BuildContext context, CarelinkPalette p) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -455,7 +484,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
         border: Border.all(color: _borderColor(p)),
       ),
       child: Text(
-        'No past visits yet. When visits are completed or cancelled, they appear here.',
+        context.tr('patient.careHub.emptyVisits'),
         textAlign: TextAlign.center,
         style: TextStyle(color: p.inkMuted, fontSize: 13, height: 1.4),
       ),

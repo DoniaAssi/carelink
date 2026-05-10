@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import 'package:carelink/core/app_colors.dart';
@@ -9,6 +11,7 @@ import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/patient_home_palette.dart';
 import 'package:carelink/core/profile_avatar.dart'
     show profileAvatarOrPlaceholder, profileImageUrlFromMap;
+import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/core/theme_controller.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
@@ -56,6 +59,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   AppointmentModel? _upcomingAppointment;
   double? _patientLat;
   double? _patientLng;
+  String? _heroLocationLine;
+  bool _heroLocationLoading = false;
   Set<String> _favoriteProviderIds = {};
   Map<String, dynamic>? _patientProfile;
   PatientCareSummary _careSummary = PatientCareSummary.empty;
@@ -65,8 +70,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   final stt.SpeechToText _speech = stt.SpeechToText();
   Timer? _careSearchDebounce;
 
-  /// Mirrors the field text â€” on Flutter web, reading [TextEditingController.text]
-  /// in callbacks can throw if the engine value is not ready; we use this for logic.
+  /// Mirrors [_careSearchController] without reading [.text] during engine gaps (e.g. Flutter web).
   String _careSearchQuery = '';
   String? _lastCareSearchSummary;
   String? _aiRecommendationReason;
@@ -81,7 +85,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
 
   String _lowerText(Object? value) => (value ?? '').toString().toLowerCase();
 
-  /// Same rules as [_applyCareSearch] so the list under â€œRecommendedâ€‌ matches the AI match.
+  /// Same rules as [_applyCareSearch] so the Recommended list matches the AI match.
   bool _providerMatchesSpecialtyChip(ProviderModel provider, String chip) {
     if (chip == 'All') return true;
     final c = _lowerText(chip);
@@ -433,7 +437,68 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
         _patientLat = pos.latitude;
         _patientLng = pos.longitude;
       });
-    } catch (_) {}
+      await _refreshHeroLocation();
+    } catch (_) {
+      await _refreshHeroLocation();
+    }
+  }
+
+  /// Profile [addressText] wins; otherwise reverse-geocode GPS for a short city/region line.
+  Future<void> _refreshHeroLocation() async {
+    final profileAddr =
+        (_patientProfile?['addressText'] ?? '').toString().trim();
+    if (profileAddr.isNotEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _heroLocationLine = profileAddr;
+        _heroLocationLoading = false;
+      });
+      return;
+    }
+
+    if (_patientLat == null || _patientLng == null) {
+      if (!mounted) return;
+      setState(() {
+        _heroLocationLine = null;
+        _heroLocationLoading = false;
+      });
+      return;
+    }
+
+    if (mounted) setState(() => _heroLocationLoading = true);
+    try {
+      final marks = await placemarkFromCoordinates(
+        _patientLat!,
+        _patientLng!,
+      );
+      String? line;
+      if (marks.isNotEmpty) {
+        final p = marks.first;
+        final parts = <String>[];
+        void addPart(String? s) {
+          final t = s?.trim() ?? '';
+          if (t.isNotEmpty && !parts.contains(t)) parts.add(t);
+        }
+        addPart(p.locality);
+        addPart(p.subAdministrativeArea);
+        addPart(p.administrativeArea);
+        addPart(p.country);
+        if (parts.isNotEmpty) {
+          line = parts.take(3).join(', ');
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _heroLocationLine = line;
+        _heroLocationLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _heroLocationLine = null;
+        _heroLocationLoading = false;
+      });
+    }
   }
 
   Future<void> _fetchUpcomingAppointment() async {
@@ -467,46 +532,32 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
 
   String get _firstName {
     final n = userName.trim();
-    if (n.isEmpty) return 'there';
+    if (n.isEmpty) {
+      return CarelinkL10n(localeController.locale).t('patient.hiFallback');
+    }
     return n.split(RegExp(r'\s+')).first;
   }
 
+  static const String _emDash = '\u2014';
+
   String _formatAppointmentDate(DateTime? dt) {
-    if (dt == null) return 'â€”';
-    const months = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-    const days = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
-    ];
-    return '${dt.day} ${months[dt.month - 1]}, ${days[dt.weekday - 1]}';
+    if (dt == null) return _emDash;
+    final loc = localeController.locale.toLanguageTag();
+    try {
+      return DateFormat.yMMMMEEEEd(loc).format(dt.toLocal());
+    } catch (_) {
+      return DateFormat.yMMMMEEEEd('en').format(dt.toLocal());
+    }
   }
 
   String _formatAppointmentTime(DateTime? dt) {
-    if (dt == null) return 'â€”';
-    var h = dt.hour;
-    final m = dt.minute;
-    final period = h >= 12 ? 'PM' : 'AM';
-    if (h > 12) h -= 12;
-    if (h == 0) h = 12;
-    return '${h.toString()}:${m.toString().padLeft(2, '0')} $period';
+    if (dt == null) return _emDash;
+    final loc = localeController.locale.toLanguageTag();
+    try {
+      return DateFormat.jm(loc).format(dt.toLocal());
+    } catch (_) {
+      return DateFormat.jm('en').format(dt.toLocal());
+    }
   }
 
   double? _distanceKmValue(ProviderModel p) {
@@ -529,7 +580,10 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   String? _distanceKmLabel(ProviderModel p) {
     final km = _distanceKmValue(p);
     if (km == null) return null;
-    return '${km.toStringAsFixed(1)} km away';
+    return CarelinkL10n(localeController.locale).t(
+      'patient.distanceAwayKm',
+      args: {'km': km.toStringAsFixed(1)},
+    );
   }
 
   Future<void> _fetchProviders() async {
@@ -547,7 +601,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
 
       setState(() {
         isLoading = false;
-        errorMessage = 'Unable to load providers. Please try again.';
+        errorMessage = CarelinkL10n(localeController.locale)
+            .t('patient.providersLoadFailed');
       });
     }
   }
@@ -591,6 +646,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
         _patientProfile = null;
         isProfileLoading = false;
       });
+      await _refreshHeroLocation();
       return;
     }
 
@@ -603,6 +659,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
         userName = profile['fullName'] ?? widget.displayName ?? 'Patient';
         isProfileLoading = false;
       });
+      await _refreshHeroLocation();
     } catch (e) {
       if (!mounted) return;
 
@@ -611,6 +668,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
         userName = widget.displayName ?? 'Patient';
         isProfileLoading = false;
       });
+      await _refreshHeroLocation();
     }
   }
 
@@ -787,8 +845,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: _buildSectionHeader(
-                      title: 'Favorites',
-                      actionText: 'See all >',
+                      title: context.tr('patient.favorites'),
+                      actionText: context.tr('patient.seeAllGt'),
                       onActionTap: _openproviders,
                     ),
                   ),
@@ -802,8 +860,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: _buildSectionHeader(
-                    title: 'Provider Specialty',
-                    actionText: 'See all >',
+                    title: context.tr('patient.providerSpecialty'),
+                    actionText: context.tr('patient.seeAllGt'),
                     onActionTap: _openproviders,
                   ),
                 ),
@@ -818,13 +876,14 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                   child: _buildSectionHeader(
                     title: sortMode == 'Smart match'
                         ? context.tr('patient.recommendedForYou')
-                        : 'Popular Providers',
+                        : context.tr('patient.popularProviders'),
                     subtitle: sortMode == 'Smart match'
                         ? _recommendationSummary.hasStructuredData
-                              ? 'Smart match uses your current case, medical file, specialty, distance, availability, ratings & experience.'
-                              : 'Add a medical record or describe your care need for stronger matches.'
+                              ? context.tr('patient.smartMatchExplainerFull')
+                              : context
+                                  .tr('patient.smartMatchExplainerAddRecord')
                         : null,
-                    actionText: 'See all >',
+                    actionText: context.tr('patient.seeAllGt'),
                     onActionTap: _openproviders,
                   ),
                 ),
@@ -904,7 +963,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'AI care match',
+                  context.tr('patient.aiCareMatch'),
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
@@ -918,7 +977,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
           const SizedBox(height: 4),
           Text(
             _careSummary.hasStructuredData
-                ? 'Your saved medical file is included in the score (conditions & allergies vs provider role/specialty), plus distance, availability, ratings & experience.'
+                ? context.tr('patient.aiMedicalFileHint')
                 : context.tr('patient.typeOrSpeak'),
             style: TextStyle(fontSize: 12, color: _p.inkMuted, height: 1.35),
           ),
@@ -930,7 +989,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
             scanStep: _aiScanStep,
             hasRecommendation: reason != null,
             recommendationTitle: topProvider == null
-                ? (_lastCareSearchSummary ?? 'AI smart match')
+                ? (_lastCareSearchSummary ??
+                    context.tr('patient.aiSmartMatchFallback'))
                 : context.tr(
                     'patient.recommended',
                     args: {'provider': topProvider},
@@ -954,8 +1014,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                   style: TextStyle(color: _p.inkDark, fontSize: 15),
                   decoration: InputDecoration(
                     isDense: true,
-                    hintText:
-                        'e.g. diabetes follow-up, ط·ط¨ظٹط¨ ط£ط·ظپط§ظ„, cardiology, available now',
+                    hintText: context.tr('patient.careSearchHint'),
                     hintStyle: TextStyle(color: _p.inkMuted),
                     filled: true,
                     fillColor: _p.filterSurface,
@@ -1064,7 +1123,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
         ],
       ),
       child: Text(
-        'No providers match your filters.',
+        context.tr('patient.providersEmptyFilters'),
         style: TextStyle(color: _p.inkMuted, fontWeight: FontWeight.w600),
       ),
     );
@@ -1072,7 +1131,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
 
   Widget _buildHeroHeader() {
     return SizedBox(
-      height: 122,
+      height: 156,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -1114,61 +1173,95 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                     forceDarkLogo: _p.isDark,
                   ),
                   const Spacer(),
-                  InkWell(
-                    onTap: () => themeController.toggle(),
-                    borderRadius: BorderRadius.circular(18),
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: _p.surface,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _p.stroke),
-                      ),
-                      child: Icon(
-                        _p.isDark
-                            ? Icons.light_mode_rounded
-                            : Icons.dark_mode_rounded,
-                        color: _p.inkDark,
-                        size: 21,
+                  Tooltip(
+                    message: CarelinkL10n(localeController.locale).t(
+                      themeController.isDark ? 'theme.light' : 'theme.dark',
+                    ),
+                    child: InkWell(
+                      onTap: () => themeController.toggle(),
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: _p.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _p.stroke),
+                        ),
+                        child: Icon(
+                          _p.isDark
+                              ? Icons.light_mode_rounded
+                              : Icons.dark_mode_rounded,
+                          color: _p.inkDark,
+                          size: 21,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  InkWell(
-                    onTap: _openNotifications,
-                    borderRadius: BorderRadius.circular(18),
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: _p.surface,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _p.stroke),
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message: CarelinkL10n(localeController.locale).t(
+                      localeController.isArabic
+                          ? 'language.switchToEnglish'
+                          : 'language.switchToArabic',
+                    ),
+                    child: InkWell(
+                      onTap: () => localeController.toggle(),
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: _p.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _p.stroke),
+                        ),
+                        child: Icon(
+                          Icons.language_rounded,
+                          color: _p.inkDark,
+                          size: 21,
+                        ),
                       ),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Center(
-                            child: Icon(
-                              Icons.notifications_none_rounded,
-                              color: _p.inkDark,
-                              size: 22,
-                            ),
-                          ),
-                          Positioned(
-                            right: 10,
-                            top: 10,
-                            child: Container(
-                              width: 7,
-                              height: 7,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFFFF6B6B),
-                                shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message: context.tr('patient.notificationsTooltip'),
+                    child: InkWell(
+                      onTap: _openNotifications,
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: _p.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _p.stroke),
+                        ),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Center(
+                              child: Icon(
+                                Icons.notifications_none_rounded,
+                                color: _p.inkDark,
+                                size: 22,
                               ),
                             ),
-                          ),
-                        ],
+                            Positioned(
+                              right: 10,
+                              top: 10,
+                              child: Container(
+                                width: 7,
+                                height: 7,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFFF6B6B),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1234,7 +1327,13 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '$_greeting, welcome back!',
+                          context.tr(
+                            'patient.homeWelcomeSubline',
+                            args: {
+                              'greeting': _greeting,
+                              'welcome': context.tr('patient.welcomeBack'),
+                            },
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -1243,6 +1342,45 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                             fontWeight: FontWeight.w500,
                             height: 1.2,
                           ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 1),
+                              child: Icon(
+                                Icons.location_on_outlined,
+                                size: 15,
+                                color: AppColors.primary.withValues(
+                                  alpha: _p.isDark ? 0.9 : 0.85,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                _heroLocationLoading
+                                    ? context.tr(
+                                        'patient.homeLocationResolving',
+                                      )
+                                    : _heroLocationLine != null &&
+                                          _heroLocationLine!.isNotEmpty
+                                    ? '${context.tr('patient.homeLocationPrefix')}: $_heroLocationLine'
+                                    : context.tr(
+                                        'patient.homeLocationUnavailable',
+                                      ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: _p.inkMuted,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  height: 1.25,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1280,12 +1418,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
         ? apt!.providerName
         : context.tr('patient.bookNextVisit');
     final sub = apt == null
-        ? 'Browse popular providers below'
+        ? context.tr('patient.browsePopularProviders')
         : (apt.specialization.trim().isNotEmpty
               ? apt.specialization
               : (_lowerText(apt.providerRole) == 'nurse'
                     ? context.tr('patient.homeNursingCare')
-                    : 'Consultation'));
+                    : context.tr('patient.consultation')));
     final dateLabel = apt != null
         ? _formatAppointmentDate(apt.scheduledAt)
         : '-';
@@ -1314,7 +1452,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
           Row(
             children: [
               Text(
-                'Upcoming Appointment',
+                context.tr('patient.upcomingAppointment'),
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 13,
@@ -1328,7 +1466,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'View details >',
+                      context.tr('patient.viewDetailsGt'),
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 11,
@@ -1473,7 +1611,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                   child: OutlinedButton.icon(
                     onPressed: _openSchedule,
                     icon: const Icon(Icons.calendar_today_outlined, size: 15),
-                    label: const Text('Reschedule'),
+                    label: Text(context.tr('patient.reschedule')),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.primary,
                       side: const BorderSide(
@@ -1519,7 +1657,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                'Join Now',
+                                context.tr('patient.joinNow'),
                                 style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   color: Colors.white,
@@ -1744,16 +1882,19 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                   fontWeight: FontWeight.w700,
                   color: _p.inkDark,
                 ),
-                items: const [
+                items: [
                   DropdownMenuItem(
                     value: 'Smart match',
-                    child: Text('Smart match'),
+                    child: Text(context.tr('patient.sortSmart')),
                   ),
                   DropdownMenuItem(
                     value: 'Top Rated',
-                    child: Text('Top Rated'),
+                    child: Text(context.tr('patient.sortTopRated')),
                   ),
-                  DropdownMenuItem(value: 'A-Z', child: Text('A-Z')),
+                  DropdownMenuItem(
+                    value: 'A-Z',
+                    child: Text(context.tr('patient.sortAz')),
+                  ),
                 ],
                 onChanged: (value) {
                   if (value == null) return;
@@ -1778,7 +1919,10 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                   color: _p.inkDark,
                 ),
                 items: [
-                  const DropdownMenuItem(value: 'All', child: Text('All')),
+                  DropdownMenuItem(
+                    value: 'All',
+                    child: Text(context.tr('patient.filterAll')),
+                  ),
                   DropdownMenuItem(
                     value: 'Available Now',
                     child: Row(
@@ -1786,13 +1930,13 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                         Container(
                           width: 7,
                           height: 7,
-                          margin: const EdgeInsets.only(right: 8),
+                          margin: const EdgeInsetsDirectional.only(end: 8),
                           decoration: const BoxDecoration(
                             color: Color(0xFF1CAE62),
                             shape: BoxShape.circle,
                           ),
                         ),
-                        const Text('Available Now'),
+                        Text(context.tr('patient.filterAvailableNow')),
                       ],
                     ),
                   ),
@@ -1892,7 +2036,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                           const SizedBox(height: 2),
                           Text(
                             p.specialization.trim().isEmpty
-                                ? 'Care provider'
+                                ? context.tr('patient.careProviderGeneric')
                                 : p.specialization,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1933,7 +2077,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
         }
       }
     }
-    if (specLine.isEmpty) specLine = 'Care provider';
+    if (specLine.isEmpty) {
+      specLine = context.tr('patient.careProviderGeneric');
+    }
 
     return Material(
       color: Colors.transparent,
@@ -2034,7 +2180,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                               ),
                             ),
                             child: Text(
-                              'ظ…ظˆطµظ‰ ط¨ظ‡',
+                              context.tr('patient.badgeRecommended'),
                               style: TextStyle(
                                 fontSize: 9,
                                 fontWeight: FontWeight.w800,
@@ -2081,7 +2227,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                         Text(
                           provider.overallRating > 0
                               ? provider.overallRating.toStringAsFixed(1)
-                              : 'â€”',
+                              : _emDash,
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 11,
@@ -2089,7 +2235,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                           ),
                         ),
                         Text(
-                          '  آ·  ',
+                          ' ${String.fromCharCode(0xb7)} ',
                           style: TextStyle(
                             fontSize: 11,
                             color: _p.inkMuted,
@@ -2225,7 +2371,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
             onTap: onActionTap,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
-              padding: const EdgeInsets.only(top: 2, left: 8),
+              padding: const EdgeInsetsDirectional.only(top: 2, start: 8),
               child: Text(
                 actionText,
                 style: const TextStyle(
@@ -2240,7 +2386,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     );
   }
 
-  /// ط£ظٹظ‚ظˆظ†ط© طھط¨ظˆظٹط¨ ط§ظ„ظ…ظ„ظپ: طµظˆط±ط© ط§ظ„ظ…ط±ظٹط¶ ط¥ظ† ظˆظڈط¬ط¯طھطŒ ظˆط¥ظ„ط§ ط£ظٹظ‚ظˆظ†ط© ط´ط®طµ.
+  /// Profile tab icon: patient photo when set, otherwise a person silhouette.
   Widget _buildProfileTabIcon() {
     const size = 24.0;
     if (isProfileLoading) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/core/theme_controller.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
 import 'package:carelink/shared/models/provider_model.dart';
@@ -331,9 +332,9 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                 _buildFeeSectionReference(),
                 if (_isLoadingDetails) ...[
                   const SizedBox(height: 12),
-                  const LinearProgressIndicator(
+                  LinearProgressIndicator(
                     color: AppColors.primary,
-                    backgroundColor: Color(0xFFD7ECE7),
+                    backgroundColor: p.surfaceSoft,
                   ),
                 ],
                 SizedBox(height: bottomBarHeight + bottomInset),
@@ -416,7 +417,17 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                           ? Icons.light_mode_rounded
                           : Icons.dark_mode_rounded,
                       size: 20,
-                      color: p.inkMuted,
+                      color: p.inkDark,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _roundToolbarIcon(
+                    p: p,
+                    onTap: () => localeController.toggle(),
+                    child: Icon(
+                      Icons.language_rounded,
+                      size: 20,
+                      color: p.inkDark,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -433,7 +444,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                         size: 20,
                         color: _isFavorite
                             ? const Color(0xFFFF6B6B)
-                            : p.inkMuted,
+                            : p.inkDark,
                       ),
                     ),
                   ),
@@ -444,6 +455,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
           CarelinkBrandLogo(
             height: 34,
             fallbackTextColor: p.inkDark,
+            forceDarkLogo: p.isDark,
           ),
         ],
       ),

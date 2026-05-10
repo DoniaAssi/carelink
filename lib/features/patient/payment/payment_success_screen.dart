@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
+
+import 'patient_visa_payment_copy.dart';
 
 /// Shown after a successful [PaymentService.createPayment] call.
 class PaymentSuccessScreen extends StatelessWidget {
@@ -19,6 +22,8 @@ class PaymentSuccessScreen extends StatelessWidget {
     this.paymentMethod,
     this.paymentStatus,
     this.amount,
+    this.currencyCode = 'JOD',
+    this.visaLast4,
   });
 
   final String? patientUserId;
@@ -32,6 +37,8 @@ class PaymentSuccessScreen extends StatelessWidget {
   final String? paymentMethod;
   final String? paymentStatus;
   final double? amount;
+  final String currencyCode;
+  final String? visaLast4;
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +51,11 @@ class PaymentSuccessScreen extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
           child: Column(
             children: [
-              const CarelinkBrandLogo(height: 40),
+              CarelinkBrandLogo(
+                height: 40,
+                fallbackTextColor: p.inkDark,
+                forceDarkLogo: p.isDark,
+              ),
               const SizedBox(height: 24),
               Container(
                 width: 88,
@@ -61,7 +72,9 @@ class PaymentSuccessScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               Text(
-                'Payment recorded',
+                paymentStatus?.toLowerCase() == 'paid'
+                    ? 'Payment successful'
+                    : 'Payment recorded',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 24,
@@ -71,7 +84,7 @@ class PaymentSuccessScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                _subtitleMessage(),
+                _subtitleMessage(context),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: p.inkMuted,
@@ -79,6 +92,22 @@ class PaymentSuccessScreen extends StatelessWidget {
                   height: 1.4,
                 ),
               ),
+              if ((paymentStatus ?? '').toLowerCase() == 'paid') ...[
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    PatientVisaPaymentCopy.paidLine(context, visaLast4),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                      color: p.inkDark,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               Container(
                 width: double.infinity,
@@ -92,7 +121,7 @@ class PaymentSuccessScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Appointment',
+                      context.tr('payment.summary.appointment'),
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         color: p.inkDark,
@@ -115,12 +144,12 @@ class PaymentSuccessScreen extends StatelessWidget {
                       Row(
                         children: [
                           Text(
-                            'Amount',
+                            context.tr('payment.summary.amount'),
                             style: TextStyle(color: p.inkMuted, fontWeight: FontWeight.w600),
                           ),
                           const Spacer(),
                           Text(
-                            '\$${amount!.toStringAsFixed(2)}',
+                            '${amount!.toStringAsFixed(2)} $currencyCode',
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
                               color: AppColors.primary,
@@ -130,13 +159,8 @@ class PaymentSuccessScreen extends StatelessWidget {
                         ],
                       ),
                     ],
-                    if ((paymentMethod ?? '').isNotEmpty)
-                      _line(
-                        Icons.payment_outlined,
-                        'Method: ${_labelMethod(paymentMethod!)}',
-                        p,
-                      ),
-                    if ((paymentStatus ?? '').isNotEmpty)
+                    if ((paymentStatus ?? '').isNotEmpty &&
+                        (paymentStatus ?? '').toLowerCase() != 'paid')
                       _line(
                         Icons.flag_outlined,
                         'Status: ${paymentStatus!}',
@@ -171,8 +195,8 @@ class PaymentSuccessScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  child: const Text(
-                    'Back to home',
+                  child: Text(
+                    context.tr('payment.backHome'),
                     style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                   ),
                 ),
@@ -184,28 +208,15 @@ class PaymentSuccessScreen extends StatelessWidget {
     );
   }
 
-  String _subtitleMessage() {
+  String _subtitleMessage(BuildContext context) {
     final s = (paymentStatus ?? '').toLowerCase();
-    if (s == 'pending') {
-      return 'Cash payment is pending. Complete payment at your visit.';
-    }
     if (s == 'paid') {
-      return 'Your simulated card or wallet payment went through. No real charge was made.';
+      return context.tr('payment.demoNoCharge');
     }
-    return 'Your booking and payment details were saved.';
-  }
-
-  static String _labelMethod(String m) {
-    switch (m.toLowerCase()) {
-      case 'cash':
-        return 'Cash';
-      case 'card':
-        return 'Card (simulated)';
-      case 'wallet':
-        return 'Wallet (simulated)';
-      default:
-        return m;
+    if (s == 'pending') {
+      return context.tr('payment.pendingCheckout');
     }
+    return context.tr('payment.savedBooking');
   }
 
   static Widget _line(IconData icon, String text, CarelinkPalette p) {

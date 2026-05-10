@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/profile_avatar.dart'
     show profileAvatarOrPlaceholder, profileImageUrlFromMap;
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'edit_profile_screen.dart';
 import 'medical_records_screen.dart';
@@ -25,13 +26,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool isLoading = true;
   String? errorMessage;
 
-  final List<Map<String, dynamic>> items = [
-    {'icon': Icons.person_outline, 'title': 'Edit Profile'},
-    {'icon': Icons.folder_open_outlined, 'title': 'Medical Records'},
-    {'icon': Icons.receipt_long_outlined, 'title': 'Payment history'},
-    {'icon': Icons.notifications_none, 'title': 'Notifications'},
-    {'icon': Icons.logout, 'title': 'Logout'},
+  static const List<String> _itemIds = [
+    'edit',
+    'records',
+    'payments',
+    'notifications',
+    'logout',
   ];
+
+  IconData _itemIcon(String id) {
+    switch (id) {
+      case 'edit':
+        return Icons.person_outline;
+      case 'records':
+        return Icons.folder_open_outlined;
+      case 'payments':
+        return Icons.receipt_long_outlined;
+      case 'notifications':
+        return Icons.notifications_none;
+      case 'logout':
+        return Icons.logout;
+      default:
+        return Icons.circle_outlined;
+    }
+  }
+
+  String _itemTitle(BuildContext context, String id) {
+    switch (id) {
+      case 'edit':
+        return context.tr('patient.menu.editProfile');
+      case 'records':
+        return context.tr('patient.menu.medicalRecords');
+      case 'payments':
+        return context.tr('patient.menu.paymentHistoryMenu');
+      case 'notifications':
+        return context.tr('patient.menu.notifications');
+      case 'logout':
+        return context.tr('patient.menu.logout');
+      default:
+        return id;
+    }
+  }
 
   @override
   void initState() {
@@ -55,8 +90,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> handleItemTap(String title) async {
-    if (title == 'Edit Profile') {
+  Future<void> handleItemTap(String id) async {
+    if (id == 'edit') {
       final updated = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
@@ -69,14 +104,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (updated == true) {
         await loadProfile();
       }
-    } else if (title == 'Medical Records') {
+    } else if (id == 'records') {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => MedicalRecordsScreen(userId: widget.userId),
         ),
       );
-    } else if (title == 'Payment history') {
+    } else if (id == 'payments') {
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -84,14 +119,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               PatientPaymentHistoryScreen(patientUserId: widget.userId),
         ),
       );
-    } else if (title == 'Notifications') {
+    } else if (id == 'notifications') {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => NotificationsScreen(userId: widget.userId),
         ),
       );
-    } else if (title == 'Logout') {
+    } else if (id == 'logout') {
       Navigator.popUntil(context, (route) => route.isFirst);
     }
   }
@@ -109,11 +144,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final p = CarelinkPalette.of(context);
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        elevation: 0,
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('Profile'),
-        actions: carelinkAppBarActions(),
+      appBar: carelinkPatientAppBar(
+        context,
+        title: CarelinkAppBarTitle.forPatient(
+          context,
+          context.tr('patient.title.profile'),
+        ),
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -158,7 +194,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              userData?['fullName'] ?? 'No Name',
+                              userData?['fullName'] ??
+                                  context.tr('patient.profile.noName'),
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w700,
@@ -167,28 +204,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              userData?['email'] ?? 'No Email',
+                              userData?['email'] ??
+                                  context.tr('patient.profile.noEmail'),
                               style: TextStyle(
                                 color: p.inkMuted,
                               ),
                             ),
                             const SizedBox(height: 14),
-                            _profileChip('Account Type: ${role.toUpperCase()}'),
+                            _profileChip(
+                              '${context.tr('patient.profile.accountType')}: ${role.toUpperCase()}',
+                            ),
                             const SizedBox(height: 14),
-                            _infoRow(Icons.email_outlined, 'Email', contactEmail),
+                            _infoRow(Icons.email_outlined,
+                                context.tr('patient.field.email'), contactEmail),
                             const SizedBox(height: 8),
-                            _infoRow(Icons.phone_outlined, 'Phone', contactPhone),
+                            _infoRow(Icons.phone_outlined,
+                                context.tr('patient.field.phone'), contactPhone),
                             if (address.isNotEmpty) ...[
                               const SizedBox(height: 8),
-                              _infoRow(Icons.location_on_outlined, 'Address', address),
+                              _infoRow(Icons.location_on_outlined,
+                                  context.tr('patient.field.address'), address),
                             ],
                             if (dob.isNotEmpty) ...[
                               const SizedBox(height: 8),
-                              _infoRow(Icons.cake_outlined, 'Date of Birth', dob),
+                              _infoRow(Icons.cake_outlined,
+                                  context.tr('patient.field.dob'), dob),
                             ],
                             if (gender.isNotEmpty) ...[
                               const SizedBox(height: 8),
-                              _infoRow(Icons.wc_outlined, 'Gender', gender),
+                              _infoRow(Icons.wc_outlined,
+                                  context.tr('patient.field.gender'), gender),
                             ],
                             const SizedBox(height: 14),
                             Container(
@@ -206,7 +251,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ),
                               ),
                               child: Text(
-                                'Disable/Delete account will be added in a secure flow soon.',
+                                context.tr('patient.profile.deleteNote'),
                                 style: TextStyle(
                                   color: p.isDark
                                       ? const Color(0xFFFFB4B4)
@@ -221,11 +266,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(height: 18),
                       Expanded(
                         child: ListView.builder(
-                          itemCount: items.length,
+                          itemCount: _itemIds.length,
                           itemBuilder: (context, index) {
-                            final item = items[index];
+                            final id = _itemIds[index];
                             return GestureDetector(
-                              onTap: () => handleItemTap(item['title']),
+                              onTap: () => handleItemTap(id),
                               child: Container(
                                 margin: const EdgeInsets.only(bottom: 14),
                                 padding: const EdgeInsets.all(16),
@@ -237,15 +282,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 child: Row(
                                   children: [
                                     Icon(
-                                      item['icon'] as IconData,
-                                      color: item['title'] == 'Logout'
+                                      _itemIcon(id),
+                                      color: id == 'logout'
                                           ? Colors.red.shade400
                                           : AppColors.primaryDark,
                                     ),
                                     const SizedBox(width: 14),
                                     Expanded(
                                       child: Text(
-                                        item['title'] as String,
+                                        _itemTitle(context, id),
                                         style: TextStyle(
                                           fontWeight: FontWeight.w600,
                                           color: p.inkDark,
@@ -255,7 +300,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     Icon(
                                       Icons.arrow_forward_ios_rounded,
                                       size: 16,
-                                      color: item['title'] == 'Logout'
+                                      color: id == 'logout'
                                           ? Colors.red.shade300
                                           : null,
                                     ),

@@ -1,11 +1,15 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:intl/intl.dart' show DateFormat;
+
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/locale_controller.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'booking_details_screen.dart';
 
 class ScheduleScreen extends StatefulWidget {
@@ -26,6 +30,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   List<Map<String, dynamic>> appointments = [];
   bool isLoading = true;
   String? errorMessage;
+  bool _missingPatientAccount = false;
   _ScheduleFilter currentFilter = _ScheduleFilter.pending;
   final ApiService _api = ApiService();
 
@@ -44,7 +49,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       setState(() {
         appointments = [];
         isLoading = false;
-        errorMessage = 'Patient account is missing. Please login again.';
+        _missingPatientAccount = true;
+        errorMessage = null;
       });
       return;
     }
@@ -114,12 +120,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         appointments = merged;
         isLoading = false;
         errorMessage = null;
+        _missingPatientAccount = false;
       });
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
         isLoading = false;
+        _missingPatientAccount = false;
         errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
     }
@@ -207,7 +215,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         var busy = false;
 
         return StatefulBuilder(
-          builder: (context, setModalState) {
+          builder: (modalCtx, setModalState) {
             Future<void> submit() async {
               if (busy || stars < 1) return;
               setModalState(() => busy = true);
@@ -225,8 +233,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 await fetchAppointments();
                 if (!mounted) return;
                 messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('Thank you — your rating was saved.'),
+                  SnackBar(
+                    content: Text(
+                      context.tr('patient.schedule.ratingSavedThanks'),
+                    ),
                   ),
                 );
               } catch (e) {
@@ -242,7 +252,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               }
             }
 
-            final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+            final bottomInset = MediaQuery.viewInsetsOf(modalCtx).bottom;
             return Padding(
               padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + bottomInset),
               child: Column(
@@ -250,16 +260,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Rate $providerLabel',
+                    sheetCtx.tr(
+                      'patient.visitRating.sheetTitleNamed',
+                      args: {'name': providerLabel},
+                    ),
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'How was your visit? (1–5 stars)',
-                    style: TextStyle(color: AppColors.textLight, fontSize: 13),
+                  Text(
+                    sheetCtx.tr('patient.visitRating.shortScaleHint'),
+                    style:
+                        const TextStyle(color: AppColors.textLight, fontSize: 13),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -285,9 +299,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     enabled: !busy,
                     maxLines: 3,
                     maxLength: 500,
-                    decoration: const InputDecoration(
-                      hintText: 'Optional comment',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      hintText: sheetCtx.tr('patient.visitRating.optionalComment'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -308,7 +322,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Text('Submit rating'),
+                          : Text(sheetCtx.tr('patient.visitRating.submitBtn')),
                     ),
                   ),
                 ],
@@ -332,47 +346,89 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return DateTime.tryParse(value.replaceFirst(' ', 'T'));
   }
 
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'Date unavailable';
-
-    final monthNames = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-
-    return '${date.day} ${monthNames[date.month - 1]} ${date.year}';
+  String _formatDate(BuildContext context, DateTime? date) {
+    if (date == null) return context.tr('patient.dateUnavailable');
+    final locTag = localeController.locale.toLanguageTag();
+    try {
+      return DateFormat.yMMMd(locTag).format(date.toLocal());
+    } catch (_) {
+      return DateFormat.yMMMd('en').format(date.toLocal());
+    }
   }
 
-  String _formatTime(DateTime? date) {
-    if (date == null) return 'Time unavailable';
-
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = '${date.minute}'.padLeft(2, '0');
-    final suffix = date.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $suffix';
+  String _formatTime(BuildContext context, DateTime? date) {
+    if (date == null) return context.tr('patient.timeUnavailable');
+    final locTag = localeController.locale.toLanguageTag();
+    try {
+      return DateFormat.jm(locTag).format(date.toLocal());
+    } catch (_) {
+      return DateFormat.jm('en').format(date.toLocal());
+    }
   }
 
-  String _providerRoleLabel(dynamic item) {
+  String _providerRoleLabel(BuildContext context, dynamic item) {
     final role = item['providerRole']?.toString().toLowerCase();
-    if (role == 'doctor') return 'Doctor';
-    if (role == 'nurse') return 'Nurse';
-    return 'Care Provider';
+    if (role == 'doctor') return context.tr('patient.role.doctor');
+    if (role == 'nurse') return context.tr('patient.role.nurse');
+    return context.tr('patient.careProviderGeneric');
+  }
+
+  String _displayProviderName(BuildContext context, Map<String, dynamic> item) {
+    final raw =
+        (item['providerName'] ?? item['doctorName'] ?? '').toString().trim();
+    if (raw.isEmpty) return '';
+
+    final role = item['providerRole']?.toString().toLowerCase();
+    final lower = raw.toLowerCase();
+    final hasDoctorPrefix =
+        lower.startsWith('dr.') ||
+        lower.startsWith('dr ') ||
+        lower.startsWith('doctor ');
+
+    if (role == 'doctor' &&
+        !hasDoctorPrefix &&
+        !lower.startsWith('د.')) {
+      return '${context.tr('patient.namePrefixDoctor')} $raw';
+    }
+    return raw;
+  }
+
+  String _paymentDisplayLabel(String paymentRaw) {
+    final r = paymentRaw.trim();
+    if (r.isEmpty) return '\u2014';
+    final lower = r.toLowerCase();
+    if (lower == 'paid' || lower == 'unpaid') return lower;
+    return r;
+  }
+
+  /// Uses optional `paymentCardLast4` from appointment list joins.
+  String _schedulePaymentSummary(
+    BuildContext context,
+    Map<String, dynamic> item,
+  ) {
+    final st =
+        (item['paymentStatus'] ?? '').toString().toLowerCase().trim();
+    final last4 = (item['paymentCardLast4'] ?? '').toString().trim();
+    if (st == 'paid') {
+      if (last4.length == 4) {
+        return context.tr(
+          'patient.pay.paidByVisaMasked',
+          args: {'last4': last4},
+        );
+      }
+      return context.tr('patient.pay.paidByVisa');
+    }
+    if (st.isEmpty || st == 'unpaid') return context.tr('patient.pay.unpaid');
+    if (st == 'pending') return context.tr('patient.pay.pending');
+    if (st == 'failed') return context.tr('patient.pay.failed');
+    if (st == 'declined') return context.tr('patient.pay.declined');
+    return _paymentDisplayLabel(st);
   }
 
   Color _statusColor(String status) {
     switch (status) {
       case 'pending':
-        return const Color(0xFFEF6C00);
+        return const Color(0xFFEA580C);
       case 'completed':
         return const Color(0xFF2E7D32);
       case 'cancelled':
@@ -382,28 +438,42 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
   }
 
-  String _statusLabel(String status) {
+  String _statusLabel(BuildContext context, String status) {
     switch (status) {
       case 'pending':
-        return 'Pending Approval';
+        return context.tr('patient.schedule.badge.pendingApproval');
       case 'completed':
-        return 'Completed';
+        return context.tr('patient.status.completed');
       case 'cancelled':
-        return 'Cancelled';
+        return context.tr('patient.status.cancelled');
       default:
-        return 'Upcoming';
+        return context.tr('patient.schedule.badge.upcoming');
+    }
+  }
+
+  String _emptyHeadline(BuildContext context) {
+    switch (currentFilter) {
+      case _ScheduleFilter.pending:
+        return context.tr('patient.schedule.empty.pending');
+      case _ScheduleFilter.upcoming:
+        return context.tr('patient.schedule.empty.upcoming');
+      case _ScheduleFilter.completed:
+        return context.tr('patient.schedule.empty.completed');
+      case _ScheduleFilter.cancelled:
+        return context.tr('patient.schedule.empty.cancelled');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
+
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('My Schedule'),
-        actions: carelinkAppBarActions(),
+      appBar: carelinkPatientAppBar(
+        context,
+        title:
+            CarelinkAppBarTitle.forPatient(context, context.tr('patient.title.schedule')),
       ),
       body: RefreshIndicator(
         color: AppColors.primary,
@@ -414,11 +484,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildHeroCard(),
+              _buildHeroCard(context),
               const SizedBox(height: 18),
-              _buildFilterTabs(),
+              _buildFilterTabs(context),
               const SizedBox(height: 18),
-              _buildBody(),
+              _buildBody(context),
             ],
           ),
         ),
@@ -426,7 +496,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  Widget _buildHeroCard() {
+  Widget _buildHeroCard(BuildContext context) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(22),
@@ -451,9 +521,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Appointments Overview',
-                  style: TextStyle(
+                Text(
+                  context.tr('patient.schedule.heroTitle'),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
@@ -461,7 +531,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Track your upcoming visits and review completed or cancelled bookings in one place.',
+                  context.tr('patient.schedule.heroSubtitle'),
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.92),
                     fontSize: 13,
@@ -490,33 +560,33 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  Widget _buildFilterTabs() {
+  Widget _buildFilterTabs(BuildContext context) {
     return Row(
       children: [
         Expanded(
           child: _filterChip(
-            label: 'Pending',
+            label: context.tr('patient.schedule.filterPending'),
             filter: _ScheduleFilter.pending,
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: _filterChip(
-            label: 'Upcoming',
+            label: context.tr('patient.schedule.filterUpcoming'),
             filter: _ScheduleFilter.upcoming,
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: _filterChip(
-            label: 'Completed',
+            label: context.tr('patient.schedule.filterCompleted'),
             filter: _ScheduleFilter.completed,
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: _filterChip(
-            label: 'Cancelled',
+            label: context.tr('patient.schedule.filterCancelled'),
             filter: _ScheduleFilter.cancelled,
           ),
         ),
@@ -549,7 +619,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           color: isSelected ? null : Colors.white,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: isSelected ? AppColors.primaryDark : AppColors.border,
+            color: isSelected
+                ? AppColors.primaryDark
+                : AppColors.primaryDark.withValues(alpha: 0.45),
+            width: 1.25,
           ),
         ),
         child: Center(
@@ -565,7 +638,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(BuildContext context) {
     if (isLoading) {
       return const Padding(
         padding: EdgeInsets.only(top: 40),
@@ -573,7 +646,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       );
     }
 
-    if (errorMessage != null) {
+    if (_missingPatientAccount || errorMessage != null) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(24),
@@ -591,7 +664,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              errorMessage!,
+              _missingPatientAccount
+                  ? context.tr('patient.error.accountMissing')
+                  : errorMessage!,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: AppColors.textDark,
@@ -608,7 +683,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              child: const Text('Try Again'),
+              child: Text(context.tr('patient.action.tryAgain')),
             ),
           ],
         ),
@@ -641,7 +716,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              'No ${_statusLabel(_filterToStatus(currentFilter)).toLowerCase()} appointments found',
+              _emptyHeadline(context),
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -650,10 +725,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Your appointments will appear here after your booking request is sent.',
+            Text(
+              context.tr('patient.schedule.emptyHint'),
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: AppColors.textLight,
                 fontSize: 13,
                 height: 1.5,
@@ -673,16 +748,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         final appointmentId = (item['appointmentId'] ?? item['requestId'] ?? '')
             .toString()
             .trim();
-        final providerLabel = (item['providerName'] ?? item['doctorName'] ?? '')
-            .toString()
-            .trim();
+        final providerLabel = _displayProviderName(context, item);
         final providerId = (item['doctorUserId'] ?? item['providerUserId'] ?? '')
             .toString()
             .trim();
         final serviceRaw =
             (item['serviceType'] ?? '').toString().trim();
-        final paymentRaw =
-            (item['paymentStatus'] ?? '').toString().trim();
+        final paymentSummary = _schedulePaymentSummary(context, item);
 
         final ratedShown =
             status == 'completed' && _alreadyRated(item);
@@ -750,8 +822,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                     providerLabel.isNotEmpty
                                         ? providerLabel
                                         : (providerId.isNotEmpty
-                                            ? 'Provider ID'
-                                            : 'Provider'),
+                                            ? context.tr(
+                                                'patient.schedule.providerIdFallback',
+                                              )
+                                            : context.tr(
+                                                'patient.providerFallback',
+                                              )),
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w800,
                                       fontSize: 16,
@@ -773,7 +849,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                       ),
                                     ),
                                   Text(
-                                    '${_providerRoleLabel(item)} · ${item['specialization']?.toString().trim().isNotEmpty == true ? item['specialization']!.toString().trim() : 'Specialization unavailable'}',
+                                    '${_providerRoleLabel(context, item)} · ${item['specialization']?.toString().trim().isNotEmpty == true ? item['specialization']!.toString().trim() : context.tr('patient.schedule.specialtyUnavailable')}',
                                     style: const TextStyle(
                                       color: AppColors.textLight,
                                       fontSize: 13,
@@ -788,12 +864,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                 vertical: 8,
                               ),
                               decoration: BoxDecoration(
-                                color: _statusColor(status)
-                                    .withValues(alpha: 0.10),
+                                color: status == 'pending'
+                                    ? const Color(0xFFFFECDD)
+                                    : _statusColor(status)
+                                        .withValues(alpha: 0.10),
                                 borderRadius: BorderRadius.circular(14),
                               ),
                               child: Text(
-                                _statusLabel(status),
+                                _statusLabel(context, status),
                                 style: TextStyle(
                                   color: _statusColor(status),
                                   fontWeight: FontWeight.w700,
@@ -805,7 +883,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          'Service: ${serviceRaw.isEmpty ? '—' : serviceRaw}',
+                          '${context.tr('patient.schedule.serviceLabel')}: ${serviceRaw.isEmpty ? '\u2014' : serviceRaw}',
                           style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -815,7 +893,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         if (status == 'completed') ...[
                           const SizedBox(height: 6),
                           Text(
-                            'Completed: ${_formatDate(completedAt)} · ${_formatTime(completedAt)}',
+                            context.tr(
+                              'patient.schedule.completedAt',
+                              args: {
+                                'date': _formatDate(context, completedAt),
+                                'time': _formatTime(context, completedAt),
+                              },
+                            ),
                             style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.textLight,
@@ -824,7 +908,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         ],
                         const SizedBox(height: 6),
                         Text(
-                          'Payment: ${paymentRaw.isEmpty ? '—' : paymentRaw}',
+                          context.tr(
+                            'patient.schedule.paymentPrefix',
+                            args: {'detail': paymentSummary},
+                          ),
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textLight,
@@ -832,7 +919,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Status: $rawStatusDisp',
+                          context.tr(
+                            'patient.schedule.apiStatusRow',
+                            args: {'status': rawStatusDisp},
+                          ),
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textLight,
@@ -845,16 +935,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                             Expanded(
                               child: _scheduleMeta(
                                 icon: Icons.event_rounded,
-                                title: 'Scheduled date',
-                                value: _formatDate(scheduledAt),
+                                title: context.tr(
+                                  'patient.schedule.scheduledDate',
+                                ),
+                                value: _formatDate(context, scheduledAt),
                               ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: _scheduleMeta(
                                 icon: Icons.access_time_rounded,
-                                title: 'Scheduled time',
-                                value: _formatTime(scheduledAt),
+                                title: context.tr(
+                                  'patient.schedule.scheduledTime',
+                                ),
+                                value: _formatTime(context, scheduledAt),
                               ),
                             ),
                           ],
@@ -869,11 +963,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   padding: const EdgeInsets.only(top: 10),
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.star_outline_rounded),
-                    label: const Text('Rate Provider'),
+                    label: Text(context.tr('patient.schedule.rateProvider')),
                     onPressed: () => _openRateSheet(
                       appointmentId: appointmentId,
-                      providerLabel:
-                          providerLabel.isEmpty ? 'Provider' : providerLabel,
+                      providerLabel: providerLabel.isEmpty
+                          ? context.tr('patient.providerFallback')
+                          : providerLabel,
                     ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.primaryDark,
@@ -892,9 +987,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         color: Colors.green.shade700,
                         size: 18,
                       ),
-                      label: const Text(
-                        'Rated',
-                        style: TextStyle(fontWeight: FontWeight.w700),
+                      label: Text(
+                        context.tr('patient.schedule.ratedBadge'),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       backgroundColor: const Color(0xFFE8F5E9),
                     ),
@@ -905,19 +1000,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         );
       }).toList(),
     );
-  }
-
-  String _filterToStatus(_ScheduleFilter filter) {
-    switch (filter) {
-      case _ScheduleFilter.completed:
-        return 'completed';
-      case _ScheduleFilter.cancelled:
-        return 'cancelled';
-      case _ScheduleFilter.pending:
-        return 'pending';
-      case _ScheduleFilter.upcoming:
-        return 'upcoming';
-    }
   }
 
   Widget _scheduleMeta({

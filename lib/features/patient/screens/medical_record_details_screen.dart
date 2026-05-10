@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
 
 /// Read-only visit report detail.
 class MedicalRecordDetailsScreen extends StatefulWidget {
@@ -67,9 +68,12 @@ class _MedicalRecordDetailsScreenState
     final p = CarelinkPalette.of(context);
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        title: const CarelinkAppBarTitle('Visit report'),
-        actions: carelinkAppBarActions(),
+      appBar: carelinkPatientAppBar(
+        context,
+        title: CarelinkAppBarTitle.forPatient(
+          context,
+          context.tr('patient.title.visitReport'),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -122,17 +126,22 @@ class _MedicalRecordDetailsScreenState
         Text(visitDate, style: TextStyle(color: AppColors.primary)),
         const SizedBox(height: 16),
         if (vitals != null && vitals.toString().trim().isNotEmpty)
-          block('Vital signs', vitals.toString()),
-        block('Diagnosis', dx),
-        block('Treatment plan', plan),
-        block('Recommendations', rec),
-        block('Medications', meds),
-        block('Allergies (visit)', allergies),
-        block('Notes', notes),
+          block(context.tr('patient.record.block.vitals'), vitals.toString()),
+        block(context.tr('patient.record.block.diagnosis'), dx),
+        block(context.tr('patient.record.block.treatmentPlan'), plan),
+        block(context.tr('patient.record.block.recommendations'), rec),
+        block(context.tr('patient.record.block.meds'), meds),
+        block(context.tr('patient.record.block.allergiesVisit'), allergies),
+        block(context.tr('patient.record.block.notes'), notes),
         if (fu)
           block(
-            'Follow-up',
-            fuDate.isNotEmpty ? 'Required by $fuDate' : 'Required',
+            context.tr('patient.record.block.followUp'),
+            fuDate.isNotEmpty
+                ? context.tr(
+                    'patient.health.followUpRequiredBy',
+                    args: {'date': fuDate},
+                  )
+                : context.tr('patient.health.followUpRequired'),
           ),
       ],
     );

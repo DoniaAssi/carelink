@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart'
+    show carelinkLocaleThemeChipRow;
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'booking_screen.dart';
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
@@ -14,14 +16,14 @@ const double _kCardRadius = 14.0;
 class _ServiceOption {
   const _ServiceOption({
     required this.value,
-    required this.title,
-    required this.description,
+    required this.titleKey,
+    required this.descKey,
     required this.icon,
   });
 
   final String value;
-  final String title;
-  final String description;
+  final String titleKey;
+  final String descKey;
   final IconData icon;
 }
 
@@ -38,38 +40,38 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
   static const List<_ServiceOption> _services = [
     _ServiceOption(
       value: 'Home Nursing Care',
-      title: 'Home nursing',
-      description: 'Skilled care at your residence with nursing support.',
+      titleKey: 'patient.service.homeNursing.title',
+      descKey: 'patient.service.homeNursing.desc',
       icon: Icons.home_filled,
     ),
     _ServiceOption(
       value: 'Wound Care',
-      title: 'Wound care',
-      description: 'Professional dressing and wound management.',
+      titleKey: 'patient.service.wound.title',
+      descKey: 'patient.service.wound.desc',
       icon: Icons.healing_rounded,
     ),
     _ServiceOption(
       value: 'Injection',
-      title: 'Injection',
-      description: 'Medication administration by a qualified nurse.',
+      titleKey: 'patient.service.injection.title',
+      descKey: 'patient.service.injection.desc',
       icon: Icons.vaccines_rounded,
     ),
     _ServiceOption(
       value: 'Elderly Care',
-      title: 'Elderly care',
-      description: 'Respectful support for daily health and comfort.',
+      titleKey: 'patient.service.elderly.title',
+      descKey: 'patient.service.elderly.desc',
       icon: Icons.elderly_rounded,
     ),
     _ServiceOption(
       value: 'Doctor Consultation',
-      title: 'Doctor consultation',
-      description: 'Virtual or in-person visit with a physician.',
+      titleKey: 'patient.service.docConsult.title',
+      descKey: 'patient.service.docConsult.desc',
       icon: Icons.medical_services_rounded,
     ),
     _ServiceOption(
       value: 'Follow-up Visit',
-      title: 'Follow-up visit',
-      description: 'Continuity of care and progress check.',
+      titleKey: 'patient.service.followup.title',
+      descKey: 'patient.service.followup.desc',
       icon: Icons.assignment_turned_in_rounded,
     ),
   ];
@@ -148,14 +150,14 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
                       );
                     }
                   : null,
-              child: const Row(
+              child: Row(
                 children: [
-                  SizedBox(width: 24),
+                  const SizedBox(width: 24),
                   Expanded(
                     child: Center(
                       child: Text(
-                        'Continue',
-                        style: TextStyle(
+                        context.tr('patient.action.continue'),
+                        style: const TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 16.5,
                           letterSpacing: 0.2,
@@ -163,7 +165,7 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
                       ),
                     ),
                   ),
-                  Icon(Icons.arrow_forward_rounded, size: 22),
+                  const Icon(Icons.arrow_forward_rounded, size: 22),
                 ],
               ),
             ),
@@ -195,7 +197,7 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'What type of service do you need?',
+                        context.tr('patient.selectService.title'),
                         style: TextStyle(
                           color: p.inkDark,
                           fontWeight: FontWeight.w800,
@@ -204,7 +206,7 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
                       ),
                       const SizedBox(height: 5),
                       Text(
-                        'Choose the service that best fits your needs.',
+                        context.tr('patient.selectService.subtitle'),
                         style: TextStyle(
                           color: p.inkMuted,
                           fontWeight: FontWeight.w500,
@@ -240,7 +242,7 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'You can review and confirm all details in the next steps.',
+                    context.tr('patient.selectService.reviewNextSteps'),
                     style: TextStyle(
                       color: p.isDark ? p.inkDark : AppColors.primary,
                       fontSize: 12.5,
@@ -284,7 +286,7 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Select Service',
+              context.tr('patient.title.selectService'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -296,14 +298,13 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
           ),
           const SizedBox(width: 8),
           Container(
-            width: 40,
-            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             decoration: BoxDecoration(
               color: p.surfaceSoft,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: p.stroke),
             ),
-            child: CarelinkThemeIconButton(color: p.inkDark),
+            child: carelinkLocaleThemeChipRow(iconColor: p.inkDark, gap: 4),
           ),
         ],
       ),
@@ -420,7 +421,7 @@ class _ServiceGridCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            option.title,
+                            context.tr(option.titleKey),
                             style: TextStyle(
                               color: p.inkDark,
                               fontWeight: FontWeight.w800,
@@ -430,7 +431,7 @@ class _ServiceGridCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            option.description,
+                            context.tr(option.descKey),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(

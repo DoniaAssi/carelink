@@ -1,17 +1,22 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/features/patient/payment/patient_visa_payment_copy.dart';
+import 'package:carelink/features/patient/widgets/visa_demo_checkout_sheet.dart';
 import 'package:carelink/shared/services/payment_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/carelink_patient_app_bar.dart';
 
 class BookingDetailsScreen extends StatefulWidget {
   final String appointmentId;
@@ -54,6 +59,80 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     _pollTimer?.cancel();
     _ratingComment.dispose();
     super.dispose();
+  }
+
+  static const String _dash = '\u2014';
+
+  String _localizedPaymentStatus(BuildContext c, String raw) {
+    final s = raw.trim().toLowerCase();
+    if (s.isEmpty) return _dash;
+    switch (s) {
+      case 'paid':
+        return c.tr('patient.pay.paid');
+      case 'pending':
+        return c.tr('patient.pay.pending');
+      case 'failed':
+        return c.tr('patient.pay.failed');
+      case 'declined':
+        return c.tr('patient.pay.declined');
+      default:
+        return raw;
+    }
+  }
+
+  String _localizedProviderRole(BuildContext c, String raw) {
+    final s = raw.trim().toLowerCase();
+    if (s.contains('doctor')) return c.tr('patient.role.doctor');
+    if (s.contains('nurse')) return c.tr('patient.role.nurse');
+    return raw.isEmpty ? _dash : raw;
+  }
+
+  String _localizedAppointmentStatus(BuildContext c, String raw) {
+    final s = raw.trim().toLowerCase();
+    switch (s) {
+      case 'pending':
+        return c.tr('patient.status.pending');
+      case 'confirmed':
+        return c.tr('patient.status.confirmed');
+      case 'completed':
+        return c.tr('patient.status.completed');
+      case 'cancelled':
+      case 'canceled':
+        return c.tr('patient.status.cancelled');
+      default:
+        return raw.isEmpty ? _dash : raw;
+    }
+  }
+
+  String _formatWhen(BuildContext c, DateTime? date) {
+    if (date == null) return c.tr('patient.dateUnavailable');
+    final loc = localeController.locale.toLanguageTag();
+    try {
+      return DateFormat.yMMMd(loc).add_jm().format(date.toLocal());
+    } catch (_) {
+      return DateFormat.yMMMd('en').add_jm().format(date.toLocal());
+    }
+  }
+
+  String _relativeWhen(BuildContext c, DateTime? t) {
+    if (t == null) return '';
+    final diff = DateTime.now().difference(t);
+    if (diff.isNegative || diff.inSeconds < 60) {
+      return c.tr('notifications.relative.justNow');
+    }
+    if (diff.inMinutes < 60) {
+      final n = diff.inMinutes;
+      return n <= 1
+          ? c.tr('notifications.relative.oneMinute')
+          : c.tr('notifications.relative.minutes', args: {'n': '$n'});
+    }
+    if (diff.inHours < 24) {
+      final h = diff.inHours;
+      return h <= 1
+          ? c.tr('notifications.relative.oneHour')
+          : c.tr('notifications.relative.hours', args: {'n': '$h'});
+    }
+    return '${t.day}/${t.month}/${t.year}';
   }
 
   void _setPolling() {
@@ -143,35 +222,53 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   Future<void> _payNowDemo() async {
     final a = appointment;
     if (a == null || _payBusy) return;
+    final hint = _hintAmountFromOverview();
+    if (hint == null || hint <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('patient.pay.amountUnavailable'))),
+      );
+      return;
+    }
+    var currency = (_paymentOverview?['currency'] ?? '').toString().trim();
+    if (currency.isEmpty) currency = 'JOD';
+
+    final serviceLabel = [
+      if (a.symptoms.trim().isNotEmpty) a.symptoms.trim(),
+      if (a.notes.trim().isNotEmpty) a.notes.trim(),
+    ].join(' · ');
+    final serviceName = serviceLabel.isEmpty
+        ? context.tr('patient.pay.careVisit')
+        : serviceLabel;
+
     setState(() => _payBusy = true);
     try {
-      final svc = PaymentService(api: _api);
-      await svc.payForBooking(
+      final out = await showVisaDemoCheckoutSheet(
+        context: context,
         appointmentId: widget.appointmentId,
         patientUserId: widget.patientUserId,
         providerUserId: a.providerUserId,
-        amountHint: _hintAmountFromOverview(),
-        paymentMethod: 'mock_card',
+        amount: hint,
+        currencyCode: currency,
+        providerName:
+            a.providerName.trim().isNotEmpty
+                ? a.providerName
+                : context.tr('patient.providerFallback'),
+        serviceName: serviceName,
+        paymentService: PaymentService(api: _api),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Payment successful (DEMO — no real card charge).',
+      if (out != null &&
+          (out['paymentStatus'] ?? '').toString().toLowerCase() == 'paid') {
+        final four = (out['cardLast4'] ?? '').toString().trim();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(PatientVisaPaymentCopy.paidLine(context, four)),
           ),
-        ),
-      );
+        );
+      }
       await _load(silent: true);
       await _refreshPaymentOverview();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            e.toString().replaceFirst('Exception: ', ''),
-          ),
-        ),
-      );
     } finally {
       if (mounted) setState(() => _payBusy = false);
     }
@@ -182,15 +279,14 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     final currency = (_paymentOverview?['currency'] ?? '').toString().trim();
     final amountLabel = hint != null && hint > 0
         ? '${hint.toStringAsFixed(2)}${currency.isNotEmpty ? ' $currency' : ''}'
-        : 'Amount set at checkout (${currency.isNotEmpty ? currency : '—'})';
-    final st = _ledgerPaymentStatus(a);
-
-    final methodShown = (() {
-      final pm = (_paymentOverview?['paymentMethod'] ?? '').toString().trim();
-      if (pm.isNotEmpty) return pm;
-      if (a.paymentMethod.isEmpty) return '—';
-      return a.paymentMethod;
-    })();
+        : context.tr(
+            'patient.pay.amountAtCheckout',
+            args: {
+              'currency': currency.isNotEmpty ? currency : _dash,
+            },
+          );
+    final stRaw = _ledgerPaymentStatus(a);
+    final stUi = _localizedPaymentStatus(context, stRaw);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -206,7 +302,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Payment',
+              context.tr('patient.title.payment'),
               style: TextStyle(fontWeight: FontWeight.w700, color: p.inkDark),
             ),
             const SizedBox(height: 6),
@@ -218,19 +314,36 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                 color: AppColors.primary,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
-              'Status: ${st.isEmpty ? '—' : st}',
-              style: TextStyle(fontSize: 13, color: p.inkMuted),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Method: $methodShown',
+              context.tr(
+                'patient.pay.statusLine',
+                args: {'status': stUi},
+              ),
               style: TextStyle(fontSize: 13, color: p.inkMuted),
             ),
             const SizedBox(height: 10),
+            if (_appointmentPaidLive)
+              Text(
+                PatientVisaPaymentCopy.paidLine(
+                  context,
+                  (_paymentOverview?['cardLast4'] ?? '').toString(),
+                ),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: p.inkDark,
+                  height: 1.35,
+                ),
+              )
+            else
+              Text(
+                PatientVisaPaymentCopy.unpaidPayWithVisa(context),
+                style: TextStyle(fontSize: 13, color: p.inkMuted, height: 1.35),
+              ),
+            const SizedBox(height: 10),
             Text(
-              'DEMO checkout: tapping Pay uses mock_card via the CareLink ledger — no gateway keys in the app.',
+              context.tr('payment.demoLedgerNote'),
               style: TextStyle(fontSize: 11.5, color: p.inkMuted, height: 1.35),
             ),
             if (_canPayDemo) ...[
@@ -255,18 +368,11 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                             color: Colors.white,
                           ),
                         )
-                      : const Text(
-                          'Pay now (DEMO)',
-                          style: TextStyle(fontWeight: FontWeight.w700),
+                      : Text(
+                          context.tr('payment.payWithVisa'),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                 ),
-              ),
-            ],
-            if (_appointmentPaidLive) ...[
-              const SizedBox(height: 10),
-              Text(
-                'This visit is marked paid.',
-                style: TextStyle(fontSize: 13, color: p.inkDark),
               ),
             ],
           ],
@@ -292,16 +398,17 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   Future<void> _cancel() async {
+    final cancelReason = context.tr('patient.booking.cancelReasonApp');
     setState(() => isCancelling = true);
     try {
       await _api.cancelAppointment(
         appointmentId: widget.appointmentId,
         patientUserId: widget.patientUserId,
-        reason: 'Cancelled from mobile app',
+        reason: cancelReason,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Appointment cancelled successfully')),
+        SnackBar(content: Text(context.tr('patient.booking.cancelSuccess'))),
       );
       await _load();
     } catch (e) {
@@ -312,22 +419,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     } finally {
       if (mounted) setState(() => isCancelling = false);
     }
-  }
-
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'Date unavailable';
-    final suffix = date.hour >= 12 ? 'PM' : 'AM';
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} $hour:$minute $suffix';
-  }
-
-  String _formatUpdated(DateTime? t) {
-    if (t == null) return '';
-    final d = DateTime.now().difference(t);
-    if (d.inSeconds < 60) return 'Just now';
-    if (d.inMinutes < 60) return '${d.inMinutes} min ago';
-    return '${d.inHours} hr ago';
   }
 
   Widget _buildVisitRatingSection(CarelinkPalette p, AppointmentModel a) {
@@ -350,7 +441,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Your rating',
+                context.tr('patient.visitRating.title'),
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   color: p.inkDark,
@@ -401,7 +492,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Rate this visit',
+              context.tr('patient.visitRating.ratePrompt'),
               style: TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 16,
@@ -410,7 +501,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              '1 = poor, 5 = excellent. This updates provider scores used in smart match.',
+              context.tr('patient.visitRating.scaleExplain'),
               style: TextStyle(fontSize: 12, color: p.inkMuted),
             ),
             const SizedBox(height: 12),
@@ -440,7 +531,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
               enabled: !_ratingBusy,
               style: TextStyle(color: p.inkDark, fontSize: 13),
               decoration: InputDecoration(
-                hintText: 'Optional comment',
+                hintText: context.tr('patient.visitRating.optionalComment'),
                 hintStyle: TextStyle(color: p.inkMuted, fontSize: 12),
                 filled: true,
                 fillColor: p.surfaceSoft,
@@ -463,9 +554,9 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                     : () {
                         if (_draftStars < 1) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
+                            SnackBar(
                               content: Text(
-                                'Please choose a star rating from 1 to 5.',
+                                context.tr('patient.visitRating.pickStars'),
                               ),
                             ),
                           );
@@ -489,9 +580,9 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : const Text(
-                        'Submit rating',
-                        style: TextStyle(fontWeight: FontWeight.w700),
+                    : Text(
+                        context.tr('patient.visitRating.submitBtn'),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
               ),
             ),
@@ -516,11 +607,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Thanks! Your rating helps improve recommendations for everyone.',
-          ),
-        ),
+        SnackBar(content: Text(context.tr('patient.visitRating.thanks'))),
       );
       await _load();
     } catch (e) {
@@ -541,10 +628,12 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     final p = CarelinkPalette.of(context);
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('Booking details'),
-        actions: carelinkAppBarActions(),
+      appBar: carelinkPatientAppBar(
+        context,
+        title: CarelinkAppBarTitle.forPatient(
+          context,
+          context.tr('patient.title.bookingDetails'),
+        ),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
@@ -565,24 +654,24 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                   if (appointment!.status.toLowerCase() == 'confirmed') ...[
                     _statusBanner(
                       p,
-                      'Accepted — visit on your schedule',
-                      'You can follow the care provider on the map when they share live location.',
+                      context.tr('patient.booking.banner.acceptTitle'),
+                      context.tr('patient.booking.banner.acceptSub'),
                     ),
                     const SizedBox(height: 10),
                   ],
                   if (appointment!.status.toLowerCase() == 'pending') ...[
                     _statusBanner(
                       p,
-                      'Pending provider response',
-                      'The provider can accept or decline. We will notify you here.',
+                      context.tr('patient.booking.banner.pendingTitle'),
+                      context.tr('patient.booking.banner.pendingSub'),
                     ),
                     const SizedBox(height: 10),
                   ],
                   if (appointment!.status.toLowerCase() == 'completed') ...[
                     _statusBanner(
                       p,
-                      'Visit completed',
-                      'Rate your provider after the service — it helps future smart matches for you and others.',
+                      context.tr('patient.booking.banner.completedTitle'),
+                      context.tr('patient.booking.banner.completedSub'),
                     ),
                     const SizedBox(height: 10),
                   ],
@@ -590,51 +679,80 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                     child: SingleChildScrollView(
                       child: Column(
                         children: [
-                          if (_showLiveMap) _buildMapCard(p, appointment!),
-                          _detailCard('Provider', appointment!.providerName),
-                          _detailCard('Role', appointment!.providerRole),
+                          if (_showLiveMap)
+                            _buildMapCard(context, p, appointment!),
                           _detailCard(
-                            'Specialization',
+                            context,
+                            context.tr('patient.detail.provider'),
+                            appointment!.providerName,
+                          ),
+                          _detailCard(
+                            context,
+                            context.tr('patient.detail.role'),
+                            _localizedProviderRole(
+                              context,
+                              appointment!.providerRole,
+                            ),
+                          ),
+                          _detailCard(
+                            context,
+                            context.tr('patient.detail.specialization'),
                             appointment!.specialization,
                           ),
                           _detailCard(
-                            'Date & time',
-                            _formatDate(appointment!.scheduledAt),
+                            context,
+                            context.tr('patient.detail.dateTime'),
+                            _formatWhen(context, appointment!.scheduledAt),
                           ),
-                          _detailCard('Status', appointment!.status),
                           _detailCard(
-                            'Notes',
+                            context,
+                            context.tr('patient.detail.status'),
+                            _localizedAppointmentStatus(
+                              context,
+                              appointment!.status,
+                            ),
+                          ),
+                          _detailCard(
+                            context,
+                            context.tr('patient.detail.notes'),
                             appointment!.notes.isEmpty
-                                ? '—'
+                                ? _dash
                                 : appointment!.notes,
                           ),
                           _detailCard(
-                            'Location',
+                            context,
+                            context.tr('patient.detail.location'),
                             appointment!.location.isEmpty
-                                ? '—'
+                                ? _dash
                                 : appointment!.location,
                           ),
                           _detailCard(
-                            'Visit address',
+                            context,
+                            context.tr('patient.detail.visitAddress'),
                             appointment!.visitAddress.isEmpty
-                                ? '—'
+                                ? _dash
                                 : appointment!.visitAddress,
                           ),
                           _detailCard(
-                            'Location note',
+                            context,
+                            context.tr('patient.detail.locationNote'),
                             appointment!.locationNote.isEmpty
-                                ? '—'
+                                ? _dash
                                 : appointment!.locationNote,
                           ),
                           _detailCard(
-                            'Symptoms',
+                            context,
+                            context.tr('patient.detail.symptoms'),
                             appointment!.symptoms.isEmpty
-                                ? '—'
+                                ? _dash
                                 : appointment!.symptoms,
                           ),
                           _detailCard(
-                            'Urgency',
-                            appointment!.isUrgent ? 'Urgent' : 'Normal',
+                            context,
+                            context.tr('patient.detail.urgency'),
+                            appointment!.isUrgent
+                                ? context.tr('patient.detail.urgencyUrgent')
+                                : context.tr('patient.detail.urgencyNormal'),
                           ),
                           _buildPaymentLedgerCard(p, appointment!),
                           _buildVisitRatingSection(p, appointment!),
@@ -658,9 +776,9 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                             ? const CircularProgressIndicator(
                                 color: Colors.white,
                               )
-                            : const Text(
-                                'Cancel booking',
-                                style: TextStyle(
+                            : Text(
+                                context.tr('patient.booking.cancelCta'),
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -706,7 +824,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     );
   }
 
-  Widget _buildMapCard(CarelinkPalette p, AppointmentModel a) {
+  Widget _buildMapCard(BuildContext context, CarelinkPalette p, AppointmentModel a) {
     final vLat = a.visitLatitude;
     final vLng = a.visitLongitude;
     final pLat = a.providerCurrentLat;
@@ -746,9 +864,15 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         provPoint.longitude,
       );
       if (m >= 1000) {
-        distLabel = 'About ${(m / 1000).toStringAsFixed(1)} km away';
+        distLabel = context.tr(
+          'patient.map.aboutKmAway',
+          args: {'km': (m / 1000).toStringAsFixed(1)},
+        );
       } else {
-        distLabel = 'About ${m.round()} m away';
+        distLabel = context.tr(
+          'patient.map.aboutMAway',
+          args: {'m': '${m.round()}'},
+        );
       }
     }
 
@@ -767,7 +891,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
               child: Text(
-                'Live visit map',
+                context.tr('patient.map.liveVisitTitle'),
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   color: p.inkDark,
@@ -778,7 +902,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
                 child: Text(
-                  'When the provider shares location, you will see them here (refreshes every few seconds).',
+                  context.tr('patient.map.whenProviderShares'),
                   style: TextStyle(fontSize: 11, color: p.inkMuted),
                 ),
               )
@@ -788,7 +912,15 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                 child: Text(
                   () {
                     final parts = <String>[
-                      'Provider last update: ${_formatUpdated(a.providerLocationUpdatedAt)}',
+                      context.tr(
+                        'patient.map.providerLastUpdate',
+                        args: {
+                          'relative': _relativeWhen(
+                            context,
+                            a.providerLocationUpdatedAt,
+                          ),
+                        },
+                      ),
                     ];
                     final d = distLabel;
                     if (d != null && d.isNotEmpty) parts.add(d);
@@ -844,7 +976,11 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     );
   }
 
-  Widget _detailCard(String title, String value) {
+  Widget _detailCard(
+    BuildContext context,
+    String title,
+    String value,
+  ) {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),

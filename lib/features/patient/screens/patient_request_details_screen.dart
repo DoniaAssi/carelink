@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart'
+    show carelinkLocaleThemeChipRow;
 import 'booking_review_screen.dart';
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
 
@@ -96,15 +98,18 @@ class _PatientRequestDetailsScreenState
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'Continue',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+                    context.tr('patient.request.continueCta'),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                    ),
                   ),
-                  SizedBox(width: 8),
-                  Icon(Icons.arrow_forward_rounded),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward_rounded),
                 ],
               ),
             ),
@@ -114,7 +119,7 @@ class _PatientRequestDetailsScreenState
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
         children: [
-          _buildHeader(p),
+          _buildHeader(context, p),
           const SizedBox(height: 16),
           const BookingStepIndicator(currentStep: BookingFlowStep.details),
           const SizedBox(height: 16),
@@ -136,7 +141,7 @@ class _PatientRequestDetailsScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Current case',
+                        context.tr('patient.request.currentCase'),
                         style: TextStyle(
                           color: p.inkDark,
                           fontWeight: FontWeight.w800,
@@ -145,7 +150,7 @@ class _PatientRequestDetailsScreenState
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'This is only for the current booking. Your provider uses it to prepare, and the recommendation engine can match the request more accurately.',
+                        context.tr('patient.request.currentCaseBody'),
                         style: TextStyle(
                           color: p.inkMuted,
                           fontSize: 12.5,
@@ -161,7 +166,7 @@ class _PatientRequestDetailsScreenState
           const SizedBox(height: 10),
           _fieldCard(
             icon: Icons.assignment_outlined,
-            title: 'Reason for Visit',
+            title: context.tr('patient.request.reasonVisit'),
             requiredMark: true,
             child: TextField(
               controller: _reasonController,
@@ -171,14 +176,14 @@ class _PatientRequestDetailsScreenState
               maxLines: 5,
               maxLength: 200,
               decoration: _inputDecoration(
-                'Please describe the reason for your visit',
+                context.tr('patient.request.reasonPlaceholder'),
               ),
             ),
           ),
           const SizedBox(height: 10),
           _fieldCard(
             icon: Icons.monitor_heart_outlined,
-            title: 'Symptoms (optional)',
+            title: context.tr('patient.request.symptomsOptional'),
             child: TextField(
               controller: _symptomsController,
               cursorColor: AppColors.primary,
@@ -187,7 +192,7 @@ class _PatientRequestDetailsScreenState
               maxLines: 5,
               maxLength: 200,
               decoration: _inputDecoration(
-                'Describe any symptoms you are experiencing',
+                context.tr('patient.request.symptomsPlaceholder'),
               ),
             ),
           ),
@@ -209,7 +214,7 @@ class _PatientRequestDetailsScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Is this urgent?',
+                        context.tr('patient.request.urgentTitle'),
                         style: TextStyle(
                           color: p.inkDark,
                           fontWeight: FontWeight.w700,
@@ -217,7 +222,7 @@ class _PatientRequestDetailsScreenState
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'We will prioritize your request',
+                        context.tr('patient.request.urgentSub'),
                         style: TextStyle(color: p.inkMuted, fontSize: 12),
                       ),
                     ],
@@ -235,7 +240,7 @@ class _PatientRequestDetailsScreenState
           const SizedBox(height: 10),
           _fieldCard(
             icon: Icons.notes_outlined,
-            title: 'Additional Notes (optional)',
+            title: context.tr('patient.request.notesOptional'),
             child: TextField(
               controller: _additionalController,
               cursorColor: AppColors.primary,
@@ -244,7 +249,7 @@ class _PatientRequestDetailsScreenState
               maxLines: 5,
               maxLength: 200,
               decoration: _inputDecoration(
-                "Any other information you'd like to share",
+                context.tr('patient.request.additionalPlaceholder'),
               ),
             ),
           ),
@@ -266,7 +271,7 @@ class _PatientRequestDetailsScreenState
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Providing detailed information helps the provider prepare for your visit.',
+                    context.tr('patient.request.infoStripDetailed'),
                     style: TextStyle(color: p.inkMuted, fontSize: 12),
                   ),
                 ),
@@ -290,7 +295,7 @@ class _PatientRequestDetailsScreenState
     );
   }
 
-  Widget _buildHeader(CarelinkPalette p) {
+  Widget _buildHeader(BuildContext context, CarelinkPalette p) {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
@@ -331,7 +336,7 @@ class _PatientRequestDetailsScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Current Case',
+                  context.tr('patient.request.detailsHeaderTitle'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -343,7 +348,7 @@ class _PatientRequestDetailsScreenState
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'Tell us what you need for this visit',
+                  context.tr('patient.request.detailsSubtitle'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -357,14 +362,13 @@ class _PatientRequestDetailsScreenState
           ),
           const SizedBox(width: 8),
           Container(
-            width: 40,
-            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             decoration: BoxDecoration(
               color: p.surfaceSoft,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: p.stroke),
             ),
-            child: CarelinkThemeIconButton(color: p.inkDark),
+            child: carelinkLocaleThemeChipRow(iconColor: p.inkDark, gap: 4),
           ),
         ],
       ),
