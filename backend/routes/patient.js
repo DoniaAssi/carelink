@@ -1187,7 +1187,12 @@ router.post('/appointments', async (req, res) => {
     }
 
     const requestId = randomUUID();
-    const requestLocation = location ?? '';
+    const requestLocation = (
+      location ||
+      visitAddress ||
+      locationNote ||
+      ''
+    ).toString().trim();
     const finalStatus = toStatus(status, BOOKING_STATUSES, 'pending');
     const parsedVisitLat = visitLatitude == null || visitLatitude === ''
       ? null

@@ -28,6 +28,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
   int selectedIndex = 0;
   int pendingRequests = 0;
   int todaysVisits = 0;
+  int waitingReports = 0;
   int completedVisits = 0;
   double weeklyEarnings = 0;
 
@@ -74,6 +75,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
       setState(() {
         pendingRequests = _parseInt(data['pendingRequests']);
         todaysVisits = _parseInt(data['todaysVisits']);
+        waitingReports = _parseInt(data['waitingReports']);
         completedVisits = _parseInt(data['completedVisits']);
         weeklyEarnings = week;
       });
@@ -300,6 +302,20 @@ class _NurseDashboardState extends State<NurseDashboard> {
                   Icons.payments_rounded,
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatCard(
+                  NurseUi.label('Waiting Reports', 'تقارير مطلوبة'),
+                  '$waitingReports',
+                  Icons.assignment_late_rounded,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(child: SizedBox.shrink()),
             ],
           ),
           const SizedBox(height: 24),

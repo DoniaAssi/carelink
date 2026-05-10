@@ -190,8 +190,13 @@ router.get('/dashboard/:userId', async (req, res) => {
     const [[today]] = await db.query(
       `SELECT COUNT(*) AS c FROM servicerequest
        WHERE providerUserId = ?
-         AND status IN ('pending','confirmed')
+         AND status IN ('confirmed','in_progress','waiting_report')
          AND DATE(scheduledAt) = CURDATE()`,
+      [userId],
+    );
+    const [[waitingReports]] = await db.query(
+      `SELECT COUNT(*) AS c FROM servicerequest
+       WHERE providerUserId = ? AND status = 'waiting_report'`,
       [userId],
     );
     const [[done]] = await db.query(
@@ -226,7 +231,7 @@ router.get('/dashboard/:userId', async (req, res) => {
           `SELECT COALESCE(SUM(amount), 0) AS s FROM (
              ${queryParts.join(' UNION ALL ')}
            ) AS allp
-           WHERE status IN ('paid', 'pending')
+           WHERE status IN ('paid', 'pending', 'unpaid')
              AND YEARWEEK(createdAt, 1) = YEARWEEK(CURDATE(), 1)`,
           params,
         );
@@ -237,6 +242,7 @@ router.get('/dashboard/:userId', async (req, res) => {
     res.json({
       pendingRequests: Number(pending?.c || 0),
       todaysVisits: Number(today?.c || 0),
+      waitingReports: Number(waitingReports?.c || 0),
       completedVisits: Number(done?.c || 0),
       weeklyEarnings,
     });
@@ -249,6 +255,8 @@ router.get('/dashboard/:userId', async (req, res) => {
 async function listRequestsForProvider(providerUserId, statusQ) {
   await ensureServiceVisitWorkflowColumns();
   const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
+  const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
+  const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
   const hasCreatedAt = await hasColumn('servicerequest', 'createdAt');
   const hasReasonForVisit = await hasColumn('servicerequest', 'reasonForVisit');
   const hasPatientLat = await hasColumn('patient', 'gpsLat');
@@ -258,6 +266,8 @@ async function listRequestsForProvider(providerUserId, statusQ) {
   const hasPaymentTable = await hasTable('payment');
   const createdExpr = hasCreatedAt ? 'sr.createdAt' : 'sr.scheduledAt';
   const visitAddressSel = hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress";
+  const visitLatSel = hasVisitLatitude ? 'sr.visitLatitude' : 'NULL AS visitLatitude';
+  const visitLngSel = hasVisitLongitude ? 'sr.visitLongitude' : 'NULL AS visitLongitude';
   const reasonSel = hasReasonForVisit ? 'sr.reasonForVisit' : "'' AS reasonForVisit";
   const patientLatSel = hasPatientLat ? 'pat.gpsLat' : 'NULL AS gpsLat';
   const patientLngSel = hasPatientLng ? 'pat.gpsLng' : 'NULL AS gpsLng';
@@ -290,6 +300,8 @@ async function listRequestsForProvider(providerUserId, statusQ) {
         sr.actualDurationMinutes,
         sr.nursingActivities,
         ${visitAddressSel},
+        ${visitLatSel},
+        ${visitLngSel},
         ${createdExpr} AS createdAt,
         pu.fullName AS patientName,
         pu.phone AS patientPhone,
@@ -309,40 +321,48 @@ async function listRequestsForProvider(providerUserId, statusQ) {
     params,
   );
 
-  return rows.map((r) => ({
-    requestId: r.requestId,
-    patientUserId: r.patientUserId,
-    providerUserId: r.providerUserId,
-    patientId: r.patientUserId,
-    providerId: r.providerUserId,
-    patientName: r.patientName || '',
-    patientPhone: r.patientPhone || '',
-    patientAge: r.dateOfBirth ? Math.max(0, new Date().getFullYear() - new Date(r.dateOfBirth).getFullYear()) : 0,
-    serviceType: r.serviceType || '',
-    location: (r.visitAddress && String(r.visitAddress).trim()) || r.location || r.patientAddress || '',
-    patientAddress: r.patientAddress || '',
-    gpsLat: r.gpsLat,
-    gpsLng: r.gpsLng,
-    status: r.status,
-    notes: r.notes,
-    reasonForVisit: r.reasonForVisit || '',
-    medicalCondition: r.reasonForVisit || r.notes || '',
-    scheduledAt: r.scheduledAt,
-    scheduledDate: r.scheduledAt,
-    expectedDurationHours: 2,
-    price: r.amount == null ? 0 : Number(r.amount || 0),
-    actualStartedAt: r.actualStartedAt,
-    actualEndedAt: r.actualEndedAt,
-    actualDurationMinutes: Number(r.actualDurationMinutes || 0),
-    nursingActivities: (() => {
-      try {
-        return r.nursingActivities ? JSON.parse(r.nursingActivities) : [];
-      } catch (_) {
-        return [];
-      }
-    })(),
-    createdAt: r.createdAt,
-  }));
+  return rows.map((r) => {
+    const noteText = (r.notes || '').toString();
+    const addressMatch = /Address:\s*([^|]+)/i.exec(noteText);
+    const gpsMatch = /VisitGPS:\s*([-.\d]+)\s*,\s*([-.\d]+)/i.exec(noteText);
+    const parsedAddress = addressMatch ? addressMatch[1].trim() : '';
+    const parsedLat = gpsMatch ? Number(gpsMatch[1]) : null;
+    const parsedLng = gpsMatch ? Number(gpsMatch[2]) : null;
+    return {
+      requestId: r.requestId,
+      patientUserId: r.patientUserId,
+      providerUserId: r.providerUserId,
+      patientId: r.patientUserId,
+      providerId: r.providerUserId,
+      patientName: r.patientName || '',
+      patientPhone: r.patientPhone || '',
+      patientAge: r.dateOfBirth ? Math.max(0, new Date().getFullYear() - new Date(r.dateOfBirth).getFullYear()) : 0,
+      serviceType: r.serviceType || '',
+      location: (r.visitAddress && String(r.visitAddress).trim()) || r.location || parsedAddress || r.patientAddress || '',
+      patientAddress: r.patientAddress || '',
+      gpsLat: r.visitLatitude ?? r.gpsLat ?? parsedLat,
+      gpsLng: r.visitLongitude ?? r.gpsLng ?? parsedLng,
+      status: r.status,
+      notes: r.notes,
+      reasonForVisit: r.reasonForVisit || '',
+      medicalCondition: r.reasonForVisit || r.notes || '',
+      scheduledAt: r.scheduledAt,
+      scheduledDate: r.scheduledAt,
+      expectedDurationHours: 2,
+      price: r.amount == null ? 0 : Number(r.amount || 0),
+      actualStartedAt: r.actualStartedAt,
+      actualEndedAt: r.actualEndedAt,
+      actualDurationMinutes: Number(r.actualDurationMinutes || 0),
+      nursingActivities: (() => {
+        try {
+          return r.nursingActivities ? JSON.parse(r.nursingActivities) : [];
+        } catch (_) {
+          return [];
+        }
+      })(),
+      createdAt: r.createdAt,
+    };
+  });
 }
 
 router.get('/requests/:providerId', async (req, res) => {
@@ -1594,7 +1614,8 @@ router.get('/payments/:providerId/summary', async (req, res) => {
            COALESCE(SUM(CASE WHEN DATE(createdAt) = CURDATE() THEN amount ELSE 0 END), 0) AS daySum
          FROM (
            ${queryParts.join(' UNION ALL ')}
-         ) AS allp`,
+         ) AS allp
+         WHERE status IN ('paid', 'pending', 'unpaid')`,
         params,
       );
       m = result;
