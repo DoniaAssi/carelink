@@ -68,7 +68,9 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
     );
     final response = await http.get(
       uri,
-      headers: const {'User-Agent': 'carelink.app/1.0 (location-search)'},
+      headers: const <String, String>{
+        'User-Agent': 'carelink.app/1.0 (location-search)',
+      },
     );
     if (response.statusCode != 200) return const [];
     final data = jsonDecode(response.body);
@@ -194,7 +196,9 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
       );
       final response = await http.get(
         uri,
-        headers: const {'User-Agent': 'carelink.app/1.0 (reverse-geocoding)'},
+        headers: const <String, String>{
+          'User-Agent': 'carelink.app/1.0 (reverse-geocoding)',
+        },
       );
       if (response.statusCode != 200) return '';
       final data = jsonDecode(response.body);

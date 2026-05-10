@@ -82,7 +82,8 @@ class ProviderSmartMatch {
   }
 
   static double _ratingPart(ProviderModel p) {
-    return _maxRating * (p.overallRating.clamp(0, 5) / 5.0);
+    final r = p.overallRating <= 0 ? 3.0 : p.overallRating;
+    return _maxRating * (r.clamp(0, 5) / 5.0);
   }
 
   static double _experiencePart(ProviderModel p) {
@@ -90,7 +91,8 @@ class ProviderSmartMatch {
     if (y != null && y > 0) {
       return _maxExperience * (y.clamp(0, 25) / 25.0);
     }
-    return _maxExperience * 0.4 * (p.overallRating.clamp(0, 5) / 5.0);
+    final r = p.overallRating <= 0 ? 3.0 : p.overallRating;
+    return _maxExperience * 0.4 * (r.clamp(0, 5) / 5.0);
   }
 
   static double _medicalFitPart(

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/carelink_app_theme.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
 class NurseUi {
@@ -33,13 +34,13 @@ class NurseUi {
   static Widget reactive(Widget Function(BuildContext context) builder) {
     return ValueListenableBuilder<bool>(
       valueListenable: isDarkMode,
-      builder: (context, _, __) {
+      builder: (context, _, child) {
         return ValueListenableBuilder<bool>(
           valueListenable: isArabic,
-          builder: (context, _, __) {
+          builder: (context, _, child) {
             final baseTheme = isDarkMode.value
-                ? ThemeData.dark(useMaterial3: true)
-                : ThemeData.light(useMaterial3: true);
+                ? CarelinkAppTheme.dark
+                : CarelinkAppTheme.light;
             return Theme(
               data: baseTheme.copyWith(
                 scaffoldBackgroundColor: background,
@@ -50,20 +51,25 @@ class NurseUi {
                   surface: surface,
                   onSurface: text,
                 ),
-                appBarTheme: AppBarTheme(
+                appBarTheme: baseTheme.appBarTheme.copyWith(
                   backgroundColor: background,
                   foregroundColor: text,
                   elevation: 0,
                 ),
-                inputDecorationTheme: InputDecorationTheme(
+                bottomNavigationBarTheme: baseTheme.bottomNavigationBarTheme.copyWith(
+                  backgroundColor: surface,
+                  selectedItemColor: AppColors.primaryDark,
+                  unselectedItemColor: muted,
+                ),
+                inputDecorationTheme: baseTheme.inputDecorationTheme.copyWith(
                   labelStyle: TextStyle(color: muted),
                   hintStyle: TextStyle(color: muted),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide(color: border),
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                     borderSide: const BorderSide(color: AppColors.primary),
                   ),
                 ),
@@ -92,7 +98,7 @@ class NurseModeControls extends StatelessWidget {
     try {
       await http.put(
         Uri.parse('${ApiService.baseUrl}/nurse/settings/$userId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: const <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode({
           'darkMode': NurseUi.isDarkMode.value,
           'language': NurseUi.isArabic.value ? 'Arabic' : 'English',

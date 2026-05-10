@@ -9,6 +9,7 @@ import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/shared/services/payment_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
 import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 
@@ -35,6 +36,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   bool isCancelling = false;
   String? errorMessage;
   AppointmentModel? appointment;
+  Map<String, dynamic>? _paymentOverview;
+  bool _payBusy = false;
 
   Timer? _pollTimer;
   int _draftStars = 0;
@@ -76,6 +79,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         appointment = AppointmentModel.fromJson(data);
         isLoading = false;
       });
+      await _refreshPaymentOverview();
       _setPolling();
     } catch (e) {
       if (!mounted) return;
@@ -84,6 +88,191 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         isLoading = false;
       });
     }
+  }
+
+  Future<void> _refreshPaymentOverview() async {
+    try {
+      final data = await _api.getAppointmentPayment(
+        appointmentId: widget.appointmentId,
+        patientUserId: widget.patientUserId,
+      );
+      if (!mounted) return;
+      setState(() => _paymentOverview = data);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _paymentOverview = null);
+    }
+  }
+
+  double? _hintAmountFromOverview() {
+    final o = _paymentOverview;
+    if (o == null) return null;
+    for (final k in ['expectedAmount', 'amount']) {
+      final v = o[k];
+      if (v == null) continue;
+      final n = double.tryParse(v.toString());
+      if (n != null && n > 0) return n;
+    }
+    return null;
+  }
+
+  String _ledgerPaymentStatus(AppointmentModel a) {
+    final fromApi =
+        (_paymentOverview?['paymentStatus'] ?? '').toString().trim();
+    if (fromApi.isNotEmpty) return fromApi;
+    return a.paymentStatus;
+  }
+
+  bool get _appointmentPaidLive {
+    return _ledgerPaymentStatus(appointment!).toLowerCase() == 'paid';
+  }
+
+  bool get _canPayDemo {
+    if (_payBusy || appointment == null || _isBookingCancelled) return false;
+    if (_appointmentPaidLive) return false;
+    final o = _paymentOverview;
+    if (o != null && o['canPay'] == false) return false;
+    return true;
+  }
+
+  bool get _isBookingCancelled {
+    final s = appointment?.status.toLowerCase() ?? '';
+    return s == 'cancelled' || s == 'canceled';
+  }
+
+  Future<void> _payNowDemo() async {
+    final a = appointment;
+    if (a == null || _payBusy) return;
+    setState(() => _payBusy = true);
+    try {
+      final svc = PaymentService(api: _api);
+      await svc.payForBooking(
+        appointmentId: widget.appointmentId,
+        patientUserId: widget.patientUserId,
+        providerUserId: a.providerUserId,
+        amountHint: _hintAmountFromOverview(),
+        paymentMethod: 'mock_card',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Payment successful (DEMO — no real card charge).',
+          ),
+        ),
+      );
+      await _load(silent: true);
+      await _refreshPaymentOverview();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _payBusy = false);
+    }
+  }
+
+  Widget _buildPaymentLedgerCard(CarelinkPalette p, AppointmentModel a) {
+    final hint = _hintAmountFromOverview();
+    final currency = (_paymentOverview?['currency'] ?? '').toString().trim();
+    final amountLabel = hint != null && hint > 0
+        ? '${hint.toStringAsFixed(2)}${currency.isNotEmpty ? ' $currency' : ''}'
+        : 'Amount set at checkout (${currency.isNotEmpty ? currency : '—'})';
+    final st = _ledgerPaymentStatus(a);
+
+    final methodShown = (() {
+      final pm = (_paymentOverview?['paymentMethod'] ?? '').toString().trim();
+      if (pm.isNotEmpty) return pm;
+      if (a.paymentMethod.isEmpty) return '—';
+      return a.paymentMethod;
+    })();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: p.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: p.stroke),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Payment',
+              style: TextStyle(fontWeight: FontWeight.w700, color: p.inkDark),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              amountLabel,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Status: ${st.isEmpty ? '—' : st}',
+              style: TextStyle(fontSize: 13, color: p.inkMuted),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Method: $methodShown',
+              style: TextStyle(fontSize: 13, color: p.inkMuted),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'DEMO checkout: tapping Pay uses mock_card via the CareLink ledger — no gateway keys in the app.',
+              style: TextStyle(fontSize: 11.5, color: p.inkMuted, height: 1.35),
+            ),
+            if (_canPayDemo) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _payNowDemo,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: _payBusy
+                      ? const SizedBox(
+                          height: 22,
+                          width: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Pay now (DEMO)',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                ),
+              ),
+            ],
+            if (_appointmentPaidLive) ...[
+              const SizedBox(height: 10),
+              Text(
+                'This visit is marked paid.',
+                style: TextStyle(fontSize: 13, color: p.inkDark),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   bool get _canCancel {
@@ -269,9 +458,21 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: _ratingBusy || _draftStars < 1
+                onPressed: _ratingBusy
                     ? null
-                    : _submitVisitRating,
+                    : () {
+                        if (_draftStars < 1) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Please choose a star rating from 1 to 5.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        _submitVisitRating();
+                      },
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
@@ -435,12 +636,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                             'Urgency',
                             appointment!.isUrgent ? 'Urgent' : 'Normal',
                           ),
-                          _detailCard(
-                            'Payment',
-                            appointment!.paymentMethod.isEmpty
-                                ? '—'
-                                : '${appointment!.paymentMethod} (${appointment!.paymentStatus})',
-                          ),
+                          _buildPaymentLedgerCard(p, appointment!),
                           _buildVisitRatingSection(p, appointment!),
                         ],
                       ),

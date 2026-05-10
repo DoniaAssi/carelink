@@ -6,3 +6,9 @@ backend/.env
 # Local / IDE — do not push
 .pub-cache/
 .tmp/
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
+# Accidental duplicate tree / local merge artifact
+.merge-carelink-origin/

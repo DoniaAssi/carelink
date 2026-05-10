@@ -196,6 +196,20 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                                       fontSize: 13,
                                     ),
                                   ),
+                                  if (item.status.toLowerCase() ==
+                                          'completed' &&
+                                      (item.patientRatingStars == null ||
+                                          item.patientRatingStars! < 1)) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Tap to rate this visit',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.primaryDark,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),

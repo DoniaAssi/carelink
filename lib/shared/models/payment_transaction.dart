@@ -1,6 +1,6 @@
 class PaymentTransaction {
-  final int id;
-  final int providerId;
+  final String id;
+  final String providerId;
   final String service;
   final String patientName;
   final double amount;
@@ -32,10 +32,8 @@ class PaymentTransaction {
     );
   }
 
-  static int _parseId(dynamic value) {
-    if (value is int) return value;
-    if (value is String) return int.tryParse(value) ?? 0;
-    return 0;
+  static String _parseId(dynamic value) {
+    return value?.toString() ?? '';
   }
 
   static double _parseDouble(dynamic value) {

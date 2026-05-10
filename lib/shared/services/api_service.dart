@@ -7,8 +7,9 @@ class ApiService {
   // غيّري هذا الـ IP إلى IPv4 تبع جهازك إذا كنتِ تشغلين التطبيق على هاتف حقيقي
   static const String _machineIp = '192.168.1.5';
 
-  // إذا كنتِ تستخدمين Android Emulator خليها true
-  static const bool _useAndroidEmulator = false;
+  // إذا كنتِ تستخدمين Android Emulator خليها true.
+  // إذا كنتِ تستخدمين جهاز حقيقي، ضعيها false وحددي عنوان IP صحيح في _machineIp.
+  static const bool _useAndroidEmulator = true;
 
   static const String _androidEmulatorBase = 'http://10.0.2.2:3000';
   static const String _webBase = 'http://localhost:3000';
@@ -52,7 +53,7 @@ class ApiService {
         : rawUrl;
   }
 
-  Map<String, String> get _jsonHeaders => const {
+  static const Map<String, String> _jsonHeaders = <String, String>{
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   };
@@ -531,7 +532,7 @@ class ApiService {
   Future<List<dynamic>> getNotifications(String userId) async {
     final response = await _sendRequest(
       http.get(
-        _endpoint('/patient/notifications/$userId'),
+        _endpoint('/notifications/$userId'),
         headers: _jsonHeaders,
       ),
     );
@@ -775,6 +776,47 @@ class ApiService {
     );
   }
 
+  /// Visit-rating aggregates + affinity used by [PatientRecommendationProfileRepository].
+  Future<Map<String, dynamic>> getPatientRatingInsights(
+    String patientUserId,
+  ) async {
+    final response = await _sendRequest(
+      http.get(
+        _endpoint('/api/ratings/patient/$patientUserId'),
+        headers: _jsonHeaders,
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to load rating insights'),
+    );
+  }
+
+  /// Public aggregates + recent rows for a provider (reviews / dashboards).
+  Future<Map<String, dynamic>> getProviderRatingsAggregate(
+    String providerUserId, {
+    int limit = 100,
+  }) async {
+    final uri = _endpoint(
+      '/api/ratings/provider/$providerUserId',
+    ).replace(queryParameters: {'limit': '$limit'});
+    final response = await _sendRequest(
+      http.get(uri, headers: _jsonHeaders),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to load provider ratings'),
+    );
+  }
+
   /// Stores payment metadata only (method, amount, status). Card numbers / CVV must never be in [body].
   Future<Map<String, dynamic>> createPayment(Map<String, dynamic> body) async {
     final response = await _sendRequest(
@@ -796,6 +838,40 @@ class ApiService {
     final response = await _sendRequest(
       http.get(
         _endpoint('/patient/payments/$patientUserId'),
+        headers: _jsonHeaders,
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as List<dynamic>;
+    }
+
+    throw Exception(_extractErrorMessage(response, 'Failed to load payments'));
+  }
+
+  /// DEMO secure booking ledger: payment row for one appointment (patient must match).
+  Future<Map<String, dynamic>> getAppointmentPayment({
+    required String appointmentId,
+    required String patientUserId,
+  }) async {
+    final uri = _endpoint('/api/payments/appointment/$appointmentId')
+        .replace(queryParameters: {'patientUserId': patientUserId});
+    final response =
+        await _sendRequest(http.get(uri, headers: _jsonHeaders));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to load appointment payment'),
+    );
+  }
+
+  Future<List<dynamic>> getPatientPaymentsApi(String patientUserId) async {
+    final response = await _sendRequest(
+      http.get(
+        _endpoint('/api/payments/patient/$patientUserId'),
         headers: _jsonHeaders,
       ),
     );

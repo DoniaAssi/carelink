@@ -1,6 +1,7 @@
 class VisitReport {
   /// Backend uses UUID strings; numeric ids are still supported in JSON.
   final String id;
+  final String requestId;
   final String providerId;
   final String patientId;
   final String patientName;
@@ -19,6 +20,7 @@ class VisitReport {
 
   VisitReport({
     required this.id,
+    this.requestId = '',
     required this.providerId,
     required this.patientId,
     required this.patientName,
@@ -39,6 +41,7 @@ class VisitReport {
   factory VisitReport.fromJson(Map<String, dynamic> json) {
     return VisitReport(
       id: _stringId(json['id']),
+      requestId: _stringId(json['requestId'] ?? json['appointmentId']),
       providerId: _stringId(json['providerId']),
       patientId: _stringId(json['patientId']),
       patientName: json['patientName'] ?? '',
@@ -60,6 +63,7 @@ class VisitReport {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'requestId': requestId,
       'providerId': providerId,
       'patientId': patientId,
       'patientName': patientName,

@@ -56,7 +56,7 @@ class ProviderProfileService {
     try {
       final response = await http.put(
         Uri.parse('$baseUrl/nurse/profile/${profile.providerId}'),
-        headers: {'Content-Type': 'application/json'},
+        headers: const <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode(profile.toJson()),
       );
 
@@ -77,7 +77,7 @@ class ProviderProfileService {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/nurse/certifications/$providerId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: const <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode({
           'name': documentName,
         }),
@@ -118,10 +118,14 @@ class ProviderProfileService {
     try {
       final response = await http.put(
         Uri.parse('$baseUrl/nurse/availability/$providerId'),
-        headers: {'Content-Type': 'application/json'},
+        headers: const <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode({'slots': slots}),
       );
-      return response.statusCode >= 200 && response.statusCode < 300;
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return true;
+      }
+      // ignore: avoid_print
+      print('Save availability failed: ${response.statusCode} ${response.body}');
     } catch (e) {
       // ignore: avoid_print
       print('Save availability error: $e');

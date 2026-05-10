@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
@@ -22,10 +23,15 @@ class ScheduleScreen extends StatefulWidget {
 enum _ScheduleFilter { pending, upcoming, completed, cancelled }
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
-  List<dynamic> appointments = [];
+  List<Map<String, dynamic>> appointments = [];
   bool isLoading = true;
   String? errorMessage;
   _ScheduleFilter currentFilter = _ScheduleFilter.pending;
+  final ApiService _api = ApiService();
+
+  void _dbg(String message) {
+    if (kDebugMode) debugPrint('[CareLink Schedule] $message');
+  }
 
   @override
   void initState() {
@@ -44,12 +50,68 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
 
     try {
-      final data = await ApiService().getAppointments(widget.patientUserId);
+      _dbg(
+        'patientUserId sent to APIs (must match servicerequest.patientUserId): "${widget.patientUserId}"',
+      );
+
+      final all = await ApiService().getAppointments(widget.patientUserId);
+      final upcoming = await ApiService().getUpcomingAppointments(
+        widget.patientUserId,
+      );
+      final history = await ApiService().getAppointmentHistory(
+        widget.patientUserId,
+      );
+
+      _dbg(
+        'API row counts — all: ${all.length}, upcoming: ${upcoming.length}, history: ${history.length}',
+      );
+
+      final byId = <String, Map<String, dynamic>>{};
+      void mergeIn(List<dynamic> list) {
+        for (final raw in list) {
+          if (raw is! Map) continue;
+          final m = Map<String, dynamic>.from(raw);
+          final id =
+              (m['appointmentId'] ?? m['requestId'] ?? '').toString().trim();
+          if (id.isEmpty) continue;
+          byId[id] = m;
+        }
+      }
+
+      mergeIn(all);
+      mergeIn(upcoming);
+      mergeIn(history);
+
+      final merged = byId.values.toList()
+        ..sort((a, b) {
+          final cb = _sortKey(b);
+          final ca = _sortKey(a);
+          return cb.compareTo(ca);
+        });
+
+      final completedAfterFilter = merged
+          .where(
+            (row) => _normalizedStatus(_rawStatusFromItem(row)) == 'completed',
+          )
+          .length;
+      _dbg(
+        'merged unique appointments: ${merged.length}; completed (normalized): $completedAfterFilter',
+      );
+      if (kDebugMode && merged.isNotEmpty) {
+        final sample = merged
+            .take(6)
+            .map(
+              (m) =>
+                  '${m['appointmentId']}: status=${m['status']}, pay=${m['paymentStatus']}',
+            )
+            .join(' | ');
+        _dbg('sample merged: $sample');
+      }
 
       if (!mounted) return;
 
       setState(() {
-        appointments = data;
+        appointments = merged;
         isLoading = false;
         errorMessage = null;
       });
@@ -63,9 +125,21 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
   }
 
-  List<dynamic> get filteredAppointments {
+  int _sortKey(Map<String, dynamic> row) {
+    final completed = _parseScheduledAt(row['completedAt']);
+    final sched = _parseScheduledAt(row['scheduledAt']);
+    final t = completed ?? sched;
+    return t?.millisecondsSinceEpoch ?? 0;
+  }
+
+  String? _rawStatusFromItem(Map<String, dynamic> item) {
+    final r = item['status'] ?? item['bookingStatus'];
+    return r?.toString();
+  }
+
+  List<Map<String, dynamic>> get filteredAppointments {
     return appointments.where((item) {
-      final status = _normalizedStatus(item['status']?.toString());
+      final status = _normalizedStatus(_rawStatusFromItem(item));
       switch (currentFilter) {
         case _ScheduleFilter.pending:
           return status == 'pending';
@@ -87,9 +161,166 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     if (status == 'approved' || status == 'confirmed' || status == 'scheduled') {
       return 'upcoming';
     }
-    if (status == 'completed') return 'completed';
-    if (status == 'cancelled') return 'cancelled';
+    if (status == 'complete' || status == 'completed') return 'completed';
+    if (status == 'cancelled' || status == 'canceled') return 'cancelled';
     return 'upcoming';
+  }
+
+  bool _paymentAllowsRating(Map<String, dynamic> item) {
+    final p = (item['paymentStatus'] ?? '').toString().toLowerCase().trim();
+    if (p.isEmpty) return true;
+    return p == 'paid';
+  }
+
+  bool _alreadyRated(Map<String, dynamic> item) {
+    final hp = item['hasPatientRating'];
+    if (hp == true || hp == 1 || hp == '1') return true;
+    final stars = item['patientRatingStars'];
+    final n = stars is num
+        ? stars.round()
+        : int.tryParse(stars?.toString() ?? '') ?? 0;
+    return n >= 1;
+  }
+
+  bool _shouldShowRateButton(Map<String, dynamic> item, String normStatus) {
+    if (normStatus != 'completed') return false;
+    if (!_paymentAllowsRating(item)) return false;
+    if (_alreadyRated(item)) return false;
+    return true;
+  }
+
+  Future<void> _openRateSheet({
+    required String appointmentId,
+    required String providerLabel,
+  }) async {
+    final comment = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetCtx) {
+        int stars = 5;
+        var busy = false;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            Future<void> submit() async {
+              if (busy || stars < 1) return;
+              setModalState(() => busy = true);
+              try {
+                await _api.rateCompletedVisit(
+                  appointmentId: appointmentId,
+                  patientUserId: widget.patientUserId,
+                  stars: stars,
+                  comment: comment.text.trim().isEmpty
+                      ? null
+                      : comment.text.trim(),
+                );
+                if (!sheetCtx.mounted) return;
+                Navigator.pop(sheetCtx);
+                await fetchAppointments();
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Thank you — your rating was saved.'),
+                  ),
+                );
+              } catch (e) {
+                setModalState(() => busy = false);
+                if (!sheetCtx.mounted) return;
+                ScaffoldMessenger.of(sheetCtx).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      e.toString().replaceFirst('Exception: ', ''),
+                    ),
+                  ),
+                );
+              }
+            }
+
+            final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + bottomInset),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Rate $providerLabel',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'How was your visit? (1–5 stars)',
+                    style: TextStyle(color: AppColors.textLight, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(5, (i) {
+                      final n = i + 1;
+                      final selected = stars >= n;
+                      return IconButton(
+                        onPressed:
+                            busy ? null : () => setModalState(() => stars = n),
+                        icon: Icon(
+                          selected ? Icons.star_rounded : Icons.star_border_rounded,
+                          color: selected
+                              ? const Color(0xFFF59E0B)
+                              : AppColors.textLight,
+                          size: 36,
+                        ),
+                      );
+                    }),
+                  ),
+                  TextField(
+                    controller: comment,
+                    enabled: !busy,
+                    maxLines: 3,
+                    maxLength: 500,
+                    decoration: const InputDecoration(
+                      hintText: 'Optional comment',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: busy ? null : submit,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: busy
+                          ? const SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Submit rating'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    } finally {
+      comment.dispose();
+    }
   }
 
   DateTime? _parseScheduledAt(dynamic rawValue) {
@@ -436,132 +667,242 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return Column(
       children: filteredAppointments.map((item) {
         final scheduledAt = _parseScheduledAt(item['scheduledAt']);
-        final status = _normalizedStatus(item['status']?.toString());
+        final completedAt = _parseScheduledAt(item['completedAt']);
+        final rawStatusDisp = (_rawStatusFromItem(item) ?? '—').toString().trim();
+        final status = _normalizedStatus(rawStatusDisp);
         final appointmentId = (item['appointmentId'] ?? item['requestId'] ?? '')
             .toString()
             .trim();
         final providerLabel = (item['providerName'] ?? item['doctorName'] ?? '')
             .toString()
             .trim();
+        final providerId = (item['doctorUserId'] ?? item['providerUserId'] ?? '')
+            .toString()
+            .trim();
+        final serviceRaw =
+            (item['serviceType'] ?? '').toString().trim();
+        final paymentRaw =
+            (item['paymentStatus'] ?? '').toString().trim();
 
-        return Material(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(24),
-            onTap: appointmentId.isEmpty
-                ? null
-                : () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => BookingDetailsScreen(
-                          appointmentId: appointmentId,
-                          patientUserId: widget.patientUserId,
-                        ),
-                      ),
-                    );
-                  },
-            child: Container(
-          margin: const EdgeInsets.only(bottom: 14),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.border),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
+        final ratedShown =
+            status == 'completed' && _alreadyRated(item);
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 14),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 58,
-                    height: 58,
+              Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(24),
+                  onTap: appointmentId.isEmpty
+                      ? null
+                      : () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => BookingDetailsScreen(
+                                appointmentId: appointmentId,
+                                patientUserId: widget.patientUserId,
+                              ),
+                            ),
+                          );
+                        },
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(18),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: AppColors.border),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 16,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
                     ),
-                    child: const Icon(
-                      Icons.calendar_month_rounded,
-                      color: AppColors.primaryDark,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 58,
+                              height: 58,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              child: const Icon(
+                                Icons.calendar_month_rounded,
+                                color: AppColors.primaryDark,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    providerLabel.isNotEmpty
+                                        ? providerLabel
+                                        : (providerId.isNotEmpty
+                                            ? 'Provider ID'
+                                            : 'Provider'),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                      color: AppColors.textDark,
+                                    ),
+                                  ),
+                                  if (providerLabel.isEmpty &&
+                                      providerId.isNotEmpty)
+                                    Padding(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 4),
+                                      child: Text(
+                                        providerId,
+                                        style: const TextStyle(
+                                          fontSize: 11.5,
+                                          color: AppColors.textDark,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  Text(
+                                    '${_providerRoleLabel(item)} · ${item['specialization']?.toString().trim().isNotEmpty == true ? item['specialization']!.toString().trim() : 'Specialization unavailable'}',
+                                    style: const TextStyle(
+                                      color: AppColors.textLight,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _statusColor(status)
+                                    .withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Text(
+                                _statusLabel(status),
+                                style: TextStyle(
+                                  color: _statusColor(status),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
                         Text(
-                          providerLabel.isNotEmpty ? providerLabel : 'Provider',
+                          'Service: ${serviceRaw.isEmpty ? '—' : serviceRaw}',
                           style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                             color: AppColors.textDark,
                           ),
                         ),
-                        const SizedBox(height: 5),
-                        Text(
-                          '${_providerRoleLabel(item)} - ${item['specialization']?.toString() ?? 'Specialization unavailable'}',
-                          style: const TextStyle(
-                            color: AppColors.textLight,
-                            fontSize: 13,
+                        if (status == 'completed') ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Completed: ${_formatDate(completedAt)} · ${_formatTime(completedAt)}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textLight,
+                            ),
                           ),
+                        ],
+                        const SizedBox(height: 6),
+                        Text(
+                          'Payment: ${paymentRaw.isEmpty ? '—' : paymentRaw}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textLight,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Status: $rawStatusDisp',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textLight,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _scheduleMeta(
+                                icon: Icons.event_rounded,
+                                title: 'Scheduled date',
+                                value: _formatDate(scheduledAt),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _scheduleMeta(
+                                icon: Icons.access_time_rounded,
+                                title: 'Scheduled time',
+                                value: _formatTime(scheduledAt),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                ),
+              ),
+              if (_shouldShowRateButton(item, status))
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.star_outline_rounded),
+                    label: const Text('Rate Provider'),
+                    onPressed: () => _openRateSheet(
+                      appointmentId: appointmentId,
+                      providerLabel:
+                          providerLabel.isEmpty ? 'Provider' : providerLabel,
                     ),
-                    decoration: BoxDecoration(
-                      color: _statusColor(status).withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(14),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primaryDark,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: Text(
-                      _statusLabel(status),
-                      style: TextStyle(
-                        color: _statusColor(status),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
+                  ),
+                ),
+              if (ratedShown)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Chip(
+                      avatar: Icon(
+                        Icons.check_circle_rounded,
+                        color: Colors.green.shade700,
+                        size: 18,
                       ),
+                      label: const Text(
+                        'Rated',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      backgroundColor: const Color(0xFFE8F5E9),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: _scheduleMeta(
-                      icon: Icons.event_rounded,
-                      title: 'Date',
-                      value: _formatDate(scheduledAt),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _scheduleMeta(
-                      icon: Icons.access_time_rounded,
-                      title: 'Time',
-                      value: _formatTime(scheduledAt),
-                    ),
-                  ),
-                ],
-              ),
+                ),
             ],
           ),
-        ),
-      ),
-    );
+        );
       }).toList(),
     );
   }

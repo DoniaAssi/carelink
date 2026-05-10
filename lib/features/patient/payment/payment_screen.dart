@@ -68,12 +68,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
         method: method,
       );
 
-      final ok = result['success'] == true;
-      if (!ok) {
-        throw Exception(result['error']?.toString() ?? 'Payment was not accepted');
+      if (result['success'] != true) {
+        throw Exception(
+          result['error']?.toString() ?? 'Payment was not accepted',
+        );
       }
 
-      final status = (result['status'] ?? '').toString();
+      final status =
+          (result['status'] ?? result['paymentStatus'] ?? '').toString();
+      final rawAmt = result['amount'];
+      final paidAmount = rawAmt is num
+          ? rawAmt.toDouble()
+          : double.tryParse(rawAmt?.toString() ?? '') ?? widget.amount;
 
       if (!mounted) return;
       Navigator.pushReplacement(
@@ -89,7 +95,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             location: widget.location,
             paymentMethod: method,
             paymentStatus: status,
-            amount: widget.amount,
+            amount: paidAmount,
           ),
         ),
       );

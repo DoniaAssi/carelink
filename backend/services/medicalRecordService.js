@@ -71,8 +71,8 @@ async function listVisitReportsForPatient(patientId) {
        vr.created_at,
        u.fullName AS providerName
      FROM visit_reports vr
-     LEFT JOIN user u ON u.userId = vr.provider_id
-     WHERE vr.patient_id = ?
+     LEFT JOIN user u ON BINARY u.userId = BINARY vr.provider_id
+     WHERE BINARY vr.patient_id = BINARY ?
      ORDER BY ${visitDateExpr} DESC, vr.created_at DESC`,
     [patientId]
   );
@@ -117,8 +117,8 @@ async function getVisitReportById(recordId) {
        vr.created_at,
        u.fullName AS providerName
      FROM visit_reports vr
-     LEFT JOIN user u ON u.userId = vr.provider_id
-     WHERE vr.id = ?
+     LEFT JOIN user u ON BINARY u.userId = BINARY vr.provider_id
+     WHERE BINARY vr.id = BINARY ?
      LIMIT 1`,
     [recordId]
   );
@@ -196,7 +196,9 @@ async function appointmentLinksPatientProvider(appointmentId, patientId, provide
   if (!appointmentId) return true;
   const [rows] = await db.query(
     `SELECT requestId FROM servicerequest
-     WHERE requestId = ? AND patientUserId = ? AND providerUserId = ?`,
+     WHERE BINARY requestId = BINARY ?
+       AND BINARY patientUserId = BINARY ?
+       AND BINARY providerUserId = BINARY ?`,
     [appointmentId, patientId, providerId]
   );
   return rows.length > 0;
