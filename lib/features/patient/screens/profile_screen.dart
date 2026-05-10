@@ -8,6 +8,7 @@ import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'edit_profile_screen.dart';
 import 'medical_records_screen.dart';
+import 'patient_payment_history_screen.dart';
 import 'package:carelink/features/notifications/notifications_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -27,6 +28,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final List<Map<String, dynamic>> items = [
     {'icon': Icons.person_outline, 'title': 'Edit Profile'},
     {'icon': Icons.folder_open_outlined, 'title': 'Medical Records'},
+    {'icon': Icons.receipt_long_outlined, 'title': 'Payment history'},
     {'icon': Icons.notifications_none, 'title': 'Notifications'},
     {'icon': Icons.logout, 'title': 'Logout'},
   ];
@@ -72,6 +74,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         context,
         MaterialPageRoute(
           builder: (_) => MedicalRecordsScreen(userId: widget.userId),
+        ),
+      );
+    } else if (title == 'Payment history') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              PatientPaymentHistoryScreen(patientUserId: widget.userId),
         ),
       );
     } else if (title == 'Notifications') {

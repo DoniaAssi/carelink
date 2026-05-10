@@ -2,6 +2,8 @@ const express = require('express');
 const { randomUUID } = require('crypto');
 const db = require('../db');
 const { insertNotification } = require('../notifications');
+const visitRatingService = require('../services/visitRatingService');
+const bookingPaymentService = require('../services/bookingPaymentService');
 
 const router = express.Router();
 
@@ -24,21 +26,66 @@ async function hasTable(tableName) {
   }
 }
 
-async function recomputeProviderOverallRating(providerUserId) {
-  const [agg] = await db.query(
-    `SELECT AVG(stars) AS a, COUNT(*) AS c
-     FROM providervisitrating
-     WHERE providerUserId = ?`,
-    [providerUserId]
-  );
-  const cnt = Number(agg[0]?.c || 0);
-  const raw = agg[0]?.a;
-  const value = cnt === 0 ? 0 : Math.round(Number(raw) * 100) / 100;
-  await db.execute(
-    `UPDATE careprovider SET overallRating = ? WHERE userId = ?`,
-    [value, providerUserId]
-  );
+/** Safe EXISTS() for legacy `providerreview` (column names vary). Returns `0` if unusable. */
+async function providerReviewExistsSql() {
+  const hasTab = await hasTable('providerreview');
+  if (!hasTab) return '0';
+  const hasReq = await hasColumn('providerreview', 'requestId');
+  const hasApp = await hasColumn('providerreview', 'appointmentId');
+  const parts = [];
+  if (hasReq) {
+    parts.push(
+      'EXISTS (SELECT 1 FROM providerreview prv_req WHERE prv_req.requestId = sr.requestId)',
+    );
+  }
+  if (hasApp) {
+    parts.push(
+      'EXISTS (SELECT 1 FROM providerreview prv_app WHERE prv_app.appointmentId = sr.requestId)',
+    );
+  }
+  if (!parts.length) return '0';
+  return `(${parts.join(' OR ')})`;
 }
+
+async function appointmentRatingSqlFragments() {
+  const hasPvr = await hasTable('providervisitrating');
+  const prExistsSql = await providerReviewExistsSql();
+
+  if (hasPvr) {
+    return {
+      ratingSelect: `pvr.stars AS patientRatingStars, pvr.comment AS patientRatingComment,
+        (pvr.ratingId IS NOT NULL OR (${prExistsSql})) AS hasPatientRating`,
+      ratingJoin:
+        'LEFT JOIN providervisitrating pvr ON TRIM(pvr.requestId) = TRIM(sr.requestId)',
+    };
+  }
+  if ((await hasTable('providerreview')) && prExistsSql !== '0') {
+    return {
+      ratingSelect: `NULL AS patientRatingStars, NULL AS patientRatingComment,
+        (${prExistsSql}) AS hasPatientRating`,
+      ratingJoin: '',
+    };
+  }
+  return {
+    ratingSelect:
+      'NULL AS patientRatingStars, NULL AS patientRatingComment, 0 AS hasPatientRating',
+    ratingJoin: '',
+  };
+}
+
+function scheduleDbgEnabled() {
+  const v = (process.env.CARELINK_DEBUG_SCHEDULE || '').toString().trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+}
+
+function scheduleDbg(tag, payload) {
+  if (!scheduleDbgEnabled()) return;
+  // eslint-disable-next-line no-console
+  console.log(`[CareLink schedule] ${tag}`, payload);
+}
+
+/** ENUM / mixed casing: normalize to lowercase string without breaking joins. */
+const normStatusSql = `LOWER(TRIM(CAST(sr.status AS CHAR(64))))`;
 
 function normalizeDateTime(date, time) {
   if (!date || !time) return null;
@@ -792,10 +839,13 @@ router.get('/medical-record-lookups/allergies', async (_req, res) => {
   }
 });
 
-router.get('/appointments/:patientUserId', async (req, res) => {
+router.get('/appointments/upcoming/:patientUserId', async (req, res) => {
   const { patientUserId } = req.params;
-  const status = req.query.status ? req.query.status.toString().toLowerCase().trim() : null;
-  const isValidStatus = status && BOOKING_STATUSES.includes(status);
+
+  scheduleDbg('endpoint', {
+    route: '/patient/appointments/upcoming/:patientUserId',
+    patientUserId,
+  });
 
   try {
     const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
@@ -807,17 +857,13 @@ router.get('/appointments/:patientUserId', async (req, res) => {
     const hasAdditionalNotes = await hasColumn('servicerequest', 'additionalNotes');
     const hasPaymentMethod = await hasColumn('servicerequest', 'paymentMethod');
     const hasPaymentStatus = await hasColumn('servicerequest', 'paymentStatus');
-
-    const params = [patientUserId];
-    let whereStatus = '';
-    if (isValidStatus) {
-      whereStatus = ' AND sr.status = ?';
-      params.push(status);
-    }
+    const hasCompletedAt = await hasColumn('servicerequest', 'completedAt');
+    const { ratingSelect, ratingJoin } = await appointmentRatingSqlFragments();
 
     const [rows] = await db.query(
       `SELECT
           sr.requestId AS appointmentId,
+          sr.patientUserId,
           sr.serviceType,
           sr.status,
           sr.location,
@@ -831,70 +877,32 @@ router.get('/appointments/:patientUserId', async (req, res) => {
           ${hasAdditionalNotes ? 'sr.additionalNotes' : "'' AS additionalNotes"},
           ${hasPaymentMethod ? 'sr.paymentMethod' : "'' AS paymentMethod"},
           ${hasPaymentStatus ? 'sr.paymentStatus' : "'' AS paymentStatus"},
+          ${hasCompletedAt ? 'sr.completedAt' : 'NULL AS completedAt'},
           sr.scheduledAt,
           sr.providerUserId AS doctorUserId,
           u.fullName AS doctorName,
           u.role AS providerRole,
-          c.specialization
+          c.specialization,
+          ${ratingSelect}
        FROM servicerequest sr
+       ${ratingJoin}
        LEFT JOIN user u ON sr.providerUserId = u.userId
        LEFT JOIN careprovider c ON u.userId = c.userId
-       WHERE sr.patientUserId = ?${whereStatus}
-       ORDER BY sr.scheduledAt DESC`,
-      params
-    );
-
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.get('/appointments/upcoming/:patientUserId', async (req, res) => {
-  const { patientUserId } = req.params;
-
-  try {
-    const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
-    const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
-    const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
-    const hasLocationNote = await hasColumn('servicerequest', 'locationNote');
-    const hasSymptoms = await hasColumn('servicerequest', 'symptoms');
-    const hasIsUrgent = await hasColumn('servicerequest', 'isUrgent');
-    const hasAdditionalNotes = await hasColumn('servicerequest', 'additionalNotes');
-    const hasPaymentMethod = await hasColumn('servicerequest', 'paymentMethod');
-    const hasPaymentStatus = await hasColumn('servicerequest', 'paymentStatus');
-
-    const [rows] = await db.query(
-      `SELECT
-          sr.requestId AS appointmentId,
-          sr.status,
-          sr.location,
-          sr.notes,
-          ${hasVisitLatitude ? 'sr.visitLatitude' : 'NULL AS visitLatitude'},
-          ${hasVisitLongitude ? 'sr.visitLongitude' : 'NULL AS visitLongitude'},
-          ${hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress"},
-          ${hasLocationNote ? 'sr.locationNote' : "'' AS locationNote"},
-          ${hasSymptoms ? 'sr.symptoms' : "'' AS symptoms"},
-          ${hasIsUrgent ? 'sr.isUrgent' : '0 AS isUrgent'},
-          ${hasAdditionalNotes ? 'sr.additionalNotes' : "'' AS additionalNotes"},
-          ${hasPaymentMethod ? 'sr.paymentMethod' : "'' AS paymentMethod"},
-          ${hasPaymentStatus ? 'sr.paymentStatus' : "'' AS paymentStatus"},
-          sr.scheduledAt,
-          sr.providerUserId AS doctorUserId,
-          u.fullName AS doctorName,
-          u.role AS providerRole,
-          c.specialization
-       FROM servicerequest sr
-       LEFT JOIN user u ON sr.providerUserId = u.userId
-       LEFT JOIN careprovider c ON u.userId = c.userId
-       WHERE sr.patientUserId = ?
-         AND sr.status IN ('pending', 'confirmed')
+       WHERE TRIM(sr.patientUserId) = TRIM(?)
+         AND ${normStatusSql} IN ('pending', 'confirmed')
        ORDER BY sr.scheduledAt ASC`,
       [patientUserId]
     );
 
+    scheduleDbg('upcoming result', {
+      patientUserId,
+      rowCount: rows.length,
+      sampleStatuses: rows.slice(0, 5).map((r) => r.status),
+    });
+
     res.json(rows);
   } catch (err) {
+    scheduleDbg('upcoming error', { patientUserId, message: err.message });
     res.status(500).json({ error: err.message });
   }
 });
@@ -902,6 +910,11 @@ router.get('/appointments/upcoming/:patientUserId', async (req, res) => {
 router.get('/appointments/history/:patientUserId', async (req, res) => {
   const { patientUserId } = req.params;
 
+  scheduleDbg('endpoint', {
+    route: '/patient/appointments/history/:patientUserId',
+    patientUserId,
+  });
+
   try {
     const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
     const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
@@ -912,10 +925,14 @@ router.get('/appointments/history/:patientUserId', async (req, res) => {
     const hasAdditionalNotes = await hasColumn('servicerequest', 'additionalNotes');
     const hasPaymentMethod = await hasColumn('servicerequest', 'paymentMethod');
     const hasPaymentStatus = await hasColumn('servicerequest', 'paymentStatus');
+    const hasCompletedAt = await hasColumn('servicerequest', 'completedAt');
+    const { ratingSelect, ratingJoin } = await appointmentRatingSqlFragments();
 
     const [rows] = await db.query(
       `SELECT
           sr.requestId AS appointmentId,
+          sr.patientUserId,
+          sr.serviceType,
           sr.status,
           sr.location,
           sr.notes,
@@ -928,22 +945,117 @@ router.get('/appointments/history/:patientUserId', async (req, res) => {
           ${hasAdditionalNotes ? 'sr.additionalNotes' : "'' AS additionalNotes"},
           ${hasPaymentMethod ? 'sr.paymentMethod' : "'' AS paymentMethod"},
           ${hasPaymentStatus ? 'sr.paymentStatus' : "'' AS paymentStatus"},
+          ${hasCompletedAt ? 'sr.completedAt' : 'NULL AS completedAt'},
           sr.scheduledAt,
           sr.providerUserId AS doctorUserId,
           u.fullName AS doctorName,
           u.role AS providerRole,
-          c.specialization
+          c.specialization,
+          ${ratingSelect}
        FROM servicerequest sr
+       ${ratingJoin}
        LEFT JOIN user u ON sr.providerUserId = u.userId
        LEFT JOIN careprovider c ON u.userId = c.userId
-       WHERE sr.patientUserId = ?
-         AND sr.status IN ('completed', 'cancelled')
-       ORDER BY sr.scheduledAt DESC`,
+       WHERE TRIM(sr.patientUserId) = TRIM(?)
+         AND ${normStatusSql} IN ('completed', 'cancelled', 'canceled')
+       ORDER BY COALESCE(sr.completedAt, sr.scheduledAt) DESC, sr.scheduledAt DESC`,
       [patientUserId]
     );
 
+    const completedCt = rows.filter(
+      (r) => `${r.status ?? ''}`.toLowerCase().trim() === 'completed',
+    ).length;
+    scheduleDbg('history result', {
+      patientUserId,
+      rowCount: rows.length,
+      completedCount: completedCt,
+      statuses: rows.map((r) => r.status),
+    });
+
     res.json(rows);
   } catch (err) {
+    scheduleDbg('history error', { patientUserId, message: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/appointments/:patientUserId', async (req, res) => {
+  const { patientUserId } = req.params;
+  const status = req.query.status ? req.query.status.toString().toLowerCase().trim() : null;
+  const isValidStatus = status && BOOKING_STATUSES.includes(status);
+
+  scheduleDbg('endpoint', {
+    route: '/patient/appointments/:patientUserId',
+    patientUserId,
+    queryStatus: status || null,
+  });
+
+  try {
+    const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
+    const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
+    const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
+    const hasLocationNote = await hasColumn('servicerequest', 'locationNote');
+    const hasSymptoms = await hasColumn('servicerequest', 'symptoms');
+    const hasIsUrgent = await hasColumn('servicerequest', 'isUrgent');
+    const hasAdditionalNotes = await hasColumn('servicerequest', 'additionalNotes');
+    const hasPaymentMethod = await hasColumn('servicerequest', 'paymentMethod');
+    const hasPaymentStatus = await hasColumn('servicerequest', 'paymentStatus');
+    const hasCompletedAt = await hasColumn('servicerequest', 'completedAt');
+    const { ratingSelect, ratingJoin } = await appointmentRatingSqlFragments();
+
+    const params = [patientUserId];
+    let whereStatus = '';
+    if (isValidStatus) {
+      whereStatus = ` AND ${normStatusSql} = ?`;
+      params.push(status);
+    }
+
+    const [rows] = await db.query(
+      `SELECT
+          sr.requestId AS appointmentId,
+          sr.patientUserId,
+          sr.serviceType,
+          sr.status,
+          sr.location,
+          sr.notes,
+          ${hasVisitLatitude ? 'sr.visitLatitude' : 'NULL AS visitLatitude'},
+          ${hasVisitLongitude ? 'sr.visitLongitude' : 'NULL AS visitLongitude'},
+          ${hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress"},
+          ${hasLocationNote ? 'sr.locationNote' : "'' AS locationNote"},
+          ${hasSymptoms ? 'sr.symptoms' : "'' AS symptoms"},
+          ${hasIsUrgent ? 'sr.isUrgent' : '0 AS isUrgent'},
+          ${hasAdditionalNotes ? 'sr.additionalNotes' : "'' AS additionalNotes"},
+          ${hasPaymentMethod ? 'sr.paymentMethod' : "'' AS paymentMethod"},
+          ${hasPaymentStatus ? 'sr.paymentStatus' : "'' AS paymentStatus"},
+          ${hasCompletedAt ? 'sr.completedAt' : 'NULL AS completedAt'},
+          sr.scheduledAt,
+          sr.providerUserId AS doctorUserId,
+          u.fullName AS doctorName,
+          u.role AS providerRole,
+          c.specialization,
+          ${ratingSelect}
+       FROM servicerequest sr
+       ${ratingJoin}
+       LEFT JOIN user u ON sr.providerUserId = u.userId
+       LEFT JOIN careprovider c ON u.userId = c.userId
+       WHERE TRIM(sr.patientUserId) = TRIM(?)${whereStatus}
+       ORDER BY COALESCE(sr.completedAt, sr.scheduledAt) DESC, sr.scheduledAt DESC`,
+      params
+    );
+
+    const completedCt = rows.filter(
+      (r) => `${r.status ?? ''}`.toLowerCase().trim() === 'completed',
+    ).length;
+    scheduleDbg('appointments list result', {
+      patientUserId,
+      rowCount: rows.length,
+      completedCount: completedCt,
+      queryStatus: status || 'all',
+    });
+
+    res.json(rows);
+  } catch (err) {
+    scheduleDbg('appointments list error', { patientUserId, message: err.message });
     res.status(500).json({ error: err.message });
   }
 });
@@ -967,14 +1079,9 @@ router.get('/appointments/details/:appointmentId', async (req, res) => {
       'servicerequest',
       'providerLocationUpdatedAt'
     );
+    const hasCompletedAt = await hasColumn('servicerequest', 'completedAt');
 
-    const hasRatings = await hasTable('providervisitrating');
-    const ratingSelect = hasRatings
-      ? 'pvr.stars AS patientRatingStars, pvr.comment AS patientRatingComment'
-      : 'NULL AS patientRatingStars, NULL AS patientRatingComment';
-    const ratingJoin = hasRatings
-      ? 'LEFT JOIN providervisitrating pvr ON pvr.requestId = sr.requestId'
-      : '';
+    const { ratingSelect, ratingJoin } = await appointmentRatingSqlFragments();
 
     const [rows] = await db.query(
       `SELECT
@@ -1001,6 +1108,7 @@ router.get('/appointments/details/:appointmentId', async (req, res) => {
               ? 'sr.providerLocationUpdatedAt'
               : 'NULL AS providerLocationUpdatedAt'
           },
+          ${hasCompletedAt ? 'sr.completedAt' : 'NULL AS completedAt'},
           sr.scheduledAt,
           pu.fullName AS patientName,
           pr.fullName AS providerName,
@@ -1030,80 +1138,17 @@ router.post('/appointments/:appointmentId/rate', async (req, res) => {
   const { appointmentId } = req.params;
   const { patientUserId, stars, comment } = req.body;
 
-  if (!patientUserId) {
-    return res.status(400).json({ error: 'patientUserId is required' });
-  }
-
-  const s = Math.round(Number(stars));
-  if (!Number.isFinite(s) || s < 1 || s > 5) {
-    return res.status(400).json({ error: 'stars must be between 1 and 5' });
-  }
-
-  if (!(await hasTable('providervisitrating'))) {
-    return res.status(501).json({
-      error: 'Ratings are not available; run the providervisitrating migration.'
-    });
-  }
-
-  const commentText =
-    comment != null ? String(comment).trim().slice(0, 2000) : '';
-
   try {
-    const [rows] = await db.query(
-      `SELECT requestId, patientUserId, providerUserId, status
-       FROM servicerequest
-       WHERE requestId = ?`,
-      [appointmentId]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Appointment not found' });
-    }
-
-    const row = rows[0];
-    if (row.patientUserId !== patientUserId) {
-      return res.status(403).json({ error: 'Not allowed' });
-    }
-
-    if ((row.status || '').toString().toLowerCase() !== 'completed') {
-      return res.status(409).json({
-        error: 'You can only rate after the visit is completed'
-      });
-    }
-
-    const [existing] = await db.query(
-      'SELECT ratingId FROM providervisitrating WHERE requestId = ?',
-      [appointmentId]
-    );
-
-    if (existing.length > 0) {
-      return res.status(409).json({ error: 'This visit is already rated' });
-    }
-
-    const ratingId = randomUUID();
-    await db.execute(
-      `INSERT INTO providervisitrating
-       (ratingId, requestId, patientUserId, providerUserId, stars, comment, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-      [
-        ratingId,
-        appointmentId,
-        row.patientUserId,
-        row.providerUserId,
-        s,
-        commentText || null
-      ]
-    );
-
-    await recomputeProviderOverallRating(row.providerUserId);
-
-    res.status(201).json({
-      success: true,
-      ratingId,
-      message: 'Thank you. Your rating helps improve CareLink recommendations.'
+    const result = await visitRatingService.submitPatientVisitRating({
+      appointmentId,
+      patientUserId,
+      stars,
+      comment,
     });
+    res.status(201).json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const code = err.status || 500;
+    res.status(code).json({ error: err.message });
   }
 });
 
@@ -1375,155 +1420,13 @@ router.put('/appointments/:appointmentId/cancel', async (req, res) => {
 });
 
 router.post('/payments', async (req, res) => {
-  const {
-    appointmentId,
-    patientUserId,
-    providerUserId,
-    amount,
-    paymentMethod,
-    status
-  } = req.body;
-
-  // Never accept raw card / CVV / track fields — in production, use a gateway (token) only.
-  const disallowedKeyNorm = new Set([
-    'cardnumber',
-    'ccnumber',
-    'ccnum',
-    'cvv',
-    'cvc',
-    'cvc2',
-    'pan',
-    'trackdata',
-    'track1',
-    'track2',
-    'magstripe',
-    'debitcardnumber',
-    'creditcardnumber',
-    'cardholdername',
-    'expirymonth',
-    'expiryyear',
-    'expirydate'
-  ]);
-  for (const k of Object.keys(req.body || {})) {
-    const n = k.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (disallowedKeyNorm.has(n)) {
-      return res.status(400).json({
-        error:
-          'Sensitive payment data must not be sent to this API. Use TLS and a PCI-compliant provider; only method and amount are stored here.'
-      });
-    }
-  }
-
-  if (!appointmentId || !patientUserId || !providerUserId || amount == null || !paymentMethod) {
-    return res.status(400).json({
-      error: 'appointmentId, patientUserId, providerUserId, amount and paymentMethod are required'
-    });
-  }
-
-  const parsedAmount = Number(amount);
-  if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
-    return res.status(400).json({ error: 'amount must be a valid number' });
-  }
-
-  const normalizedMethod = paymentMethod.toString().trim().toLowerCase();
-  const allowZero =
-    normalizedMethod === 'cash' ||
-    normalizedMethod === 'card' ||
-    normalizedMethod === 'cash_on_visit';
-  if (!allowZero && parsedAmount <= 0) {
-    return res.status(400).json({ error: 'amount must be a positive number' });
-  }
-
   try {
-    const hasPaymentMethod = await hasColumn('servicerequest', 'paymentMethod');
-    const hasPaymentStatus = await hasColumn('servicerequest', 'paymentStatus');
-    const hasTransactionId = await hasColumn('payment', 'transactionId');
-    const hasPaidAt = await hasColumn('payment', 'paidAt');
-
-    const [appointments] = await db.query(
-      `SELECT requestId
-       FROM servicerequest
-       WHERE requestId = ? AND patientUserId = ? AND providerUserId = ?`,
-      [appointmentId, patientUserId, providerUserId]
-    );
-
-    if (appointments.length === 0) {
-      return res.status(404).json({ error: 'Related appointment not found' });
-    }
-
-    const [existingPayment] = await db.query(
-      'SELECT paymentId FROM payment WHERE requestId = ?',
-      [appointmentId]
-    );
-
-    if (existingPayment.length > 0) {
-      return res.status(409).json({ error: 'Payment already exists for this appointment' });
-    }
-
-    const paymentId = randomUUID();
-    const computedStatus = status
-      ? toStatus(status, PAYMENT_STATUSES, 'unpaid')
-      : normalizedMethod === 'cash' || normalizedMethod === 'cash_on_visit'
-        ? 'unpaid'
-        : normalizedMethod === 'card'
-          ? 'pending'
-          : 'paid';
-
-    const baseParams = [
-      paymentId,
-      appointmentId,
-      patientUserId,
-      providerUserId,
-      parsedAmount,
-      normalizedMethod,
-      computedStatus
-    ];
-
-    if (hasTransactionId && hasPaidAt) {
-      await db.execute(
-        `INSERT INTO payment
-         (paymentId, requestId, patientUserId, providerUserId, amount, paymentMethod, paymentStatus, transactionId, paidAt, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NOW(), NOW())`,
-        baseParams
-      );
-    } else {
-      await db.execute(
-        `INSERT INTO payment
-         (paymentId, requestId, patientUserId, providerUserId, amount, paymentMethod, paymentStatus, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-        baseParams
-      );
-    }
-
-    if (hasPaymentMethod || hasPaymentStatus) {
-      const updates = [];
-      const updateValues = [];
-      if (hasPaymentMethod) {
-        updates.push('paymentMethod = ?');
-        updateValues.push(normalizedMethod);
-      }
-      if (hasPaymentStatus) {
-        updates.push('paymentStatus = ?');
-        updateValues.push(computedStatus);
-      }
-      if (updates.length) {
-        updateValues.push(appointmentId);
-        await db.execute(
-          `UPDATE servicerequest SET ${updates.join(', ')} WHERE requestId = ?`,
-          updateValues
-        );
-      }
-    }
-
-    res.status(201).json({
-      message: 'Payment stored successfully',
-      paymentId,
-      appointmentId,
-      bookingId: appointmentId,
-      paymentStatus: computedStatus
-    });
+    const out =
+      await bookingPaymentService.createLegacyPatientPayment(req.body);
+    res.status(201).json(out);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const code = err.status || 500;
+    res.status(code).json({ error: err.message });
   }
 });
 
@@ -1531,25 +1434,8 @@ router.get('/payments/:patientUserId', async (req, res) => {
   const { patientUserId } = req.params;
 
   try {
-    const [rows] = await db.query(
-      `SELECT
-          p.paymentId,
-          p.requestId AS appointmentId,
-          p.requestId AS bookingId,
-          p.amount,
-          p.paymentMethod,
-          p.paymentStatus,
-          p.transactionId,
-          p.paidAt,
-          p.createdAt,
-          sr.scheduledAt,
-          u.fullName AS providerName
-       FROM payment p
-       LEFT JOIN servicerequest sr ON p.requestId = sr.requestId
-       LEFT JOIN user u ON p.providerUserId = u.userId
-       WHERE p.patientUserId = ?
-       ORDER BY p.createdAt DESC`,
-      [patientUserId]
+    const rows = await bookingPaymentService.listPatientPayments(
+      patientUserId,
     );
 
     res.json(rows);

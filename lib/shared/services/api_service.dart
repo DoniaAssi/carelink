@@ -776,6 +776,47 @@ class ApiService {
     );
   }
 
+  /// Visit-rating aggregates + affinity used by [PatientRecommendationProfileRepository].
+  Future<Map<String, dynamic>> getPatientRatingInsights(
+    String patientUserId,
+  ) async {
+    final response = await _sendRequest(
+      http.get(
+        _endpoint('/api/ratings/patient/$patientUserId'),
+        headers: _jsonHeaders,
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to load rating insights'),
+    );
+  }
+
+  /// Public aggregates + recent rows for a provider (reviews / dashboards).
+  Future<Map<String, dynamic>> getProviderRatingsAggregate(
+    String providerUserId, {
+    int limit = 100,
+  }) async {
+    final uri = _endpoint(
+      '/api/ratings/provider/$providerUserId',
+    ).replace(queryParameters: {'limit': '$limit'});
+    final response = await _sendRequest(
+      http.get(uri, headers: _jsonHeaders),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to load provider ratings'),
+    );
+  }
+
   /// Stores payment metadata only (method, amount, status). Card numbers / CVV must never be in [body].
   Future<Map<String, dynamic>> createPayment(Map<String, dynamic> body) async {
     final response = await _sendRequest(
@@ -797,6 +838,40 @@ class ApiService {
     final response = await _sendRequest(
       http.get(
         _endpoint('/patient/payments/$patientUserId'),
+        headers: _jsonHeaders,
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as List<dynamic>;
+    }
+
+    throw Exception(_extractErrorMessage(response, 'Failed to load payments'));
+  }
+
+  /// DEMO secure booking ledger: payment row for one appointment (patient must match).
+  Future<Map<String, dynamic>> getAppointmentPayment({
+    required String appointmentId,
+    required String patientUserId,
+  }) async {
+    final uri = _endpoint('/api/payments/appointment/$appointmentId')
+        .replace(queryParameters: {'patientUserId': patientUserId});
+    final response =
+        await _sendRequest(http.get(uri, headers: _jsonHeaders));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to load appointment payment'),
+    );
+  }
+
+  Future<List<dynamic>> getPatientPaymentsApi(String patientUserId) async {
+    final response = await _sendRequest(
+      http.get(
+        _endpoint('/api/payments/patient/$patientUserId'),
         headers: _jsonHeaders,
       ),
     );

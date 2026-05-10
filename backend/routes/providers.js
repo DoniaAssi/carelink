@@ -44,6 +44,13 @@ async function hasColumn(tableName, columnName) {
   }
 }
 
+async function ratingsCountProjection() {
+  const hasRc = await hasColumn('careprovider', 'ratingsCount');
+  return hasRc
+    ? 'COALESCE(c.ratingsCount, 0) AS ratingsCount'
+    : '0 AS ratingsCount';
+}
+
 async function getProviderExtrasProjection() {
   const hasServiceType = await hasColumn('careprovider', 'serviceType');
   const hasConsultationFee = await hasColumn('careprovider', 'consultationFee');
@@ -70,6 +77,7 @@ router.get('/', async (req, res) => {
   try {
     const gpsProjection = await getGpsProjection();
     const providerExtrasProjection = await getProviderExtrasProjection();
+    const rcProj = await ratingsCountProjection();
     const hasExperienceYears = await hasColumn('careprovider', 'experienceYears');
     const experienceProjection = hasExperienceYears
       ? 'c.experienceYears'
@@ -83,6 +91,7 @@ router.get('/', async (req, res) => {
         u.role,
         c.specialization,
         c.overallRating,
+        ${rcProj},
         c.isAvailable,
         ${experienceProjection},
         ${providerExtrasProjection},
@@ -126,6 +135,7 @@ router.get('/doctors', async (req, res) => {
   try {
     const gpsProjection = await getGpsProjection();
     const providerExtrasProjection = await getProviderExtrasProjection();
+    const rcProj = await ratingsCountProjection();
     const [rows] = await db.query(`
       SELECT 
         u.userId,
@@ -135,6 +145,7 @@ router.get('/doctors', async (req, res) => {
         u.role,
         c.specialization,
         c.overallRating,
+        ${rcProj},
         c.isAvailable,
         ${providerExtrasProjection},
         ${gpsProjection}
@@ -157,6 +168,7 @@ router.get('/provider/:userId', async (req, res) => {
   try {
     const gpsProjection = await getGpsProjection();
     const providerExtrasProjection = await getProviderExtrasProjection();
+    const rcProj = await ratingsCountProjection();
     const [rows] = await db.query(
       `
       SELECT 
@@ -167,6 +179,7 @@ router.get('/provider/:userId', async (req, res) => {
         u.role,
         c.specialization,
         c.overallRating,
+        ${rcProj},
         c.isAvailable,
         ${providerExtrasProjection},
         ${gpsProjection}
@@ -211,6 +224,7 @@ router.get('/doctor/:userId', async (req, res) => {
   try {
     const gpsProjection = await getGpsProjection();
     const providerExtrasProjection = await getProviderExtrasProjection();
+    const rcProj = await ratingsCountProjection();
     const [rows] = await db.query(
       `
       SELECT 
@@ -221,6 +235,7 @@ router.get('/doctor/:userId', async (req, res) => {
         u.role,
         c.specialization,
         c.overallRating,
+        ${rcProj},
         c.isAvailable,
         ${providerExtrasProjection},
         ${gpsProjection}

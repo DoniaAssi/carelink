@@ -76,6 +76,8 @@ class ProviderModel {
   final String specialization;
   final String serviceType;
   final double overallRating;
+  /// Number of completed visit ratings (when API exposes `ratingsCount`).
+  final int ratingsCount;
   final String role;
   final bool isAvailable;
   final double? consultationFee;
@@ -92,6 +94,7 @@ class ProviderModel {
     required this.specialization,
     required this.serviceType,
     required this.overallRating,
+    this.ratingsCount = 0,
     required this.role,
     required this.isAvailable,
     this.consultationFee,
@@ -106,6 +109,8 @@ class ProviderModel {
   factory ProviderModel.fromJson(Map<String, dynamic> json) {
     final rating =
         double.tryParse(json['overallRating']?.toString() ?? '0') ?? 0;
+    final rCount =
+        int.tryParse(json['ratingsCount']?.toString() ?? '') ?? 0;
     final role = json['role']?.toString() ?? 'doctor';
     final isAvailable =
         json['isAvailable'] == true ||
@@ -151,6 +156,7 @@ class ProviderModel {
       specialization: json['specialization']?.toString() ?? '',
       serviceType: serviceType,
       overallRating: rating,
+      ratingsCount: rCount,
       role: role,
       isAvailable: isAvailable,
       consultationFee: fee,

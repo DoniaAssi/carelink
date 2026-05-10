@@ -1,0 +1,38 @@
+Laravel 10+ reference — Email OTP registration
+==============================================
+
+CareLink Flutter app uses the Node backend (`carelink-main/backend`) by default.
+SMTP for signup email belongs in `backend/.env` (MAIL_USER, MAIL_PASS) — see MAIL_CONFIG_NOTE.txt.
+
+This folder is an optional Laravel blueprint — not required to run the mobile app.
+
+IDE types (optional)
+--------------------
+This folder is not a runnable Laravel app. To clear “Undefined type Migration / Schema”
+in the editor you can either:
+
+  A) Install dependencies (requires PHP + Composer on your machine):
+       cd laravel-email-auth-reference
+       composer install
+     Then delete the `_ide_stubs/` folder to avoid duplicate-class hints.
+
+  B) Keep `_ide_stubs/` as shipped — minimal shims so Intelephense resolves core types
+     without `vendor/`. Remove `_ide_stubs/` if you later run `composer install` here.
+
+Copy the files under this folder into a Laravel project (or use as a blueprint):
+
+1. database/migrations/*  → run: php artisan migrate
+2. app/Http/Controllers/Api/EmailAuthController.php
+3. app/Mail/OtpVerificationMail.php  → uses resources/views/emails/otp.blade.php
+4. app/Models/User.php and app/Models/EmailVerificationCode.php (merge with your app)
+5. Configure .env: DB_*, MAIL_MAILER, MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, etc.
+   See also `.env.mail.example`. Gmail: App Password as MAIL_PASSWORD.
+   The API does not return the OTP in JSON.
+
+API (adjust prefix in RouteServiceProvider if needed):
+  POST /api/register          — body: full_name, email, password
+  POST /api/verify-email     — body: email, code
+  POST /api/resend-code      — body: email
+
+Flutter: point EmailAuthApi base URL to your Laravel host and change paths in
+lib/features/email_auth/services/email_auth_api.dart to match these routes.

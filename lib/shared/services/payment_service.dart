@@ -6,8 +6,8 @@ import 'package:carelink/shared/models/payment_method.dart';
 import 'package:carelink/shared/models/payment_transaction.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
-/// Patient flows use instance [createPayment]. Nurse screens use static helpers
-/// that talk to `/nurse/...` on [ApiService.baseUrl].
+/// Patient flows use [createPayment] / [payForBooking] (**`/api/payments/*`** DEMO ledger).
+/// Nurse screens use static helpers that talk to `/nurse/...` on [ApiService.baseUrl].
 class PaymentService {
   PaymentService({ApiService? api}) : _api = api ?? ApiService();
 
@@ -15,9 +15,63 @@ class PaymentService {
 
   static String get baseUrl => ApiService.baseUrl;
 
+  /// Creates a booking payment row, then confirms electronic methods (**DEMO** — no PSP).
+  Future<Map<String, dynamic>> payForBooking({
+    required String appointmentId,
+    required String patientUserId,
+    required String providerUserId,
+    double? amountHint,
+    required String paymentMethod,
+  }) async {
+    final method = paymentMethod.trim().toLowerCase();
+    final payload = <String, dynamic>{
+      'appointmentId': appointmentId,
+      'patientUserId': patientUserId,
+      'providerUserId': providerUserId,
+      'paymentMethod': method,
+    };
+    if (amountHint != null) payload['amount'] = amountHint;
+    final created = await _api.postJson(
+      '/api/payments/create',
+      payload,
+      errorFallback: 'Payment could not be processed',
+    );
+
+    final createdStatus =
+        (created['paymentStatus'] ?? '').toString().toLowerCase();
+    final electronic =
+        method == 'mock_card' ||
+        method == 'card' ||
+        method == 'wallet';
+
+    Map<String, dynamic>? confirmed;
+    if (electronic && createdStatus == 'pending') {
+      confirmed = await _api.postJson(
+        '/api/payments/confirm',
+        {
+          'appointmentId': appointmentId,
+          'patientUserId': patientUserId,
+        },
+        errorFallback: 'Payment confirmation failed',
+      );
+    }
+
+    final merged = <String, dynamic>{
+      ...created,
+      if (confirmed != null) ...confirmed,
+      'success': true,
+      'paymentStatus': (confirmed?['paymentStatus'] ?? created['paymentStatus'])
+              ?.toString() ??
+          '',
+    };
+
+    merged['status'] = merged['paymentStatus'];
+    return merged;
+  }
+
   /// [appointmentId] is the UUID returned by `POST /patient/appointments`.
   ///
-  /// [method]: `cash` | `card` | `wallet`.
+  /// [method]: `cash` | `cash_on_visit` | `card` | `wallet` | `mock_card`.
   Future<Map<String, dynamic>> createPayment({
     required String appointmentId,
     required String patientId,
@@ -25,16 +79,12 @@ class PaymentService {
     required double amount,
     required String method,
   }) async {
-    return _api.postJson(
-      '/payments/create',
-      {
-        'appointmentId': appointmentId,
-        'patientId': patientId,
-        'providerId': providerId,
-        'amount': amount,
-        'method': method.trim().toLowerCase(),
-      },
-      errorFallback: 'Payment could not be processed',
+    return payForBooking(
+      appointmentId: appointmentId,
+      patientUserId: patientId,
+      providerUserId: providerId,
+      amountHint: amount,
+      paymentMethod: method,
     );
   }
 
@@ -50,7 +100,11 @@ class PaymentService {
         final data = jsonDecode(response.body);
         final List methods = data is List ? data : [];
         return methods
-            .map((item) => PaymentMethod.fromJson(Map<String, dynamic>.from(item as Map)))
+            .map(
+              (item) => PaymentMethod.fromJson(
+                Map<String, dynamic>.from(item as Map),
+              ),
+            )
             .toList();
       }
     } catch (e) {
@@ -72,8 +126,9 @@ class PaymentService {
         final List history = data is List ? data : [];
         return history
             .map(
-              (item) =>
-                  PaymentTransaction.fromJson(Map<String, dynamic>.from(item as Map)),
+              (item) => PaymentTransaction.fromJson(
+                Map<String, dynamic>.from(item as Map),
+              ),
             )
             .toList();
       }

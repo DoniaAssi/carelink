@@ -1,12 +1,15 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/app_nav.dart';
-import 'package:carelink/core/carelink_app_theme.dart';
+import 'package:carelink/core/app_theme.dart';
 import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/core/theme_controller.dart';
 import 'package:carelink/features/auth/login_screen.dart';
+import 'package:carelink/features/auth/registration/getx/registration_entry.dart';
+import 'package:carelink/features/auth/registration/professional_profile_completion_screen.dart';
 import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
 import 'package:carelink/features/onboarding/intro_screen.dart';
 import 'package:carelink/features/patient/screens/patient_home_screen.dart';
@@ -33,6 +36,14 @@ class CareLinkApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           title: CarelinkL10n(localeController.locale).t('app.name'),
           locale: localeController.locale,
+          scrollBehavior: const MaterialScrollBehavior().copyWith(
+            dragDevices: {
+              PointerDeviceKind.touch,
+              PointerDeviceKind.mouse,
+              PointerDeviceKind.trackpad,
+              PointerDeviceKind.stylus,
+            },
+          ),
           supportedLocales: const [Locale('en'), Locale('ar')],
           localeResolutionCallback: (deviceLocale, supportedLocales) {
             if (deviceLocale == null) return const Locale('en');
@@ -45,8 +56,8 @@ class CareLinkApp extends StatelessWidget {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          theme: CarelinkAppTheme.light,
-          darkTheme: CarelinkAppTheme.dark,
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
           themeMode: themeController.themeMode,
           builder: (context, child) {
             return Stack(
@@ -64,6 +75,17 @@ class CareLinkApp extends StatelessWidget {
             '/login': (context) => const LoginScreen(),
           },
           onGenerateRoute: (settings) {
+            if (settings.name == '/email-register') {
+              final args = settings.arguments;
+              String? roleArg;
+              if (args is Map<String, dynamic>) {
+                roleArg = args['role']?.toString();
+              }
+              return MaterialPageRoute<void>(
+                builder: (_) => CarelinkRegistrationEntry(initialRole: roleArg),
+              );
+            }
+
             if (settings.name == '/patient-home') {
               final args = settings.arguments as Map<String, dynamic>?;
               return MaterialPageRoute(
@@ -72,6 +94,17 @@ class CareLinkApp extends StatelessWidget {
                   displayName: args?['displayName'] as String?,
                 ),
               );
+            }
+
+            if (settings.name == '/complete-professional-profile' ||
+                settings.name == '/complete-profile') {
+              final user = settings.arguments as User?;
+              if (user != null) {
+                return MaterialPageRoute<void>(
+                  builder: (_) =>
+                      ProfessionalProfileCompletionScreen(user: user),
+                );
+              }
             }
 
             if (settings.name == '/nurse-dashboard') {
