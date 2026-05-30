@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "apple-signin-auth": "^2.0.0",
+    "google-auth-library": "^10.6.2",
+    "nodemailer": "^8.0.5"
+  }
+}

@@ -1,0 +1,14 @@
+CareLink — where email (SMTP) is configured
+============================================
+
+1) Flutter app + Node API (default for this repo)
+   - Edit:  carelink-main/backend/.env
+   - Set:   MAIL_USER and MAIL_PASS (Gmail = App Password)
+   - Run:   node server.js  from the backend folder
+   - Check: http://localhost:3000/api/email-auth/health  → smtpEnvConfigured: true
+
+2) This folder (laravel-email-auth-reference)
+   - Blueprint / copy-paste only — not started by the mobile app unless you change API base URL.
+   - If you run it as a real Laravel app: copy .env.example → .env there and set MAIL_* + DB_*.
+
+Do not put real passwords in source code; only in .env on each machine.
