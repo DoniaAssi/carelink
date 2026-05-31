@@ -874,22 +874,6 @@ router.get('/appointments/upcoming/:patientUserId', async (req, res) => {
   });
 
   try {
-    const [providerRows] = await db.query(
-      `SELECT c.isAvailable
-       FROM careprovider c
-       JOIN user u ON u.userId = c.userId
-       WHERE c.userId = ? AND u.role IN ('doctor', 'nurse')`,
-      [finalDoctorUserId]
-    );
-    if (providerRows.length === 0) {
-      return res.status(404).json({ error: 'Care provider not found' });
-    }
-    if (providerRows[0].isAvailable === 0) {
-      return res.status(409).json({
-        error: 'This care provider is currently unavailable for new requests',
-      });
-    }
-
     const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
     const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
     const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');

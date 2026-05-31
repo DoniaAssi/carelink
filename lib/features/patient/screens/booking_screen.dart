@@ -600,9 +600,14 @@ class _BookingScreenState extends State<BookingScreen> {
         widget.request.providerId,
       );
       final provider = ProviderModel.fromJson(providerJson);
-      final upcoming = await ApiService().getUpcomingAppointments(
-        widget.request.patientId,
-      );
+      var upcoming = <dynamic>[];
+      try {
+        upcoming = await ApiService().getUpcomingAppointments(
+          widget.request.patientId,
+        );
+      } catch (_) {
+        upcoming = <dynamic>[];
+      }
 
       final blocked = <String>{};
       for (final item in upcoming) {
