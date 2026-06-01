@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 
 enum BookingFlowStep { service, dateTime, location, details, review }
@@ -10,12 +11,12 @@ class BookingStepIndicator extends StatelessWidget {
 
   const BookingStepIndicator({super.key, required this.currentStep});
 
-  static const _labels = <String>[
-    'Service',
-    'Date & Time',
-    'Location',
-    'Details',
-    'Review',
+  static const _labelKeys = <String>[
+    'booking.step.service',
+    'booking.step.dateTime',
+    'booking.step.location',
+    'booking.step.details',
+    'booking.step.review',
   ];
 
   @override
@@ -27,7 +28,7 @@ class BookingStepIndicator extends StatelessWidget {
       child: Column(
         children: [
           Row(
-            children: List.generate(_labels.length * 2 - 1, (i) {
+            children: List.generate(_labelKeys.length * 2 - 1, (i) {
               if (i.isOdd) {
                 final connectorIndex = (i - 1) ~/ 2;
                 final active = connectorIndex < currentIndex;
@@ -58,7 +59,7 @@ class BookingStepIndicator extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Row(
-            children: List.generate(_labels.length, (index) {
+            children: List.generate(_labelKeys.length, (index) {
               final isDone = index < currentIndex;
               final isCurrent = index == currentIndex;
               final color = isCurrent
@@ -68,7 +69,7 @@ class BookingStepIndicator extends StatelessWidget {
                   : p.inkMuted;
               return Expanded(
                 child: Text(
-                  _labels[index],
+                  context.tr(_labelKeys[index]),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: color,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
 
@@ -61,7 +62,7 @@ class PaymentSuccessScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               Text(
-                'Payment recorded',
+                context.tr('payment.success'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 24,
@@ -71,7 +72,7 @@ class PaymentSuccessScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                _subtitleMessage(),
+                context.tr('payment.bookingConfirmed'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: p.inkMuted,
@@ -92,7 +93,7 @@ class PaymentSuccessScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Appointment',
+                      context.tr('booking.review.provider'),
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         color: p.inkDark,
@@ -115,12 +116,12 @@ class PaymentSuccessScreen extends StatelessWidget {
                       Row(
                         children: [
                           Text(
-                            'Amount',
+                            context.tr('payment.totalAmount'),
                             style: TextStyle(color: p.inkMuted, fontWeight: FontWeight.w600),
                           ),
                           const Spacer(),
                           Text(
-                            '\$${amount!.toStringAsFixed(2)}',
+                            '${amount!.toStringAsFixed(2)} ${context.tr('payment.currencySymbol')}',
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
                               color: AppColors.primary,
@@ -130,18 +131,23 @@ class PaymentSuccessScreen extends StatelessWidget {
                         ],
                       ),
                     ],
-                    if ((paymentMethod ?? '').isNotEmpty)
+                    if ((paymentMethod ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 8),
                       _line(
                         Icons.payment_outlined,
-                        'Method: ${_labelMethod(paymentMethod!)}',
+                        _labelMethod(paymentMethod!),
                         p,
                       ),
-                    if ((paymentStatus ?? '').isNotEmpty)
+                    ],
+                    if ((paymentStatus ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 4),
                       _line(
                         Icons.flag_outlined,
-                        'Status: ${paymentStatus!}',
+                        context.tr('payment.amountHeld'),
                         p,
+                        isStatus: true,
                       ),
+                    ],
                   ],
                 ),
               ),
@@ -171,7 +177,7 @@ class PaymentSuccessScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  child: const Text(
+                  child: Text(
                     'Back to home',
                     style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                   ),
@@ -184,31 +190,16 @@ class PaymentSuccessScreen extends StatelessWidget {
     );
   }
 
-  String _subtitleMessage() {
-    final s = (paymentStatus ?? '').toLowerCase();
-    if (s == 'pending') {
-      return 'Cash payment is pending. Complete payment at your visit.';
-    }
-    if (s == 'paid') {
-      return 'Your simulated card or wallet payment went through. No real charge was made.';
-    }
-    return 'Your booking and payment details were saved.';
-  }
-
   static String _labelMethod(String m) {
-    switch (m.toLowerCase()) {
-      case 'cash':
-        return 'Cash';
-      case 'card':
-        return 'Card (simulated)';
-      case 'wallet':
-        return 'Wallet (simulated)';
-      default:
-        return m;
-    }
+    return m;
   }
 
-  static Widget _line(IconData icon, String text, CarelinkPalette p) {
+  static Widget _line(
+    IconData icon,
+    String text,
+    CarelinkPalette p, {
+    bool isStatus = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(

@@ -1046,7 +1046,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
             ),
           ),
           Text(
-            hasFee ? '\$${fee.toStringAsFixed(0)}' : 'Not available',
+            hasFee ? '${fee.toStringAsFixed(0)} ILS' : 'Not available',
             style: TextStyle(
               color: hasFee ? AppColors.primary : p.inkMuted,
               fontWeight: FontWeight.w800,
@@ -1180,32 +1180,26 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
           ),
         ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(
               Icons.calendar_month_rounded,
               color: Colors.white,
               size: 22,
             ),
-            Expanded(
-              child: Text(
-                !hasPatientId
-                    ? 'Login First'
-                    : canContinue
-                    ? 'Book Appointment'
-                    : 'Login First',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 16.5,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                  letterSpacing: 0.2,
-                ),
+            const SizedBox(width: 8),
+            Text(
+              !hasPatientId
+                  ? 'Login First'
+                  : canContinue
+                  ? 'Book Appointment'
+                  : 'Login First',
+              style: const TextStyle(
+                fontSize: 16.5,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                letterSpacing: 0.2,
               ),
-            ),
-            const Icon(
-              Icons.arrow_forward_rounded,
-              color: Colors.white,
-              size: 22,
             ),
           ],
         ),

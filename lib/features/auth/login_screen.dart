@@ -386,24 +386,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         strokeWidth: 2.5,
                       ),
                     )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          context.tr('auth.signIn'),
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.arrow_forward_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ],
+                  : Text(
+                      context.tr('auth.signIn'),
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
                     ),
             ),
           ),
@@ -725,6 +714,10 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     final currentUser = User.fromJson(userMap);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('session_user_id', userId);
+    await prefs.setString('session_display_name', userName);
+
     _showMessage(
       successMessage ?? context.tr('auth.loginSuccessful'),
       color: Colors.green.shade700,
@@ -732,8 +725,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     switch (role) {
       case 'patient':
-        appNavigatorKey.currentState?.pushReplacementNamed(
+        appNavigatorKey.currentState?.pushNamedAndRemoveUntil(
           '/patient-home',
+          (route) => false,
           arguments: {'userId': userId, 'displayName': userName},
         );
         break;

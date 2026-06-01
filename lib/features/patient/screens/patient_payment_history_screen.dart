@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
-import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
 /// Lists booking payments from `GET /api/payments/patient/:id` (DEMO ledger).
@@ -78,10 +77,8 @@ class _PatientPaymentHistoryScreenState extends State<PatientPaymentHistoryScree
     final p = CarelinkPalette.of(context);
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('Payment history'),
-        actions: carelinkAppBarActions(),
+      appBar: PatientAppBar(
+        title: 'Payment history',
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -98,7 +95,14 @@ class _PatientPaymentHistoryScreenState extends State<PatientPaymentHistoryScree
                       ? ListView(
                           padding: const EdgeInsets.all(24),
                           children: [
-                            const CarelinkBrandLogo(height: 32),
+                            const SizedBox(height: 40),
+                            Center(
+                              child: Icon(
+                                Icons.receipt_long_outlined,
+                                size: 64,
+                                color: p.inkMuted,
+                              ),
+                            ),
                             const SizedBox(height: 24),
                             Text(
                               'No payments yet.',

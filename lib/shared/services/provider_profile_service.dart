@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:carelink/shared/models/provider_profile.dart';
@@ -9,6 +10,12 @@ class ProviderProfileService {
   static const String _phpBaseUrl = 'http://127.0.0.1/carelink';
 
   static String get baseUrl => ApiService.baseUrl;
+
+  static void _logError(String message) {
+    if (kDebugMode) {
+      debugPrint('[ProviderProfileService] $message');
+    }
+  }
 
   /// Patient app: legacy PHP provider profile (unchanged path).
   static Future<ProviderProfile?> getProfileLegacy(int providerId) async {
@@ -28,8 +35,7 @@ class ProviderProfileService {
         }
       }
     } catch (e) {
-      // ignore: avoid_print
-      print('Get provider profile (PHP) error: $e');
+      _logError('Error message: $e');
     }
     return null;
   }
@@ -46,8 +52,7 @@ class ProviderProfileService {
         return ProviderProfile.fromJson(data as Map<String, dynamic>);
       }
     } catch (e) {
-      // ignore: avoid_print
-      print('Get provider profile error: $e');
+      _logError('Error message: $e');
     }
     return null;
   }
@@ -64,8 +69,7 @@ class ProviderProfileService {
         return true;
       }
     } catch (e) {
-      // ignore: avoid_print
-      print('Update provider profile error: $e');
+      _logError('Error message: $e');
     }
     return false;
   }
@@ -78,15 +82,12 @@ class ProviderProfileService {
       final response = await http.post(
         Uri.parse('$baseUrl/nurse/certifications/$providerId'),
         headers: const <String, String>{'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'name': documentName,
-        }),
+        body: jsonEncode({'name': documentName}),
       );
 
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      // ignore: avoid_print
-      print('Upload certification error: $e');
+      _logError('Error message: $e');
     }
     return false;
   }
@@ -101,12 +102,13 @@ class ProviderProfileService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data is List) {
-          return data.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+          return data
+              .map((item) => Map<String, dynamic>.from(item as Map))
+              .toList();
         }
       }
     } catch (e) {
-      // ignore: avoid_print
-      print('Get availability error: $e');
+      _logError('Error message: $e');
     }
     return [];
   }
@@ -124,11 +126,12 @@ class ProviderProfileService {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return true;
       }
-      // ignore: avoid_print
-      print('Save availability failed: ${response.statusCode} ${response.body}');
+      _logError(
+        'Request URL: ${response.request?.url} | HTTP method: PUT | '
+        'Status code: ${response.statusCode} | Error message: Save availability failed',
+      );
     } catch (e) {
-      // ignore: avoid_print
-      print('Save availability error: $e');
+      _logError('Error message: $e');
     }
     return false;
   }

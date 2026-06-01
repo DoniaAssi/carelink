@@ -157,14 +157,14 @@ async function dispatchEmailVerificationCode(params) {
         throw err;
       }
       console.warn(
-        `[EMAIL DEV] SMTP failed — use this code in the app: ${code} (to=${to})`,
+        '[EMAIL DEV] SMTP failed; verification code was not logged.',
       );
       return { channel: 'simulated', sendError: e.message };
     }
   }
 
   console.warn(
-    `[EMAIL DEV] No MAIL_USER/MAIL_PASS — verification code for ${to}: ${code} purpose=${purpose}`,
+    '[EMAIL DEV] No MAIL_USER/MAIL_PASS; verification code was not logged.',
   );
   return { channel: 'simulated' };
 }
@@ -190,14 +190,14 @@ async function dispatchSmsVerificationCode(params) {
 
   if (sid && token && fromNum && !isProduction()) {
     console.log(
-      `[DEV SMS stub] would send to ${toDigits} purpose=${purpose} (install twilio SDK to send)`,
+      '[DEV SMS stub] SMS verification requested; recipient and code were not logged.',
     );
     return { channel: 'simulated' };
   }
 
   if (!isProduction()) {
     console.log(
-      `[SIMULATED SMS] to=${toDigits} code=${code} purpose=${purpose} (set TWILIO_* for real SMS in production)`,
+      '[SIMULATED SMS] Verification code generated but not logged.',
     );
     return { channel: 'simulated' };
   }
@@ -217,3 +217,4 @@ module.exports = {
   isProduction,
   isConfiguredMail,
 };
+

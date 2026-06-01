@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:carelink/shared/models/visit_report.dart';
@@ -7,6 +8,12 @@ import 'package:carelink/shared/services/api_service.dart';
 
 class ReportService {
   static String get baseUrl => ApiService.baseUrl;
+
+  static void _logError(String message) {
+    if (kDebugMode) {
+      debugPrint('[ReportService] $message');
+    }
+  }
 
   static Future<List<VisitReport>> getReports(String providerId) async {
     try {
@@ -17,12 +24,14 @@ class ReportService {
         final data = jsonDecode(response.body);
         final List reports = data is List ? data : [];
         return reports
-            .map((item) => VisitReport.fromJson(Map<String, dynamic>.from(item as Map)))
+            .map(
+              (item) =>
+                  VisitReport.fromJson(Map<String, dynamic>.from(item as Map)),
+            )
             .toList();
       }
     } catch (e) {
-      // ignore: avoid_print
-      print('Get reports error: $e');
+      _logError('Error message: $e');
     }
     return [];
   }
@@ -65,11 +74,12 @@ class ReportService {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return true;
       }
-      // ignore: avoid_print
-      print('Create report failed: ${response.statusCode} ${response.body}');
+      _logError(
+        'Request URL: ${response.request?.url} | HTTP method: POST | '
+        'Status code: ${response.statusCode} | Error message: Create report failed',
+      );
     } catch (e) {
-      // ignore: avoid_print
-      print('Create report error: $e');
+      _logError('Error message: $e');
     }
     return false;
   }
@@ -114,11 +124,12 @@ class ReportService {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return true;
       }
-      // ignore: avoid_print
-      print('Update report failed: ${response.statusCode} ${response.body}');
+      _logError(
+        'Request URL: ${response.request?.url} | HTTP method: POST | '
+        'Status code: ${response.statusCode} | Error message: Update report failed',
+      );
     } catch (e) {
-      // ignore: avoid_print
-      print('Update report error: $e');
+      _logError('Error message: $e');
     }
     return false;
   }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/services/api_service.dart';
 
 /// رابط صورة الملف من استجابة الـ API (يدعم اختلاف تسمية المفتاح).
 String? profileImageUrlFromMap(Map<String, dynamic>? map) {
@@ -41,8 +42,16 @@ ImageProvider? profileImageProvider(
   if (localBytes != null && localBytes.isNotEmpty) {
     return MemoryImage(localBytes);
   }
-  final u = (url ?? '').trim();
+  String u = (url ?? '').trim();
   if (u.isEmpty) return null;
+  if (u.toLowerCase().contains('robot') || u.toLowerCase().contains('robohash')) {
+    return null;
+  }
+  if (!u.startsWith('data:image') && !u.startsWith('http://') && !u.startsWith('https://')) {
+    final base = ApiService.baseUrl;
+    final separator = u.startsWith('/') ? '' : '/';
+    u = '$base$separator$u';
+  }
   if (u.startsWith('data:image')) {
     final bytes = decodeDataUriImageBytes(u);
     if (bytes == null) return null;
@@ -84,7 +93,19 @@ Widget profileAvatarOrPlaceholder({
       ),
     );
   }
-  final u = (imageUrl ?? '').trim();
+  String u = (imageUrl ?? '').trim();
+  if (u.toLowerCase().contains('robot') || u.toLowerCase().contains('robohash')) {
+    return _placeholderIcon(
+      placeholderIcon: placeholderIcon,
+      placeholderColor: placeholderColor,
+      iconSize: iconSize,
+    );
+  }
+  if (u.isNotEmpty && !u.startsWith('data:image') && !u.startsWith('http://') && !u.startsWith('https://')) {
+    final base = ApiService.baseUrl;
+    final separator = u.startsWith('/') ? '' : '/';
+    u = '$base$separator$u';
+  }
   if (u.startsWith('data:image')) {
     final bytes = decodeDataUriImageBytes(u);
     if (bytes == null) {

@@ -1,33 +1,41 @@
+// ignore_for_file: unused_element, unused_field, unused_element_parameter
+
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:geocoding/geocoding.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
+import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/core/patient_home_palette.dart';
 import 'package:carelink/core/profile_avatar.dart'
     show profileAvatarOrPlaceholder, profileImageUrlFromMap;
 import 'package:carelink/core/theme_controller.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
+import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/features/patient/services/favorite_providers_service.dart';
 import 'package:carelink/shared/services/location_service.dart';
 import 'package:carelink/features/ai/care_intent_parser.dart';
+
 import 'package:carelink/shared/services/medical_record_service.dart';
+import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
 import 'package:carelink/features/patient/services/patient_care_summary.dart';
 import 'package:carelink/features/ai/provider_smart_match.dart';
 import 'booking_details_screen.dart';
 import 'messages_screen.dart';
 import 'package:carelink/features/notifications/notifications_screen.dart';
 import 'edit_profile_screen.dart';
-import 'profile_screen.dart';
 import 'provider_details_screen.dart';
 import 'providers_screen.dart';
-import 'patient_care_hub_screen.dart';
-import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
+import 'select_service_screen.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 
 class PatientHomeScreen extends StatefulWidget {
   final String? userId;
@@ -42,6 +50,8 @@ class PatientHomeScreen extends StatefulWidget {
 class _PatientHomeScreenState extends State<PatientHomeScreen>
     with SingleTickerProviderStateMixin {
   PatientHomePalette get _p => PatientHomePalette.of(context);
+  bool get _ar => localeController.isArabic;
+  String _homeText(String en, String ar) => _ar ? ar : en;
 
   int currentIndex = 0;
   String selectedSpecialty = 'All';
@@ -54,6 +64,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   String? errorMessage;
   List<ProviderModel> providers = [];
   AppointmentModel? _upcomingAppointment;
+  int _medicalRecordsCount = 0;
   double? _patientLat;
   double? _patientLng;
   Set<String> _favoriteProviderIds = {};
@@ -61,11 +72,254 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   PatientCareSummary _careSummary = PatientCareSummary.empty;
   final LocationService _locationService = LocationService();
   final TextEditingController _careSearchController = TextEditingController();
+  int _unreadNotifications = 0;
+  List<Map<String, dynamic>> _latestNotifications = [];
   late final AnimationController _aiAnimationController;
   final stt.SpeechToText _speech = stt.SpeechToText();
   Timer? _careSearchDebounce;
 
-  /// Mirrors the field text â€” on Flutter web, reading [TextEditingController.text]
+  String? _resolvedGeocodeAddress;
+
+  String _shortenAddress(String address) {
+    if (address.isEmpty) return '';
+    String cleaned = address
+        .replaceAll(
+          RegExp(r'Palestinian Territories', caseSensitive: false),
+          'Palestine',
+        )
+        .replaceAll(
+          RegExp(r'Palestinian Territory', caseSensitive: false),
+          'Palestine',
+        );
+    cleaned = cleaned.replaceAll(
+      RegExp(r'\bArea\s+[A-Z]\b', caseSensitive: false),
+      '',
+    );
+
+    final parts = cleaned
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .fold<List<String>>([], (list, e) {
+          if (!list.contains(e)) list.add(e);
+          return list;
+        });
+
+    if (parts.isEmpty) return '';
+    if (parts.length <= 2) {
+      return parts.join(', ');
+    }
+
+    final filteredParts = parts.where((p) {
+      if (RegExp(r'^\d+$').hasMatch(p)) return false;
+      return true;
+    }).toList();
+
+    if (filteredParts.isEmpty) return parts.first;
+
+    final first = filteredParts.first;
+    final hasWestBank = filteredParts.any(
+      (p) => p.toLowerCase() == 'west bank',
+    );
+    final hasPalestine = filteredParts.any(
+      (p) => p.toLowerCase() == 'palestine',
+    );
+
+    if (hasWestBank) {
+      if (first.toLowerCase() != 'west bank') {
+        return '$first, West Bank';
+      }
+    }
+    if (hasPalestine) {
+      if (first.toLowerCase() != 'palestine') {
+        return '$first, Palestine';
+      }
+    }
+    if (filteredParts.length >= 2) {
+      return '${filteredParts[0]}, ${filteredParts[1]}';
+    }
+    return first;
+  }
+
+  Future<void> _reverseGeocodeCoords(double lat, double lng) async {
+    try {
+      final placemarks = await placemarkFromCoordinates(
+        lat,
+        lng,
+      ).timeout(const Duration(seconds: 4));
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        final streetClean = (p.street ?? '').toLowerCase().contains('area ')
+            ? null
+            : p.street;
+        final subLocalityClean =
+            (p.subLocality ?? '').toLowerCase().contains('area ')
+            ? null
+            : p.subLocality;
+        final localityClean = p.locality;
+        final subAdminAreaClean =
+            (p.subAdministrativeArea ?? '').toLowerCase().contains('area ')
+            ? null
+            : p.subAdministrativeArea;
+        final adminAreaClean =
+            (p.administrativeArea ?? '').toLowerCase().contains('area ')
+            ? null
+            : p.administrativeArea;
+
+        var countryClean = p.country ?? '';
+        if (countryClean.toLowerCase() == 'palestinian territories' ||
+            countryClean.toLowerCase().contains('palestinian')) {
+          countryClean = 'Palestine';
+        }
+
+        final parts = <String>[];
+        if (streetClean != null && streetClean.isNotEmpty)
+          parts.add(streetClean);
+        if (subLocalityClean != null && subLocalityClean.isNotEmpty)
+          parts.add(subLocalityClean);
+        if (localityClean != null && localityClean.isNotEmpty)
+          parts.add(localityClean);
+        if (subAdminAreaClean != null && subAdminAreaClean.isNotEmpty)
+          parts.add(subAdminAreaClean);
+        if (adminAreaClean != null && adminAreaClean.isNotEmpty)
+          parts.add(adminAreaClean);
+        if (countryClean.isNotEmpty) parts.add(countryClean);
+
+        final addressStr = parts.join(', ');
+        if (addressStr.trim().isNotEmpty) {
+          if (mounted) {
+            setState(() {
+              _resolvedGeocodeAddress = addressStr;
+            });
+          }
+          return;
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=$lat&lon=$lng&zoom=18&addressdetails=1',
+      );
+      final response = await http
+          .get(
+            uri,
+            headers: const <String, String>{
+              'User-Agent': 'carelink.app/1.0 (reverse-geocoding-home)',
+            },
+          )
+          .timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic>) {
+          final addressStr = (data['display_name'] ?? '').toString().trim();
+          if (addressStr.isNotEmpty && mounted) {
+            setState(() {
+              _resolvedGeocodeAddress = addressStr;
+            });
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  String get _locationText {
+    final profileAddress =
+        _patientProfile?['addressText']?.toString() ??
+        _patientProfile?['address']?.toString() ??
+        '';
+    if (profileAddress.trim().isNotEmpty) {
+      return _shortenAddress(profileAddress);
+    }
+    if (_resolvedGeocodeAddress != null &&
+        _resolvedGeocodeAddress!.trim().isNotEmpty) {
+      return _shortenAddress(_resolvedGeocodeAddress!);
+    }
+    return _homeText('Location not set', 'لم يتم تحديد الموقع');
+  }
+
+  String get _dynamicGreeting {
+    final hour = DateTime.now().hour;
+    final name = _firstName;
+    if (_ar) {
+      final greeting = hour < 12 ? 'صباح الخير' : 'مساء الخير';
+      return '$greeting، $name';
+    } else {
+      final String greeting;
+      if (hour < 12) {
+        greeting = 'Good morning';
+      } else if (hour < 17) {
+        greeting = 'Good afternoon';
+      } else {
+        greeting = 'Good evening';
+      }
+      return '$greeting, $name';
+    }
+  }
+
+  String _weekdayLabel(int weekday) {
+    const en = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const ar = [
+      '',
+      'الإثنين',
+      'الثلاثاء',
+      'الأربعاء',
+      'الخميس',
+      'الجمعة',
+      'السبت',
+      'الأحد',
+    ];
+    if (weekday < 1 || weekday > 7) return '';
+    return _ar ? ar[weekday] : en[weekday];
+  }
+
+  Color _appointmentStatusColor(String status) {
+    switch (status.toLowerCase().trim()) {
+      case 'pending':
+        return const Color(0xFFEF6C00);
+      case 'completed':
+        return const Color(0xFF2E7D32);
+      case 'cancelled':
+        return const Color(0xFFC62828);
+      case 'upcoming':
+      case 'confirmed':
+      default:
+        return const Color(0xFF21A35B);
+    }
+  }
+
+  String _appointmentStatusText(String status) {
+    final s = status.toLowerCase().trim();
+    if (_ar) {
+      switch (s) {
+        case 'pending':
+          return 'بانتظار الرد';
+        case 'completed':
+          return 'مكتمل';
+        case 'cancelled':
+          return 'ملغي';
+        case 'upcoming':
+        case 'confirmed':
+        default:
+          return 'مؤكد';
+      }
+    } else {
+      switch (s) {
+        case 'pending':
+          return 'Pending';
+        case 'completed':
+          return 'Completed';
+        case 'cancelled':
+          return 'Cancelled';
+        case 'upcoming':
+        case 'confirmed':
+        default:
+          return 'Confirmed';
+      }
+    }
+  }
+
+  /// Mirrors the field text — on Flutter web, reading [TextEditingController.text]
   /// in callbacks can throw if the engine value is not ready; we use this for logic.
   String _careSearchQuery = '';
   String? _lastCareSearchSummary;
@@ -136,6 +390,51 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     return ['All', ...items];
   }
 
+  List<_HomeQuickService> get _quickServices => const [
+    _HomeQuickService(
+      titleEn: 'Home nurse',
+      titleAr: 'ممرض منزلي',
+      serviceType: 'Home Nursing Care',
+      icon: Icons.health_and_safety_outlined,
+      terms: ['nurse', 'nursing', 'home nursing'],
+    ),
+    _HomeQuickService(
+      titleEn: 'General doctor',
+      titleAr: 'طبيب عام',
+      serviceType: 'Doctor Consultation',
+      icon: Icons.medical_services_outlined,
+      terms: ['doctor', 'general', 'physician'],
+    ),
+    _HomeQuickService(
+      titleEn: 'Elderly care',
+      titleAr: 'رعاية كبار السن',
+      serviceType: 'Elderly Care',
+      icon: Icons.elderly_outlined,
+      terms: ['elderly', 'senior', 'geriatric'],
+    ),
+    _HomeQuickService(
+      titleEn: 'Post surgery care',
+      titleAr: 'رعاية بعد العمليات',
+      serviceType: 'Follow-up Visit',
+      icon: Icons.healing_outlined,
+      terms: ['post surgery', 'post operation', 'post-op', 'surgery', 'wound'],
+    ),
+    _HomeQuickService(
+      titleEn: 'Physiotherapy',
+      titleAr: 'علاج طبيعي',
+      serviceType: 'Physiotherapy',
+      icon: Icons.accessibility_new_rounded,
+      terms: ['physio', 'physiotherapy', 'physical', 'therapy', 'rehab'],
+    ),
+    _HomeQuickService(
+      titleEn: 'Mental support',
+      titleAr: 'دعم نفسي',
+      serviceType: 'Mental Health',
+      icon: Icons.psychology_alt_outlined,
+      terms: ['mental', 'psych', 'psychology', 'psychiatry'],
+    ),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -149,6 +448,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     _fetchUpcomingAppointment();
     _loadFavorites();
     _loadMedicalSummary();
+    _loadNotificationCount();
   }
 
   @override
@@ -158,6 +458,32 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     _aiAnimationController.dispose();
     _careSearchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadNotificationCount() async {
+    final id = widget.userId?.trim();
+    if (id == null || id.isEmpty) return;
+
+    try {
+      final raw = await ApiService().getNotifications(id);
+      if (!mounted) return;
+
+      var unread = 0;
+      final items = <Map<String, dynamic>>[];
+      for (final item in raw) {
+        if (item is Map<String, dynamic> || item is Map) {
+          items.add(Map<String, dynamic>.from(item as Map));
+          final read = (item['isRead'] == true || item['read'] == true);
+          if (!read) unread += 1;
+        }
+      }
+      setState(() {
+        _unreadNotifications = unread;
+        _latestNotifications = items.take(3).toList();
+      });
+    } catch (_) {
+      // Ignore notification count failures; leave badge hidden.
+    }
   }
 
   Future<void> _toggleVoiceSearch() async {
@@ -433,6 +759,13 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
         _patientLat = pos.latitude;
         _patientLng = pos.longitude;
       });
+      final profileAddress =
+          _patientProfile?['addressText']?.toString() ??
+          _patientProfile?['address']?.toString() ??
+          '';
+      if (profileAddress.trim().isEmpty) {
+        _reverseGeocodeCoords(pos.latitude, pos.longitude);
+      }
     } catch (_) {}
   }
 
@@ -509,6 +842,41 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     return '${h.toString()}:${m.toString().padLeft(2, '0')} $period';
   }
 
+  String _monthLabel(int month) {
+    const en = [
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    const ar = [
+      '',
+      'يناير',
+      'فبراير',
+      'مارس',
+      'أبريل',
+      'مايو',
+      'يونيو',
+      'يوليو',
+      'أغسطس',
+      'سبتمبر',
+      'أكتوبر',
+      'نوفمبر',
+      'ديسمبر',
+    ];
+    if (month < 1 || month > 12) return '';
+    return _ar ? ar[month] : en[month];
+  }
+
   double? _distanceKmValue(ProviderModel p) {
     if (_patientLat == null ||
         _patientLng == null ||
@@ -578,9 +946,15 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
           profile,
         );
         _careSummary = PatientCareSummary.mergeClinical(base, clinical);
+        _medicalRecordsCount = clinical.length;
       });
     } catch (_) {
-      if (mounted) setState(() => _careSummary = PatientCareSummary.empty);
+      if (mounted) {
+        setState(() {
+          _careSummary = PatientCareSummary.empty;
+          _medicalRecordsCount = 0;
+        });
+      }
     }
   }
 
@@ -655,13 +1029,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   }
 
   void _openSchedule() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            PatientCareHubScreen(patientUserId: widget.userId ?? ''),
-      ),
-    );
+    PatientNavigationShell.switchTab(context, 2);
+  }
+
+  void _openBookings() {
+    PatientNavigationShell.switchTab(context, 1);
   }
 
   void _openMessages() {
@@ -674,12 +1046,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   }
 
   void _openProfile() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ProfileScreen(userId: widget.userId ?? ''),
-      ),
-    );
+    PatientNavigationShell.switchTab(context, 4);
+  }
+
+  void _openMedicalRecords() {
+    PatientNavigationShell.switchTab(context, 3);
   }
 
   void _openNotifications() {
@@ -687,6 +1058,82 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
       context,
       MaterialPageRoute(
         builder: (_) => NotificationsScreen(userId: widget.userId),
+      ),
+    );
+  }
+
+  void _openAiAssistant() {
+    Navigator.pushNamed(
+      context,
+      '/find-provider',
+      arguments: {'userId': widget.userId ?? '', 'displayName': userName},
+    );
+  }
+
+  void _openQuickServiceBooking(_HomeQuickService service) {
+    final matched = providers.where((provider) {
+      final role = _lowerText(provider.role);
+      final specialization = _lowerText(provider.specialization);
+      final serviceType = _lowerText(provider.serviceType);
+      return service.terms.any(
+        (term) =>
+            role.contains(term) ||
+            specialization.contains(term) ||
+            serviceType.contains(term),
+      );
+    }).toList();
+
+    final sorted = ProviderSmartMatch.sortCopy(
+      matched,
+      selectedSpecialty: service.serviceType,
+      locationService: _locationService,
+      patientLat: _patientLat,
+      patientLng: _patientLng,
+      careSummary: _recommendationSummary,
+    );
+
+    if (sorted.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _homeText(
+              'No providers are available for this service right now.',
+              'لا يوجد مزودون متاحون لهذه الخدمة حالياً.',
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final provider = sorted.first;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SelectServiceScreen(
+          request: BookingRequestModel(
+            patientId: widget.userId ?? '',
+            providerId: provider.userId,
+            providerName: provider.fullName,
+            providerRole: provider.role,
+            specialization: provider.specialization,
+            serviceType: service.serviceType,
+            appointmentDate: '',
+            appointmentTime: '',
+            visitLatitude: 0,
+            visitLongitude: 0,
+            visitAddress: '',
+            locationNote: '',
+            patientReason: '',
+            symptoms: '',
+            isUrgent: false,
+            additionalNotes: '',
+            price: provider.consultationFee ?? 0,
+            paymentMethod: 'cash',
+            paymentStatus: 'pending',
+            bookingStatus: 'pending',
+          ),
+        ),
       ),
     );
   }
@@ -700,12 +1147,15 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
       case 0:
         break;
       case 1:
-        _openSchedule();
+        _openBookings();
         break;
       case 2:
-        _openMessages();
+        _openSchedule();
         break;
       case 3:
+        _openMedicalRecords();
+        break;
+      case 4:
         _openProfile();
         break;
     }
@@ -720,156 +1170,676 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final specialtyMatched = selectedSpecialty == 'All'
-        ? List<ProviderModel>.from(providers)
-        : providers
-              .where((p) => _providerMatchesSpecialtyChip(p, selectedSpecialty))
-              .toList();
-    var filteredProviders = List<ProviderModel>.from(specialtyMatched);
-    if (_availabilityFilter == 'Available Now') {
-      filteredProviders.removeWhere((p) => !p.isAvailable);
-    }
+    final recommended = ProviderSmartMatch.sortCopy(
+      providers,
+      selectedSpecialty: selectedSpecialty,
+      locationService: _locationService,
+      patientLat: _patientLat,
+      patientLng: _patientLng,
+      careSummary: _recommendationSummary,
+    );
 
-    final List<ProviderModel> displayProviders;
-    if (sortMode == 'Smart match') {
-      displayProviders = ProviderSmartMatch.sortCopy(
-        filteredProviders,
-        selectedSpecialty: selectedSpecialty,
-        locationService: _locationService,
-        patientLat: _patientLat,
-        patientLng: _patientLng,
-        careSummary: _recommendationSummary,
-      );
-    } else {
-      final copy = List<ProviderModel>.from(filteredProviders);
-      copy.sort((a, b) {
-        if (sortMode == 'A-Z') {
-          return a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase());
-        }
-        return b.overallRating.compareTo(a.overallRating);
-      });
-      displayProviders = copy;
-    }
+    return AnimatedBuilder(
+      animation: Listenable.merge([localeController, themeController]),
+      builder: (context, _) {
+        return Directionality(
+          textDirection: localeController.isArabic
+              ? TextDirection.rtl
+              : TextDirection.ltr,
+          child: Scaffold(
+            backgroundColor: _p.pageBg,
+            body: SafeArea(
+              child: RefreshIndicator(
+                color: AppColors.primary,
+                onRefresh: () async {
+                  await _fetchProviders();
+                  await _loadPatientProfile();
+                  await _fetchUpcomingAppointment();
+                  await _loadPatientLocation();
+                  await _loadFavorites();
+                  await _loadMedicalSummary();
+                },
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(0, 12, 0, 90),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _buildHeroHeader(),
+                      ),
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _buildCareHeroCard(),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildQuickServicesSection(),
+                      const SizedBox(height: 20),
+                      _buildUpcomingAppointmentCard(),
+                      const SizedBox(height: 20),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _buildHomeAiRecommendation(recommended),
+                      ),
+                      const SizedBox(height: 20),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _buildRecordsAndNotificationsRow(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
-    return Scaffold(
-      backgroundColor: _p.pageBg,
-      body: SafeArea(
-        child: RefreshIndicator(
-          color: AppColors.primary,
-          onRefresh: () async {
-            await _fetchProviders();
-            await _loadPatientProfile();
-            await _fetchUpcomingAppointment();
-            await _loadPatientLocation();
-            await _loadFavorites();
-            await _loadMedicalSummary();
-          },
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 118),
+  Widget _buildCareHeroCard() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: _p.isDark ? const Color(0xFF0B2A2D) : const Color(0xFFE7F6F3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: _p.isDark ? 0.20 : 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 5,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.asset(
+                'assets/images/patientcare.jpg',
+                height: 116,
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 7,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _buildHeroHeader(),
+                Text(
+                  _homeText(
+                    'How can we help you today?',
+                    'كيف يمكننا مساعدتك اليوم؟',
+                  ),
+                  textAlign: TextAlign.start,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _p.inkDark,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    height: 1.15,
+                  ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: _buildSmartSearchCard(),
+                const SizedBox(height: 5),
+                Text(
+                  _homeText(
+                    'Home care and remote consultations made easy',
+                    'رعاية منزلية واستشارات عن بعد بكل سهولة',
+                  ),
+                  textAlign: TextAlign.start,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _p.inkMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-                  child: _buildUpcomingAppointmentCard(),
-                ),
-                if (_favoriteProviders.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: _buildSectionHeader(
-                      title: 'Favorites',
-                      actionText: 'See all >',
-                      onActionTap: _openproviders,
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 38,
+                  child: FilledButton.icon(
+                    onPressed: _openproviders,
+                    icon: const Icon(
+                      Icons.add_circle_outline_rounded,
+                      size: 16,
+                    ),
+                    label: Text(
+                      _homeText('Request care now', 'اطلب رعاية الآن'),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: _buildFavoritesRow(),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 38,
+                  child: OutlinedButton.icon(
+                    onPressed: _openAiAssistant,
+                    icon: const Icon(Icons.auto_awesome_rounded, size: 15),
+                    label: Text(
+                      _homeText('Ask AI assistant', 'اسأل المساعد الذكي'),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
-                ],
-                const SizedBox(height: 20),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildSectionHeader(
-                    title: 'Provider Specialty',
-                    actionText: 'See all >',
-                    onActionTap: _openproviders,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildSpecialtyChips(),
-                ),
-                const SizedBox(height: 20),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildSectionHeader(
-                    title: sortMode == 'Smart match'
-                        ? context.tr('patient.recommendedForYou')
-                        : 'Popular Providers',
-                    subtitle: sortMode == 'Smart match'
-                        ? _recommendationSummary.hasStructuredData
-                              ? 'Smart match uses your current case, medical file, specialty, distance, availability, ratings & experience.'
-                              : 'Add a medical record or describe your care need for stronger matches.'
-                        : null,
-                    actionText: 'See all >',
-                    onActionTap: _openproviders,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildProviderFilters(),
-                ),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: isLoading
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 24),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      : displayProviders.isEmpty
-                      ? _buildNoProvidersCard()
-                      : Column(
-                          children: displayProviders
-                              .take(8)
-                              .toList()
-                              .asMap()
-                              .entries
-                              .map(
-                                (e) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: _buildDoctorListCard(
-                                    e.value,
-                                    showRecommendedBadge:
-                                        sortMode == 'Smart match' && e.key < 3,
-                                    isAiMatched:
-                                        e.value.userId == _aiMatchedProviderId,
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        ),
                 ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickServicesSection() {
+    final services = _quickServices;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _buildSectionHeader(
+            title: _homeText('Quick services', 'الخدمات السريعة'),
+            actionText: _homeText('View all', 'عرض الكل'),
+            onActionTap: _openproviders,
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 118,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: services.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (context, index) {
+              final service = services[index];
+              return SizedBox(
+                width: 98,
+                child: _buildQuickServiceCard(service),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuickServiceCard(_HomeQuickService service) {
+    return InkWell(
+      onTap: () => _openQuickServiceBooking(service),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        decoration: BoxDecoration(
+          color: _p.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _p.stroke),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: _p.isDark ? 0.15 : 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(service.icon, color: AppColors.primary, size: 26),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: Center(
+                child: Text(
+                  _homeText(service.titleEn, service.titleAr),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _p.inkDark,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
-      bottomNavigationBar: _buildFloatingBottomNav(),
+    );
+  }
+
+  Widget _buildHomeAiRecommendation(List<ProviderModel> recommended) {
+    final provider = recommended.isNotEmpty ? recommended.first : null;
+    final name =
+        provider?.fullName ??
+        _homeText('Dr. Mohammad Mahmoud', 'د. محمد محمود');
+    final specialty = provider?.specialization.trim().isNotEmpty == true
+        ? provider!.specialization
+        : _homeText('General medicine', 'طب عام');
+    final rating = provider?.overallRating.toStringAsFixed(1) ?? '4.9';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _p.isDark ? const Color(0xFF151C32) : const Color(0xFFFAF8FF),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFF7C5CE7).withValues(alpha: 0.18),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: _p.isDark ? 0.18 : 0.045),
+            blurRadius: 16,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 104,
+            child: Column(
+              children: [
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF7C5CE7),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      _homeText('Best for you', 'الأفضل لك'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ClipOval(
+                  child: Image.asset(
+                    'assets/images/doctorportrait.jpg',
+                    width: 68,
+                    height: 68,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _p.inkDark,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  specialty,
+                  style: TextStyle(
+                    color: _p.inkMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Text(
+                      rating,
+                      style: TextStyle(
+                        color: _p.inkDark,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(
+                      Icons.star_rounded,
+                      color: Color(0xFFFFB020),
+                      size: 15,
+                    ),
+                    Text(
+                      _homeText(' (128 reviews)', ' (128 تقييم)'),
+                      style: TextStyle(color: _p.inkMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 7),
+                Row(
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF21A35B),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      _homeText('Available today', 'متاح اليوم'),
+                      style: const TextStyle(
+                        color: Color(0xFF21A35B),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 78,
+            color: const Color(0xFF7C5CE7).withValues(alpha: 0.25),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  _homeText('Suggested for you', 'مقترح لك'),
+                  style: TextStyle(
+                    color: _p.inkDark,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 9),
+                Text(
+                  _homeText(
+                    'Recommended based on your health needs and medical file',
+                    'تم ترشيحه بناءً على احتياجاتك الصحية وسجلك الطبي',
+                  ),
+                  textAlign: TextAlign.end,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _p.inkMuted,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 34,
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: provider == null
+                        ? _openproviders
+                        : () => _bookProvider(provider),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF6D4DE6),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                    ),
+                    child: Text(
+                      _homeText('View details', 'عرض التفاصيل'),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecordsAndNotificationsRow() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: _buildMedicalFilesCard()),
+        const SizedBox(width: 12),
+        Expanded(child: _buildNotificationsCard()),
+      ],
+    );
+  }
+
+  Widget _buildMedicalFilesCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: _homeCardDecoration(),
+      child: Column(
+        children: [
+          Text(
+            _homeText('My medical files', 'ملفاتي الطبية'),
+            style: TextStyle(
+              color: _p.inkDark,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: 70,
+            height: 70,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.10),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.folder_outlined,
+              color: AppColors.primary,
+              size: 36,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _homeText(
+              '$_medicalRecordsCount medical files',
+              '$_medicalRecordsCount ملف طبي',
+            ),
+            style: TextStyle(
+              color: _p.inkDark,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _homeText('Last upload: yesterday', 'آخر رفع: أمس'),
+            style: TextStyle(color: _p.inkMuted, fontSize: 11),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 38,
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _openMedicalRecords,
+              icon: const Icon(Icons.cloud_upload_outlined, size: 16),
+              label: Text(_homeText('Upload file', 'رفع ملف طبي')),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary.withValues(alpha: 0.10),
+                foregroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotificationsCard() {
+    final items = [
+      (
+        _homeText(
+          'Your appointment with Dr. Ahmad was confirmed',
+          'تم تأكيد موعدك مع د. أحمد علي',
+        ),
+        _homeText('10 minutes ago', 'منذ 10 دقائق'),
+        Icons.check_circle_rounded,
+        const Color(0xFF43A047),
+      ),
+      (
+        _homeText('New test result uploaded', 'تم رفع نتيجة فحص جديد'),
+        _homeText('1 day ago', 'منذ 1 يوم'),
+        Icons.description_outlined,
+        const Color(0xFF2196F3),
+      ),
+      (
+        _homeText(
+          'Do not forget your medicine today',
+          'لا تنس تناول أدويتك اليوم',
+        ),
+        _homeText('2 days ago', 'منذ 2 يوم'),
+        Icons.notifications_rounded,
+        const Color(0xFF7C5CE7),
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: _homeCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader(
+            title: _homeText('Latest notifications', 'أحدث الإشعارات'),
+            actionText: _homeText('View all', 'عرض الكل'),
+            onActionTap: _openNotifications,
+          ),
+          const SizedBox(height: 8),
+          ...List.generate(items.length, (index) {
+            final item = items[index];
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: index == items.length - 1 ? 0 : 8,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: item.$4.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(item.$3, color: item.$4, size: 18),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.$1,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _p.inkDark,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          item.$2,
+                          style: TextStyle(color: _p.inkMuted, fontSize: 10.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  BoxDecoration _homeCardDecoration() {
+    return BoxDecoration(
+      color: _p.surface,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: _p.stroke),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: _p.isDark ? 0.20 : 0.045),
+          blurRadius: 16,
+          offset: const Offset(0, 7),
+        ),
+      ],
     );
   }
 
@@ -1071,187 +2041,218 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   }
 
   Widget _buildHeroHeader() {
-    return SizedBox(
-      height: 122,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            right: 0,
-            top: 30,
-            child: SizedBox(
-              width: 136,
-              height: 58,
-              child: CustomPaint(
-                painter: _HeaderEkgDecorationPainter(
-                  lineColor: AppColors.primary.withValues(
-                    alpha: _p.isDark ? 0.23 : 0.11,
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CarelinkThemeIconButton(color: primaryColor),
+            CarelinkLocaleIconButton(color: primaryColor),
+            IconButton(
+              icon: Icon(Icons.smart_toy_outlined, color: primaryColor),
+              onPressed: _openAiAssistant,
+            ),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    Icons.notifications_none_rounded,
+                    color: primaryColor,
                   ),
-                  glow: _p.isDark,
+                  onPressed: _openNotifications,
                 ),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 78,
-            top: 33,
-            child: Icon(
-              Icons.health_and_safety_outlined,
-              size: 60,
-              color: AppColors.primary.withValues(
-                alpha: _p.isDark ? 0.15 : 0.08,
-              ),
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  CarelinkBrandLogo(
-                    height: 30,
-                    fallbackTextColor: _p.inkDark,
-                    forceDarkLogo: _p.isDark,
-                  ),
-                  const Spacer(),
-                  InkWell(
-                    onTap: () => themeController.toggle(),
-                    borderRadius: BorderRadius.circular(18),
+                if (_unreadNotifications > 0)
+                  Positioned(
+                    top: 4,
+                    right: 4,
                     child: Container(
-                      width: 36,
-                      height: 36,
+                      height: 16,
+                      constraints: const BoxConstraints(minWidth: 16),
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
                       decoration: BoxDecoration(
-                        color: _p.surface,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _p.stroke),
+                        color: const Color(0xFFE53935),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(
-                        _p.isDark
-                            ? Icons.light_mode_rounded
-                            : Icons.dark_mode_rounded,
-                        color: _p.inkDark,
-                        size: 21,
+                      child: Text(
+                        _unreadNotifications > 9
+                            ? '9+'
+                            : '$_unreadNotifications',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  InkWell(
-                    onTap: _openNotifications,
-                    borderRadius: BorderRadius.circular(18),
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: _p.surface,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _p.stroke),
-                      ),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Center(
-                            child: Icon(
-                              Icons.notifications_none_rounded,
-                              color: _p.inkDark,
-                              size: 22,
-                            ),
+              ],
+            ),
+          ],
+        ),
+        const Spacer(),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Column(
+              crossAxisAlignment: _ar
+                  ? CrossAxisAlignment.start
+                  : CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isProfileLoading
+                      ? context.tr('patient.hiLoading')
+                      : _dynamicGreeting,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: _ar ? TextAlign.left : TextAlign.right,
+                  style: TextStyle(
+                    color: _p.inkDark,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    height: 1.15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _ar
+                      ? [
+                          Icon(
+                            Icons.location_on_outlined,
+                            color: primaryColor,
+                            size: 14,
                           ),
-                          Positioned(
-                            right: 10,
-                            top: 10,
-                            child: Container(
-                              width: 7,
-                              height: 7,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFFFF6B6B),
-                                shape: BoxShape.circle,
+                          const SizedBox(width: 3),
+                          Flexible(
+                            child: Text(
+                              _locationText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _p.inkMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
+                        ]
+                      : [
+                          Flexible(
+                            child: Text(
+                              _locationText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _p.inkMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Icon(
+                            Icons.location_on_outlined,
+                            color: primaryColor,
+                            size: 14,
+                          ),
                         ],
-                      ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 10),
+            InkWell(
+              onTap: _openEditFromHero,
+              customBorder: const CircleBorder(),
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: _p.surface,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: _p.stroke, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: profileAvatarOrPlaceholder(
+                  imageUrl: profileImageUrlFromMap(_patientProfile),
+                  size: 48,
+                  placeholderColor: AppColors.primary,
+                  placeholderIcon: Icons.person_rounded,
+                  iconSize: 22,
+                ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: _openEditFromHero,
-                      borderRadius: BorderRadius.circular(32),
-                      child: Container(
-                        width: 58,
-                        height: 58,
-                        decoration: BoxDecoration(
-                          color: _p.surface,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.12),
-                              blurRadius: 14,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        child: ClipOval(
-                          child: profileAvatarOrPlaceholder(
-                            imageUrl: profileImageUrlFromMap(_patientProfile),
-                            size: 58,
-                            placeholderColor: AppColors.primary.withValues(
-                              alpha: 0.85,
-                            ),
-                            placeholderIcon: Icons.person_rounded,
-                            iconSize: 28,
-                          ),
-                        ),
-                      ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _headerCircleButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    String? badge,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: _p.surface,
+          shape: BoxShape.circle,
+          border: Border.all(color: _p.stroke),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: _p.isDark ? 0.20 : 0.08),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            Icon(icon, color: _p.inkDark, size: 22),
+            if (badge != null)
+              Positioned(
+                top: -2,
+                right: -2,
+                child: Container(
+                  height: 18,
+                  constraints: const BoxConstraints(minWidth: 18),
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFE53935),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    badge,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isProfileLoading
-                              ? context.tr('patient.hiLoading')
-                              : context.tr(
-                                  'patient.hiName',
-                                  args: {'name': _firstName},
-                                ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: _p.inkDark,
-                            fontSize: 19,
-                            fontWeight: FontWeight.w800,
-                            height: 1.15,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '$_greeting, welcome back!',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: _p.inkMuted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            height: 1.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1275,6 +2276,278 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   }
 
   Widget _buildUpcomingAppointmentCard() {
+    final apt = _upcomingAppointment;
+    final scheduled = apt?.scheduledAt?.toLocal();
+    final day = scheduled?.day.toString() ?? '24';
+    final month = scheduled == null
+        ? _homeText('May', 'مايو')
+        : _monthLabel(scheduled.month);
+    final name = apt?.providerName.trim().isNotEmpty == true
+        ? apt!.providerName
+        : _homeText('Dr. Ahmad Ali', 'د. أحمد علي');
+    final specialty = apt?.specialization.trim().isNotEmpty == true
+        ? apt!.specialization
+        : _homeText('General doctor', 'طبيب عام');
+    final time = scheduled == null
+        ? _homeText('03:30 PM', '03:30 مساءً')
+        : _formatAppointmentTime(scheduled);
+
+    final isToday =
+        scheduled != null &&
+        scheduled.year == DateTime.now().year &&
+        scheduled.month == DateTime.now().month &&
+        scheduled.day == DateTime.now().day;
+    final dateLabel = isToday
+        ? _homeText('Today', 'اليوم')
+        : (scheduled != null
+              ? _weekdayLabel(scheduled.weekday)
+              : _homeText('Date', 'التاريخ'));
+
+    final statusText = _appointmentStatusText(apt?.status ?? 'confirmed');
+    final statusColor = _appointmentStatusColor(apt?.status ?? 'confirmed');
+    final isHomeVisit = (apt?.location ?? '').toLowerCase() != 'remote';
+    final visitTypeLabel = isHomeVisit
+        ? _homeText('Home visit', 'زيارة منزلية')
+        : _homeText('Remote', 'استشارة عن بعد');
+    final visitIcon = isHomeVisit
+        ? Icons.home_outlined
+        : Icons.videocam_outlined;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader(
+            title: _homeText('My next appointment', 'موعدي القادم'),
+            actionText: _homeText('View all', 'عرض الكل'),
+            onActionTap: _openBookings,
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: _p.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _p.stroke),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: _p.isDark ? 0.16 : 0.04,
+                  ),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 58,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.15),
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        dateLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        day,
+                        style: TextStyle(
+                          color: _p.inkDark,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          height: 1.05,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        month,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _p.inkDark,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.15),
+                            width: 1.5,
+                          ),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Image.asset(
+                          'assets/images/doctorportrait.jpg',
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Container(
+                            color: AppColors.primary.withValues(alpha: 0.10),
+                            child: const Icon(
+                              Icons.medical_services_rounded,
+                              color: AppColors.primary,
+                              size: 24,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _p.inkDark,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              specialty,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _p.inkMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.access_time_rounded,
+                                  size: 12,
+                                  color: AppColors.primary,
+                                ),
+                                const SizedBox(width: 3),
+                                Flexible(
+                                  child: Text(
+                                    time,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(visitIcon, size: 12, color: _p.inkMuted),
+                                const SizedBox(width: 3),
+                                Flexible(
+                                  child: Text(
+                                    visitTypeLabel,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: _p.inkMuted,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        statusText,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 28,
+                      child: OutlinedButton(
+                        onPressed: _openUpcomingDetails,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: const BorderSide(color: AppColors.primary),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: Text(
+                          _homeText('Details', 'عرض التفاصيل'),
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _legacyUpcomingAppointmentCard() {
     final apt = _upcomingAppointment;
     final name = apt?.providerName.trim().isNotEmpty == true
         ? apt!.providerName
@@ -2277,67 +3550,6 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
       ),
     );
   }
-
-  Widget _buildFloatingBottomNav() {
-    return Material(
-      elevation: 18,
-      shadowColor: Colors.black12,
-      color: Colors.transparent,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-        decoration: BoxDecoration(
-          color: _p.navBackground,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: _p.stroke),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: _p.isDark ? 0.35 : 0.08),
-              blurRadius: 24,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          top: false,
-          child: BottomNavigationBar(
-            currentIndex: currentIndex,
-            onTap: _onBottomNavTap,
-            selectedItemColor: AppColors.primary,
-            unselectedItemColor: _p.navUnselected,
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            type: BottomNavigationBarType.fixed,
-            selectedLabelStyle: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 11,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 11,
-            ),
-            items: [
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.home_rounded, size: 24),
-                label: context.tr('patient.navHome'),
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.healing_outlined, size: 24),
-                label: context.tr('patient.navCare'),
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 24),
-                label: context.tr('patient.navChat'),
-              ),
-              BottomNavigationBarItem(
-                icon: _buildProfileTabIcon(),
-                label: context.tr('patient.navProfile'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _AiListeningBadge extends StatelessWidget {
@@ -2383,6 +3595,22 @@ class _AiListeningBadge extends StatelessWidget {
           : const SizedBox(key: ValueKey('idle'), width: 0, height: 0),
     );
   }
+}
+
+class _HomeQuickService {
+  const _HomeQuickService({
+    required this.titleEn,
+    required this.titleAr,
+    required this.serviceType,
+    required this.icon,
+    required this.terms,
+  });
+
+  final String titleEn;
+  final String titleAr;
+  final String serviceType;
+  final IconData icon;
+  final List<String> terms;
 }
 
 class _AiMatchAnimation extends StatelessWidget {

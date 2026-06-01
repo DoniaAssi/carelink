@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_date_picker.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
@@ -8,6 +9,7 @@ import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'patient_request_details_screen.dart';
 import 'select_visit_location_screen.dart';
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
 
@@ -52,25 +54,42 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   String _monthYear(DateTime date) {
-    const monthNames = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
+    final monthNames = context.l10n.isArabic
+        ? const [
+            'يناير',
+            'فبراير',
+            'مارس',
+            'أبريل',
+            'مايو',
+            'يونيو',
+            'يوليو',
+            'أغسطس',
+            'سبتمبر',
+            'أكتوبر',
+            'نوفمبر',
+            'ديسمبر',
+          ]
+        : const [
+            'January',
+            'February',
+            'March',
+            'April',
+            'May',
+            'June',
+            'July',
+            'August',
+            'September',
+            'October',
+            'November',
+            'December',
+          ];
     return '${monthNames[date.month - 1]} ${date.year}';
   }
 
   String _shortDay(DateTime? d) {
-    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final names = context.l10n.isArabic
+        ? const ['إث', 'ثل', 'أر', 'خم', 'جم', 'سب', 'أح']
+        : const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final weekday = _safeWeekday(d);
     if (weekday == null || weekday < 1 || weekday > 7) return '--';
     return names[weekday - 1];
@@ -84,7 +103,7 @@ class _BookingScreenState extends State<BookingScreen> {
   void _continue() {
     if (_selectedTimeLabel == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please choose date and time first')),
+        SnackBar(content: Text(context.tr('booking.dateTime.chooseFirst'))),
       );
       return;
     }
@@ -97,7 +116,9 @@ class _BookingScreenState extends State<BookingScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => SelectVisitLocationScreen(request: request),
+        builder: (_) => request.appointmentType == 'remote'
+            ? PatientRequestDetailsScreen(request: request)
+            : SelectVisitLocationScreen(request: request),
       ),
     );
   }
@@ -141,16 +162,12 @@ class _BookingScreenState extends State<BookingScreen> {
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Continue',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-                  ),
-                  SizedBox(width: 8),
-                  Icon(Icons.arrow_forward_rounded),
-                ],
+              child: Text(
+                context.tr('booking.continue'),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                ),
               ),
             ),
           ),
@@ -193,7 +210,7 @@ class _BookingScreenState extends State<BookingScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Choose your preferred date and time',
+                          context.tr('booking.dateTime.prompt'),
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
                             color: p.inkDark,
@@ -202,7 +219,7 @@ class _BookingScreenState extends State<BookingScreen> {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          'Available times are shown in your local time',
+                          context.tr('booking.dateTime.promptSubtitle'),
                           style: TextStyle(color: p.inkMuted, fontSize: 12),
                         ),
                       ],
@@ -231,18 +248,18 @@ class _BookingScreenState extends State<BookingScreen> {
                         : const Color(0xFFF0C9C6),
                   ),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.block_rounded,
                       color: Color(0xFFC64A44),
                       size: 18,
                     ),
-                    SizedBox(width: 8),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'This provider is currently not available.',
-                        style: TextStyle(
+                        context.tr('booking.dateTime.notAvailable'),
+                        style: const TextStyle(
                           color: Color(0xFF9F3E38),
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
@@ -258,7 +275,7 @@ class _BookingScreenState extends State<BookingScreen> {
               Row(
                 children: [
                   Text(
-                    'Select Date',
+                    context.tr('booking.dateTime.selectDate'),
                     style: TextStyle(
                       color: p.inkDark,
                       fontWeight: FontWeight.w700,
@@ -383,7 +400,7 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
               const SizedBox(height: 14),
               Text(
-                'Select Time',
+                context.tr('booking.dateTime.selectTime'),
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -449,7 +466,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: 10),
                   child: Text(
-                    'No available times for this date.',
+                    context.tr('booking.dateTime.noTimes'),
                     style: TextStyle(color: p.inkMuted),
                   ),
                 ),
@@ -475,7 +492,7 @@ class _BookingScreenState extends State<BookingScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'All times are approximate and may vary',
+                        context.tr('booking.dateTime.approx'),
                         style: TextStyle(color: p.inkMuted, fontSize: 12),
                       ),
                     ),
@@ -496,7 +513,7 @@ class _BookingScreenState extends State<BookingScreen> {
                   border: Border.all(color: p.stroke),
                 ),
                 child: Text(
-                  'Please choose another provider to continue booking.',
+                  context.tr('booking.dateTime.chooseAnotherProvider'),
                   style: TextStyle(color: p.inkMuted, fontSize: 12),
                 ),
               ),
@@ -548,7 +565,7 @@ class _BookingScreenState extends State<BookingScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Select Date & Time',
+                  context.tr('booking.dateTime.title'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -560,7 +577,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Pick your visit slot',
+                  context.tr('booking.dateTime.subtitle'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -625,6 +642,12 @@ class _BookingScreenState extends State<BookingScreen> {
         _blockedDateTimes
           ..clear()
           ..addAll(blocked);
+        final firstDate = _firstSelectableDateFrom(_today);
+        if (firstDate != null) {
+          _selectedDate = firstDate;
+          _visibleStartDate = firstDate;
+          _selectedTimeLabel = null;
+        }
       });
     } catch (_) {
       if (!mounted) return;
@@ -727,7 +750,7 @@ class _BookingScreenState extends State<BookingScreen> {
       initialDate: _selectedDate.isBefore(_today) ? _today : _selectedDate,
       firstDate: _today,
       lastDate: DateTime(_today.year + 1, 12, 31),
-      helpText: 'Select month and year',
+      helpText: context.tr('booking.dateTime.monthHelp'),
       initialDatePickerMode: DatePickerMode.year,
       builder: (context, child) => CarelinkDatePickerTheme.wrap(context, child),
     );
@@ -773,12 +796,28 @@ class _BookingScreenState extends State<BookingScreen> {
     final hour = int.tryParse(parts[0]);
     final minute = int.tryParse(parts[1]);
     if (hour == null || minute == null) return time24;
-    final period = hour >= 12 ? 'PM' : 'AM';
     final normalizedHour = hour % 12 == 0 ? 12 : hour % 12;
+    if (context.l10n.isArabic) {
+      final period = hour >= 12 ? 'م' : 'ص';
+      return '${normalizedHour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $period';
+    }
+    final period = hour >= 12 ? 'PM' : 'AM';
     return '${normalizedHour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $period';
   }
 
   String _to24h(String time12) {
+    final arabic = RegExp(
+      r'^(\d{1,2}):(\d{2})\s*(ص|م)$',
+    ).firstMatch(time12.trim());
+    if (arabic != null) {
+      final hour12 = int.tryParse(arabic.group(1)!);
+      final minute = int.tryParse(arabic.group(2)!);
+      final period = arabic.group(3)!;
+      if (hour12 == null || minute == null) return time12;
+      var hour24 = hour12 % 12;
+      if (period == 'م') hour24 += 12;
+      return '${hour24.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+    }
     final match = RegExp(
       r'^(\d{1,2}):(\d{2})\s*(AM|PM)$',
       caseSensitive: false,

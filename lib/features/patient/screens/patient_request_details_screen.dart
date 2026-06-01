@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
@@ -96,16 +97,12 @@ class _PatientRequestDetailsScreenState
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Continue',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-                  ),
-                  SizedBox(width: 8),
-                  Icon(Icons.arrow_forward_rounded),
-                ],
+              child: Text(
+                context.tr('booking.continue'),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                ),
               ),
             ),
           ),
@@ -136,7 +133,7 @@ class _PatientRequestDetailsScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Current case',
+                        context.tr('booking.case.prompt'),
                         style: TextStyle(
                           color: p.inkDark,
                           fontWeight: FontWeight.w800,
@@ -145,7 +142,7 @@ class _PatientRequestDetailsScreenState
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'This is only for the current booking. Your provider uses it to prepare, and the recommendation engine can match the request more accurately.',
+                        context.tr('booking.case.promptSubtitle'),
                         style: TextStyle(
                           color: p.inkMuted,
                           fontSize: 12.5,
@@ -161,7 +158,7 @@ class _PatientRequestDetailsScreenState
           const SizedBox(height: 10),
           _fieldCard(
             icon: Icons.assignment_outlined,
-            title: 'Reason for Visit',
+            title: context.tr('booking.case.reason'),
             requiredMark: true,
             child: TextField(
               controller: _reasonController,
@@ -171,14 +168,14 @@ class _PatientRequestDetailsScreenState
               maxLines: 5,
               maxLength: 200,
               decoration: _inputDecoration(
-                'Please describe the reason for your visit',
+                context.tr('booking.case.reasonHint'),
               ),
             ),
           ),
           const SizedBox(height: 10),
           _fieldCard(
             icon: Icons.monitor_heart_outlined,
-            title: 'Symptoms (optional)',
+            title: context.tr('booking.case.symptoms'),
             child: TextField(
               controller: _symptomsController,
               cursorColor: AppColors.primary,
@@ -187,7 +184,7 @@ class _PatientRequestDetailsScreenState
               maxLines: 5,
               maxLength: 200,
               decoration: _inputDecoration(
-                'Describe any symptoms you are experiencing',
+                context.tr('booking.case.symptomsHint'),
               ),
             ),
           ),
@@ -209,7 +206,7 @@ class _PatientRequestDetailsScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Is this urgent?',
+                        context.tr('booking.case.urgent'),
                         style: TextStyle(
                           color: p.inkDark,
                           fontWeight: FontWeight.w700,
@@ -217,7 +214,7 @@ class _PatientRequestDetailsScreenState
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'We will prioritize your request',
+                        context.tr('booking.case.urgentSubtitle'),
                         style: TextStyle(color: p.inkMuted, fontSize: 12),
                       ),
                     ],
@@ -235,7 +232,7 @@ class _PatientRequestDetailsScreenState
           const SizedBox(height: 10),
           _fieldCard(
             icon: Icons.notes_outlined,
-            title: 'Additional Notes (optional)',
+            title: context.tr('booking.case.additional'),
             child: TextField(
               controller: _additionalController,
               cursorColor: AppColors.primary,
@@ -244,7 +241,7 @@ class _PatientRequestDetailsScreenState
               maxLines: 5,
               maxLength: 200,
               decoration: _inputDecoration(
-                "Any other information you'd like to share",
+                context.tr('booking.case.additionalHint'),
               ),
             ),
           ),
@@ -266,7 +263,7 @@ class _PatientRequestDetailsScreenState
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Providing detailed information helps the provider prepare for your visit.',
+                    context.tr('booking.case.help'),
                     style: TextStyle(color: p.inkMuted, fontSize: 12),
                   ),
                 ),
@@ -280,7 +277,7 @@ class _PatientRequestDetailsScreenState
               Icon(Icons.lock_outline_rounded, color: p.inkMuted, size: 14),
               const SizedBox(width: 6),
               Text(
-                'Your information is kept confidential',
+                context.tr('booking.case.private'),
                 style: TextStyle(color: p.inkMuted, fontSize: 11),
               ),
             ],
@@ -331,7 +328,7 @@ class _PatientRequestDetailsScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Current Case',
+                  context.tr('booking.case.title'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -343,7 +340,7 @@ class _PatientRequestDetailsScreenState
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'Tell us what you need for this visit',
+                  context.tr('booking.case.subtitle'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

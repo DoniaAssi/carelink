@@ -6,8 +6,10 @@ import 'package:carelink/features/doctor/screens/doctor_home_screen.dart';
 import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
 import 'package:carelink/shared/models/user.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 /// Same routing as [LoginScreen] after a successful auth response (`user` map).
-void navigateCarelinkHomeForUserMap(Map<String, dynamic> rawUser) {
+void navigateCarelinkHomeForUserMap(Map<String, dynamic> rawUser) async {
   final userMap = Map<String, dynamic>.from(rawUser);
   if (userMap['id'] == null && userMap['userId'] != null) {
     userMap['id'] = userMap['userId'];
@@ -24,13 +26,18 @@ void navigateCarelinkHomeForUserMap(Map<String, dynamic> rawUser) {
   final userId = user.carelinkUserId;
   final userName = user.fullName.isNotEmpty ? user.fullName : 'User';
 
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('session_user_id', userId);
+  await prefs.setString('session_display_name', userName);
+
   final nav = appNavigatorKey.currentState;
   if (nav == null) return;
 
   switch (role) {
     case 'patient':
-      nav.pushReplacementNamed(
+      nav.pushNamedAndRemoveUntil(
         '/patient-home',
+        (route) => false,
         arguments: {'userId': userId, 'displayName': userName},
       );
       break;
@@ -56,8 +63,9 @@ void navigateCarelinkHomeForUserMap(Map<String, dynamic> rawUser) {
       );
       break;
     default:
-      nav.pushReplacementNamed(
+      nav.pushNamedAndRemoveUntil(
         '/patient-home',
+        (route) => false,
         arguments: {'userId': userId, 'displayName': userName},
       );
   }

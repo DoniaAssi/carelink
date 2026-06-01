@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/app_nav.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
@@ -23,6 +24,9 @@ class PaymentScreen extends StatefulWidget {
     required this.amount,
     this.serviceType,
     this.location,
+    this.servicePrice = 0,
+    this.discount = 0,
+    this.isRemote = false,
   });
 
   final String appointmentId;
@@ -35,6 +39,9 @@ class PaymentScreen extends StatefulWidget {
   final double amount;
   final String? serviceType;
   final String? location;
+  final double servicePrice;
+  final double discount;
+  final bool isRemote;
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
@@ -42,24 +49,31 @@ class PaymentScreen extends StatefulWidget {
 
 class _PaymentScreenState extends State<PaymentScreen> {
   final PaymentService _paymentService = PaymentService();
-  String? _method;
   bool _submitting = false;
 
-  static const _methods = [
-    _PayOption('cash', 'Cash', 'Pay in person when you visit', Icons.payments_outlined),
-    _PayOption('card', 'Card', 'Simulated — no real charge', Icons.credit_card_rounded),
-    _PayOption('wallet', 'Wallet', 'Simulated — no real charge', Icons.account_balance_wallet_outlined),
-  ];
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _cardController = TextEditingController();
+  final _expiryController = TextEditingController();
+  final _cvvController = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _cardController.dispose();
+    _expiryController.dispose();
+    _cvvController.dispose();
+    super.dispose();
+  }
 
   Future<void> _pay() async {
-    final method = _method;
-    if (method == null) {
-      _toast('Please choose how you want to pay.');
-      return;
-    }
-
+    if (!_formKey.currentState!.validate()) return;
     setState(() => _submitting = true);
     try {
+      final cardText = _cardController.text.trim();
+      final last4 = cardText.length >= 4 ? cardText.substring(cardText.length - 4) : 'XXXX';
+      final method = 'Visa ****$last4';
+
       final result = await _paymentService.createPayment(
         appointmentId: widget.appointmentId,
         patientId: widget.patientId,
@@ -74,8 +88,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         );
       }
 
-      final status =
-          (result['status'] ?? result['paymentStatus'] ?? '').toString();
+      final status = 'held';
       final rawAmt = result['amount'];
       final paidAmount = rawAmt is num
           ? rawAmt.toDouble()
@@ -131,7 +144,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return Scaffold(
       backgroundColor: p.pageBg,
       appBar: AppBar(
-        title: const CarelinkAppBarTitle('Payment'),
+        title: CarelinkAppBarTitle(context.tr('payment.title')),
         actions: carelinkAppBarActions(),
       ),
       body: Stack(
@@ -142,7 +155,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
               const CarelinkBrandLogo(height: 36),
               const SizedBox(height: 16),
               Text(
-                'Complete payment',
+                context.tr('payment.completePayment'),
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
@@ -151,7 +164,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Choose a method. Card and wallet are simulated until a gateway is connected.',
+                context.tr('payment.enterCardInfo'),
                 style: TextStyle(color: p.inkMuted, fontSize: 13.5, height: 1.35),
               ),
               const SizedBox(height: 20),
@@ -163,10 +176,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 time: widget.appointmentTime,
                 amount: widget.amount,
                 serviceType: widget.serviceType,
+                servicePrice: widget.servicePrice,
+                discount: widget.discount,
+                isRemote: widget.isRemote,
               ),
               const SizedBox(height: 20),
               Text(
-                'Payment method',
+                context.tr('payment.cardDetails'),
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 15,
@@ -174,33 +190,72 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              ..._methods.map(
-                (o) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _MethodTile(
-                    palette: p,
-                    option: o,
-                    selected: _method == o.id,
-                    onTap: _submitting ? null : () => setState(() => _method = o.id),
-                  ),
+              Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _nameController,
+                      decoration: InputDecoration(
+                        labelText: context.tr('payment.cardHolderName'),
+                      ),
+                      validator: (v) => v!.trim().isEmpty ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _cardController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: context.tr('payment.cardNumber'),
+                      ),
+                      validator: (v) => v!.trim().length < 8 ? 'Invalid card number' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _expiryController,
+                            keyboardType: TextInputType.datetime,
+                            decoration: InputDecoration(
+                              labelText: context.tr('payment.expiry'),
+                            ),
+                            validator: (v) => v!.trim().isEmpty ? 'Required' : null,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _cvvController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: context.tr('payment.cvv'),
+                            ),
+                            validator: (v) => v!.trim().isEmpty ? 'Required' : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
+              const SizedBox(height: 20),
               const SecurePaymentNotice(),
             ],
           ),
           if (_submitting)
             Container(
               color: Colors.black26,
-              child: const Center(
+              child: Center(
                 child: Card(
                   child: Padding(
-                    padding: EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(24),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircularProgressIndicator(color: AppColors.primary),
-                        SizedBox(height: 14),
-                        Text('Processing…'),
+                        const CircularProgressIndicator(color: AppColors.primary),
+                        const SizedBox(height: 14),
+                        Text(context.tr('payment.processing')),
                       ],
                     ),
                   ),
@@ -222,7 +277,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
             ),
             child: Text(
-              'Pay \$${widget.amount.toStringAsFixed(2)}',
+              context.tr('payment.pay', args: {
+                'amount': widget.amount.toStringAsFixed(2),
+              }),
               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
             ),
           ),
@@ -232,13 +289,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 }
 
-class _PayOption {
-  const _PayOption(this.id, this.title, this.subtitle, this.icon);
-  final String id;
-  final String title;
-  final String subtitle;
-  final IconData icon;
-}
+
 
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({
@@ -249,6 +300,9 @@ class _SummaryCard extends StatelessWidget {
     required this.time,
     required this.amount,
     this.serviceType,
+    this.servicePrice = 0,
+    this.discount = 0,
+    this.isRemote = false,
   });
 
   final CarelinkPalette palette;
@@ -258,6 +312,9 @@ class _SummaryCard extends StatelessWidget {
   final String time;
   final double amount;
   final String? serviceType;
+  final double servicePrice;
+  final double discount;
+  final bool isRemote;
 
   @override
   Widget build(BuildContext context) {
@@ -323,10 +380,16 @@ class _SummaryCard extends StatelessWidget {
           _row('Date', date, p),
           _row('Time', time, p),
           const SizedBox(height: 6),
+          if (servicePrice > 0) ...[
+            _pricingRow(context.tr('payment.servicePrice'), servicePrice, p),
+            if (discount > 0)
+              _pricingRow(context.tr('payment.remoteDiscount'), -discount, p, isNegative: true),
+          ],
+          const Divider(height: 16),
           Row(
             children: [
               Text(
-                'Total',
+                context.tr('payment.totalAmount'),
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   color: p.inkDark,
@@ -335,7 +398,7 @@ class _SummaryCard extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                '\$${amount.toStringAsFixed(2)}',
+                '${amount.toStringAsFixed(2)} ${context.tr('payment.currencySymbol')}',
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 18,
@@ -371,75 +434,30 @@ class _SummaryCard extends StatelessWidget {
       ),
     );
   }
-}
 
-class _MethodTile extends StatelessWidget {
-  const _MethodTile({
-    required this.palette,
-    required this.option,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final CarelinkPalette palette;
-  final _PayOption option;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = palette;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: p.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected ? AppColors.primary : p.stroke,
-              width: selected ? 2 : 1,
+  static Widget _pricingRow(String label, double value, CarelinkPalette p, {bool isNegative = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: p.inkMuted, fontSize: 13),
             ),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          child: Row(
-            children: [
-              Icon(
-                option.icon,
-                color: selected ? AppColors.primary : p.inkMuted,
-                size: 26,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      option.title,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: p.inkDark,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      option.subtitle,
-                      style: TextStyle(color: p.inkMuted, fontSize: 12.5),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                selected ? Icons.radio_button_checked : Icons.radio_button_off,
-                color: selected ? AppColors.primary : p.inkMuted,
-              ),
-            ],
+          Text(
+            '${isNegative ? '-' : ''}${value.abs().toStringAsFixed(2)} ILS',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: isNegative ? AppColors.primary : p.inkDark,
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
+
 }
+
+

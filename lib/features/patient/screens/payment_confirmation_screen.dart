@@ -3,11 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/provider_model.dart';
-import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'package:carelink/shared/widgets/secure_payment_notice.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/features/patient/payment/payment_screen.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 
 class PaymentConfirmationScreen extends StatefulWidget {
   final String patientUserId;
@@ -123,10 +122,8 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
 
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('Appointment'),
-        actions: carelinkAppBarActions(),
+      appBar: const PatientAppBar(
+        title: 'Appointment',
       ),
       bottomNavigationBar: SafeArea(
         top: false,
@@ -136,7 +133,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             children: [
               Expanded(
                 child: Text(
-                  'Total\n\$ ${widget.amount.toStringAsFixed(2)}',
+                  'Total\n${widget.amount.toStringAsFixed(2)} ILS',
                   style: const TextStyle(
                     color: AppColors.textDark,
                     fontWeight: FontWeight.w700,
@@ -315,22 +312,22 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             const SizedBox(height: 8),
             _paymentLine(
               'Consultation',
-              '\$${widget.consultationFee.toStringAsFixed(2)}',
+              '${widget.consultationFee.toStringAsFixed(2)} ILS',
             ),
             _paymentLine(
               'Admin Fee',
-              '\$${widget.adminFee.toStringAsFixed(2)}',
+              '${widget.adminFee.toStringAsFixed(2)} ILS',
             ),
             _paymentLine(
               'Additional Discount',
               widget.discount == 0
                   ? '-'
-                  : '\$${widget.discount.toStringAsFixed(2)}',
+                  : '${widget.discount.toStringAsFixed(2)} ILS',
             ),
             const Divider(height: 20, color: Color(0xFFE1E8EB)),
             _paymentLine(
               'Total',
-              '\$${widget.amount.toStringAsFixed(2)}',
+              '${widget.amount.toStringAsFixed(2)} ILS',
               valueColor: AppColors.primary,
               bold: true,
             ),

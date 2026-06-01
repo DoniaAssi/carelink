@@ -2,23 +2,25 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
+import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/core/locale_controller.dart';
+import 'package:carelink/core/theme_controller.dart';
 import 'package:carelink/features/ai/recommendation/ai_recommendation_engine.dart';
 import 'package:carelink/features/ai/recommendation/ai_recommendation_repository.dart';
 import 'package:carelink/features/ai/recommendation/mock_ai_data.dart';
 import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
 import 'package:carelink/features/ai/recommendation/recommendation_request_parser.dart';
-import 'package:carelink/features/ai/screens/ai_provider_details_screen.dart';
-import 'package:carelink/features/ai/screens/patient_ai_medical_record_screen.dart';
-import 'package:carelink/features/ai/widgets/ai_flow_theme.dart';
 import 'package:carelink/features/ai/widgets/ai_provider_recommendation_card.dart';
 import 'package:carelink/features/ai/widgets/ai_recommendation_loader.dart';
-import 'package:carelink/features/patient/screens/patient_home_screen.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/location_service.dart';
 
-/// CareLink “Find Doctors / Providers” with explainable hybrid scoring + loader.
+/// Patient AI assistant entry, analysis, and ranked provider results.
 class FindProviderScreen extends StatefulWidget {
   const FindProviderScreen({super.key, this.userId});
 
@@ -29,30 +31,35 @@ class FindProviderScreen extends StatefulWidget {
 }
 
 class _FindProviderScreenState extends State<FindProviderScreen> {
-  final _searchController = TextEditingController();
+  final _caseController = TextEditingController();
+  final _speech = stt.SpeechToText();
   final _api = ApiService();
   late final AiProviderRepository _providerRepo;
   late final PatientRecommendationProfileRepository _profileRepo;
 
-  List<ProviderModel> _providers = [];
+  List<ProviderModel>? _providers;
   PatientRecommendationProfile _patient = MockAiData.newPatient('guest');
   List<AIRecommendationResult> _results = [];
-  bool _loadingList = true;
+  bool _loadingList = false;
+  bool _fetchError = false;
+  bool _isTimeout = false;
   bool _aiRunning = false;
-  bool _returningDemo = false;
-  String _searchText = '';
-  String? _activeCategory;
+  bool _showResults = false;
+  bool _listening = false;
   double? _patLat;
   double? _patLng;
+  String? _selectedCategoryKey;
+  String? _activeUserId;
+  bool _bootstrapped = false;
 
-  static const _categories = <(String key, String label, IconData icon)>[
-    ('general', 'General', Icons.local_hospital_outlined),
-    ('lungs', 'Lungs', Icons.air_rounded),
-    ('dentist', 'Dentist', Icons.medical_services_outlined),
-    ('psychiatrist', 'Psychiatrist', Icons.psychology_outlined),
-    ('covid', 'Covid-19', Icons.coronavirus_outlined),
-    ('surgeon', 'Surgeon', Icons.content_cut_rounded),
-    ('cardiology', 'Cardiologist', Icons.favorite_outline_rounded),
+  bool get _ar => Directionality.of(context) == TextDirection.rtl;
+
+  static const _categoryKeys = [
+    'homeNurse',
+    'elderly',
+    'afterSurgery',
+    'physio',
+    'mental',
   ];
 
   @override
@@ -60,29 +67,36 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
     super.initState();
     _providerRepo = AiProviderRepository(_api);
     _profileRepo = PatientRecommendationProfileRepository(_api);
-    _hydratePrefs();
     _bootstrap();
   }
 
-  Future<void> _hydratePrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = 'ai_returning_demo_${widget.userId ?? 'guest'}';
-    final v = prefs.getBool(key) ?? false;
-    if (mounted) setState(() => _returningDemo = v);
-  }
-
-  Future<void> _setReturningDemo(bool v) async {
-    setState(() => _returningDemo = v);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(
-      'ai_returning_demo_${widget.userId ?? 'guest'}',
-      v,
-    );
-    await _reloadPatientOnly();
-    await _runRecommendation(showOverlay: true);
-  }
-
   Future<void> _bootstrap() async {
+    // Safely extract from multiple inputs to protect against direct named-route URL entries
+    String resolvedId = widget.userId ?? '';
+    String resolvedName = 'Patient';
+    if (mounted) {
+      final routeArgs =
+          ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+      if (resolvedId.isEmpty) {
+        resolvedId = routeArgs?['userId']?.toString() ?? '';
+      }
+      resolvedName = routeArgs?['displayName']?.toString() ?? 'Patient';
+    }
+    if (resolvedId.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      resolvedId = prefs.getString('session_user_id') ?? '';
+      if (resolvedName == 'Patient') {
+        resolvedName = prefs.getString('session_display_name') ?? 'Patient';
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _activeUserId = resolvedId;
+        _bootstrapped = true;
+      });
+    }
+
     await _loadLocation();
     await _reloadPatientOnly();
     await _loadProviders();
@@ -100,61 +114,162 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
   }
 
   Future<void> _reloadPatientOnly() async {
+    final uid = _activeUserId ?? widget.userId ?? 'guest';
+    final prefs = await SharedPreferences.getInstance();
+    final returningDemo = prefs.getBool('ai_returning_demo_$uid') ?? false;
     final p = await _profileRepo.load(
-      userId: widget.userId,
-      returningDemo: _returningDemo,
+      userId: uid,
+      returningDemo: returningDemo,
     );
     if (!mounted) return;
     setState(() => _patient = p);
   }
 
   Future<void> _loadProviders() async {
-    setState(() => _loadingList = true);
+    if (!mounted) return;
+    setState(() {
+      _loadingList = true;
+      _fetchError = false;
+    });
     try {
       final list = await _providerRepo.loadMergedProviders();
       if (!mounted) return;
-      setState(() => _providers = list);
-    } finally {
-      if (mounted) setState(() => _loadingList = false);
+      setState(() {
+        _providers = list;
+        _loadingList = false;
+        _fetchError = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _providers = null;
+        _loadingList = false;
+        _fetchError = true;
+      });
     }
-    await _runRecommendation(showOverlay: false);
   }
 
-  Future<void> _runRecommendation({bool showOverlay = true}) async {
-    if (_providers.isEmpty) return;
-
-    if (showOverlay) {
-      setState(() => _aiRunning = true);
-      await Future<void>.delayed(const Duration(milliseconds: 1700));
+  Future<void> _toggleVoice() async {
+    if (_listening) {
+      await _speech.stop();
+      if (mounted) setState(() => _listening = false);
+      return;
     }
 
-    final req = RecommendationRequestParser.fromInputs(
-      searchText: _searchText,
-      categoryKey: _activeCategory,
-    );
+    final available = await _speech.initialize();
+    if (!available) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_t('voiceUnavailable'))));
+      return;
+    }
 
+    setState(() => _listening = true);
+    await _speech.listen(
+      localeId: _ar ? 'ar' : 'en_US',
+      listenOptions: stt.SpeechListenOptions(
+        listenMode: stt.ListenMode.confirmation,
+        partialResults: true,
+      ),
+      onResult: (result) {
+        _caseController.text = result.recognizedWords;
+        _caseController.selection = TextSelection.fromPosition(
+          TextPosition(offset: _caseController.text.length),
+        );
+        if (result.finalResult && mounted) {
+          setState(() => _listening = false);
+        }
+      },
+    );
+  }
+
+  void _selectCategory(String key) {
+    setState(() {
+      _selectedCategoryKey = key;
+    });
+    final label = _t(key);
+    _caseController.text = label;
+    _caseController.selection = TextSelection.collapsed(
+      offset: _caseController.text.length,
+    );
+  }
+
+  Future<void> _analyzeCase() async {
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      _aiRunning = true;
+      _showResults = false;
+      _isTimeout = false;
+    });
+
+    debugPrint('[AI_DEBUG] transition to analysis');
+
+    if (_providers == null || _loadingList || _fetchError) {
+      if ((_providers == null || _fetchError) && !_loadingList) {
+        _loadProviders();
+      }
+
+      final startTime = DateTime.now();
+      while (_loadingList && mounted) {
+        final elapsed = DateTime.now().difference(startTime);
+        if (elapsed.inSeconds >= 8) {
+          setState(() {
+            _isTimeout = true;
+            _aiRunning = false;
+          });
+          return;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    }
+
+    if (!mounted) return;
+
+    if (_fetchError || _isTimeout) {
+      setState(() {
+        _aiRunning = false;
+      });
+      return;
+    }
+
+    final currentProviders = _providers;
+    if (currentProviders == null) {
+      setState(() {
+        _aiRunning = false;
+      });
+      return;
+    }
+
+    if (currentProviders.isEmpty) {
+      setState(() {
+        _aiRunning = false;
+      });
+      return;
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 2000));
+    if (!mounted || !_aiRunning) return;
+
+    final req = RecommendationRequestParser.fromInputs(
+      searchText: _caseController.text.trim(),
+      categoryKey: null,
+    );
     final ranked = AiRecommendationEngine.recommendProviders(
       patient: _patient,
       request: req,
-      providers: _providers,
-      top: 16,
+      providers: currentProviders,
+      top: 10,
     );
 
-    if (!mounted) return;
+    if (!mounted || !_aiRunning) return;
+    debugPrint('[AI_DEBUG] transition to results');
     setState(() {
       _results = ranked;
       _aiRunning = false;
+      _showResults = true;
     });
-  }
-
-  Future<void> _onSearch() async {
-    _searchText = _searchController.text.trim();
-    await _runRecommendation(showOverlay: true);
-  }
-
-  Future<void> _onCategory(String? key) async {
-    setState(() => _activeCategory = key);
-    await _runRecommendation(showOverlay: true);
   }
 
   Future<void> _openDetails(AIRecommendationResult r) async {
@@ -165,288 +280,151 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
       r.provider,
     );
     if (!mounted) return;
-    await Navigator.push<void>(
+    await Navigator.pushNamed(
       context,
-      MaterialPageRoute(
-        builder: (_) => AiProviderDetailsScreen(
-          patientUserId: widget.userId,
-          result: r,
-          distanceKm: dist,
-        ),
-      ),
+      '/ai-details',
+      arguments: {
+        'result': r,
+        'selectedProvider': r.provider,
+        'userId': _activeUserId ?? 'guest',
+        'patientUserId': _activeUserId ?? 'guest',
+        'distanceKm': dist,
+        'caseReason': _caseController.text.trim(),
+        'patientRequest': _caseController.text.trim(),
+        'recommendedSpecialization': r.provider.specialization,
+      },
     );
     await _reloadPatientOnly();
   }
 
   Future<void> _rememberRecent(String providerId) async {
     final prefs = await SharedPreferences.getInstance();
-    final key = 'ai_recent_${widget.userId ?? 'guest'}';
+    final key = 'ai_recent_${_activeUserId ?? widget.userId ?? 'guest'}';
     final cur = prefs.getStringList(key) ?? <String>[];
     cur.remove(providerId);
     cur.insert(0, providerId);
     await prefs.setStringList(key, cur.take(8).toList());
   }
 
-  Future<List<ProviderModel>> _recentProviders() async {
-    final prefs = await SharedPreferences.getInstance();
-    final ids =
-        prefs.getStringList('ai_recent_${widget.userId ?? 'guest'}') ??
-        const [];
-    final map = {for (final p in _providers) p.userId: p};
-    return ids.map((id) => map[id]).whereType<ProviderModel>().toList();
-  }
-
-  AIRecommendationResult? _resultForProviderId(String id) {
-    for (final r in _results) {
-      if (r.provider.userId == id) return r;
-    }
-    return null;
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AiFlowTheme.pageBg,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        foregroundColor: AiFlowTheme.ink,
-        elevation: 0,
-        title: const Text(
-          'Find providers',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        actions: [
+  Widget _topActionBar() {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
           IconButton(
-            icon: const Icon(Icons.folder_shared_outlined),
+            icon: Icon(
+              _ar ? Icons.arrow_forward : Icons.arrow_back,
+              color: primaryColor,
+            ),
             onPressed: () {
-              final id = widget.userId?.trim() ?? '';
-              if (id.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Sign in to view your structured record.'),
-                  ),
-                );
-                return;
+              if (_aiRunning) {
+                setState(() {
+                  _aiRunning = false;
+                });
+              } else if (_showResults) {
+                setState(() {
+                  _showResults = false;
+                });
+              } else {
+                Navigator.of(context).pop();
               }
-              Navigator.push<void>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PatientAiMedicalRecordScreen(userId: id),
-                ),
-              );
             },
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => PatientHomeScreen(
-                    userId: widget.userId,
-                  ),
-                ),
-              );
-            },
-            child: const Text('Home'),
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            children: [
-              _searchBar(),
-              const SizedBox(height: 12),
-              _demoToggle(),
-              const SizedBox(height: 8),
-              _aiInfoCard(),
-              const SizedBox(height: 16),
-              _categoryRow(),
-              const SizedBox(height: 18),
-              _sectionTitle('Recommended for you'),
-              const SizedBox(height: 8),
-              _resultsList(),
-              const SizedBox(height: 20),
-              _sectionTitle('Recent providers'),
-              const SizedBox(height: 8),
-              _recentRow(),
-            ],
-          ),
-          if (_aiRunning) const AiRecommendationLoader(),
+          PatientHeaderActions(color: primaryColor),
         ],
       ),
     );
   }
 
-  Widget _searchBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AiFlowTheme.cardStroke),
-      ),
-      child: TextField(
-        controller: _searchController,
-        textInputAction: TextInputAction.search,
-        onSubmitted: (_) => _onSearch(),
-        decoration: InputDecoration(
-          hintText:
-              'e.g. “2 PM Wednesday” or “book cardiology follow-up”',
-          prefixIcon: const Icon(Icons.search, color: AiFlowTheme.primaryBlue),
-          suffixIcon: IconButton(
-            icon: const Icon(Icons.tune_rounded),
-            color: AiFlowTheme.primaryBlue,
-            onPressed: _onSearch,
-          ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 14,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _demoToggle() {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      title: const Text(
-        'Graduation demo: returning heart patient',
-        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-      ),
-      subtitle: const Text(
-        'Adds chronic heart history + prior cardiologist rating for hybrid personalization.',
-        style: TextStyle(fontSize: 11),
-      ),
-      value: _returningDemo,
-      activeThumbColor: Colors.white,
-      activeTrackColor: AiFlowTheme.primaryBlue,
-      onChanged: _setReturningDemo,
-    );
-  }
-
-  Widget _aiInfoCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AiFlowTheme.primaryBlue.withValues(alpha: 0.15),
-        ),
-      ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _providersLoadingBody() {
+    final p = CarelinkPalette.of(context);
+    final themeColor = p.inkDark;
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.auto_awesome_rounded,
-                color: AiFlowTheme.primaryBlue,
-                size: 20,
-              ),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'AI matched these providers using your location, condition, availability, and medical history.',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    height: 1.3,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 8),
+          const CircularProgressIndicator(color: AppColors.primary),
+          const SizedBox(height: 16),
           Text(
-            'This recommendation is based on location, specialty, availability, rating, experience, and medical compatibility. For returning patients, previous visit reports also adjust the ranking.',
-            style: TextStyle(fontSize: 11.5, height: 1.35),
+            _t('loadingProvidersText'),
+            style: TextStyle(fontWeight: FontWeight.bold, color: themeColor),
           ),
         ],
       ),
     );
   }
 
-  Widget _categoryRow() {
-    return SizedBox(
-      height: 104,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _categories.length + 1,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          if (i == 0) {
-            final sel = _activeCategory == null;
-            return _catChip(
-              label: 'All',
-              icon: Icons.grid_view_rounded,
-              selected: sel,
-              onTap: () => _onCategory(null),
-            );
-          }
-          final c = _categories[i - 1];
-          final selected = _activeCategory == c.$1;
-          return _catChip(
-            label: c.$2,
-            icon: c.$3,
-            selected: selected,
-            onTap: () => _onCategory(c.$1),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _catChip({
-    required String label,
-    required IconData icon,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        width: 86,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: selected
-              ? AiFlowTheme.primaryBlue.withValues(alpha: 0.1)
-              : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? AiFlowTheme.primaryBlue : AiFlowTheme.cardStroke,
-            width: selected ? 1.4 : 1,
-          ),
-        ),
+  Widget _providersErrorBody() {
+    final p = CarelinkPalette.of(context);
+    final themeColor = p.inkDark;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              color: selected ? AiFlowTheme.primaryBlue : AiFlowTheme.inkMuted,
-            ),
-            const SizedBox(height: 6),
+            const Icon(Icons.cloud_off_rounded, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
             Text(
-              label,
-              maxLines: 2,
+              _t('providersLoadError'),
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: selected ? AiFlowTheme.ink : AiFlowTheme.inkMuted,
+                fontWeight: FontWeight.bold,
+                color: themeColor,
+                fontSize: 16,
               ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: themeColor,
+                    side: BorderSide(color: p.stroke),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _fetchError = false;
+                      _isTimeout = false;
+                      _aiRunning = false;
+                      _showResults = false;
+                    });
+                  },
+                  child: Text(_t('backToInput')),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _fetchError = false;
+                      _isTimeout = false;
+                    });
+                    _analyzeCase();
+                  },
+                  child: Text(_t('retry')),
+                ),
+              ],
             ),
           ],
         ),
@@ -454,126 +432,675 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
     );
   }
 
-  Widget _sectionTitle(String t) {
-    return Text(
-      t,
-      style: const TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w800,
-        color: AiFlowTheme.ink,
+  Widget _providersEmptyBody() {
+    final p = CarelinkPalette.of(context);
+    final themeColor = p.inkDark;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.people_outline_rounded,
+              size: 64,
+              color: AppColors.primary,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _t('providersEmptyText'),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: themeColor,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: themeColor,
+                    side: BorderSide(color: p.stroke),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: Text(_t('backToHome')),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: () {
+                    _loadProviders();
+                  },
+                  child: Text(_t('retry')),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _resultsList() {
-    if (_loadingList) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: CircularProgressIndicator(color: AiFlowTheme.primaryBlue),
-        ),
-      );
-    }
-    if (_results.isEmpty) {
-      return const Text('No providers to display yet.');
-    }
-    return Column(
-      children: _results
-          .map(
-            (r) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: AiProviderRecommendationCard(
-                result: r,
-                distanceKm: AiProviderRecommendationCard.distanceFrom(
-                  _patLat,
-                  _patLng,
-                  r.provider,
-                ),
-                onTap: () => _openDetails(r),
-              ),
+  Widget _buildBottomNav() {
+    final p = CarelinkPalette.of(context);
+    return Material(
+      elevation: 18,
+      shadowColor: Colors.black12,
+      color: Colors.transparent,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        decoration: BoxDecoration(
+          color: p.navBackground,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: p.stroke),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: p.isDark ? 0.35 : 0.08),
+              blurRadius: 24,
+              offset: const Offset(0, 10),
             ),
-          )
-          .toList(),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: BottomNavigationBar(
+            currentIndex: 0,
+            onTap: (index) {
+              if (index == 0) {
+                Navigator.of(context).pop();
+              } else {
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  '/patient-home',
+                  (route) => false,
+                  arguments: {
+                    'userId': _activeUserId ?? '',
+                    'initialTab': index,
+                  },
+                );
+              }
+            },
+            selectedItemColor: AppColors.primary,
+            unselectedItemColor: p.navUnselected,
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            type: BottomNavigationBarType.fixed,
+            selectedLabelStyle: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            ),
+            items: [
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.home_rounded, size: 23),
+                activeIcon: const Icon(
+                  Icons.home_rounded,
+                  size: 23,
+                  color: AppColors.primary,
+                ),
+                label: _ar ? 'الرئيسية' : 'Home',
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.calendar_month_rounded, size: 23),
+                label: _ar ? 'حجوزاتي' : 'Bookings',
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.favorite_border_rounded, size: 23),
+                label: _ar ? 'رعايتي' : 'My care',
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.folder_outlined, size: 23),
+                label: _ar ? 'السجل الطبي' : 'Records',
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.person_outline_rounded, size: 23),
+                label: _ar ? 'الملف الشخصي' : 'Profile',
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _recentRow() {
-    return FutureBuilder<List<ProviderModel>>(
-      future: _recentProviders(),
-      builder: (context, snap) {
-        final list = snap.data ?? const <ProviderModel>[];
-        if (list.isEmpty) {
-          return const Text(
-            'Visit a provider to populate recents.',
-            style: TextStyle(color: AiFlowTheme.inkMuted, fontSize: 12),
+  @override
+  void dispose() {
+    _speech.cancel();
+    _caseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([localeController, themeController]),
+      builder: (context, _) {
+        final p = CarelinkPalette.of(context);
+        final themeColor = p.inkDark;
+
+        final uid = _activeUserId;
+        // Protective authentication state check to prevent blank screens/crashes
+        if (_bootstrapped && (uid == null || uid.isEmpty)) {
+          return Directionality(
+            textDirection: localeController.isArabic
+                ? TextDirection.rtl
+                : TextDirection.ltr,
+            child: Scaffold(
+              backgroundColor: p.pageBg,
+              body: SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _topActionBar(),
+                    Expanded(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.error_outline_rounded,
+                                size: 64,
+                                color: Colors.red,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _t('sessionMissing'),
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: themeColor,
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: themeColor,
+                                      side: BorderSide(color: p.stroke),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 20,
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(),
+                                    child: Text(_t('backToHome')),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 24,
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        _bootstrapped = false;
+                                      });
+                                      _bootstrap();
+                                    },
+                                    child: Text(_t('retry')),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           );
         }
-        return SizedBox(
-          height: 110,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: list.length,
-            separatorBuilder: (context, index) => const SizedBox(width: 10),
-            itemBuilder: (context, i) {
-              final p = list[i];
-              return InkWell(
-                onTap: () async {
-                  var hit = _resultForProviderId(p.userId);
-                  hit ??= () {
-                    final one = AiRecommendationEngine.recommendProviders(
-                      patient: _patient,
-                      request: RecommendationRequestParser.fromInputs(
-                        searchText: '',
-                        categoryKey: null,
-                      ),
-                      providers: [p],
-                      top: 1,
-                    );
-                    return one.isEmpty ? null : one.first;
-                  }();
-                  if (hit != null) await _openDetails(hit);
-                },
-                child: Container(
-                  width: 160,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AiFlowTheme.cardStroke),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        p.fullName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        p.specialization.isEmpty
-                            ? p.role
-                            : p.specialization,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AiFlowTheme.primaryBlue,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
+
+        return Directionality(
+          textDirection: localeController.isArabic
+              ? TextDirection.rtl
+              : TextDirection.ltr,
+          child: PopScope(
+            canPop: !_showResults && !_aiRunning,
+            onPopInvokedWithResult: (didPop, result) {
+              if (didPop) return;
+              if (_aiRunning) {
+                setState(() {
+                  _aiRunning = false;
+                });
+              } else if (_showResults) {
+                setState(() {
+                  _showResults = false;
+                });
+              }
             },
+            child: Scaffold(
+              backgroundColor: p.pageBg,
+              bottomNavigationBar: _buildBottomNav(),
+              body: SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _topActionBar(),
+                    Expanded(
+                      child: _aiRunning
+                          ? (_providers == null || _loadingList
+                                ? _providersLoadingBody()
+                                : AiRecommendationLoader(isArabic: _ar))
+                          : _showResults
+                          ? _resultsBody()
+                          : (_fetchError || _isTimeout
+                                ? _providersErrorBody()
+                                : (_providers != null && _providers!.isEmpty
+                                      ? _providersEmptyBody()
+                                      : _inputBody())),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         );
       },
     );
   }
+
+  Widget _inputBody() {
+    final p = CarelinkPalette.of(context);
+    final dark = p.isDark;
+    final themeColor = p.inkDark;
+    final helperColor = p.inkMuted;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 22),
+      children: [
+        SizedBox(
+          height: 188,
+          child: Image.asset(
+            'assets/images/ai_robot_illustration.png',
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              debugPrint(
+                'Warning: Could not load assets/images/ai_robot_illustration.png',
+              );
+              return const Icon(
+                Icons.smart_toy_outlined,
+                size: 96,
+                color: AppColors.primary,
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          _t('headline'),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: dark ? Colors.blue[300] : AppColors.primary,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            height: 1.15,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _t('subtitle'),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: themeColor,
+            fontSize: 16,
+            height: 1.45,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 22),
+        TextField(
+          controller: _caseController,
+          minLines: 3,
+          maxLines: 5,
+          textInputAction: TextInputAction.newline,
+          onChanged: (val) {
+            if (_selectedCategoryKey != null) {
+              final label = _t(_selectedCategoryKey!);
+              if (val.trim() != label.trim()) {
+                setState(() => _selectedCategoryKey = null);
+              }
+            }
+          },
+          style: TextStyle(color: themeColor),
+          decoration: InputDecoration(
+            hintText: _t('hint'),
+            hintStyle: TextStyle(color: helperColor),
+            helperText: _t('example'),
+            helperStyle: TextStyle(color: helperColor),
+            helperMaxLines: 2,
+            filled: true,
+            fillColor: p.surface,
+            contentPadding: const EdgeInsets.all(16),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: p.stroke),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: p.stroke),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(
+                color: AppColors.primary,
+                width: 1.4,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          _t('chooseType'),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: themeColor,
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 10,
+          runSpacing: 10,
+          children: _categoryKeys
+              .map(
+                (key) => ChoiceChip(
+                  selected: _selectedCategoryKey == key,
+                  selectedColor: AppColors.primary.withValues(alpha: 0.15),
+                  backgroundColor: p.surface,
+                  side: BorderSide(
+                    color: _selectedCategoryKey == key
+                        ? AppColors.primary
+                        : p.stroke,
+                  ),
+                  avatar: Icon(
+                    _categoryIcon(key),
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                  label: Text(
+                    _t(key),
+                    style: TextStyle(
+                      color: _selectedCategoryKey == key
+                          ? AppColors.primary
+                          : themeColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  onSelected: (selected) {
+                    if (selected) {
+                      _selectCategory(key);
+                    } else {
+                      setState(() {
+                        _selectedCategoryKey = null;
+                        _caseController.clear();
+                      });
+                    }
+                  },
+                ),
+              )
+              .toList(),
+        ),
+        const SizedBox(height: 22),
+        Center(
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: _toggleVoice,
+            child: Container(
+              width: 82,
+              height: 82,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.28),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Icon(
+                _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                color: Colors.white,
+                size: 38,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _listening ? _t('listening') : _t('tapToSpeak'),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: themeColor,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 18),
+        SizedBox(
+          height: 56,
+          width: double.infinity,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: _aiRunning ? null : _analyzeCase,
+            icon: const Icon(Icons.auto_awesome_rounded),
+            label: Text(
+              _t('analyze'),
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _resultsBody() {
+    final p = CarelinkPalette.of(context);
+    final dark = p.isDark;
+    final helperColor = p.inkMuted;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
+      children: [
+        Text(
+          _t('resultsHeadline'),
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: dark ? Colors.blue[300] : AppColors.primary,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            height: 1.25,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _t('resultsSubtitle'),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: helperColor,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (_results.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              _t('empty'),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: p.inkMuted, fontWeight: FontWeight.w700),
+            ),
+          )
+        else
+          ..._results.asMap().entries.map(
+            (entry) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: AiProviderRecommendationCard(
+                rank: entry.key + 1,
+                result: entry.value,
+                distanceKm: AiProviderRecommendationCard.distanceFrom(
+                  _patLat,
+                  _patLng,
+                  entry.value.provider,
+                ),
+                onTap: () => _openDetails(entry.value),
+                isArabic: _ar,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  IconData _categoryIcon(String key) {
+    switch (key) {
+      case 'homeNurse':
+        return Icons.home_work_outlined;
+      case 'elderly':
+        return Icons.elderly_rounded;
+      case 'afterSurgery':
+        return Icons.health_and_safety_outlined;
+      case 'physio':
+        return Icons.accessibility_new_rounded;
+      case 'mental':
+        return Icons.psychology_alt_outlined;
+      default:
+        return Icons.medical_services_outlined;
+    }
+  }
+
+  String _t(String key) {
+    final strings = _ar ? _arStrings : _enStrings;
+    return strings[key] ?? _enStrings[key] ?? key;
+  }
 }
+
+const _enStrings = <String, String>{
+  'title': 'CareLink AI Assistant',
+  'analysisTitle': 'Analyzing your case',
+  'resultsTitle': 'Best matches for you',
+  'headline': 'How can I help you today?',
+  'subtitle':
+      'Write or speak about your case and I will recommend the most suitable care provider.',
+  'hint': 'Write your case here...',
+  'example': 'Example: I need a nurse for my father after surgery',
+  'chooseType': 'Or choose care type',
+  'homeNurse': 'Home Nursing',
+  'elderly': 'Elderly Care',
+  'afterSurgery': 'Post-Surgery Care',
+  'physio': 'Physiotherapy',
+  'mental': 'Mental Health Support',
+  'tapToSpeak': 'Tap to speak',
+  'listening': 'Listening...',
+  'analyze': 'Analyze Condition',
+  'resultsHeadline':
+      'We found the best care providers based on your case and location.',
+  'resultsSubtitle': 'Results are ranked by compatibility match',
+  'empty': 'No suitable providers found yet.',
+  'voiceUnavailable': 'Voice input is not available on this device.',
+  'providersLoading': 'Provider list is still loading. Try again shortly.',
+  'language': 'Change language',
+  'theme': 'Change theme',
+  'authRequired':
+      'Authentication Required\nPlease log in to search care providers.',
+  'goToLogin': 'Go to Login',
+  'sessionMissing':
+      'Unable to open AI assistant because patient session data is missing.',
+  'backToHome': 'Back to Home',
+  'retry': 'Retry',
+  'loadingProvidersText': 'Loading care providers...',
+  'providersLoadError': 'Could not load care providers. Please try again.',
+  'providersEmptyText': 'No care providers are available right now.',
+  'backToInput': 'Back to Input',
+};
+
+const _arStrings = <String, String>{
+  'title': 'مساعد كيرلينك الذكي',
+  'analysisTitle': 'جاري تحليل حالتك',
+  'resultsTitle': 'أفضل المطابقات لك',
+  'headline': 'كيف يمكنني مساعدتك اليوم؟',
+  'subtitle': 'اكتب أو تحدث عن حالتك وسأرشح لك مقدم الرعاية الأنسب',
+  'hint': 'اكتب حالتك هنا...',
+  'example': 'مثال: أحتاج ممرضة لرعاية والدي بعد العملية',
+  'chooseType': 'أو اختر نوع الرعاية',
+  'homeNurse': 'رعاية تمريضية منزلية',
+  'elderly': 'رعاية كبار السن',
+  'afterSurgery': 'رعاية ما بعد الجراحة',
+  'physio': 'علاج طبيعي',
+  'mental': 'دعم الصحة النفسية',
+  'tapToSpeak': 'اضغط للتحدث',
+  'listening': 'جاري الاستماع...',
+  'analyze': 'تحليل الحالة',
+  'resultsHeadline': 'وجدنا أفضل مقدمي الرعاية بناءً على حالتك وموقعك',
+  'resultsSubtitle': 'تم ترتيب النتائج حسب نسبة التوافق',
+  'empty': 'لم يتم العثور على مقدم رعاية مناسب حتى الآن.',
+  'voiceUnavailable': 'الإدخال الصوتي غير متاح على هذا الجهاز.',
+  'providersLoading': 'قائمة مقدمي الرعاية ما زالت قيد التحميل. حاول بعد قليل.',
+  'language': 'تغيير اللغة',
+  'theme': 'تغيير المظهر',
+  'authRequired': 'تسجيل الدخول مطلوب\nيرجى تسجيل الدخول للبحث عن مقدمي رعاية.',
+  'goToLogin': 'الذهاب لتسجيل الدخول',
+  'sessionMissing':
+      'Unable to open AI assistant because patient session data is missing.',
+  'backToHome': 'العودة للرئيسية',
+  'retry': 'إعادة المحاولة',
+  'loadingProvidersText': 'جاري تحميل مقدمي الرعاية...',
+  'providersLoadError': 'تعذر تحميل مقدمي الرعاية. حاول مرة أخرى.',
+  'providersEmptyText': 'لا يوجد مقدمو رعاية متاحون حالياً',
+  'backToInput': 'العودة للإدخال',
+};

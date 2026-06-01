@@ -211,6 +211,19 @@ class AiMedicalRecordLocalStore {
       usedByAi: e['usedByAi'] == true,
       privateLabel: e['privateLabel'] != false,
       uploadedAfterVisit: e['uploadedAfterVisit'] == true,
+      category: e['category']?.toString(),
+      fileUrl: e['fileUrl']?.toString(),
+      fileName: e['fileName']?.toString(),
+      fileExtension: e['fileExtension']?.toString(),
+      fileSize: e['fileSize'] is int ? e['fileSize'] as int : int.tryParse(e['fileSize']?.toString() ?? ''),
+      aiReady: e['aiReady'] == true,
+      extractedTextStatus: e['extractedTextStatus']?.toString() ?? 'pending',
+      extractedText: e['extractedText']?.toString(),
+      medicalSummary: e['medicalSummary']?.toString(),
+      detectedCategory: e['detectedCategory']?.toString(),
+      tags: (e['tags'] as List<dynamic>?)?.map((x) => x.toString()).toList() ?? const [],
+      usedForAiMatching: e['usedForAiMatching'] != false,
+      source: e['source']?.toString() ?? 'patient_upload',
     );
   }
 
@@ -237,6 +250,12 @@ class AiMedicalRecordLocalStore {
     await _save(patientId, next);
   }
 
+  Future<void> delete(String patientId, String entryId) async {
+    final existing = await load(patientId);
+    final next = existing.where((e) => e.id != entryId).toList();
+    await _save(patientId, next);
+  }
+
   Future<void> _save(String patientId, List<MedicalRecordEntry> list) async {
     final prefs = await SharedPreferences.getInstance();
     final encoded = jsonEncode(
@@ -257,6 +276,19 @@ class AiMedicalRecordLocalStore {
               'usedByAi': e.usedByAi,
               'privateLabel': e.privateLabel,
               'uploadedAfterVisit': e.uploadedAfterVisit,
+              'category': e.category,
+              'fileUrl': e.fileUrl,
+              'fileName': e.fileName,
+              'fileExtension': e.fileExtension,
+              'fileSize': e.fileSize,
+              'aiReady': e.aiReady,
+              'extractedTextStatus': e.extractedTextStatus,
+              'extractedText': e.extractedText,
+              'medicalSummary': e.medicalSummary,
+              'detectedCategory': e.detectedCategory,
+              'tags': e.tags,
+              'usedForAiMatching': e.usedForAiMatching,
+              'source': e.source,
             },
           )
           .toList(),

@@ -81,7 +81,7 @@ function scheduleDbgEnabled() {
 function scheduleDbg(tag, payload) {
   if (!scheduleDbgEnabled()) return;
   // eslint-disable-next-line no-console
-  console.log(`[CareLink schedule] ${tag}`, payload);
+  console.log(`[CareLink schedule] ${tag}`);
 }
 
 /** ENUM / mixed casing: normalize to lowercase string without breaking joins. */
@@ -269,6 +269,7 @@ router.get('/profile/:userId', async (req, res) => {
     const hasChronic = await hasColumn('patient', 'chronicDiseases');
     const hasAllergies = await hasColumn('patient', 'allergies');
     const hasMeds = await hasColumn('patient', 'currentMedications');
+    const hasBloodType = await hasColumn('medicalrecord', 'bloodType');
 
     const [rows] = await db.query(
       `SELECT
@@ -287,7 +288,16 @@ router.get('/profile/:userId', async (req, res) => {
          ${hasPatientGender ? 'p.gender' : 'NULL AS gender'},
          ${hasChronic ? 'p.chronicDiseases' : 'NULL AS chronicDiseases'},
          ${hasAllergies ? 'p.allergies' : 'NULL AS allergies'},
-         ${hasMeds ? 'p.currentMedications' : 'NULL AS currentMedications'}
+         ${hasMeds ? 'p.currentMedications' : 'NULL AS currentMedications'},
+         ${
+           hasBloodType
+             ? `(SELECT mr.bloodType
+                 FROM medicalrecord mr
+                 WHERE mr.patientUserId = u.userId
+                 ORDER BY mr.updatedAt DESC, mr.createdAt DESC
+                 LIMIT 1) AS bloodType`
+             : 'NULL AS bloodType'
+         }
        FROM user u
        LEFT JOIN patient p ON u.userId = p.userId
        WHERE u.userId = ?`,
@@ -304,8 +314,60 @@ router.get('/profile/:userId', async (req, res) => {
   }
 });
 
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadsDir = path.join(__dirname, '..', 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '.jpg';
+    cb(null, `profile_${Date.now()}_${Math.round(Math.random() * 1E9)}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
+
+router.post('/profile/upload', (req, res) => {
+  const contentLength = req.headers['content-length'];
+  console.log(`[Upload] Incoming upload request. Content-Length: ${contentLength} bytes`);
+
+  upload.single('image')(req, res, (err) => {
+    if (err) {
+      console.error(`[Upload] Upload failed: ${err.message}`);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'Image size must be less than 5MB' });
+      }
+      return res.status(400).json({ error: err.message });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file uploaded' });
+    }
+
+    console.log(`[Upload] Saved image to uploads/${req.file.filename}. Size: ${req.file.size} bytes`);
+    res.json({
+      url: `/uploads/${req.file.filename}`
+    });
+  });
+});
+
 router.put('/profile/:userId', async (req, res) => {
   const { userId } = req.params;
+  const contentLength = req.headers['content-length'];
+  console.log(`[Profile Update] PUT /patient/profile/${userId} - Content-Length: ${contentLength} bytes`);
+
   const {
     fullName,
     email,
@@ -318,7 +380,8 @@ router.put('/profile/:userId', async (req, res) => {
     profileImageUrl,
     chronicDiseases,
     allergies,
-    currentMedications
+    currentMedications,
+    bloodType
   } = req.body;
 
   if (!fullName || !email || !phone) {
@@ -340,18 +403,30 @@ router.put('/profile/:userId', async (req, res) => {
     const hasChronic = await hasColumn('patient', 'chronicDiseases');
     const hasAllergies = await hasColumn('patient', 'allergies');
     const hasMeds = await hasColumn('patient', 'currentMedications');
+    const hasBloodType = await hasColumn('medicalrecord', 'bloodType');
 
     let userResult;
     if (hasProfileImageUrl) {
-      [userResult] = await db.execute(
-        `UPDATE user
-         SET fullName = ?,
-             email = ?,
-             phone = ?,
-             profileImageUrl = COALESCE(?, profileImageUrl)
-         WHERE userId = ?`,
-        [fullName, email, phone, profileImageUrl ?? null, userId]
-      );
+      if (req.body.hasOwnProperty('profileImageUrl')) {
+        [userResult] = await db.execute(
+          `UPDATE user
+           SET fullName = ?,
+               email = ?,
+               phone = ?,
+               profileImageUrl = ?
+           WHERE userId = ?`,
+          [fullName, email, phone, profileImageUrl || null, userId]
+        );
+      } else {
+        [userResult] = await db.execute(
+          `UPDATE user
+           SET fullName = ?,
+               email = ?,
+               phone = ?
+           WHERE userId = ?`,
+          [fullName, email, phone, userId]
+        );
+      }
     } else {
       [userResult] = await db.execute(
         `UPDATE user
@@ -420,6 +495,26 @@ router.put('/profile/:userId', async (req, res) => {
         `UPDATE patient SET ${setParts.join(', ')} WHERE userId = ?`,
         execVals
       );
+    }
+
+    if (hasBloodType && Object.prototype.hasOwnProperty.call(req.body, 'bloodType')) {
+      const normalizedBloodType = bloodType != null ? bloodType.toString().trim() : '';
+      const [recordRows] = await db.query(
+        `SELECT recordId
+         FROM medicalrecord
+         WHERE patientUserId = ?
+         ORDER BY updatedAt DESC, createdAt DESC
+         LIMIT 1`,
+        [userId]
+      );
+      if (recordRows.length > 0) {
+        await db.execute(
+          `UPDATE medicalrecord
+           SET bloodType = ?, updatedAt = NOW()
+           WHERE recordId = ? AND patientUserId = ?`,
+          [normalizedBloodType, recordRows[0].recordId, userId]
+        );
+      }
     }
 
     res.json({ message: 'Profile updated successfully' });
@@ -1543,6 +1638,48 @@ router.get('/notifications/:userId', async (req, res) => {
     if (err && err.code === 'ER_NO_SUCH_TABLE') {
       return res.json([]);
     }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/appointments/:appointmentId/reschedule', async (req, res) => {
+  const { appointmentId } = req.params;
+  const { date, time } = req.body;
+
+  if (!date || !time) {
+    return res.status(400).json({ error: 'Date and time are required' });
+  }
+
+  const scheduledAt = normalizeDateTime(date, time);
+  if (!scheduledAt) {
+    return res.status(400).json({ error: 'Invalid appointment date or time' });
+  }
+
+  try {
+    const [rows] = await db.query(
+      `SELECT status FROM servicerequest WHERE requestId = ?`,
+      [appointmentId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    const currentStatus = (rows[0].status || '').toString().toLowerCase().trim();
+    const allowed = ['pending', 'request_sent', 'requested', 'waiting_provider_response', 'waiting response'];
+    if (!allowed.includes(currentStatus)) {
+      return res.status(400).json({
+        error: 'Rescheduling is only allowed before the provider accepts or rejects the appointment.'
+      });
+    }
+
+    await db.execute(
+      `UPDATE servicerequest SET scheduledAt = ? WHERE requestId = ?`,
+      [scheduledAt, appointmentId]
+    );
+
+    res.json({ message: 'Appointment rescheduled successfully', scheduledAt });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

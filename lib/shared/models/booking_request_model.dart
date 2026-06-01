@@ -5,6 +5,7 @@ class BookingRequestModel {
   final String providerRole;
   final String specialization;
   final String serviceType;
+  final String appointmentType;
   final String appointmentDate;
   final String appointmentTime;
   final double visitLatitude;
@@ -30,6 +31,7 @@ class BookingRequestModel {
     required this.providerRole,
     required this.specialization,
     required this.serviceType,
+    this.appointmentType = 'home',
     required this.appointmentDate,
     required this.appointmentTime,
     required this.visitLatitude,
@@ -47,8 +49,15 @@ class BookingRequestModel {
     required this.bookingStatus,
   });
 
-  /// Total to charge or record (service price + extras).
-  double get totalAmount => price + extraFees;
+  double get discount {
+    if (appointmentType == 'remote') {
+      return price * 0.3;
+    }
+    return 0.0;
+  }
+
+  /// Total to charge or record (service price - discount + extras).
+  double get totalAmount => price - discount + extraFees;
 
   String get currentCaseSummary {
     final segments = <String>[
@@ -67,6 +76,7 @@ class BookingRequestModel {
     String? providerRole,
     String? specialization,
     String? serviceType,
+    String? appointmentType,
     String? appointmentDate,
     String? appointmentTime,
     double? visitLatitude,
@@ -90,6 +100,7 @@ class BookingRequestModel {
       providerRole: providerRole ?? this.providerRole,
       specialization: specialization ?? this.specialization,
       serviceType: serviceType ?? this.serviceType,
+      appointmentType: appointmentType ?? this.appointmentType,
       appointmentDate: appointmentDate ?? this.appointmentDate,
       appointmentTime: appointmentTime ?? this.appointmentTime,
       visitLatitude: visitLatitude ?? this.visitLatitude,
@@ -111,6 +122,7 @@ class BookingRequestModel {
   String get composedNotes {
     final segments = <String>[
       'Service: $serviceType',
+      'AppointmentType: $appointmentType',
       if (visitAddress.trim().isNotEmpty) 'Address: $visitAddress',
       if (locationNote.trim().isNotEmpty) 'LocationNote: $locationNote',
       if (currentCaseSummary.trim().isNotEmpty)

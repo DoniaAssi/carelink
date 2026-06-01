@@ -4,9 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/services/api_service.dart';
-import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'booking_details_screen.dart';
+import 'chat_screen.dart';
+
+import 'package:carelink/core/app_localizations.dart';
+import 'package:carelink/features/patient/widgets/reschedule_modal.dart';
+import 'package:carelink/core/locale_controller.dart';
+import 'package:carelink/core/theme_controller.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 
 class ScheduleScreen extends StatefulWidget {
   final String patientUserId;
@@ -27,7 +33,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   bool isLoading = true;
   String? errorMessage;
   _ScheduleFilter currentFilter = _ScheduleFilter.pending;
-  final ApiService _api = ApiService();
 
   void _dbg(String message) {
     if (kDebugMode) debugPrint('[CareLink Schedule] $message');
@@ -51,7 +56,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
     try {
       _dbg(
-        'patientUserId sent to APIs (must match servicerequest.patientUserId): "${widget.patientUserId}"',
+        'patientUserId sent to APIs: "${widget.patientUserId}"',
       );
 
       final all = await ApiService().getAppointments(widget.patientUserId);
@@ -89,25 +94,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           return cb.compareTo(ca);
         });
 
-      final completedAfterFilter = merged
-          .where(
-            (row) => _normalizedStatus(_rawStatusFromItem(row)) == 'completed',
-          )
-          .length;
-      _dbg(
-        'merged unique appointments: ${merged.length}; completed (normalized): $completedAfterFilter',
-      );
-      if (kDebugMode && merged.isNotEmpty) {
-        final sample = merged
-            .take(6)
-            .map(
-              (m) =>
-                  '${m['appointmentId']}: status=${m['status']}, pay=${m['paymentStatus']}',
-            )
-            .join(' | ');
-        _dbg('sample merged: $sample');
-      }
-
       if (!mounted) return;
 
       setState(() {
@@ -120,9 +106,22 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
       setState(() {
         isLoading = false;
-        errorMessage = e.toString().replaceFirst('Exception: ', '');
+        errorMessage = _cleanErrorMessage(e);
       });
     }
+  }
+
+  String _cleanErrorMessage(dynamic e) {
+    final raw = e.toString().replaceFirst('Exception: ', '').trim();
+    if (raw.toLowerCase().contains('html') ||
+        raw.contains('<!') ||
+        raw.contains('<html') ||
+        raw.contains('<body>')) {
+      return context.l10n.isArabic
+          ? 'تعذر جلب البيانات، يرجى المحاولة لاحقاً'
+          : 'Server connection error, please try again later';
+    }
+    return raw;
   }
 
   int _sortKey(Map<String, dynamic> row) {
@@ -155,172 +154,27 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   String _normalizedStatus(String? rawStatus) {
     final status = (rawStatus ?? '').toLowerCase().trim();
-    if (status == 'pending' || status == 'requested' || status == 'request_sent') {
+    if (status == 'pending' ||
+        status == 'requested' ||
+        status == 'request_sent' ||
+        status == 'waiting_provider_response') {
       return 'pending';
     }
-    if (status == 'approved' || status == 'confirmed' || status == 'scheduled') {
+    if (status == 'accepted' ||
+        status == 'confirmed' ||
+        status == 'scheduled' ||
+        status == 'approved') {
       return 'upcoming';
     }
-    if (status == 'complete' || status == 'completed') return 'completed';
-    if (status == 'cancelled' || status == 'canceled') return 'cancelled';
-    return 'upcoming';
-  }
-
-  bool _paymentAllowsRating(Map<String, dynamic> item) {
-    final p = (item['paymentStatus'] ?? '').toString().toLowerCase().trim();
-    if (p.isEmpty) return true;
-    return p == 'paid';
-  }
-
-  bool _alreadyRated(Map<String, dynamic> item) {
-    final hp = item['hasPatientRating'];
-    if (hp == true || hp == 1 || hp == '1') return true;
-    final stars = item['patientRatingStars'];
-    final n = stars is num
-        ? stars.round()
-        : int.tryParse(stars?.toString() ?? '') ?? 0;
-    return n >= 1;
-  }
-
-  bool _shouldShowRateButton(Map<String, dynamic> item, String normStatus) {
-    if (normStatus != 'completed') return false;
-    if (!_paymentAllowsRating(item)) return false;
-    if (_alreadyRated(item)) return false;
-    return true;
-  }
-
-  Future<void> _openRateSheet({
-    required String appointmentId,
-    required String providerLabel,
-  }) async {
-    final comment = TextEditingController();
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (sheetCtx) {
-        int stars = 5;
-        var busy = false;
-
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            Future<void> submit() async {
-              if (busy || stars < 1) return;
-              setModalState(() => busy = true);
-              try {
-                await _api.rateCompletedVisit(
-                  appointmentId: appointmentId,
-                  patientUserId: widget.patientUserId,
-                  stars: stars,
-                  comment: comment.text.trim().isEmpty
-                      ? null
-                      : comment.text.trim(),
-                );
-                if (!sheetCtx.mounted) return;
-                Navigator.pop(sheetCtx);
-                await fetchAppointments();
-                if (!mounted) return;
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('Thank you — your rating was saved.'),
-                  ),
-                );
-              } catch (e) {
-                setModalState(() => busy = false);
-                if (!sheetCtx.mounted) return;
-                ScaffoldMessenger.of(sheetCtx).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      e.toString().replaceFirst('Exception: ', ''),
-                    ),
-                  ),
-                );
-              }
-            }
-
-            final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-            return Padding(
-              padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + bottomInset),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Rate $providerLabel',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'How was your visit? (1–5 stars)',
-                    style: TextStyle(color: AppColors.textLight, fontSize: 13),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(5, (i) {
-                      final n = i + 1;
-                      final selected = stars >= n;
-                      return IconButton(
-                        onPressed:
-                            busy ? null : () => setModalState(() => stars = n),
-                        icon: Icon(
-                          selected ? Icons.star_rounded : Icons.star_border_rounded,
-                          color: selected
-                              ? const Color(0xFFF59E0B)
-                              : AppColors.textLight,
-                          size: 36,
-                        ),
-                      );
-                    }),
-                  ),
-                  TextField(
-                    controller: comment,
-                    enabled: !busy,
-                    maxLines: 3,
-                    maxLength: 500,
-                    decoration: const InputDecoration(
-                      hintText: 'Optional comment',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: busy ? null : submit,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      child: busy
-                          ? const SizedBox(
-                              height: 22,
-                              width: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Submit rating'),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-    } finally {
-      comment.dispose();
+    if (status == 'completed' || status == 'done') {
+      return 'completed';
     }
+    if (status == 'cancelled' ||
+        status == 'canceled' ||
+        status == 'rejected') {
+      return 'cancelled';
+    }
+    return 'upcoming';
   }
 
   DateTime? _parseScheduledAt(dynamic rawValue) {
@@ -332,195 +186,296 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return DateTime.tryParse(value.replaceFirst(' ', 'T'));
   }
 
+  bool _isFuture(DateTime? dt) {
+    if (dt == null) return false;
+    return dt.isAfter(DateTime.now());
+  }
+
   String _formatDate(DateTime? date) {
-    if (date == null) return 'Date unavailable';
-
-    final monthNames = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-
-    return '${date.day} ${monthNames[date.month - 1]} ${date.year}';
+    if (date == null) return context.l10n.isArabic ? 'التاريخ غير متوفر' : 'Date unavailable';
+    if (context.l10n.isArabic) {
+      final monthNames = [
+        'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+        'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+      ];
+      return '${date.day} ${monthNames[date.month - 1]} ${date.year}';
+    } else {
+      final monthNames = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
+      return '${date.day} ${monthNames[date.month - 1]} ${date.year}';
+    }
   }
 
   String _formatTime(DateTime? date) {
-    if (date == null) return 'Time unavailable';
-
+    if (date == null) return context.l10n.isArabic ? 'الوقت غير متوفر' : 'Time unavailable';
     final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
     final minute = '${date.minute}'.padLeft(2, '0');
-    final suffix = date.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $suffix';
-  }
-
-  String _providerRoleLabel(dynamic item) {
-    final role = item['providerRole']?.toString().toLowerCase();
-    if (role == 'doctor') return 'Doctor';
-    if (role == 'nurse') return 'Nurse';
-    return 'Care Provider';
-  }
-
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'pending':
-        return const Color(0xFFEF6C00);
-      case 'completed':
-        return const Color(0xFF2E7D32);
-      case 'cancelled':
-        return const Color(0xFFC62828);
-      default:
-        return AppColors.primaryDark;
+    if (context.l10n.isArabic) {
+      final suffix = date.hour >= 12 ? 'م' : 'ص';
+      return '$hour:$minute $suffix';
+    } else {
+      final suffix = date.hour >= 12 ? 'PM' : 'AM';
+      return '$hour:$minute $suffix';
     }
   }
 
-  String _statusLabel(String status) {
+  String _localizedProviderRole(BuildContext context, dynamic item) {
+    final role = item['providerRole']?.toString().toLowerCase() ?? '';
+    if (role.contains('doctor')) return context.l10n.isArabic ? 'طبيب' : 'Doctor';
+    if (role.contains('nurse')) return context.l10n.isArabic ? 'ممرض' : 'Nurse';
+    return context.l10n.isArabic ? 'مقدم رعاية' : 'Care Provider';
+  }
+
+  Color _statusColor(String status, bool isDark) {
     switch (status) {
       case 'pending':
-        return 'Pending Approval';
+        return AppColors.primary; // CareLink Teal (mint background via opacity)
       case 'completed':
-        return 'Completed';
+        return isDark ? const Color(0xFF90A4AE) : const Color(0xFF78909C); // Blue-gray
       case 'cancelled':
-        return 'Cancelled';
+        return isDark ? const Color(0xFFE57373) : const Color(0xFFC62828); // Red
       default:
-        return 'Upcoming';
+        // Upcoming/Confirmed
+        return isDark ? const Color(0xFF81C784) : const Color(0xFF2E7D32); // Green
     }
+  }
+
+  String _localizedServiceType(BuildContext context, String? rawService) {
+    final s = (rawService ?? '').trim();
+    final isAr = context.l10n.isArabic;
+    if (s == 'Home Nursing Care' || s.toLowerCase() == 'home nursing') {
+      return isAr ? 'تمريض منزلي' : 'Home Nursing Care';
+    }
+    if (s == 'General Doctor') {
+      return isAr ? 'طبيب عام' : 'General Doctor';
+    }
+    if (s == 'Elderly Care') {
+      return isAr ? 'رعاية كبار السن' : 'Elderly Care';
+    }
+    if (s == 'Post-surgery Care') {
+      return isAr ? 'رعاية بعد العمليات' : 'Post-surgery Care';
+    }
+    if (s == 'Physiotherapy') {
+      return isAr ? 'علاج طبيعي' : 'Physiotherapy';
+    }
+    if (s == 'Mental Support') {
+      return isAr ? 'دعم نفسي' : 'Mental Support';
+    }
+    return s.isNotEmpty ? s : (isAr ? 'غير متوفر' : 'Not specified');
+  }
+
+  String _localizedPaymentStatus(BuildContext context, String? status) {
+    final s = (status ?? '').toLowerCase().trim();
+    final isAr = context.l10n.isArabic;
+    if (s == 'paid') return isAr ? 'مدفوع' : 'Paid';
+    if (s == 'refunded') return isAr ? 'مسترد' : 'Refunded';
+    if (s == 'held' || s == 'reserved' || s == 'hold') return isAr ? 'محجوز' : 'Reserved';
+    if (s == 'unpaid') return isAr ? 'غير مدفوع' : 'Unpaid';
+    return isAr ? 'غير متوفر' : 'Not available';
+  }
+
+  String _localizedBookingStatus(BuildContext context, String? rawStatus) {
+    final s = (rawStatus ?? '').toLowerCase().trim();
+    final isAr = context.l10n.isArabic;
+    if (s == 'pending' || s == 'requested' || s == 'request_sent' || s == 'waiting_provider_response') {
+      return isAr ? 'بانتظار الرد' : 'Waiting';
+    }
+    if (s == 'accepted' || s == 'confirmed' || s == 'scheduled' || s == 'approved') {
+      return isAr ? 'مؤكد' : 'Confirmed';
+    }
+    if (s == 'completed' || s == 'done') {
+      return isAr ? 'مكتمل' : 'Completed';
+    }
+    if (s == 'cancelled' || s == 'canceled' || s == 'rejected') {
+      return isAr ? 'ملغي' : 'Cancelled';
+    }
+    return isAr ? 'مؤكد' : 'Confirmed';
+  }
+
+  String _shortenAddress(String address) {
+    if (address.isEmpty) return '';
+    String cleaned = address
+        .replaceAll(RegExp(r'Palestinian Territories', caseSensitive: false), 'Palestine')
+        .replaceAll(RegExp(r'Palestinian Territory', caseSensitive: false), 'Palestine');
+    cleaned = cleaned.replaceAll(RegExp(r'\bArea\s+[A-Z]\b', caseSensitive: false), '');
+    
+    final parts = cleaned
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .fold<List<String>>([], (list, e) {
+          if (!list.contains(e)) list.add(e);
+          return list;
+        });
+
+    if (parts.isEmpty) return '';
+    if (parts.length <= 2) {
+      return parts.join(', ');
+    }
+
+    final filteredParts = parts.where((p) {
+      if (RegExp(r'^\d+$').hasMatch(p)) return false;
+      return true;
+    }).toList();
+
+    if (filteredParts.isEmpty) return parts.first;
+
+    final first = filteredParts.first;
+    final hasWestBank = filteredParts.any((p) => p.toLowerCase() == 'west bank');
+    final hasPalestine = filteredParts.any((p) => p.toLowerCase() == 'palestine');
+    
+    if (hasWestBank) {
+      if (first.toLowerCase() != 'west bank') {
+        return '$first, West Bank';
+      }
+    }
+    if (hasPalestine) {
+      if (first.toLowerCase() != 'palestine') {
+        return '$first, Palestine';
+      }
+    }
+    if (filteredParts.length >= 2) {
+      return '${filteredParts[0]}, ${filteredParts[1]}';
+    }
+    return first;
+  }
+
+
+
+  Future<void> _openRescheduleSheet(Map<String, dynamic> item) async {
+    final appointmentId = (item['appointmentId'] ?? item['requestId'] ?? '').toString();
+    final providerId = (item['doctorUserId'] ?? item['providerUserId'] ?? '').toString();
+    final scheduledAt = (item['scheduledAt'] ?? '').toString();
+    if (providerId.isEmpty) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return RescheduleModal(
+          appointmentId: appointmentId,
+          providerUserId: providerId,
+          oldDateTime: scheduledAt,
+          onSuccess: () {
+            Navigator.pop(sheetCtx);
+            fetchAppointments();
+          },
+        );
+      },
+    );
+  }
+
+  Widget _avatarPlaceholder(String role) {
+    return Container(
+      width: 56,
+      height: 56,
+      color: AppColors.primary.withValues(alpha: 0.12),
+      child: Icon(
+        role.toLowerCase().contains('doctor')
+            ? Icons.medical_services_rounded
+            : Icons.local_hospital_rounded,
+        color: AppColors.primaryDark,
+        size: 26,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final p = CarelinkPalette.of(context);
-    return Scaffold(
-      backgroundColor: p.pageBg,
-      appBar: AppBar(
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('My Schedule'),
-        actions: carelinkAppBarActions(),
-      ),
-      body: RefreshIndicator(
-        color: AppColors.primary,
-        onRefresh: fetchAppointments,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeroCard(),
-              const SizedBox(height: 18),
-              _buildFilterTabs(),
-              const SizedBox(height: 18),
-              _buildBody(),
-            ],
+    return AnimatedBuilder(
+      animation: Listenable.merge([localeController, themeController]),
+      builder: (context, _) {
+        final p = CarelinkPalette.of(context);
+        final primaryColor = Theme.of(context).colorScheme.primary;
+
+        return Directionality(
+          textDirection: localeController.isArabic
+              ? TextDirection.rtl
+              : TextDirection.ltr,
+          child: Scaffold(
+            backgroundColor: p.pageBg,
+            body: SafeArea(
+              child: RefreshIndicator(
+                color: AppColors.primary,
+                onRefresh: fetchAppointments,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildHeader(context, primaryColor, p),
+                      const SizedBox(height: 16),
+                      _buildFilterTabs(),
+                      const SizedBox(height: 18),
+                      _buildBody(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildHeroCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.primary, AppColors.primaryDark],
+  Widget _buildHeader(BuildContext context, Color primaryColor, CarelinkPalette p) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CarelinkThemeIconButton(color: primaryColor),
+            CarelinkLocaleIconButton(color: primaryColor),
+          ],
         ),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.20),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+        const Spacer(),
+        Text(
+          context.tr('schedule.title'),
+          style: TextStyle(
+            color: p.inkDark,
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Appointments Overview',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Track your upcoming visits and review completed or cancelled bookings in one place.',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    fontSize: 13,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          Container(
-            width: 70,
-            height: 70,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: const Icon(
-              Icons.calendar_month_rounded,
-              color: Colors.white,
-              size: 34,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildFilterTabs() {
-    return Row(
-      children: [
-        Expanded(
-          child: _filterChip(
-            label: 'Pending',
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: [
+          _filterChip(
+            label: context.tr('schedule.tabs.waiting'),
             filter: _ScheduleFilter.pending,
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _filterChip(
-            label: 'Upcoming',
+          const SizedBox(width: 8),
+          _filterChip(
+            label: context.tr('schedule.tabs.upcoming'),
             filter: _ScheduleFilter.upcoming,
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _filterChip(
-            label: 'Completed',
+          const SizedBox(width: 8),
+          _filterChip(
+            label: context.tr('schedule.tabs.completed'),
             filter: _ScheduleFilter.completed,
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _filterChip(
-            label: 'Cancelled',
+          const SizedBox(width: 8),
+          _filterChip(
+            label: context.tr('schedule.tabs.cancelled'),
             filter: _ScheduleFilter.cancelled,
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -528,36 +483,39 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     required String label,
     required _ScheduleFilter filter,
   }) {
+    final p = CarelinkPalette.of(context);
     final isSelected = currentFilter == filter;
 
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: () {
+        debugPrint('[CareLink Debug] selected tab: ${filter.name}');
         setState(() {
           currentFilter = filter;
         });
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
         decoration: BoxDecoration(
           gradient: isSelected
               ? const LinearGradient(
                   colors: [AppColors.primary, AppColors.primaryDark],
                 )
               : null,
-          color: isSelected ? null : Colors.white,
+          color: isSelected ? null : p.surface,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: isSelected ? AppColors.primaryDark : AppColors.border,
+            color: isSelected ? AppColors.primaryDark : p.stroke,
           ),
         ),
         child: Center(
           child: Text(
             label,
             style: TextStyle(
-              color: isSelected ? Colors.white : AppColors.textDark,
+              color: isSelected ? Colors.white : p.inkMuted,
               fontWeight: FontWeight.w700,
+              fontSize: 13,
             ),
           ),
         ),
@@ -566,10 +524,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   Widget _buildBody() {
+    final p = CarelinkPalette.of(context);
     if (isLoading) {
       return const Padding(
-        padding: EdgeInsets.only(top: 40),
-        child: Center(child: CircularProgressIndicator()),
+        padding: EdgeInsets.only(top: 60),
+        child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
       );
     }
 
@@ -578,9 +537,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         width: double.infinity,
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.border),
+          color: p.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: p.stroke),
         ),
         child: Column(
           children: [
@@ -593,8 +552,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             Text(
               errorMessage!,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.textDark,
+              style: TextStyle(
+                color: p.inkDark,
                 fontSize: 14,
               ),
             ),
@@ -605,24 +564,26 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: const Text('Try Again'),
+              child: Text(context.tr('booking.tryAgain')),
             ),
           ],
         ),
       );
     }
 
-    if (filteredAppointments.isEmpty) {
+    final filtered = filteredAppointments;
+
+    if (filtered.isEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.border),
+          color: p.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: p.stroke),
         ),
         child: Column(
           children: [
@@ -631,7 +592,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               height: 72,
               decoration: BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(16),
               ),
               child: const Icon(
                 Icons.event_busy_rounded,
@@ -641,324 +602,633 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              'No ${_statusLabel(_filterToStatus(currentFilter)).toLowerCase()} appointments found',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textDark,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Your appointments will appear here after your booking request is sent.',
-              textAlign: TextAlign.center,
+              context.tr('schedule.noBookings'),
               style: TextStyle(
-                color: AppColors.textLight,
-                fontSize: 13,
-                height: 1.5,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: p.inkDark,
               ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
       );
     }
 
+    final isTabular = currentFilter == _ScheduleFilter.completed || currentFilter == _ScheduleFilter.cancelled;
+
     return Column(
-      children: filteredAppointments.map((item) {
-        final scheduledAt = _parseScheduledAt(item['scheduledAt']);
-        final completedAt = _parseScheduledAt(item['completedAt']);
-        final rawStatusDisp = (_rawStatusFromItem(item) ?? '—').toString().trim();
-        final status = _normalizedStatus(rawStatusDisp);
-        final appointmentId = (item['appointmentId'] ?? item['requestId'] ?? '')
-            .toString()
-            .trim();
-        final providerLabel = (item['providerName'] ?? item['doctorName'] ?? '')
-            .toString()
-            .trim();
-        final providerId = (item['doctorUserId'] ?? item['providerUserId'] ?? '')
-            .toString()
-            .trim();
-        final serviceRaw =
-            (item['serviceType'] ?? '').toString().trim();
-        final paymentRaw =
-            (item['paymentStatus'] ?? '').toString().trim();
-
-        final ratedShown =
-            status == 'completed' && _alreadyRated(item);
-
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Material(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(24),
-                  onTap: appointmentId.isEmpty
-                      ? null
-                      : () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => BookingDetailsScreen(
-                                appointmentId: appointmentId,
-                                patientUserId: widget.patientUserId,
-                              ),
-                            ),
-                          );
-                        },
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: AppColors.border),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 16,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 58,
-                              height: 58,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                              child: const Icon(
-                                Icons.calendar_month_rounded,
-                                color: AppColors.primaryDark,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    providerLabel.isNotEmpty
-                                        ? providerLabel
-                                        : (providerId.isNotEmpty
-                                            ? 'Provider ID'
-                                            : 'Provider'),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 16,
-                                      color: AppColors.textDark,
-                                    ),
-                                  ),
-                                  if (providerLabel.isEmpty &&
-                                      providerId.isNotEmpty)
-                                    Padding(
-                                      padding:
-                                          const EdgeInsets.only(bottom: 4),
-                                      child: Text(
-                                        providerId,
-                                        style: const TextStyle(
-                                          fontSize: 11.5,
-                                          color: AppColors.textDark,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  Text(
-                                    '${_providerRoleLabel(item)} · ${item['specialization']?.toString().trim().isNotEmpty == true ? item['specialization']!.toString().trim() : 'Specialization unavailable'}',
-                                    style: const TextStyle(
-                                      color: AppColors.textLight,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _statusColor(status)
-                                    .withValues(alpha: 0.10),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Text(
-                                _statusLabel(status),
-                                style: TextStyle(
-                                  color: _statusColor(status),
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'Service: ${serviceRaw.isEmpty ? '—' : serviceRaw}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                        if (status == 'completed') ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            'Completed: ${_formatDate(completedAt)} · ${_formatTime(completedAt)}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textLight,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 6),
-                        Text(
-                          'Payment: ${paymentRaw.isEmpty ? '—' : paymentRaw}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textLight,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Status: $rawStatusDisp',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textLight,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _scheduleMeta(
-                                icon: Icons.event_rounded,
-                                title: 'Scheduled date',
-                                value: _formatDate(scheduledAt),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _scheduleMeta(
-                                icon: Icons.access_time_rounded,
-                                title: 'Scheduled time',
-                                value: _formatTime(scheduledAt),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              if (_shouldShowRateButton(item, status))
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.star_outline_rounded),
-                    label: const Text('Rate Provider'),
-                    onPressed: () => _openRateSheet(
-                      appointmentId: appointmentId,
-                      providerLabel:
-                          providerLabel.isEmpty ? 'Provider' : providerLabel,
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primaryDark,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                ),
-              if (ratedShown)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Chip(
-                      avatar: Icon(
-                        Icons.check_circle_rounded,
-                        color: Colors.green.shade700,
-                        size: 18,
-                      ),
-                      label: const Text(
-                        'Rated',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      backgroundColor: const Color(0xFFE8F5E9),
-                    ),
-                  ),
-                ),
-            ],
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSectionHeader(filtered.length, p),
+        const SizedBox(height: 12),
+        if (isTabular)
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: p.stroke),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                _buildTableHeader(p),
+                ...filtered.map((item) => _buildTableRow(item, p)),
+              ],
+            ),
+          )
+        else
+          Column(
+            children: filtered.map((item) => _buildCardView(item, p)).toList(),
           ),
-        );
-      }).toList(),
+      ],
     );
   }
 
-  String _filterToStatus(_ScheduleFilter filter) {
-    switch (filter) {
-      case _ScheduleFilter.completed:
-        return 'completed';
-      case _ScheduleFilter.cancelled:
-        return 'cancelled';
+  Widget _buildSectionHeader(int count, CarelinkPalette p) {
+    final title = _getSectionTitleOnly();
+    final sub = context.l10n.isArabic
+        ? '$count ${count == 1 ? "موعد" : "مواعيد"}'
+        : '$count ${count == 1 ? "appointment" : "appointments"}';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            color: p.inkDark,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          sub,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: p.inkMuted,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _getSectionTitleOnly() {
+    final isAr = context.l10n.isArabic;
+    switch (currentFilter) {
       case _ScheduleFilter.pending:
-        return 'pending';
+        return isAr ? 'المواعيد بانتظار الرد' : 'Waiting Appointments';
       case _ScheduleFilter.upcoming:
-        return 'upcoming';
+        return isAr ? 'المواعيد القادمة (المقبولة)' : 'Upcoming Appointments';
+      case _ScheduleFilter.completed:
+        return isAr ? 'المواعيد المكتملة' : 'Completed Appointments';
+      case _ScheduleFilter.cancelled:
+        return isAr ? 'المواعيد الملغاة' : 'Cancelled Appointments';
     }
   }
 
-  Widget _scheduleMeta({
-    required IconData icon,
-    required String title,
-    required String value,
-  }) {
+  String _getDayName(DateTime? date) {
+    if (date == null) return '';
+    const daysEn = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const daysAr = ['الأثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];
+    final idx = date.weekday - 1;
+    return context.l10n.isArabic ? daysAr[idx] : daysEn[idx];
+  }
+
+  Widget _mockupMetaItem(CarelinkPalette p, IconData icon, String value) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(18),
+        color: p.surfaceSoft,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: p.stroke),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: AppColors.primaryDark),
+          Icon(icon, size: 16, color: AppColors.primary),
           const SizedBox(width: 8),
           Expanded(
-            child: Column(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: p.inkDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardView(Map<String, dynamic> item, CarelinkPalette p) {
+    final scheduledAt = _parseScheduledAt(item['scheduledAt']);
+    final rawStatusDisp = (_rawStatusFromItem(item) ?? '—').toString().trim();
+    final status = _normalizedStatus(rawStatusDisp);
+    final appointmentId = (item['appointmentId'] ?? item['requestId'] ?? '').toString().trim();
+    final providerLabel = (item['providerName'] ?? item['doctorName'] ?? '').toString().trim();
+    final providerId = (item['doctorUserId'] ?? item['providerUserId'] ?? '').toString().trim();
+    final serviceRaw = (item['serviceType'] ?? '').toString().trim();
+    final paymentRaw = (item['paymentStatus'] ?? '').toString().trim();
+    final appType = (item['appointmentType'] ?? 'home').toString().toLowerCase().trim();
+    final providerRole = item['providerRole']?.toString() ?? '';
+    final specialization = (item['specialization'] ?? '').toString().trim();
+    final address = (item['visitAddress'] ?? item['location'] ?? '').toString().trim();
+    final isHomeVisit = appType != 'remote';
+    final isAr = context.l10n.isArabic;
+
+    final isUnpaid = paymentRaw == 'unpaid' || paymentRaw.isEmpty || paymentRaw == 'pending';
+    final isAct = status == 'pending' || status == 'upcoming';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: PatientCard(
+        padding: const EdgeInsets.all(12),
+        onTap: appointmentId.isEmpty
+            ? null
+            : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => BookingDetailsScreen(
+                      appointmentId: appointmentId,
+                      patientUserId: widget.patientUserId,
+                    ),
+                  ),
+                ).then((_) => fetchAppointments());
+              },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textLight,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: item['profileImageUrl'] != null &&
+                          item['profileImageUrl'].toString().isNotEmpty
+                      ? Image.network(
+                          item['profileImageUrl'].toString(),
+                          width: 56,
+                          height: 56,
+                          fit: BoxFit.cover,
+                          errorBuilder: (ctx, err, stack) => _avatarPlaceholder(providerRole),
+                        )
+                      : _avatarPlaceholder(providerRole),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        providerLabel.isNotEmpty
+                            ? providerLabel
+                            : (isAr ? 'مقدم الخدمة' : 'Provider'),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: p.inkDark,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        specialization.isNotEmpty
+                            ? specialization
+                            : _localizedProviderRole(context, item),
+                        style: TextStyle(
+                          color: p.inkMuted,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textDark,
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _statusColor(status, p.isDark).withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _localizedBookingStatus(context, rawStatusDisp),
+                        style: TextStyle(
+                          color: _statusColor(status, p.isDark),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: paymentRaw == 'paid'
+                            ? const Color(0xFF2E7D32).withValues(alpha: 0.10)
+                            : const Color(0xFFC62828).withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _localizedPaymentStatus(context, paymentRaw),
+                        style: TextStyle(
+                          color: paymentRaw == 'paid' ? const Color(0xFF2E7D32) : const Color(0xFFC62828),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 10.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _mockupMetaItem(
+                    p,
+                    Icons.calendar_today_rounded,
+                    scheduledAt == null
+                        ? (isAr ? 'التاريخ غير متوفر' : 'Date unavailable')
+                        : '${_formatDate(scheduledAt)} ${_getDayName(scheduledAt)}',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _mockupMetaItem(
+                    p,
+                    Icons.access_time_rounded,
+                    _formatTime(scheduledAt),
                   ),
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _mockupMetaItem(
+                    p,
+                    appType == 'remote' ? Icons.videocam_rounded : Icons.home_rounded,
+                    _localizedServiceType(context, serviceRaw),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _mockupMetaItem(
+                    p,
+                    Icons.location_on_rounded,
+                    !isHomeVisit ? '—' : (address.isNotEmpty ? _shortenAddress(address) : '—'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (isUnpaid && isAct && _isFuture(scheduledAt)) ...[
+                  FilledButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => BookingDetailsScreen(
+                            appointmentId: appointmentId,
+                            patientUserId: widget.patientUserId,
+                          ),
+                        ),
+                      ).then((_) => fetchAppointments());
+                    },
+                    icon: const Icon(Icons.payment_rounded, size: 16),
+                    label: Text(
+                      context.tr('schedule.payNow'),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      minimumSize: const Size.fromHeight(44),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                Row(
+                  children: [
+                    if (providerId.isNotEmpty && _isFuture(scheduledAt)) ...[
+                      Expanded(
+                        flex: 2,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ChatScreen(
+                                  name: providerLabel,
+                                  userId: widget.patientUserId,
+                                  doctorId: providerId,
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                          label: Text(
+                            isAr ? 'محادثة' : 'Chat',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(color: AppColors.primary, width: 1.5),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            minimumSize: const Size.fromHeight(44),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Expanded(
+                      flex: 3,
+                      child: FilledButton.icon(
+                        onPressed: appointmentId.isEmpty
+                            ? null
+                            : () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => BookingDetailsScreen(
+                                      appointmentId: appointmentId,
+                                      patientUserId: widget.patientUserId,
+                                    ),
+                                  ),
+                                ).then((_) => fetchAppointments());
+                              },
+                        icon: const Icon(Icons.visibility_rounded, size: 16),
+                        label: Text(
+                          isAr ? 'عرض التفاصيل' : 'Details',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          minimumSize: const Size.fromHeight(44),
+                        ),
+                      ),
+                    ),
+                    if (status == 'pending' && _isFuture(scheduledAt)) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 3,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _openRescheduleSheet(item),
+                          icon: const Icon(Icons.edit_calendar_rounded, size: 16),
+                          label: Text(
+                            context.tr('schedule.edit'),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(color: AppColors.primary, width: 1.5),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            minimumSize: const Size.fromHeight(44),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTableHeader(CarelinkPalette p) {
+    final isAr = context.l10n.isArabic;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: p.surfaceSoft,
+        border: Border(
+          bottom: BorderSide(color: p.stroke),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(
+              isAr ? 'مقدم الرعاية' : 'Provider',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: p.inkMuted),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              isAr ? 'التاريخ والوقت' : 'Date & Time',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: p.inkMuted),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              isAr ? 'الخدمة' : 'Service',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: p.inkMuted),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              isAr ? 'الحالة' : 'Status',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: p.inkMuted),
+              textAlign: TextAlign.center,
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTableRow(Map<String, dynamic> item, CarelinkPalette p) {
+    final scheduledAt = _parseScheduledAt(item['scheduledAt']);
+    final rawStatusDisp = (_rawStatusFromItem(item) ?? '—').toString().trim();
+    final status = _normalizedStatus(rawStatusDisp);
+    final appointmentId = (item['appointmentId'] ?? item['requestId'] ?? '').toString().trim();
+    final providerLabel = (item['providerName'] ?? item['doctorName'] ?? '').toString().trim();
+    final providerRole = item['providerRole']?.toString() ?? '';
+    final appType = (item['appointmentType'] ?? 'home').toString().toLowerCase().trim();
+    final isAr = context.l10n.isArabic;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: appointmentId.isEmpty
+            ? null
+            : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => BookingDetailsScreen(
+                      appointmentId: appointmentId,
+                      patientUserId: widget.patientUserId,
+                    ),
+                  ),
+                ).then((_) => fetchAppointments());
+              },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          decoration: BoxDecoration(
+            color: p.surface,
+            border: Border(
+              bottom: BorderSide(color: p.stroke),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                flex: 3,
+                child: Row(
+                  children: [
+                    ClipOval(
+                      child: item['profileImageUrl'] != null &&
+                              item['profileImageUrl'].toString().isNotEmpty
+                          ? Image.network(
+                              item['profileImageUrl'].toString(),
+                              width: 32,
+                              height: 32,
+                              fit: BoxFit.cover,
+                              errorBuilder: (ctx, err, stack) => _avatarPlaceholderSmall(providerRole),
+                            )
+                          : _avatarPlaceholderSmall(providerRole),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            providerLabel.isNotEmpty ? providerLabel : (isAr ? 'مقدم الخدمة' : 'Provider'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: p.inkDark,
+                            ),
+                          ),
+                          Text(
+                            _localizedProviderRole(context, item),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: p.inkMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _formatDate(scheduledAt),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: p.inkDark,
+                      ),
+                    ),
+                    Text(
+                      _formatTime(scheduledAt),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: p.inkMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  appType == 'remote'
+                      ? (isAr ? 'استشارة عن بعد' : 'Remote')
+                      : (isAr ? 'زيارة منزلية' : 'Home Visit'),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: p.inkDark,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _statusColor(status, p.isDark).withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _localizedBookingStatus(context, rawStatusDisp),
+                      style: TextStyle(
+                        color: _statusColor(status, p.isDark),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _avatarPlaceholderSmall(String role) {
+    return Container(
+      width: 32,
+      height: 32,
+      color: AppColors.primary.withValues(alpha: 0.12),
+      child: Icon(
+        role.toLowerCase().contains('doctor')
+            ? Icons.medical_services_rounded
+            : Icons.local_hospital_rounded,
+        color: AppColors.primaryDark,
+        size: 16,
       ),
     );
   }

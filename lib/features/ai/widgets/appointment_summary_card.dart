@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/core/locale_controller.dart';
+import 'package:carelink/core/theme_controller.dart';
 import 'package:carelink/features/ai/widgets/ai_flow_theme.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 
@@ -20,23 +22,36 @@ class AppointmentSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dark = themeController.isDark;
+    final ar = localeController.isArabic;
+
+    final cardBg = dark ? Colors.grey[850]! : Colors.white;
+    final themeColor = dark ? Colors.white : AiFlowTheme.ink;
+    final helperColor = dark ? Colors.grey.shade400 : AiFlowTheme.inkMuted;
+    final strokeColor = dark ? Colors.grey[750]! : AiFlowTheme.cardStroke;
+
+    final dateKey = ar ? 'التاريخ' : 'Date';
+    final timeKey = ar ? 'الوقت' : 'Time';
+    final reasonKey = ar ? 'سبب الزيارة' : 'Reason for visit';
+    final feeKey = ar ? 'الرسوم المقدرة' : 'Estimated fee';
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardBg,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AiFlowTheme.cardStroke),
+        border: Border.all(color: strokeColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             provider.fullName,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w800,
-              color: AiFlowTheme.ink,
+              color: themeColor,
             ),
           ),
           const SizedBox(height: 4),
@@ -49,26 +64,26 @@ class AppointmentSummaryCard extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
-          const Divider(height: 22),
-          _line(Icons.calendar_today_outlined, 'Date', dateLabel),
+          Divider(height: 22, color: strokeColor),
+          _line(Icons.calendar_today_outlined, dateKey, dateLabel, themeColor, helperColor),
           const SizedBox(height: 8),
-          _line(Icons.schedule_rounded, 'Time', timeLabel),
+          _line(Icons.schedule_rounded, timeKey, timeLabel, themeColor, helperColor),
           const SizedBox(height: 8),
-          _line(Icons.edit_note_rounded, 'Reason for visit', reason),
+          _line(Icons.edit_note_rounded, reasonKey, reason, themeColor, helperColor),
           if (priceLabel != null) ...[
             const SizedBox(height: 8),
-            _line(Icons.payments_outlined, 'Estimated fee', priceLabel!),
+            _line(Icons.payments_outlined, feeKey, priceLabel!, themeColor, helperColor),
           ],
         ],
       ),
     );
   }
 
-  Widget _line(IconData icon, String k, String v) {
+  Widget _line(IconData icon, String k, String v, Color themeColor, Color helperColor) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: AiFlowTheme.inkMuted),
+        Icon(icon, size: 18, color: helperColor),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
@@ -76,18 +91,18 @@ class AppointmentSummaryCard extends StatelessWidget {
             children: [
               Text(
                 k,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: AiFlowTheme.inkMuted,
+                  color: helperColor,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               Text(
                 v,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: AiFlowTheme.ink,
+                  color: themeColor,
                 ),
               ),
             ],

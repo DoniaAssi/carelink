@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
@@ -154,6 +155,22 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
     }
   }
 
+  String _cleanAddressString(String raw) {
+    String formatted = raw
+        .replaceAll(RegExp(r'Palestinian Territories', caseSensitive: false), 'Palestine')
+        .replaceAll(RegExp(r'Palestinian Territory', caseSensitive: false), 'Palestine');
+    formatted = formatted.replaceAll(RegExp(r'\bArea\s+[A-Z]\b', caseSensitive: false), '');
+    return formatted
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .fold<List<String>>([], (list, e) {
+          if (!list.contains(e)) list.add(e);
+          return list;
+        })
+        .join(', ');
+  }
+
   Future<void> _resolveAddress(LatLng point) async {
     setState(() => _isResolving = true);
     try {
@@ -163,26 +180,40 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
       );
       if (placemarks.isNotEmpty) {
         final p = placemarks.first;
+        
+        final streetClean = (p.street ?? '').toLowerCase().contains('area ') ? null : p.street;
+        final subLocalityClean = (p.subLocality ?? '').toLowerCase().contains('area ') ? null : p.subLocality;
+        final localityClean = p.locality;
+        final subAdminAreaClean = (p.subAdministrativeArea ?? '').toLowerCase().contains('area ') ? null : p.subAdministrativeArea;
+        final adminAreaClean = (p.administrativeArea ?? '').toLowerCase().contains('area ') ? null : p.administrativeArea;
+        
+        var countryClean = p.country ?? '';
+        if (countryClean.toLowerCase() == 'palestinian territories' || countryClean.toLowerCase().contains('palestinian')) {
+          countryClean = 'Palestine';
+        }
+
         final fromDeviceGeocoder = _joinNonEmptyParts([
-          p.street,
-          p.subLocality,
-          p.locality,
-          p.administrativeArea,
-          p.country,
+          streetClean,
+          subLocalityClean,
+          localityClean,
+          subAdminAreaClean,
+          adminAreaClean,
+          countryClean,
         ]);
+
         if (fromDeviceGeocoder.trim().isNotEmpty) {
-          _addressController.text = fromDeviceGeocoder;
+          _addressController.text = _cleanAddressString(fromDeviceGeocoder);
           return;
         }
       }
       final fromNominatim = await _reverseGeocodeFromNominatim(point);
       if (fromNominatim.trim().isNotEmpty) {
-        _addressController.text = fromNominatim;
+        _addressController.text = _cleanAddressString(fromNominatim);
       }
     } catch (_) {
       final fromNominatim = await _reverseGeocodeFromNominatim(point);
       if (fromNominatim.trim().isNotEmpty) {
-        _addressController.text = fromNominatim;
+        _addressController.text = _cleanAddressString(fromNominatim);
       }
     } finally {
       if (mounted) setState(() => _isResolving = false);
@@ -260,16 +291,12 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Confirm Location',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-                  ),
-                  SizedBox(width: 8),
-                  Icon(Icons.arrow_forward_rounded),
-                ],
+              child: Text(
+                context.tr('booking.location.confirm'),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                ),
               ),
             ),
           ),
@@ -377,7 +404,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                     ),
                   ),
                   icon: const Icon(Icons.my_location_rounded),
-                  label: const Text('Use Current Location'),
+                  label: Text(context.tr('booking.location.useCurrent')),
                 ),
                 const SizedBox(height: 10),
                 Container(
@@ -401,7 +428,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Drag the map to adjust location',
+                          context.tr('booking.location.adjust'),
                           style: TextStyle(
                             color: p.inkMuted,
                             fontWeight: FontWeight.w600,
@@ -413,7 +440,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                _fieldLabel('Address'),
+                _fieldLabel(context.tr('booking.location.address')),
                 const SizedBox(height: 6),
                 TextField(
                   controller: _addressController,
@@ -424,7 +451,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                   decoration: InputDecoration(
-                    hintText: 'Type city/place name and choose result',
+                    hintText: context.tr('booking.location.addressHint'),
                     hintStyle: TextStyle(color: p.inkMuted),
                     filled: true,
                     fillColor: p.filterSurface,
@@ -499,7 +526,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                   ),
                 ],
                 const SizedBox(height: 12),
-                _fieldLabel('Location Note (optional)'),
+                _fieldLabel(context.tr('booking.location.note')),
                 const SizedBox(height: 6),
                 TextField(
                   controller: _noteController,
@@ -512,8 +539,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                   maxLines: 5,
                   maxLength: 120,
                   decoration: InputDecoration(
-                    hintText:
-                        'e.g. Apartment 3, Second floor, Near the gate...',
+                    hintText: context.tr('booking.location.noteHint'),
                     hintStyle: TextStyle(color: p.inkMuted),
                     filled: true,
                     fillColor: p.filterSurface,
@@ -540,7 +566,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
               Icon(Icons.lock_outline_rounded, color: p.inkMuted, size: 14),
               const SizedBox(width: 6),
               Text(
-                'Your location is only used for this booking',
+                context.tr('booking.location.private'),
                 style: TextStyle(color: p.inkMuted, fontSize: 11),
               ),
             ],
@@ -623,7 +649,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Select Visit Location',
+                  context.tr('booking.location.title'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -635,7 +661,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Choose where the provider will visit you',
+                  context.tr('booking.location.subtitle'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -676,7 +702,7 @@ String _joinNonEmptyParts(List<Object?> values) {
   final parts = <String>[];
   for (final value in values) {
     final text = value?.toString().trim() ?? '';
-    if (text.isNotEmpty) parts.add(text);
+    if (text.isNotEmpty && !parts.contains(text)) parts.add(text);
   }
   return parts.join(', ');
 }

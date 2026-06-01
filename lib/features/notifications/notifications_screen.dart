@@ -5,6 +5,7 @@ import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
 import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/core/app_localizations.dart';
 
 const Color _kTimeGrey = Color(0xFF8A9BA3);
 
@@ -77,19 +78,32 @@ class NotificationCardData {
   }
 }
 
-String _formatRelativeTimeShort(DateTime? t) {
+String _formatRelativeTimeShort(BuildContext context, DateTime? t) {
   if (t == null) return '';
   final d = DateTime.now().difference(t);
-  if (d.isNegative) return 'Just now';
-  if (d.inSeconds < 60) return 'Just now';
+  if (d.isNegative || d.inSeconds < 60) {
+    return context.tr('notifications.justNow');
+  }
   if (d.inMinutes < 60) {
-    return d.inMinutes <= 1 ? '1 min ago' : '${d.inMinutes} min ago';
+    return d.inMinutes == 1
+        ? context.tr('notifications.oneMinuteAgo')
+        : context.tr('notifications.minutesAgo', args: {
+            'count': '${d.inMinutes}',
+          });
   }
   if (d.inHours < 24) {
-    return d.inHours <= 1 ? '1 hr ago' : '${d.inHours} hr ago';
+    return d.inHours == 1
+        ? context.tr('notifications.oneHourAgo')
+        : context.tr('notifications.hoursAgo', args: {
+            'count': '${d.inHours}',
+          });
   }
   if (d.inDays < 7) {
-    return d.inDays == 1 ? '1 day ago' : '${d.inDays} days ago';
+    return d.inDays == 1
+        ? context.tr('notifications.oneDayAgo')
+        : context.tr('notifications.daysAgo', args: {
+            'count': '${d.inDays}',
+          });
   }
   return '${t.day}/${t.month}/${t.year}';
 }
@@ -147,45 +161,45 @@ NotificationCardData? _fromJson(Map<String, dynamic> m) {
   );
 }
 
-List<NotificationCardData> _demoList() {
+List<NotificationCardData> _demoList(BuildContext context) {
   final now = DateTime.now();
   return [
     NotificationCardData(
       id: 'demo-1',
-      title: 'Appointment Confirmed',
-      description: 'Your appointment has been confirmed.',
+      title: context.tr('notifications.demo.appointmentConfirmed'),
+      description: context.tr('notifications.demo.appointmentConfirmedDescription'),
       at: now.subtract(const Duration(minutes: 2)),
       style: NotificationStyle.appointment,
       read: false,
     ),
     NotificationCardData(
       id: 'demo-2',
-      title: 'New Message',
-      description: 'Doctor sent you a new message.',
+      title: context.tr('notifications.demo.newMessage'),
+      description: context.tr('notifications.demo.newMessageDescription'),
       at: now.subtract(const Duration(hours: 1)),
       style: NotificationStyle.message,
       read: false,
     ),
     NotificationCardData(
       id: 'demo-3',
-      title: 'Medical Record Uploaded',
-      description: 'A new file was added to your records.',
+      title: context.tr('notifications.demo.medicalRecordUploaded'),
+      description: context.tr('notifications.demo.medicalRecordUploadedDescription'),
       at: now.subtract(const Duration(days: 1)),
       style: NotificationStyle.medical,
       read: true,
     ),
     NotificationCardData(
       id: 'demo-4',
-      title: 'Appointment Reminder',
-      description: 'Appointment tomorrow at 10:00 AM.',
+      title: context.tr('notifications.demo.appointmentReminder'),
+      description: context.tr('notifications.demo.appointmentReminderDescription'),
       at: now.subtract(const Duration(days: 1, hours: 2)),
       style: NotificationStyle.reminder,
       read: true,
     ),
     NotificationCardData(
       id: 'demo-5',
-      title: 'Account Security',
-      description: 'Your email was used to sign in on a new device.',
+      title: context.tr('notifications.demo.accountSecurity'),
+      description: context.tr('notifications.demo.accountSecurityDescription'),
       at: now.subtract(const Duration(days: 2)),
       style: NotificationStyle.security,
       read: true,
@@ -246,7 +260,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       if (!mounted) return;
       setState(() {
         _error = e.toString();
-        _items = _demoList();
+        _items = _demoList(context);
         _loading = false;
       });
     }
@@ -285,15 +299,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     child: CircularProgressIndicator(color: AppColors.primary),
                   )
                 : _items.isEmpty
-                ? _buildEmpty()
-                : Column(
+                    ? _buildEmpty()
+                    : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (_error != null)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
                           child: Text(
-                            'Could not connect to the server. Showing sample notifications.',
+                            context.tr('notifications.offlineFallback'),
                             textAlign: TextAlign.center,
                             style: TextStyle(fontSize: 12, color: p.inkMuted),
                           ),
@@ -316,7 +330,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                     8,
                                   ),
                                   child: Text(
-                                    'Recent',
+                                    context.tr('notifications.recentTitle'),
                                     style: TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.w800,
@@ -364,7 +378,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       children: [
         if (widget.userId == null || widget.userId!.trim().isEmpty) ...[
           Text(
-            'Sign in to load your notifications.',
+            context.tr('notifications.signInMessage'),
             textAlign: TextAlign.center,
             style: TextStyle(color: p.inkMuted, fontSize: 13, height: 1.4),
           ),
@@ -419,7 +433,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  'No notifications yet',
+                  context.tr('notifications.emptyTitle'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 19,
@@ -429,7 +443,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'You will see your updates here.',
+                  context.tr('notifications.emptySubtitle'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,
@@ -483,7 +497,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Notifications',
+              context.tr('notifications.title'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -502,9 +516,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: const Text(
-              'Read all',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            child: Text(
+              context.tr('notifications.readAll'),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
             ),
           ),
           const SizedBox(width: 4),
@@ -656,7 +670,7 @@ class _NotificationCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            _formatRelativeTimeShort(data.at),
+                            _formatRelativeTimeShort(context, data.at),
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,

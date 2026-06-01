@@ -204,6 +204,171 @@ async function appointmentLinksPatientProvider(appointmentId, patientId, provide
   return rows.length > 0;
 }
 
+async function listPatientMedicalRecordsForPatient(patientId) {
+  if (!(await tableExists('patient_medical_records'))) return [];
+  const [rows] = await db.query(
+    `SELECT
+       id,
+       patient_id,
+       uploaded_by,
+       record_type,
+       title,
+       description,
+       category,
+       attachments,
+       used_for_ai_matching,
+       ai_ready,
+       extracted_text_status,
+       medical_summary,
+       detected_category,
+       tags,
+       private_label,
+       uploaded_after_visit,
+       created_at,
+       file_url,
+       file_name,
+       file_extension,
+       file_size,
+       extracted_text,
+       source,
+       notes
+     FROM patient_medical_records
+     WHERE BINARY patient_id = BINARY ?
+     ORDER BY created_at DESC`,
+    [patientId]
+  );
+  return rows.map((r) => {
+    try {
+      r.attachments = typeof r.attachments === 'string' && r.attachments.trim() ? JSON.parse(r.attachments) : (r.attachments || []);
+    } catch (_) {
+      r.attachments = [];
+    }
+    try {
+      r.tags = typeof r.tags === 'string' && r.tags.trim() ? JSON.parse(r.tags) : (r.tags || []);
+    } catch (_) {
+      r.tags = [];
+    }
+    return r;
+  });
+}
+
+async function getPatientMedicalRecordById(recordId) {
+  if (!(await tableExists('patient_medical_records'))) return null;
+  const [rows] = await db.query(
+    `SELECT
+       id,
+       patient_id,
+       uploaded_by,
+       record_type,
+       title,
+       description,
+       category,
+       attachments,
+       used_for_ai_matching,
+       ai_ready,
+       extracted_text_status,
+       medical_summary,
+       detected_category,
+       tags,
+       private_label,
+       uploaded_after_visit,
+       created_at,
+       file_url,
+       file_name,
+       file_extension,
+       file_size,
+       extracted_text,
+       source,
+       notes
+     FROM patient_medical_records
+     WHERE BINARY id = BINARY ?
+     LIMIT 1`,
+    [recordId]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  try {
+    r.attachments = typeof r.attachments === 'string' && r.attachments.trim() ? JSON.parse(r.attachments) : (r.attachments || []);
+  } catch (_) {
+    r.attachments = [];
+  }
+  try {
+    r.tags = typeof r.tags === 'string' && r.tags.trim() ? JSON.parse(r.tags) : (r.tags || []);
+  } catch (_) {
+    r.tags = [];
+  }
+  return r;
+}
+
+async function insertPatientMedicalRecord(payload) {
+  const id = randomUUID();
+  const attachments = JSON.stringify(payload.attachments || []);
+  const tags = JSON.stringify(payload.tags || []);
+
+  await db.execute(
+    `INSERT INTO patient_medical_records (
+       id,
+       patient_id,
+       uploaded_by,
+       record_type,
+       title,
+       description,
+       category,
+       attachments,
+       used_for_ai_matching,
+       ai_ready,
+       extracted_text_status,
+       medical_summary,
+       detected_category,
+       tags,
+       private_label,
+       uploaded_after_visit,
+       file_url,
+       file_name,
+       file_extension,
+       file_size,
+       extracted_text,
+       source,
+       notes
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      payload.patient_id,
+      payload.uploaded_by,
+      payload.record_type,
+      payload.title,
+      payload.description || null,
+      payload.category || null,
+      attachments,
+      payload.used_for_ai_matching ? 1 : 0,
+      payload.ai_ready ? 1 : 0,
+      payload.extracted_text_status || null,
+      payload.medical_summary || null,
+      payload.detected_category || null,
+      tags,
+      payload.private_label ? 1 : 0,
+      payload.uploaded_after_visit ? 1 : 0,
+      payload.file_url || null,
+      payload.file_name || null,
+      payload.file_extension || null,
+      payload.file_size || null,
+      payload.extracted_text || null,
+      payload.source || 'patient_upload',
+      payload.notes || null,
+    ]
+  );
+
+  return getPatientMedicalRecordById(id);
+}
+
+async function deletePatientMedicalRecord(recordId) {
+  if (!(await tableExists('patient_medical_records'))) return;
+  await db.execute(
+    `DELETE FROM patient_medical_records WHERE BINARY id = BINARY ?`,
+    [recordId]
+  );
+}
+
 module.exports = {
   tableExists,
   hasColumn,
@@ -211,5 +376,9 @@ module.exports = {
   listVisitReportsForPatient,
   getVisitReportById,
   insertVisitReport,
+  listPatientMedicalRecordsForPatient,
+  getPatientMedicalRecordById,
+  insertPatientMedicalRecord,
+  deletePatientMedicalRecord,
   appointmentLinksPatientProvider,
 };

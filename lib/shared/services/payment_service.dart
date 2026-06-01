@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:carelink/shared/models/payment_method.dart';
@@ -14,6 +15,12 @@ class PaymentService {
   final ApiService _api;
 
   static String get baseUrl => ApiService.baseUrl;
+
+  static void _logError(String message) {
+    if (kDebugMode) {
+      debugPrint('[PaymentService] $message');
+    }
+  }
 
   /// Creates a booking payment row, then confirms electronic methods (**DEMO** — no PSP).
   Future<Map<String, dynamic>> payForBooking({
@@ -37,30 +44,26 @@ class PaymentService {
       errorFallback: 'Payment could not be processed',
     );
 
-    final createdStatus =
-        (created['paymentStatus'] ?? '').toString().toLowerCase();
+    final createdStatus = (created['paymentStatus'] ?? '')
+        .toString()
+        .toLowerCase();
     final electronic =
-        method == 'mock_card' ||
-        method == 'card' ||
-        method == 'wallet';
+        method == 'mock_card' || method == 'card' || method == 'wallet';
 
     Map<String, dynamic>? confirmed;
     if (electronic && createdStatus == 'pending') {
-      confirmed = await _api.postJson(
-        '/api/payments/confirm',
-        {
-          'appointmentId': appointmentId,
-          'patientUserId': patientUserId,
-        },
-        errorFallback: 'Payment confirmation failed',
-      );
+      confirmed = await _api.postJson('/api/payments/confirm', {
+        'appointmentId': appointmentId,
+        'patientUserId': patientUserId,
+      }, errorFallback: 'Payment confirmation failed');
     }
 
     final merged = <String, dynamic>{
       ...created,
       if (confirmed != null) ...confirmed,
       'success': true,
-      'paymentStatus': (confirmed?['paymentStatus'] ?? created['paymentStatus'])
+      'paymentStatus':
+          (confirmed?['paymentStatus'] ?? created['paymentStatus'])
               ?.toString() ??
           '',
     };
@@ -108,8 +111,7 @@ class PaymentService {
             .toList();
       }
     } catch (e) {
-      // ignore: avoid_print
-      print('Get payment methods error: $e');
+      _logError('Error message: $e');
     }
     return [];
   }
@@ -133,8 +135,7 @@ class PaymentService {
             .toList();
       }
     } catch (e) {
-      // ignore: avoid_print
-      print('Get payment history error: $e');
+      _logError('Error message: $e');
     }
     return [];
   }
@@ -155,8 +156,7 @@ class PaymentService {
         };
       }
     } catch (e) {
-      // ignore: avoid_print
-      print('Get payment summary error: $e');
+      _logError('Error message: $e');
     }
     return {'thisMonth': 0, 'thisWeek': 0, 'today': 0};
   }
@@ -180,8 +180,7 @@ class PaymentService {
 
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      // ignore: avoid_print
-      print('Add payment method error: $e');
+      _logError('Error message: $e');
     }
     return false;
   }
@@ -206,8 +205,7 @@ class PaymentService {
 
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      // ignore: avoid_print
-      print('Update payment method error: $e');
+      _logError('Error message: $e');
     }
     return false;
   }
@@ -223,8 +221,7 @@ class PaymentService {
 
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      // ignore: avoid_print
-      print('Delete payment method error: $e');
+      _logError('Error message: $e');
     }
     return false;
   }
@@ -237,15 +234,12 @@ class PaymentService {
       final response = await http.put(
         Uri.parse('$baseUrl/nurse/payments/$providerId/$transactionId/status'),
         headers: const <String, String>{'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'status': 'paid',
-        }),
+        body: jsonEncode({'status': 'paid'}),
       );
 
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
-      // ignore: avoid_print
-      print('Request payment error: $e');
+      _logError('Error message: $e');
     }
     return false;
   }

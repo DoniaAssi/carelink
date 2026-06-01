@@ -63,39 +63,102 @@ class ApiService {
     return Uri.parse('$baseUrl$normalizedPath');
   }
 
+  void _logApi({
+    required String label,
+    Uri? url,
+    String? method,
+    int? statusCode,
+    String? error,
+  }) {
+    if (kDebugMode) {
+      debugPrint(
+        '$label Request URL: ${url?.toString() ?? 'unknown URL'} | '
+        'HTTP method: ${method ?? 'unknown'} | '
+        'Status code: ${statusCode?.toString() ?? 'n/a'}'
+        '${error == null || error.isEmpty ? '' : ' | Error message: $error'}',
+      );
+    }
+  }
+
   Future<http.Response> _sendRequest(Future<http.Response> request) async {
     try {
-      return await request.timeout(const Duration(seconds: 20));
-    } on TimeoutException {
+      final response = await request.timeout(const Duration(seconds: 20));
+      _logApi(
+        label: '[API]',
+        url: response.request?.url,
+        method: response.request?.method,
+        statusCode: response.statusCode,
+      );
+      return response;
+    } on TimeoutException catch (e) {
+      _logApi(label: '[API]', url: Uri.tryParse(baseUrl), error: e.toString());
       throw Exception(
-        'Request timed out. Backend may be down or unreachable at $baseUrl',
+        'CareLink is taking too long to respond. The server might be busy or down. Please try again. (Host: $baseUrl)',
       );
     } on http.ClientException catch (e) {
-      throw Exception('Network request failed: ${e.message}');
+      _logApi(label: '[API]', url: Uri.tryParse(baseUrl), error: e.message);
+      final isLocal =
+          baseUrl.contains('localhost') ||
+          baseUrl.contains('127.0.0.1') ||
+          baseUrl.contains('10.0.2.2');
+      if (isLocal) {
+        throw Exception(
+          'Backend server is not running or API URL is incorrect. (Host: $baseUrl)',
+        );
+      } else {
+        throw Exception(
+          'CareLink connection failed: please check your internet connection. (Host: $baseUrl)',
+        );
+      }
     } catch (e) {
-      throw Exception('Network error: $e');
+      _logApi(label: '[API]', url: Uri.tryParse(baseUrl), error: e.toString());
+      throw Exception(
+        'CareLink network error. Please try again. (Host: $baseUrl)',
+      );
     }
   }
 
   String _extractErrorMessage(http.Response response, String fallback) {
+    final url = response.request?.url.toString() ?? 'unknown URL';
+    final statusCode = response.statusCode;
+    final body = response.body;
+
+    String? serverMsg;
     try {
-      final decoded = jsonDecode(response.body);
-
+      final decoded = jsonDecode(body);
       if (decoded is Map<String, dynamic>) {
-        if (decoded['message'] != null) return decoded['message'].toString();
-        if (decoded['error'] != null) return decoded['error'].toString();
-      }
-
-      if (decoded is String && decoded.trim().isNotEmpty) {
-        return decoded;
+        if (decoded['message'] != null) {
+          serverMsg = decoded['message'].toString();
+        } else if (decoded['error'] != null) {
+          serverMsg = decoded['error'].toString();
+        }
+      } else if (decoded is String && decoded.trim().isNotEmpty) {
+        serverMsg = decoded.trim();
       }
     } catch (_) {}
 
-    if (response.body.trim().isNotEmpty) {
-      return response.body;
+    if (serverMsg == null) {
+      final bodyTrimmed = body.trim();
+      if (bodyTrimmed.isNotEmpty) {
+        final isHtml =
+            bodyTrimmed.toLowerCase().startsWith('<!doctype html') ||
+            bodyTrimmed.toLowerCase().startsWith('<html') ||
+            bodyTrimmed.toLowerCase().contains('<pre>');
+        if (!isHtml) {
+          serverMsg = bodyTrimmed;
+        }
+      }
     }
 
-    return fallback;
+    final reason = serverMsg ?? fallback;
+    _logApi(
+      label: '[API Error]',
+      url: response.request?.url ?? Uri.tryParse(url),
+      method: response.request?.method,
+      statusCode: statusCode,
+      error: reason,
+    );
+    return '$reason (Status: $statusCode, URL: $url)';
   }
 
   Future<void> pingServer() async {
@@ -252,9 +315,7 @@ class ApiService {
       throw Exception('Unexpected reset-password response format');
     }
 
-    throw Exception(
-      _extractErrorMessage(response, 'Failed to reset password'),
-    );
+    throw Exception(_extractErrorMessage(response, 'Failed to reset password'));
   }
 
   Future<Map<String, dynamic>> getSocialAuthConfig() async {
@@ -391,12 +452,15 @@ class ApiService {
     }
 
     if (role == 'patient') {
-      if (addressText == null || addressText.trim().isEmpty) {
-        throw Exception('Patient registration requires address');
+      if (addressText != null && addressText.trim().isNotEmpty) {
+        body['addressText'] = addressText.trim();
       }
-      body['addressText'] = addressText.trim();
-      body['gpsLat'] = gpsLat;
-      body['gpsLng'] = gpsLng;
+      if (gpsLat != null) {
+        body['gpsLat'] = gpsLat;
+      }
+      if (gpsLng != null) {
+        body['gpsLng'] = gpsLng;
+      }
       if (dateOfBirth != null && dateOfBirth.trim().isNotEmpty) {
         body['dateOfBirth'] = dateOfBirth.trim();
       }
@@ -483,6 +547,47 @@ class ApiService {
     throw Exception(_extractErrorMessage(response, 'Failed to load profile'));
   }
 
+  Future<String> uploadProfileImage(Uint8List bytes, String filename) async {
+    final uri = _endpoint('/patient/profile/upload');
+    final request = http.MultipartRequest('POST', uri);
+    final multipartFile = http.MultipartFile.fromBytes(
+      'image',
+      bytes,
+      filename: filename,
+    );
+    request.files.add(multipartFile);
+
+    try {
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 25),
+      );
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        if (decoded['url'] != null) {
+          return decoded['url'] as String;
+        }
+        throw Exception('Upload succeeded but no URL was returned');
+      }
+
+      throw Exception(
+        _extractErrorMessage(
+          response,
+          'Profile image upload failed. Please try again.',
+        ),
+      );
+    } catch (e) {
+      _logApi(
+        label: '[Upload Error]',
+        url: uri,
+        method: 'POST',
+        error: e.toString(),
+      );
+      rethrow;
+    }
+  }
+
   Future<Map<String, dynamic>> updatePatientProfile(
     String userId,
     Map<String, dynamic> body,
@@ -531,10 +636,7 @@ class ApiService {
 
   Future<List<dynamic>> getNotifications(String userId) async {
     final response = await _sendRequest(
-      http.get(
-        _endpoint('/notifications/$userId'),
-        headers: _jsonHeaders,
-      ),
+      http.get(_endpoint('/notifications/$userId'), headers: _jsonHeaders),
     );
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -602,6 +704,7 @@ class ApiService {
     required String time,
     String? notes,
     String? serviceType,
+    String? appointmentType,
     double? visitLatitude,
     double? visitLongitude,
     String? visitAddress,
@@ -625,6 +728,9 @@ class ApiService {
           'patientUserId': patientId,
           'providerUserId': providerId,
           'serviceType': serviceType ?? 'appointment',
+          'appointmentType': appointmentType?.trim().isEmpty == false
+              ? appointmentType!.trim()
+              : 'home',
           'date': date,
           'time': time,
           'notes': notes?.trim() ?? '',
@@ -748,6 +854,28 @@ class ApiService {
     );
   }
 
+  Future<Map<String, dynamic>> rescheduleAppointment({
+    required String appointmentId,
+    required String date,
+    required String time,
+  }) async {
+    final response = await _sendRequest(
+      http.put(
+        _endpoint('/patient/appointments/$appointmentId/reschedule'),
+        headers: _jsonHeaders,
+        body: jsonEncode({'date': date, 'time': time}),
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to reschedule appointment'),
+    );
+  }
+
   /// Post-visit rating (1–5) after the provider marks the visit completed. Updates provider `overallRating`.
   Future<Map<String, dynamic>> rateCompletedVisit({
     required String appointmentId,
@@ -771,9 +899,7 @@ class ApiService {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
 
-    throw Exception(
-      _extractErrorMessage(response, 'Failed to submit rating'),
-    );
+    throw Exception(_extractErrorMessage(response, 'Failed to submit rating'));
   }
 
   /// Visit-rating aggregates + affinity used by [PatientRecommendationProfileRepository].
@@ -804,9 +930,7 @@ class ApiService {
     final uri = _endpoint(
       '/api/ratings/provider/$providerUserId',
     ).replace(queryParameters: {'limit': '$limit'});
-    final response = await _sendRequest(
-      http.get(uri, headers: _jsonHeaders),
-    );
+    final response = await _sendRequest(http.get(uri, headers: _jsonHeaders));
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -854,10 +978,10 @@ class ApiService {
     required String appointmentId,
     required String patientUserId,
   }) async {
-    final uri = _endpoint('/api/payments/appointment/$appointmentId')
-        .replace(queryParameters: {'patientUserId': patientUserId});
-    final response =
-        await _sendRequest(http.get(uri, headers: _jsonHeaders));
+    final uri = _endpoint(
+      '/api/payments/appointment/$appointmentId',
+    ).replace(queryParameters: {'patientUserId': patientUserId});
+    final response = await _sendRequest(http.get(uri, headers: _jsonHeaders));
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -935,10 +1059,7 @@ class ApiService {
       http.put(
         _endpoint('/providers/appointments/$requestId/status'),
         headers: _jsonHeaders,
-        body: jsonEncode({
-          'providerUserId': providerUserId,
-          'status': status,
-        }),
+        body: jsonEncode({'providerUserId': providerUserId, 'status': status}),
       ),
     );
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -982,11 +1103,7 @@ class ApiService {
     String errorFallback = 'Request failed',
   }) async {
     final response = await _sendRequest(
-      http.post(
-        _endpoint(path),
-        headers: _jsonHeaders,
-        body: jsonEncode(body),
-      ),
+      http.post(_endpoint(path), headers: _jsonHeaders, body: jsonEncode(body)),
     );
 
     if (response.statusCode >= 200 && response.statusCode < 300) {

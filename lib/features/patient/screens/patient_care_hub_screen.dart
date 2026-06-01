@@ -4,12 +4,10 @@ import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
-import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
+import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
 import 'appointments_screen.dart';
 import 'booking_details_screen.dart';
-import 'medical_records_screen.dart';
-import 'schedule_screen.dart';
 
 /// مركز واحد: تنظيم المواعيد، الملف الصحي الإلكتروني، وإبراز آخر الزيارات.
 class PatientCareHubScreen extends StatefulWidget {
@@ -81,12 +79,9 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
 
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        backgroundColor: p.isDark ? const Color(0xFF06313A) : AppColors.primary,
-        foregroundColor: Colors.white,
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('My care'),
-        actions: carelinkAppBarActions(),
+      appBar: const PatientAppBar(
+        title: 'My care',
+        leading: SizedBox.shrink(),
       ),
       body: RefreshIndicator(
         color: AppColors.primary,
@@ -107,12 +102,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                     title: 'Appointment schedule',
                     subtitle: 'Filter by status, open each booking',
                     onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ScheduleScreen(patientUserId: uid),
-                        ),
-                      );
+                      PatientNavigationShell.switchTab(context, 1);
                     },
                   );
                   final second = _hubTile(
@@ -121,12 +111,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                     title: 'Medical records',
                     subtitle: 'Electronic file, add or edit entries',
                     onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => MedicalRecordsScreen(userId: uid),
-                        ),
-                      );
+                      PatientNavigationShell.switchTab(context, 3);
                     },
                   );
                   if (constraints.maxWidth < 560) {
@@ -149,13 +134,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                 icon: Icons.receipt_long_rounded,
                 label: 'Visit reports (long-term)',
                 onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          MedicalRecordsScreen(userId: uid, initialTab: 1),
-                    ),
-                  );
+                  PatientNavigationShell.switchTab(context, 3);
                 },
               ),
               const SizedBox(height: 10),

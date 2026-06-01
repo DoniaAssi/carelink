@@ -57,36 +57,110 @@ Widget carelinkLocaleThemeChipRow({
   );
 }
 
-Widget carelinkGlobalLocaleOverlay(BuildContext context) {
-  final isDark = themeController.isDark;
-  final background = isDark ? const Color(0xFF263238) : const Color(0xFFFFFFFF);
-  final foreground = isDark ? const Color(0xFFF5FBFC) : const Color(0xFF1F2933);
-  return SafeArea(
-    child: Align(
-      alignment: AlignmentDirectional.topEnd,
-      child: Padding(
-        padding: const EdgeInsetsDirectional.only(end: 10, top: 2),
-        child: Material(
-          elevation: 3,
-          shadowColor: Colors.black45,
-          borderRadius: BorderRadius.circular(999),
-          color: background.withValues(alpha: 0.94),
-          clipBehavior: Clip.antiAlias,
-          child: IconTheme(
-            data: IconThemeData(color: foreground, size: 24),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CarelinkLocaleIconButton(omitTooltip: true),
-                SizedBox(width: 2),
-                CarelinkThemeIconButton(omitTooltip: true),
-              ],
-            ),
+class PatientHeaderActions extends StatelessWidget {
+  const PatientHeaderActions({
+    super.key,
+    this.showLanguage = true,
+    this.showTheme = true,
+    this.color,
+  });
+
+  final bool showLanguage;
+  final bool showTheme;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (showLanguage)
+          CarelinkLocaleIconButton(color: color),
+        if (showTheme)
+          CarelinkThemeIconButton(color: color),
+      ],
+    );
+  }
+}
+
+class PatientTopActions extends StatelessWidget implements PreferredSizeWidget {
+  const PatientTopActions({
+    super.key,
+    this.showBack = false,
+    this.showNotification = false,
+    this.showAiRobot = false,
+    this.showLanguage = true,
+    this.showTheme = true,
+    this.onBack,
+  });
+
+  final bool showBack;
+  final bool showNotification;
+  final bool showAiRobot;
+  final bool showLanguage;
+  final bool showTheme;
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final ar = Directionality.of(context) == TextDirection.rtl;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Left side: Back button (if enabled)
+          if (showBack)
+            IconButton(
+              icon: Icon(
+                ar ? Icons.arrow_forward : Icons.arrow_back,
+                color: primaryColor,
+              ),
+              onPressed: onBack ?? () => Navigator.of(context).pop(),
+            )
+          else
+            const SizedBox(width: 48),
+          
+          // Right side: Action buttons
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (showNotification)
+                IconButton(
+                  icon: Icon(Icons.notifications_outlined, color: primaryColor),
+                  onPressed: () {
+                    // Triggers notifications or profile page
+                  },
+                ),
+              if (showAiRobot)
+                IconButton(
+                  icon: Icon(Icons.smart_toy_outlined, color: primaryColor),
+                  onPressed: () {
+                    Navigator.pushNamed(
+                      context,
+                      '/find-provider',
+                    );
+                  },
+                ),
+              if (showLanguage)
+                CarelinkLocaleIconButton(color: primaryColor),
+              if (showTheme)
+                CarelinkThemeIconButton(color: primaryColor),
+            ],
           ),
-        ),
+        ],
       ),
-    ),
-  );
+    );
+  }
+
+  @override
+  Size get preferredSize => const Size.fromHeight(48);
+}
+
+Widget carelinkGlobalLocaleOverlay(BuildContext context) {
+  return const SizedBox.shrink();
 }
 
 class CarelinkThemeIconButton extends StatelessWidget {
@@ -128,5 +202,9 @@ class CarelinkThemeIconButton extends StatelessWidget {
 }
 
 List<Widget> carelinkAppBarActions([List<Widget>? other]) {
-  return [if (other != null) ...other, const CarelinkThemeIconButton()];
+  return [
+    if (other != null) ...other,
+    const CarelinkLocaleIconButton(),
+    const CarelinkThemeIconButton(),
+  ];
 }

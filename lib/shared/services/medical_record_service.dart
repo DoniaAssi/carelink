@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:carelink/shared/services/api_service.dart';
@@ -15,7 +16,8 @@ abstract final class MedicalRecordsBrand {
 
 /// Official visit reports: `/medical-records/*`.
 class MedicalRecordService {
-  MedicalRecordService({http.Client? client}) : _client = client ?? http.Client();
+  MedicalRecordService({http.Client? client})
+    : _client = client ?? http.Client();
 
   final http.Client _client;
 
@@ -34,6 +36,22 @@ class MedicalRecordService {
   Uri _uri(String path) {
     final p = path.startsWith('/') ? path : '/$path';
     return Uri.parse('${ApiService.baseUrl}$p');
+  }
+
+  void _logRequest({
+    required Uri url,
+    required String method,
+    int? statusCode,
+    String? error,
+  }) {
+    if (kDebugMode) {
+      debugPrint(
+        '[MedicalRecordService] Request URL: $url | '
+        'HTTP method: $method | '
+        'Status code: ${statusCode?.toString() ?? 'n/a'}'
+        '${error == null || error.isEmpty ? '' : ' | Error message: $error'}',
+      );
+    }
   }
 
   Future<List<Map<String, dynamic>>> listForPatient(
@@ -98,6 +116,97 @@ class MedicalRecordService {
     throw _err(res, 'Failed to submit visit report');
   }
 
+  Future<Map<String, dynamic>> uploadPatientRecord({
+    required String patientId,
+    required String title,
+    required String category,
+    required String notes,
+    required bool usedForAiMatching,
+    required bool aiReady,
+    String? filePath,
+    List<int>? fileBytes,
+    required String fileName,
+  }) async {
+    final uri = _uri('/medical-records/upload');
+    final request = http.MultipartRequest('POST', uri);
+
+    request.headers.addAll(
+      _headers(requesterUserId: patientId, requesterRole: 'patient'),
+    );
+
+    request.fields['patientId'] = patientId;
+    request.fields['patient_id'] = patientId;
+    request.fields['title'] = title;
+    request.fields['category'] = category;
+    request.fields['notes'] = notes;
+    request.fields['description'] = notes;
+    request.fields['usedForAiMatching'] = usedForAiMatching ? 'true' : 'false';
+    request.fields['used_for_ai_matching'] = usedForAiMatching
+        ? 'true'
+        : 'false';
+    request.fields['aiReady'] = aiReady ? 'true' : 'false';
+    request.fields['ai_ready'] = aiReady ? 'true' : 'false';
+    request.fields['source'] = 'patient_upload';
+
+    if (fileBytes != null && fileBytes.isNotEmpty) {
+      request.files.add(
+        http.MultipartFile.fromBytes('file', fileBytes, filename: fileName),
+      );
+    } else if (filePath != null && filePath.isNotEmpty) {
+      request.files.add(
+        await http.MultipartFile.fromPath('file', filePath, filename: fileName),
+      );
+    } else {
+      throw Exception('No file data provided for upload');
+    }
+
+    final streamedResponse = await request.send().timeout(
+      const Duration(seconds: 40),
+    );
+    final response = await http.Response.fromStream(streamedResponse);
+
+    _logRequest(url: uri, method: 'POST', statusCode: response.statusCode);
+
+    if (response.statusCode == 201) {
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+
+    if (response.statusCode == 404) {
+      _logRequest(
+        url: uri,
+        method: 'POST',
+        statusCode: response.statusCode,
+        error: 'Upload endpoint not found',
+      );
+      throw Exception(
+        'Upload endpoint not found.\n'
+        'Requested URL: $uri\n'
+        'Status code: ${response.statusCode}',
+      );
+    }
+
+    throw _err(response, 'Failed to upload medical record');
+  }
+
+  Future<void> deletePatientRecord({
+    required String recordId,
+    required String patientId,
+  }) async {
+    final res = await _client
+        .delete(
+          _uri('/medical-records/upload/$recordId'),
+          headers: _headers(
+            requesterUserId: patientId,
+            requesterRole: 'patient',
+          ),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return;
+    }
+    throw _err(res, 'Failed to delete record');
+  }
+
   Exception _err(http.Response res, String fallback) {
     try {
       final map = jsonDecode(res.body);
@@ -105,9 +214,7 @@ class MedicalRecordService {
         final err = map['error']?.toString();
         final errs = map['errors'];
         if (errs is List) {
-          return Exception(
-            '$err: ${errs.map((e) => e.toString()).join('; ')}',
-          );
+          return Exception('$err: ${errs.map((e) => e.toString()).join('; ')}');
         }
         if (err != null && err.isNotEmpty) return Exception(err);
       }

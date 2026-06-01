@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 import 'package:carelink/shared/services/api_service.dart';
 
 /// Thrown for expected auth/validation failures (show message to user).
@@ -20,11 +18,17 @@ abstract final class VerificationPurpose {
 }
 
 class SendVerificationResult {
-  SendVerificationResult({required this.userMessage, this.devCode});
+  SendVerificationResult({
+    required this.userMessage,
+    this.devCode,
+    this.emailDeliveryFailed = false,
+  });
 
   final String userMessage;
+
   /// Only present when backend runs in non-production and opts in to dev exposure.
   final String? devCode;
+  final bool emailDeliveryFailed;
 }
 
 /// High-level auth flows. Uses [ApiService] for HTTP.
@@ -52,6 +56,77 @@ class AuthService {
     throw AuthServiceException(s);
   }
 
+  Future<SendVerificationResult> sendUnifiedVerificationCode({
+    required String email,
+    required String phoneDigits,
+    required String purpose,
+  }) async {
+    final trimmed = email.trim().toLowerCase();
+    if (!isValidEmailFormat(trimmed)) {
+      throw AuthServiceException('Invalid email address');
+    }
+    try {
+      final map = await _api.postJson('/auth/send-verification-code', {
+        'email': trimmed,
+        'phone': normalizePhoneDigits(phoneDigits),
+        'purpose': purpose,
+      });
+      final msg =
+          map['message']?.toString() ?? 'Verification code sent to your email';
+      final dev = map['devVerificationCode']?.toString();
+      final hasDeliveryNote = map['emailDeliveryNote'] != null;
+      return SendVerificationResult(
+        userMessage: msg,
+        devCode: (dev != null && dev.isNotEmpty) ? dev : null,
+        emailDeliveryFailed: hasDeliveryNote,
+      );
+    } catch (e) {
+      _throwFromException(e);
+    }
+  }
+
+  Future<({String emailVerificationToken, String phoneVerificationToken})>
+  verifyUnifiedCode({
+    required String email,
+    required String phoneDigits,
+    required String code,
+    required String purpose,
+  }) async {
+    final trimmed = email.trim().toLowerCase();
+    if (!isValidEmailFormat(trimmed)) {
+      throw AuthServiceException('Invalid email address');
+    }
+    final c = code.trim();
+    if (c.isEmpty) {
+      throw AuthServiceException('Enter the verification code');
+    }
+    try {
+      final map = await _api.postJson('/auth/verify-code', {
+        'email': trimmed,
+        'phone': normalizePhoneDigits(phoneDigits),
+        'code': c,
+        'purpose': purpose,
+      });
+      if (map['verified'] != true) {
+        throw AuthServiceException('Invalid verification code');
+      }
+      final et = map['emailVerificationToken']?.toString() ?? '';
+      final pt = map['phoneVerificationToken']?.toString() ?? '';
+      if (et.isEmpty || pt.isEmpty) {
+        throw AuthServiceException('Verification incomplete');
+      }
+      return (emailVerificationToken: et, phoneVerificationToken: pt);
+    } catch (e) {
+      final s = e.toString().replaceFirst('Exception: ', '');
+      if (s.toLowerCase().contains('invalid') ||
+          s.toLowerCase().contains('expired') ||
+          s.toLowerCase().contains('too many')) {
+        throw AuthServiceException(s);
+      }
+      _throwFromException(e);
+    }
+  }
+
   Future<SendVerificationResult> sendEmailVerificationCode({
     required String email,
     required String purpose,
@@ -65,8 +140,8 @@ class AuthService {
         email: trimmed,
         purpose: purpose,
       );
-      final msg = map['message']?.toString() ??
-          'Verification code sent to your email';
+      final msg =
+          map['message']?.toString() ?? 'Verification code sent to your email';
       final dev = map['devVerificationCode']?.toString();
       return SendVerificationResult(
         userMessage: msg,
@@ -83,17 +158,15 @@ class AuthService {
   }) async {
     final d = normalizePhoneDigits(phoneDigits);
     if (!isValidPhoneLength(d)) {
-      throw AuthServiceException(
-        'Enter a valid phone number (8–15 digits)',
-      );
+      throw AuthServiceException('Enter a valid phone number (8–15 digits)');
     }
     try {
       final map = await _api.sendPhoneVerificationCode(
         phoneDigits: d,
         purpose: purpose,
       );
-      final msg = map['message']?.toString() ??
-          'Verification code sent to your phone';
+      final msg =
+          map['message']?.toString() ?? 'Verification code sent to your phone';
       final dev = map['devVerificationCode']?.toString();
       return SendVerificationResult(
         userMessage: msg,
@@ -106,7 +179,7 @@ class AuthService {
 
   /// Signup → `emailVerificationToken`. Password reset → `resetToken` for [completePasswordReset].
   Future<({String? emailVerificationToken, String? resetToken})>
-      verifyEmailCode({
+  verifyEmailCode({
     required String email,
     required String code,
     required String purpose,
@@ -152,7 +225,7 @@ class AuthService {
   }
 
   Future<({String? phoneVerificationToken, String? resetToken})>
-      verifyPhoneCode({
+  verifyPhoneCode({
     required String phoneDigits,
     required String code,
     required String purpose,
@@ -214,8 +287,6 @@ class AuthService {
 
   /// Shows dev code in debug console only — never user-facing for production builds.
   static void logDevCodeIfAny(String? devCode) {
-    if (!kDebugMode || devCode == null || devCode.isEmpty) return;
-    // ignore: avoid_print
-    print('[CareLink dev] Server returned verification code (dev only): $devCode');
+    return;
   }
 }

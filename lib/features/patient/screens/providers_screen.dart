@@ -3,13 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/provider_model.dart';
-import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/location_service.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
 import 'package:carelink/features/patient/services/patient_care_summary.dart';
 import 'package:carelink/features/ai/provider_smart_match.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'provider_details_screen.dart';
 
 enum ProviderSortOption {
@@ -443,7 +442,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                           final selected = tempMaxPrice == price;
                           final label = price == null
                               ? 'Any'
-                              : '\$${price.toInt()}';
+                              : '${price.toInt()} ILS';
                           return _filterChoiceChip(
                             p: p,
                             label: label,
@@ -613,10 +612,8 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     final p = CarelinkPalette.of(context);
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: AppBar(
-        centerTitle: true,
-        title: const CarelinkAppBarTitle('Find Providers'),
-        actions: carelinkAppBarActions(),
+      appBar: const PatientAppBar(
+        title: 'Find Providers',
       ),
       body: SafeArea(
         child: RefreshIndicator(
@@ -941,7 +938,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                         _metric(
                           p,
                           Icons.payments_outlined,
-                          '\$${provider.consultationFee!.toStringAsFixed(0)}',
+                          '${provider.consultationFee!.toStringAsFixed(0)} ILS',
                         ),
                       if (provider.serviceType.trim().isNotEmpty)
                         _metric(

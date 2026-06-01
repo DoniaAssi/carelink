@@ -231,8 +231,6 @@ async function getOrCreateSocialUser({
 }
 
 router.post('/register', async (req, res) => {
-  console.log('REGISTER BODY:', req.body);
-
   const {
     fullName,
     email,
@@ -345,11 +343,6 @@ router.post('/register', async (req, res) => {
   }
 
   if (normalizedRole === 'patient') {
-    if (!normalizedAddress) {
-      return res.status(400).json({
-        error: 'Patients must provide addressText'
-      });
-    }
     if (normalizedGender) {
       const allowedGenders = ['male', 'female', 'other', 'prefer_not_to_say'];
       if (!allowedGenders.includes(normalizedGender)) {
@@ -393,6 +386,27 @@ router.post('/register', async (req, res) => {
 
     const hasProfileImageUrl = await hasColumn('user', 'profileImageUrl');
     if (hasProfileImageUrl) {
+      let finalProfileImageUrl = normalizedProfileImageUrl || null;
+      if (finalProfileImageUrl && finalProfileImageUrl.startsWith('data:image')) {
+        const matches = finalProfileImageUrl.match(/^data:image\/([a-zA-Z0-9-+]+);base64,(.+)$/);
+        if (matches && matches.length === 3) {
+          const fs = require('fs');
+          const path = require('path');
+          const ext = matches[1];
+          const base64Data = matches[2].replace(/\s/g, '');
+          const buffer = Buffer.from(base64Data, 'base64');
+          const filename = `profile_${userId}_${Date.now()}.${ext}`;
+          const uploadsDir = path.join(__dirname, '..', 'uploads');
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+          }
+          const filePath = path.join(uploadsDir, filename);
+          await fs.promises.writeFile(filePath, buffer);
+          finalProfileImageUrl = `/uploads/${filename}`;
+          console.log('[Signup] Profile image decoded and saved');
+        }
+      }
+
       await connection.query(
         `INSERT INTO user
            (userId, fullName, email, phone, passwordHash, role, profileImageUrl)
@@ -404,7 +418,7 @@ router.post('/register', async (req, res) => {
           phoneDigits,
           hashedPassword,
           normalizedRole,
-          normalizedProfileImageUrl || null
+          finalProfileImageUrl
         ]
       );
     } else {
@@ -451,6 +465,13 @@ router.post('/register', async (req, res) => {
         patientColumns.push('currentMedications');
         patientValues.push(
           (currentMedications ?? '').toString().trim() || null
+        );
+      }
+      const hasEmergency = await hasColumn('patient', 'emergencyContact');
+      if (hasEmergency) {
+        patientColumns.push('emergencyContact');
+        patientValues.push(
+          (req.body.emergencyContact ?? '').toString().trim() || null
         );
       }
 
@@ -855,6 +876,135 @@ router.post('/verify-phone-otp', async (req, res) => {
   }
 });
 
+router.post('/send-verification-code', async (req, res) => {
+  const purpose = ((req.body.purpose || 'signup') + '').toLowerCase();
+  const normalizedEmail = (req.body.email || '').toString().trim().toLowerCase();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!normalizedEmail || !emailRegex.test(normalizedEmail)) {
+    return res.status(400).json({ error: 'Invalid email format' });
+  }
+  if (!['signup', 'password_reset'].includes(purpose)) {
+    return res.status(400).json({ error: 'purpose must be signup or password_reset' });
+  }
+
+  try {
+    if (purpose === 'signup') {
+      const [rows] = await db.query(
+        'SELECT userId FROM user WHERE email = ? LIMIT 1',
+        [normalizedEmail],
+      );
+      if (rows.length > 0) {
+        return res.status(409).json({ error: 'Email already registered' });
+      }
+    }
+
+    const { plainCode } = await verificationCodes.startChallenge(
+      'email',
+      normalizedEmail,
+      purpose,
+    );
+    const mailResult = await dispatchEmailVerificationCode({
+      to: normalizedEmail,
+      code: plainCode,
+      purpose,
+    });
+
+    const payload = {
+      ok: true,
+      message: 'Verification code sent to your email',
+    };
+    if (exposeDevVerificationCode() || mailResult.channel === 'simulated') {
+      payload.devVerificationCode = plainCode;
+    }
+    if (mailResult.sendError) {
+      payload.emailDeliveryNote =
+        'Email could not be sent via SMTP; use the verification code shown in the app or server log.';
+    }
+    return res.json(payload);
+  } catch (err) {
+    if (err.statusCode === 429) {
+      return res.status(429).json({
+        error: err.message,
+        retryAfterSeconds: err.retryAfterSeconds,
+      });
+    }
+    const status = err.statusCode || 500;
+    return res.status(status).json({ error: err.message });
+  }
+});
+
+router.post('/verify-code', async (req, res) => {
+  const purpose = ((req.body.purpose || 'signup') + '').toLowerCase();
+  const normalizedEmail = (req.body.email || '').toString().trim().toLowerCase();
+  const rawPhone = (req.body.phone || '').toString().trim();
+  const phoneDigits = normalizePhoneDigits(rawPhone);
+  const rawCode = ((req.body.code || '') + '').trim();
+
+  if (!normalizedEmail || !rawCode) {
+    return res.status(400).json({ error: 'email and code are required' });
+  }
+  if (!['signup', 'password_reset'].includes(purpose)) {
+    return res.status(400).json({ error: 'Invalid purpose' });
+  }
+
+  try {
+    await verificationCodes.completeChallenge(
+      'email',
+      normalizedEmail,
+      purpose,
+      rawCode,
+    );
+
+    if (purpose === 'signup') {
+      pruneEmailVerificationSecrets();
+      const emailProof = randomBytes(32).toString('hex');
+      emailVerificationSecrets.set(emailProof, {
+        email: normalizedEmail,
+        expiresAt: Date.now() + SIGNUP_PROOF_TTL_MS,
+      });
+
+      prunePhoneVerificationSecrets();
+      const phoneProof = randomBytes(32).toString('hex');
+      phoneVerificationSecrets.set(phoneProof, {
+        phone: phoneDigits || '00000000',
+        expiresAt: Date.now() + SIGNUP_PROOF_TTL_MS,
+      });
+
+      return res.json({
+        verified: true,
+        message: 'Code verified successfully',
+        emailVerificationToken: emailProof,
+        phoneVerificationToken: phoneProof,
+      });
+    }
+
+    const [rows] = await db.query(
+      'SELECT userId FROM user WHERE email = ? LIMIT 1',
+      [normalizedEmail],
+    );
+    if (rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid or expired code' });
+    }
+    const u = rows[0];
+    const resetToken = randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 15);
+    await db.query(
+      'UPDATE user SET resetToken = ?, resetTokenExpires = ? WHERE userId = ?',
+      [resetToken, expiresAt, u.userId],
+    );
+    return res.json({
+      verified: true,
+      message: 'Code verified successfully',
+      resetToken,
+    });
+  } catch (err) {
+    const status = err.statusCode || 500;
+    if (status >= 500) console.error('verify-code:', err);
+    return res.status(status).json({ error: err.message });
+  }
+});
+
+
 router.post('/reset-password', async (req, res) => {
   const token = (req.body.token || '').toString().trim();
   const { newPassword } = req.body;
@@ -924,11 +1074,7 @@ router.post('/forgot-password', async (req, res) => {
         console.error('FORGOT PASSWORD MAIL:', mailErr);
       }
     } else {
-      console.log(
-        '[SIMULATED EMAIL] Password reset link for',
-        user.email,
-        resetLink,
-      );
+      console.log('[SIMULATED EMAIL] Password reset link generated');
     }
 
     res.json({

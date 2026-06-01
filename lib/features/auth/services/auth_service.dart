@@ -72,13 +72,35 @@ class AuthService {
     return 'Request failed ($statusCode)';
   }
 
+  void _logAuthRequest({
+    required Uri url,
+    required String method,
+    int? statusCode,
+    String? error,
+  }) {
+    if (kDebugMode) {
+      debugPrint(
+        '[AuthService] Request URL: $url | '
+        'HTTP method: $method | '
+        'Status code: ${statusCode?.toString() ?? 'n/a'}'
+        '${error == null || error.isEmpty ? '' : ' | Error message: $error'}',
+      );
+    }
+  }
+
   /// `POST /auth/send-phone-otp`
   Future<SendOtpResult> sendOtp({required String phoneDigits}) async {
+    final url = _auth('/auth/send-phone-otp');
     try {
       final response = await http.post(
-        _auth('/auth/send-phone-otp'),
+        url,
         headers: _jsonHeaders,
         body: jsonEncode({'phone': phoneDigits, 'purpose': 'signup'}),
+      );
+      _logAuthRequest(
+        url: url,
+        method: 'POST',
+        statusCode: response.statusCode,
       );
 
       final body = response.body;
@@ -93,21 +115,23 @@ class AuthService {
         return SendOtpResult(note: note);
       }
 
-      throw AuthApiException(
-        _extractError(body, response.statusCode),
+      final message = _extractError(body, response.statusCode);
+      _logAuthRequest(
+        url: url,
+        method: 'POST',
         statusCode: response.statusCode,
+        error: message,
       );
+      throw AuthApiException(message, statusCode: response.statusCode);
     } on AuthApiException {
       rethrow;
-    } on http.ClientException catch (e, st) {
-      debugPrint('[AuthService.sendOtp] ClientException: $e');
-      debugPrint('$st');
+    } on http.ClientException catch (e) {
+      _logAuthRequest(url: url, method: 'POST', error: e.message);
       throw AuthApiException(
         'Cannot reach Node API at ${_auth('/auth/send-phone-otp')} — run `cd backend && node server.js` (port 3000).',
       );
-    } catch (e, st) {
-      debugPrint('[AuthService.sendOtp] $e');
-      debugPrint('$st');
+    } catch (e) {
+      _logAuthRequest(url: url, method: 'POST', error: e.toString());
       rethrow;
     }
   }
@@ -162,11 +186,17 @@ class AuthService {
     if (gpsLat != null) payload['gpsLat'] = gpsLat;
     if (gpsLng != null) payload['gpsLng'] = gpsLng;
 
+    final url = _auth('/auth/register-with-phone-otp');
     try {
       final response = await http.post(
-        _auth('/auth/register-with-phone-otp'),
+        url,
         headers: _jsonHeaders,
         body: jsonEncode(payload),
+      );
+      _logAuthRequest(
+        url: url,
+        method: 'POST',
+        statusCode: response.statusCode,
       );
 
       final body = response.body;
@@ -180,23 +210,25 @@ class AuthService {
         return decoded ?? <String, dynamic>{'raw': body};
       }
 
-      throw AuthApiException(
-        decoded != null
-            ? _extractError(body, response.statusCode)
-            : (body.isNotEmpty ? body : 'Registration failed'),
+      final message = decoded != null
+          ? _extractError(body, response.statusCode)
+          : 'Registration failed';
+      _logAuthRequest(
+        url: url,
+        method: 'POST',
         statusCode: response.statusCode,
+        error: message,
       );
+      throw AuthApiException(message, statusCode: response.statusCode);
     } on AuthApiException {
       rethrow;
-    } on http.ClientException catch (e, st) {
-      debugPrint('[AuthService.register] ClientException: $e');
-      debugPrint('$st');
+    } on http.ClientException catch (e) {
+      _logAuthRequest(url: url, method: 'POST', error: e.message);
       throw AuthApiException(
         'Cannot reach Node API at ${_auth('/auth/register-with-phone-otp')}.',
       );
-    } catch (e, st) {
-      debugPrint('[AuthService.register] $e');
-      debugPrint('$st');
+    } catch (e) {
+      _logAuthRequest(url: url, method: 'POST', error: e.toString());
       rethrow;
     }
   }

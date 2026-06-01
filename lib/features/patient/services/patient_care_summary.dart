@@ -94,6 +94,21 @@ class PatientCareSummary {
     }
 
     for (final item in clinical) {
+      final isPatientUpload = item['uploaded_by'] == 'patient' ||
+          item['uploadedBy'] == 'patient' ||
+          item['source'] == 'patient_upload';
+      if (isPatientUpload) {
+        final usedForAi = item['used_for_ai_matching'] == true ||
+            item['used_for_ai_matching'] == 1 ||
+            item['usedForAiMatching'] == true;
+        final aiReady = item['ai_ready'] == true ||
+            item['ai_ready'] == 1 ||
+            item['aiReady'] == true;
+        if (!usedForAi || !aiReady) {
+          continue; // Skip patient upload not ready for AI or not toggled.
+        }
+      }
+
       add(item['title']);
       add(item['diagnosis']);
       add(item['symptoms']);

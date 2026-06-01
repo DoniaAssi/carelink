@@ -92,13 +92,6 @@ function validateUnifiedSignupBody(body) {
   }
 
   if (role === 'patient') {
-    if (!addressText) {
-      return {
-        ok: false,
-        status: 400,
-        error: 'Patients must provide addressText',
-      };
-    }
     if (gender) {
       const allowed = ['male', 'female', 'other', 'prefer_not_to_say'];
       if (!allowed.includes(gender)) {
@@ -169,6 +162,26 @@ async function upsertUserRow(db, connection, v, opts) {
   const { userId, isResume, hasVerifiedCol, hasProfileImageUrl } = opts;
   const hashedPassword = await bcrypt.hash(v.password, 10);
 
+  let finalProfileImageUrl = v.profileImageUrl || null;
+  if (finalProfileImageUrl && finalProfileImageUrl.startsWith('data:image')) {
+    const matches = finalProfileImageUrl.match(/^data:image\/([a-zA-Z0-9-+]+);base64,(.+)$/);
+    if (matches && matches.length === 3) {
+      const fs = require('fs');
+      const path = require('path');
+      const ext = matches[1];
+      const base64Data = matches[2].replace(/\s/g, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      const filename = `profile_${userId}_${Date.now()}.${ext}`;
+      const uploadsDir = path.join(__dirname, '..', 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      const filePath = path.join(uploadsDir, filename);
+      fs.writeFileSync(filePath, buffer);
+      finalProfileImageUrl = `/uploads/${filename}`;
+    }
+  }
+
   if (isResume) {
     if (hasProfileImageUrl) {
       await connection.query(
@@ -179,7 +192,7 @@ async function upsertUserRow(db, connection, v, opts) {
           hashedPassword,
           v.phoneDigits,
           v.role,
-          v.profileImageUrl || null,
+          finalProfileImageUrl,
           userId,
         ],
       );
@@ -209,7 +222,7 @@ async function upsertUserRow(db, connection, v, opts) {
         v.phoneDigits,
         hashedPassword,
         v.role,
-        v.profileImageUrl || null,
+        finalProfileImageUrl,
       ],
     );
   } else if (hasVerifiedCol) {
@@ -236,7 +249,7 @@ async function upsertUserRow(db, connection, v, opts) {
         v.phoneDigits,
         hashedPassword,
         v.role,
-        v.profileImageUrl || null,
+        finalProfileImageUrl,
       ],
     );
   } else {

@@ -312,26 +312,13 @@ class _CarelinkPrimaryGradientButton extends StatelessWidget {
                         strokeWidth: 2.5,
                       ),
                     )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          label,
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                        if (showTrailingArrow) ...[
-                          const SizedBox(width: 8),
-                          const Icon(
-                            Icons.arrow_forward_rounded,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ],
-                      ],
+                  : Text(
+                      label,
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
                     ),
             ),
           ),
@@ -453,7 +440,7 @@ class _Step1FieldsState extends State<_Step1Fields> {
           final busy = c.isBusy.value;
           return _CarelinkPrimaryGradientButton(
             loading: busy,
-            showTrailingArrow: true,
+            showTrailingArrow: false,
             label: context.tr('auth.sendCode'),
             onPressed: busy
                 ? null
@@ -879,9 +866,10 @@ class _Step2OtpBody extends StatelessWidget {
                     }
                     final r = user.role.toLowerCase();
                     if (r == 'patient') {
-                      Navigator.pushReplacementNamed(
+                      Navigator.pushNamedAndRemoveUntil(
                         context,
                         '/patient-home',
+                        (route) => false,
                         arguments: {
                           'userId': user.carelinkUserId,
                           'displayName': user.fullName.isNotEmpty
@@ -892,9 +880,10 @@ class _Step2OtpBody extends StatelessWidget {
                     } else if (r == 'nurse' || r == 'doctor') {
                       navigateCarelinkHomeForUserMap(user.toJson());
                     } else {
-                      Navigator.pushReplacementNamed(
+                      Navigator.pushNamedAndRemoveUntil(
                         context,
                         '/patient-home',
+                        (route) => false,
                         arguments: {
                           'userId': user.carelinkUserId,
                           'displayName': user.fullName,

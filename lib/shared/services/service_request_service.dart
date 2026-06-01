@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:carelink/shared/models/service_request.dart';
@@ -9,6 +10,12 @@ class ServiceRequestService {
   static String get baseUrl => ApiService.baseUrl;
 
   static const String _phpBaseUrl = 'http://127.0.0.1/carelink';
+
+  static void _logError(String message) {
+    if (kDebugMode) {
+      debugPrint('[ServiceRequestService] $message');
+    }
+  }
 
   static Future<List<ServiceRequest>> getPatientRequests(
     int patientId, {
@@ -36,8 +43,7 @@ class ServiceRequestService {
       }
       return [];
     } catch (e) {
-      // ignore: avoid_print
-      print('Get patient requests error: $e');
+      _logError('Error message: $e');
       return [];
     }
   }
@@ -68,8 +74,7 @@ class ServiceRequestService {
       }
       return false;
     } catch (e) {
-      // ignore: avoid_print
-      print('Create request error: $e');
+      _logError('Error message: $e');
       return false;
     }
   }
@@ -84,13 +89,14 @@ class ServiceRequestService {
       apiStatus = 'confirmed';
     }
     try {
+      final body = <String, dynamic>{'status': apiStatus};
+      if (providerUserId != null) {
+        body['providerUserId'] = providerUserId;
+      }
       final response = await http.put(
         Uri.parse('$baseUrl/nurse/requests/$requestId/status'),
         headers: const <String, String>{'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'status': apiStatus,
-          if (providerUserId != null) 'providerUserId': providerUserId,
-        }),
+        body: jsonEncode(body),
       );
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -106,8 +112,7 @@ class ServiceRequestService {
       } catch (_) {}
       throw Exception(message);
     } catch (e) {
-      // ignore: avoid_print
-      print('Update status error: $e');
+      _logError('Error message: $e');
       if (e is Exception) rethrow;
       return false;
     }
@@ -117,11 +122,9 @@ class ServiceRequestService {
     String requestId, {
     required String providerUserId,
   }) async {
-    return _postVisitAction(
-      '$baseUrl/nurse/requests/$requestId/start',
-      {'providerUserId': providerUserId},
-      'Failed to start visit',
-    );
+    return _postVisitAction('$baseUrl/nurse/requests/$requestId/start', {
+      'providerUserId': providerUserId,
+    }, 'Failed to start visit');
   }
 
   static Future<bool> endVisit(
@@ -129,14 +132,10 @@ class ServiceRequestService {
     required String providerUserId,
     required List<Map<String, dynamic>> nursingActivities,
   }) async {
-    return _postVisitAction(
-      '$baseUrl/nurse/requests/$requestId/end',
-      {
-        'providerUserId': providerUserId,
-        'nursingActivities': nursingActivities,
-      },
-      'Failed to end visit',
-    );
+    return _postVisitAction('$baseUrl/nurse/requests/$requestId/end', {
+      'providerUserId': providerUserId,
+      'nursingActivities': nursingActivities,
+    }, 'Failed to end visit');
   }
 
   static Future<bool> _postVisitAction(
@@ -162,8 +161,7 @@ class ServiceRequestService {
       } catch (_) {}
       throw Exception(message);
     } catch (e) {
-      // ignore: avoid_print
-      print('$fallbackMessage: $e');
+      _logError('Error message: $fallbackMessage: $e');
       if (e is Exception) rethrow;
       return false;
     }
@@ -195,8 +193,7 @@ class ServiceRequestService {
       }
       return [];
     } catch (e) {
-      // ignore: avoid_print
-      print('Get provider requests error: $e');
+      _logError('Error message: $e');
       return [];
     }
   }

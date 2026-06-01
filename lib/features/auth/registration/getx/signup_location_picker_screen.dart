@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import 'package:carelink/core/app_colors.dart';
-import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/app_localizations.dart';
 
 class SignupLocationResult {
   const SignupLocationResult({
@@ -101,6 +101,22 @@ class _SignupLocationPickerScreenState
     }
   }
 
+  String _cleanAddressString(String raw) {
+    String formatted = raw
+        .replaceAll(RegExp(r'Palestinian Territories', caseSensitive: false), 'Palestine')
+        .replaceAll(RegExp(r'Palestinian Territory', caseSensitive: false), 'Palestine');
+    formatted = formatted.replaceAll(RegExp(r'\bArea\s+[A-Z]\b', caseSensitive: false), '');
+    return formatted
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .fold<List<String>>([], (list, e) {
+          if (!list.contains(e)) list.add(e);
+          return list;
+        })
+        .join(', ');
+  }
+
   Future<void> _resolveAddress(LatLng point) async {
     setState(() => _isResolving = true);
     try {
@@ -110,23 +126,37 @@ class _SignupLocationPickerScreenState
       );
       if (placemarks.isNotEmpty) {
         final p = placemarks.first;
+        
+        final streetClean = (p.street ?? '').toLowerCase().contains('area ') ? null : p.street;
+        final subLocalityClean = (p.subLocality ?? '').toLowerCase().contains('area ') ? null : p.subLocality;
+        final localityClean = p.locality;
+        final subAdminAreaClean = (p.subAdministrativeArea ?? '').toLowerCase().contains('area ') ? null : p.subAdministrativeArea;
+        final adminAreaClean = (p.administrativeArea ?? '').toLowerCase().contains('area ') ? null : p.administrativeArea;
+        
+        var countryClean = p.country ?? '';
+        if (countryClean.toLowerCase() == 'palestinian territories' || countryClean.toLowerCase().contains('palestinian')) {
+          countryClean = 'Palestine';
+        }
+
         final address = _joinNonEmptyParts([
-          p.street,
-          p.subLocality,
-          p.locality,
-          p.administrativeArea,
-          p.country,
+          streetClean,
+          subLocalityClean,
+          localityClean,
+          subAdminAreaClean,
+          adminAreaClean,
+          countryClean,
         ]);
+
         if (address.trim().isNotEmpty) {
-          _addressController.text = address;
+          _addressController.text = _cleanAddressString(address);
           return;
         }
       }
       final fallback = await _reverseGeocodeFromNominatim(point);
-      if (fallback.isNotEmpty) _addressController.text = fallback;
+      if (fallback.isNotEmpty) _addressController.text = _cleanAddressString(fallback);
     } catch (_) {
       final fallback = await _reverseGeocodeFromNominatim(point);
-      if (fallback.isNotEmpty) _addressController.text = fallback;
+      if (fallback.isNotEmpty) _addressController.text = _cleanAddressString(fallback);
     } finally {
       if (mounted) setState(() => _isResolving = false);
     }
@@ -163,28 +193,41 @@ class _SignupLocationPickerScreenState
 
   @override
   Widget build(BuildContext context) {
-    final p = CarelinkPalette.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: p.pageBg,
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        title: const Text('Choose address'),
-        backgroundColor: p.pageBg,
-        foregroundColor: p.inkDark,
+        title: Text(
+          context.tr('booking.location.chooseAddress'),
+          style: TextStyle(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        iconTheme: IconThemeData(
+          color: colorScheme.onSurface,
+        ),
+        backgroundColor: colorScheme.surface,
         elevation: 0,
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-          child: FilledButton.icon(
+          child: FilledButton(
             onPressed: _canConfirm ? _confirm : null,
-            icon: const Icon(Icons.check_rounded),
-            label: const Text('Use this address'),
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: Text(
+              context.tr('booking.location.useThisAddress'),
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
               ),
             ),
           ),
@@ -249,21 +292,34 @@ class _SignupLocationPickerScreenState
             minLines: 2,
             maxLines: 4,
             onChanged: (_) => setState(() {}),
+            style: TextStyle(color: colorScheme.onSurface),
             decoration: InputDecoration(
-              labelText: 'Address',
-              prefixIcon: const Icon(Icons.location_on_outlined),
+              labelText: context.tr('booking.location.address'),
+              labelStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.8)),
+              prefixIcon: Icon(Icons.location_on_outlined, color: colorScheme.primary),
               suffixIcon: _isResolving
-                  ? const Padding(
-                      padding: EdgeInsets.all(14),
+                  ? Padding(
+                      padding: const EdgeInsets.all(14),
                       child: SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colorScheme.primary,
+                        ),
                       ),
                     )
                   : null,
               filled: true,
-              fillColor: p.surface,
+              fillColor: colorScheme.surface,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.3)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
@@ -283,8 +339,9 @@ class _MapButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Material(
-      color: Colors.white,
+      color: colorScheme.surface,
       borderRadius: BorderRadius.circular(12),
       elevation: 4,
       child: InkWell(
@@ -293,7 +350,7 @@ class _MapButton extends StatelessWidget {
         child: SizedBox(
           width: 44,
           height: 44,
-          child: Icon(icon, color: AppColors.primary),
+          child: Icon(icon, color: colorScheme.primary),
         ),
       ),
     );
@@ -304,7 +361,7 @@ String _joinNonEmptyParts(List<Object?> values) {
   final parts = <String>[];
   for (final value in values) {
     final text = value?.toString().trim() ?? '';
-    if (text.isNotEmpty) parts.add(text);
+    if (text.isNotEmpty && !parts.contains(text)) parts.add(text);
   }
   return parts.join(', ');
 }

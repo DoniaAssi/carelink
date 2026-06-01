@@ -12,9 +12,15 @@ import 'package:carelink/features/auth/registration/getx/registration_entry.dart
 import 'package:carelink/features/auth/registration/professional_profile_completion_screen.dart';
 import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
 import 'package:carelink/features/onboarding/intro_screen.dart';
-import 'package:carelink/features/patient/screens/patient_home_screen.dart';
+import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
 import 'package:carelink/shared/models/user.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+// AI Flow Screens
+import 'package:carelink/features/ai/screens/find_provider_screen.dart';
+import 'package:carelink/features/ai/screens/ai_provider_details_screen.dart';
+import 'package:carelink/features/ai/screens/ai_appointment_screen.dart';
+import 'package:carelink/features/ai/screens/ai_booking_confirmed_screen.dart';
+import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
+import 'package:carelink/shared/models/booking_request_model.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,21 +66,36 @@ class CareLinkApp extends StatelessWidget {
           darkTheme: AppTheme.dark,
           themeMode: themeController.themeMode,
           builder: (context, child) {
-            return Stack(
-              fit: StackFit.expand,
-              clipBehavior: Clip.none,
-              children: [
-                child ?? const SizedBox.shrink(),
-                carelinkGlobalLocaleOverlay(context),
-              ],
-            );
+            return child ?? const SizedBox.shrink();
           },
           initialRoute: '/intro',
           routes: {
             '/intro': (context) => const IntroScreen(),
             '/login': (context) => const LoginScreen(),
+            '/patient-home': (context) {
+              final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+              final initialTabValue = args?['initialTab'];
+              final initialTab = initialTabValue is int
+                  ? initialTabValue
+                  : int.tryParse(initialTabValue?.toString() ?? '') ?? 0;
+              return PatientNavigationShell(
+                userId: (args?['userId'] ?? '').toString(),
+                displayName: args?['displayName'] as String?,
+                initialTab: initialTab.clamp(0, 4).toInt(),
+              );
+            },
+            '/patient-profile': (_) => const PatientNavigationShell(initialIndex: 4),
           },
           onGenerateRoute: (settings) {
+            if (settings.name == '/patient/profile' || settings.name == '/patient/profile/') {
+              return MaterialPageRoute<void>(
+                builder: (_) => const PatientNavigationShell(
+                  initialIndex: 4,
+                ),
+                settings: const RouteSettings(name: '/patient-profile'),
+              );
+            }
+
             if (settings.name == '/email-register') {
               final args = settings.arguments;
               String? roleArg;
@@ -83,16 +104,7 @@ class CareLinkApp extends StatelessWidget {
               }
               return MaterialPageRoute<void>(
                 builder: (_) => CarelinkRegistrationEntry(initialRole: roleArg),
-              );
-            }
-
-            if (settings.name == '/patient-home') {
-              final args = settings.arguments as Map<String, dynamic>?;
-              return MaterialPageRoute(
-                builder: (_) => PatientHomeScreen(
-                  userId: args?['userId'] as String?,
-                  displayName: args?['displayName'] as String?,
-                ),
+                settings: settings,
               );
             }
 
@@ -103,7 +115,47 @@ class CareLinkApp extends StatelessWidget {
                 return MaterialPageRoute<void>(
                   builder: (_) =>
                       ProfessionalProfileCompletionScreen(user: user),
+                  settings: settings,
                 );
+              }
+            }
+
+            if (settings.name?.startsWith('/patient/') == true) {
+              final pathSegments = settings.name!
+                  .split('/')
+                  .where((segment) => segment.isNotEmpty)
+                  .toList();
+              if (pathSegments.length == 2 && pathSegments[0] == 'patient') {
+                final tabKey = pathSegments[1];
+                final args = settings.arguments as Map<String, dynamic>?;
+                int? initialTab;
+                switch (tabKey) {
+                  case 'home':
+                    initialTab = 0;
+                    break;
+                  case 'bookings':
+                  case 'schedule':
+                    initialTab = 1;
+                    break;
+                  case 'care':
+                  case 'care-hub':
+                    initialTab = 2;
+                    break;
+                  case 'records':
+                  case 'medical-records':
+                    initialTab = 3;
+                    break;
+                }
+                if (initialTab != null) {
+                  return MaterialPageRoute<void>(
+                    builder: (_) => PatientNavigationShell(
+                      userId: (args?['userId'] ?? '').toString(),
+                      displayName: args?['displayName'] as String?,
+                      initialTab: initialTab!,
+                    ),
+                    settings: settings,
+                  );
+                }
               }
             }
 
@@ -112,9 +164,62 @@ class CareLinkApp extends StatelessWidget {
               if (user != null) {
                 return MaterialPageRoute(
                   builder: (_) => NurseDashboard(user: user),
+                  settings: settings,
                 );
               }
             }
+
+            // AI Flow Named Routes with safety checks
+            if (settings.name == '/find-provider') {
+              final args = settings.arguments as Map<String, dynamic>?;
+              return MaterialPageRoute(
+                builder: (_) => FindProviderScreen(
+                  userId: (args?['userId'] ?? '').toString(),
+                ),
+                settings: settings,
+              );
+            }
+
+            if (settings.name == '/ai-details') {
+              final args = settings.arguments as Map<String, dynamic>?;
+              return MaterialPageRoute(
+                builder: (_) => AiProviderDetailsScreen(
+                  result: args?['result'] as AIRecommendationResult?,
+                  patientUserId: args?['patientUserId'] as String?,
+                  distanceKm: args?['distanceKm'] as double?,
+                  caseReason: args?['caseReason'] as String? ?? '',
+                ),
+                settings: settings,
+              );
+            }
+
+            if (settings.name == '/ai-appointment') {
+              final args = settings.arguments as Map<String, dynamic>?;
+              return MaterialPageRoute(
+                builder: (_) => AiAppointmentScreen(
+                  request: args?['request'] as BookingRequestModel?,
+                  aiResult: args?['aiResult'] as AIRecommendationResult?,
+                  displayDate: args?['displayDate'] as String? ?? '',
+                  displayTime: args?['displayTime'] as String? ?? '',
+                ),
+                settings: settings,
+              );
+            }
+
+            if (settings.name == '/ai-booking-confirmed') {
+              final args = settings.arguments as Map<String, dynamic>?;
+              return MaterialPageRoute(
+                builder: (_) => AiBookingConfirmedScreen(
+                  request: args?['request'] as BookingRequestModel?,
+                  appointmentId: args?['appointmentId'] as String? ?? '',
+                  displayDate: args?['displayDate'] as String? ?? '',
+                  displayTime: args?['displayTime'] as String? ?? '',
+                  patientUserId: args?['patientUserId'] as String? ?? '',
+                ),
+                settings: settings,
+              );
+            }
+
             return null;
           },
         );

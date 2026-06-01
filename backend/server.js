@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 
 const authRoutes = require('./routes/auth');
 const providerRoutes = require('./routes/providers');
@@ -13,6 +14,7 @@ const graduationAiDemoRoutes = require('./routes/graduationAiDemoRoutes');
 const ratingsApiRoutes = require('./routes/ratingsApi');
 const paymentsApiRoutes = require('./routes/paymentsApi');
 const signupProof = require('./services/signupVerificationProof');
+const migrateBase64Images = require('./utils/migrateImages');
 
 const app = express();
 
@@ -35,6 +37,7 @@ app.use('/auth', authRoutes);
 app.use('/providers', providerRoutes);
 app.use('/patient', patientRoutes);
 app.use('/medical-records', medicalRecordRoutes);
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/payments', paymentRoutes);
 app.use('/nurse', nurseRoutes);
 app.use('/notifications', notificationsRoutes);
@@ -87,5 +90,8 @@ app.listen(PORT, () => {
       '[CareLink] Could not ensure signup_verification_proof table:',
       e.message,
     );
+  });
+  migrateBase64Images().catch((e) => {
+    console.error('[CareLink] Could not migrate base64 images:', e.message);
   });
 });

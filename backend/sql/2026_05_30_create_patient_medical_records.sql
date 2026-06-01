@@ -1,0 +1,28 @@
+-- Create patient_medical_records table with all required columns.
+CREATE TABLE IF NOT EXISTS patient_medical_records (
+  id CHAR(36) NOT NULL PRIMARY KEY,
+  patient_id CHAR(36) NOT NULL,
+  uploaded_by VARCHAR(36) NOT NULL,
+  record_type VARCHAR(64) NOT NULL DEFAULT 'attachment',
+  title VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  category VARCHAR(100) NULL,
+  attachments TEXT NULL,
+  used_for_ai_matching TINYINT(1) NOT NULL DEFAULT 1,
+  ai_ready TINYINT(1) NOT NULL DEFAULT 0,
+  extracted_text_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  medical_summary TEXT NULL,
+  detected_category VARCHAR(100) NULL,
+  tags TEXT NULL,
+  private_label TINYINT(1) NOT NULL DEFAULT 1,
+  uploaded_after_visit TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  file_url VARCHAR(500) NULL,
+  file_name VARCHAR(255) NULL,
+  file_extension VARCHAR(32) NULL,
+  file_size BIGINT NULL,
+  extracted_text LONGTEXT NULL,
+  source VARCHAR(64) NULL DEFAULT 'patient_upload',
+  notes TEXT NULL,
+  KEY idx_pmr_patient (patient_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

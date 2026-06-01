@@ -190,6 +190,19 @@ class MedicalRecordEntry {
     this.usedByAi = false,
     this.privateLabel = true,
     this.uploadedAfterVisit = false,
+    this.category,
+    this.fileUrl,
+    this.fileName,
+    this.fileExtension,
+    this.fileSize,
+    this.aiReady = false,
+    this.extractedTextStatus = 'pending',
+    this.extractedText,
+    this.medicalSummary,
+    this.detectedCategory,
+    this.tags = const [],
+    this.usedForAiMatching = true,
+    this.source = 'patient_upload',
   });
 
   final String id;
@@ -207,4 +220,17 @@ class MedicalRecordEntry {
   final bool usedByAi;
   final bool privateLabel;
   final bool uploadedAfterVisit;
+  final String? category;
+  final String? fileUrl;
+  final String? fileName;
+  final String? fileExtension;
+  final int? fileSize;
+  final bool aiReady;
+  final String extractedTextStatus;
+  final String? extractedText;
+  final String? medicalSummary;
+  final String? detectedCategory;
+  final List<String> tags;
+  final bool usedForAiMatching;
+  final String source;
 }
