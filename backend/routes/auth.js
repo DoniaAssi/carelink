@@ -398,25 +398,56 @@ router.post('/register', async (req, res) => {
     await connection.beginTransaction();
 
     const hasProfileImageUrl = await hasColumn('user', 'profileImageUrl');
+    const hasIsActive = await hasColumn('user', 'isActive');
+    const shouldStartInactive =
+      normalizedRole === 'doctor' || normalizedRole === 'nurse';
     if (hasProfileImageUrl) {
+      const userColumns = [
+        'userId',
+        'fullName',
+        'email',
+        'phone',
+        'passwordHash',
+        'role',
+        'profileImageUrl',
+      ];
+      const userValues = [
+        userId,
+        normalizedFullName,
+        normalizedEmail,
+        normalizedPhone,
+        hashedPassword,
+        normalizedRole,
+        normalizedProfileImageUrl || null
+      ];
+      if (hasIsActive) {
+        userColumns.push('isActive');
+        userValues.push(shouldStartInactive ? 0 : 1);
+      }
       await connection.query(
         `INSERT INTO user
-           (userId, fullName, email, phone, passwordHash, role, profileImageUrl)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          userId,
-          normalizedFullName,
-          normalizedEmail,
-          normalizedPhone,
-          hashedPassword,
-          normalizedRole,
-          normalizedProfileImageUrl || null
-        ]
+           (${userColumns.join(', ')})
+         VALUES (${userColumns.map(() => '?').join(', ')})`,
+        userValues
       );
     } else {
+      const userColumns = ['userId', 'fullName', 'email', 'phone', 'passwordHash', 'role'];
+      const userValues = [
+        userId,
+        normalizedFullName,
+        normalizedEmail,
+        normalizedPhone,
+        hashedPassword,
+        normalizedRole
+      ];
+      if (hasIsActive) {
+        userColumns.push('isActive');
+        userValues.push(shouldStartInactive ? 0 : 1);
+      }
       await connection.query(
-        'INSERT INTO user (userId, fullName, email, phone, passwordHash, role) VALUES (?, ?, ?, ?, ?, ?)',
-        [userId, normalizedFullName, normalizedEmail, normalizedPhone, hashedPassword, normalizedRole]
+        `INSERT INTO user (${userColumns.join(', ')})
+         VALUES (${userColumns.map(() => '?').join(', ')})`,
+        userValues
       );
     }
 
@@ -467,6 +498,7 @@ router.post('/register', async (req, res) => {
       const hasLicenseNumber = await hasColumn('careprovider', 'licenseNumber');
       const hasServiceType = await hasColumn('careprovider', 'serviceType');
       const hasProviderAddress = await hasColumn('careprovider', 'providerAddress');
+      const hasApprovalStatus = await hasColumn('careprovider', 'approvalStatus');
 
       const providerColumns = [
         'userId',
@@ -500,6 +532,10 @@ router.post('/register', async (req, res) => {
       if (hasProviderAddress) {
         providerColumns.push('providerAddress');
         providerValues.push(normalizedAddress || null);
+      }
+      if (hasApprovalStatus) {
+        providerColumns.push('approvalStatus');
+        providerValues.push('pending');
       }
 
       await connection.query(
@@ -552,8 +588,18 @@ router.post('/login', async (req, res) => {
   }
 
   try {
+    const hasIsActive = await hasColumn('user', 'isActive');
+    const userColumns = [
+      'userId',
+      'fullName',
+      'email',
+      'phone',
+      'role',
+      'passwordHash',
+    ];
+    if (hasIsActive) userColumns.push('isActive');
     const [rows] = await db.query(
-      'SELECT userId, fullName, email, phone, role, passwordHash FROM user WHERE email = ?',
+      `SELECT ${userColumns.join(', ')} FROM user WHERE email = ?`,
       [normalizedEmail]
     );
 
@@ -566,6 +612,36 @@ router.post('/login', async (req, res) => {
 
     if (!isValid) {
       return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (hasIsActive && Number(user.isActive) === 0) {
+      return res.status(403).json({
+        error: 'account_inactive',
+        message: 'Your account is inactive or waiting for admin approval.',
+        status: 'inactive'
+      });
+    }
+
+    if (['doctor', 'nurse'].includes(user.role)) {
+      const hasApprovalStatus = await hasColumn('careprovider', 'approvalStatus');
+      if (hasApprovalStatus) {
+        const [providerRows] = await db.query(
+          'SELECT approvalStatus FROM careprovider WHERE userId = ? LIMIT 1',
+          [user.userId]
+        );
+        const approvalStatus = (providerRows[0]?.approvalStatus || 'pending').toString();
+        if (approvalStatus !== 'approved') {
+          return res.status(403).json({
+            error: 'pending_approval',
+            message: `Your ${user.role} account is ${approvalStatus}.`,
+            status: approvalStatus,
+            userId: user.userId,
+            fullName: user.fullName,
+            email: user.email,
+            role: user.role
+          });
+        }
+      }
     }
 
     delete user.passwordHash;

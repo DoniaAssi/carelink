@@ -6,7 +6,7 @@ import 'package:carelink/shared/services/provider_profile_service.dart';
 import 'nurse_ui.dart';
 
 class NurseAvailability extends StatefulWidget {
-  const NurseAvailability({Key? key, required this.user}) : super(key: key);
+  const NurseAvailability({super.key, required this.user});
 
   final User user;
 
@@ -26,6 +26,7 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
   ];
 
   bool isLoading = true;
+  bool isSaving = false;
   List<Map<String, dynamic>> slots = [];
 
   @override
@@ -35,7 +36,9 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
   }
 
   Future<void> _load() async {
-    final data = await ProviderProfileService.getAvailability(widget.user.userId);
+    final data = await ProviderProfileService.getAvailability(
+      widget.user.userId,
+    );
     if (!mounted) return;
     setState(() {
       slots = data
@@ -108,7 +111,7 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onPressed: _save,
+                      onPressed: isSaving ? null : _save,
                       icon: const Icon(Icons.save_rounded),
                       label: const Text(
                         'Save Availability',
@@ -128,10 +131,13 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
       decoration: BoxDecoration(
         color: NurseUi.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NurseUi.border.withOpacity(0.8)),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
       ),
       child: ListTile(
-        leading: const Icon(Icons.schedule_rounded, color: AppColors.primaryDark),
+        leading: const Icon(
+          Icons.schedule_rounded,
+          color: AppColors.primaryDark,
+        ),
         title: Text(
           slot['day'].toString(),
           style: TextStyle(color: NurseUi.text, fontWeight: FontWeight.bold),
@@ -172,7 +178,7 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: day,
+                initialValue: day,
                 decoration: const InputDecoration(labelText: 'Day'),
                 items: days
                     .map((d) => DropdownMenuItem(value: d, child: Text(d)))
@@ -215,14 +221,17 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                   ),
-                  onPressed: () {
-                    setState(() {
-                      slots.add({
-                        'day': day,
-                        'startTime': _formatTime(start),
-                        'endTime': _formatTime(end),
-                      });
-                    });
+                  onPressed: () async {
+                    final newSlot = {
+                      'day': day,
+                      'startTime': _formatTime(start),
+                      'endTime': _formatTime(end),
+                    };
+                    final updatedSlots = [...slots, newSlot];
+
+                    final saved = await _persistAvailability(updatedSlots);
+                    if (!context.mounted || !saved) return;
+                    setState(() => slots = updatedSlots);
                     Navigator.pop(context);
                   },
                   child: const Text('Add Time'),
@@ -236,25 +245,40 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
   }
 
   Future<void> _save() async {
+    final success = await _persistAvailability(slots);
+    if (!mounted) return;
+    if (success) Navigator.pop(context);
+  }
+
+  Future<bool> _persistAvailability(
+    List<Map<String, dynamic>> nextSlots,
+  ) async {
+    if (isSaving) return false;
+    setState(() => isSaving = true);
     final success = await ProviderProfileService.saveAvailability(
       widget.user.userId,
-      slots,
+      nextSlots,
     );
-    if (!mounted) return;
+    if (!mounted) return success;
+    setState(() => isSaving = false);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          success ? 'Availability saved successfully' : 'Failed to save availability',
+          success
+              ? 'Availability saved successfully'
+              : 'Failed to save availability',
         ),
       ),
     );
-    if (success) Navigator.pop(context);
+    return success;
   }
 
   String _cleanTime(dynamic value) {
     final text = value?.toString() ?? '';
     final parts = text.split(':');
-    if (parts.length >= 2) return '${parts[0].padLeft(2, '0')}:${parts[1].padLeft(2, '0')}';
+    if (parts.length >= 2) {
+      return '${parts[0].padLeft(2, '0')}:${parts[1].padLeft(2, '0')}';
+    }
     return text;
   }
 

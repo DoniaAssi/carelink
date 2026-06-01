@@ -1,4 +1,6 @@
-require('dotenv').config();
+const path = require('path');
+
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const express = require('express');
 const cors = require('cors');
@@ -15,7 +17,9 @@ const emailAuthFlowRoutes = require('./routes/emailAuthFlow');
 const graduationAiDemoRoutes = require('./routes/graduationAiDemoRoutes');
 const ratingsApiRoutes = require('./routes/ratingsApi');
 const paymentsApiRoutes = require('./routes/paymentsApi');
+const adminRoutes = require('./routes/admin');
 const signupProof = require('./services/signupVerificationProof');
+const adminBootstrap = require('./services/adminBootstrap');
 
 const app = express();
 
@@ -33,6 +37,7 @@ app.get('/', (req, res) => {
 app.use('/api/email-auth', emailAuthFlowRoutes);
 app.use('/api/ratings', ratingsApiRoutes);
 app.use('/api/payments', paymentsApiRoutes);
+app.use('/admin', adminRoutes);
 app.use('/demo/graduation-flow', graduationAiDemoRoutes);
 app.use('/auth', authRoutes);
 app.use('/providers', providerRoutes);
@@ -91,5 +96,8 @@ app.listen(PORT, () => {
       '[CareLink] Could not ensure signup_verification_proof table:',
       e.message,
     );
+  });
+  adminBootstrap.ensureDemoAdmin().catch((e) => {
+    console.error('[CareLink] Could not ensure demo admin:', e.message);
   });
 });
