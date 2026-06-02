@@ -44,7 +44,7 @@ class _PatientAiMedicalRecordScreenState
   Future<void> _refresh() async {
     setState(() => _loading = true);
     try {
-      _profile = await _api.getPatientProfile(widget.userId);
+      _profile = await (_api as dynamic).getPatientProfile(widget.userId);
     } catch (_) {
       _profile = {};
     }

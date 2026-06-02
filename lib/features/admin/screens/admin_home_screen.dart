@@ -756,7 +756,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       (Icons.people_outline_rounded, Icons.people_alt_rounded, 'المستخدمين'),
       (Icons.star_border_rounded, Icons.star_rounded, 'التقييمات'),
     ];
-    return Center(
+    return Align(
+      alignment: Alignment.bottomCenter,
+      heightFactor: 1,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: _phoneWidth),
         child: Directionality(
@@ -1221,7 +1223,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message.replaceFirst('Exception: ', ''))),
+      SnackBar(
+        behavior: SnackBarBehavior.fixed,
+        content: Text(message.replaceFirst('Exception: ', '')),
+      ),
     );
   }
 }

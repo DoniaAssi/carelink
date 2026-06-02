@@ -12,12 +12,14 @@ class ApiService {
   static const bool _useAndroidEmulator = true;
 
   static const String _androidEmulatorBase = 'http://10.0.2.2:3000';
-  static const String _webBase = 'http://localhost:3000';
+  static const String _webBase = 'http://127.0.0.1:3000';
   static const String _desktopBase = 'http://127.0.0.1:3000';
   static const String _realDeviceBase = 'http://$_machineIp:3000';
 
   // ممكن تمرري الرابط وقت التشغيل:
-  // flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:3000
+  // flutter run -d chrome --dart-define=API_BASE_URL=http://127.0.0.1:3000
+  // flutter run -d android --dart-define=API_BASE_URL=http://192.168.1.5:3000
+  // flutter run -d ios --dart-define=API_BASE_URL=http://192.168.1.5:3000
   static const String _envBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: '',

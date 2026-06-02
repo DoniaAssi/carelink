@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/app_colors.dart';
-import '../../notifications/notifications_screen.dart';
+import 'package:carelink/features/notifications/notifications_screen.dart';
 import '../../../services/doctor_service.dart';
 import '../../../shared/widgets/carelink_brand_logo.dart';
 import 'patients_screen.dart';

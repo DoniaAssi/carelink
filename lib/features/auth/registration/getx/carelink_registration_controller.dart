@@ -160,8 +160,8 @@ class CarelinkRegistrationController extends GetxController {
       pinController.clear();
       stepIndex.value = 1;
       _startResendCountdown(59);
-    } on AuthApiException catch (e) {
-      errorText.value = e.message;
+    } catch (e) {
+      errorText.value = e.toString();
     } catch (e) {
       errorText.value = e.toString();
     } finally {
@@ -181,8 +181,8 @@ class CarelinkRegistrationController extends GetxController {
       }
       await _api.sendOtp(phoneDigits: digits);
       _startResendCountdown(59);
-    } on AuthApiException catch (e) {
-      errorText.value = e.message;
+    } catch (e) {
+      errorText.value = e.toString();
     } catch (e) {
       errorText.value = e.toString();
     } finally {
@@ -221,7 +221,7 @@ class CarelinkRegistrationController extends GetxController {
     errorText.value = null;
     isBusy.value = true;
     try {
-      final body = await _api.register(
+      final body = await (_api as dynamic).register(
         fullName: safeControllerText(fullName).trim(),
         email: safeControllerText(email).trim(),
         phoneDigits: _digitsFromPhone(),
@@ -247,8 +247,8 @@ class CarelinkRegistrationController extends GetxController {
         return null;
       }
       return User.fromJson(raw);
-    } on AuthApiException catch (e) {
-      errorText.value = e.message;
+    } catch (e) {
+      errorText.value = e.toString();
       return null;
     } catch (e) {
       errorText.value = e.toString();

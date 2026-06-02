@@ -1,17 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:ui' as ui;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'package:image_picker/image_picker.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:pinput/pinput.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
@@ -19,9 +11,40 @@ import 'package:carelink/core/app_nav.dart';
 import 'package:carelink/core/carelink_date_picker.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/theme_controller.dart';
+import 'package:carelink/core/post_auth_navigation.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/auth_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/features/auth/registration/getx/signup_location_picker_screen.dart';
+
+class Country {
+  final String name;
+  final String nameAr;
+  final String code;
+  final String dialCode;
+  final String flag;
+
+  const Country({
+    required this.name,
+    required this.nameAr,
+    required this.code,
+    required this.dialCode,
+    required this.flag,
+  });
+}
+
+const List<Country> _countries = [
+  Country(name: 'Palestine', nameAr: 'فلسطين', code: 'PS', dialCode: '+970', flag: '🇵🇸'),
+  Country(name: 'Jordan', nameAr: 'الأردن', code: 'JO', dialCode: '+962', flag: '🇯🇴'),
+  Country(name: 'Egypt', nameAr: 'مصر', code: 'EG', dialCode: '+20', flag: '🇪🇬'),
+  Country(name: 'Saudi Arabia', nameAr: 'المملكة العربية السعودية', code: 'SA', dialCode: '+966', flag: '🇸🇦'),
+  Country(name: 'United Arab Emirates', nameAr: 'الإمارات العربية المتحدة', code: 'AE', dialCode: '+971', flag: '🇦🇪'),
+  Country(name: 'Qatar', nameAr: 'قطر', code: 'QA', dialCode: '+974', flag: '🇶🇦'),
+  Country(name: 'Kuwait', nameAr: 'الكويت', code: 'KW', dialCode: '+965', flag: '🇰🇼'),
+  Country(name: 'Bahrain', nameAr: 'البحرين', code: 'BH', dialCode: '+973', flag: '🇧🇭'),
+  Country(name: 'Oman', nameAr: 'عمان', code: 'OM', dialCode: '+968', flag: '🇴🇲'),
+];
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -55,7 +78,7 @@ class _SignupBackdropPainter extends CustomPainter {
       ..strokeWidth = isDark ? 56 : 48
       ..strokeCap = StrokeCap.round
       ..color = AppColors.primary.withValues(alpha: isDark ? 0.07 : 0.09);
-    final p1 = ui.Path()
+    final p1 = Path()
       ..moveTo(-40, size.height * 0.18)
       ..cubicTo(
         size.width * 0.25,
@@ -72,7 +95,7 @@ class _SignupBackdropPainter extends CustomPainter {
       ..strokeWidth = isDark ? 48 : 40
       ..strokeCap = StrokeCap.round
       ..color = AppColors.primaryDark.withValues(alpha: isDark ? 0.08 : 0.07);
-    final p2 = ui.Path()
+    final p2 = Path()
       ..moveTo(size.width * 0.12, size.height + 56)
       ..cubicTo(
         size.width * 0.4,
@@ -102,84 +125,305 @@ class _SignupBackdropPainter extends CustomPainter {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  final _formKey = GlobalKey<FormState>();
+  int _stepIndex = 0; // 0: Choose Account Type, 1: Form, 2: OTP Verification
+  bool _isLoading = false;
+  String _selectedRole = 'patient';
 
+  // Form keys and Controllers
+  final _step1FormKey = GlobalKey<FormState>();
+  final _step2FormKey = GlobalKey<FormState>();
   final TextEditingController nameController = TextEditingController();
   final TextEditingController emailController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
-  final TextEditingController confirmPasswordController =
-      TextEditingController();
+  final TextEditingController confirmPasswordController = TextEditingController();
 
-  final TextEditingController specializationController =
-      TextEditingController();
-  final TextEditingController experienceYearsController =
-      TextEditingController();
-  final TextEditingController licenseNumberController = TextEditingController();
-  final TextEditingController serviceTypeController = TextEditingController();
-  final TextEditingController addressController = TextEditingController();
-  final TextEditingController profileImageUrlController =
-      TextEditingController();
+  // Role specific controllers
   final TextEditingController dateOfBirthController = TextEditingController();
-  final TextEditingController chronicDiseasesController =
-      TextEditingController();
+  final TextEditingController addressController = TextEditingController();
+  final TextEditingController chronicDiseasesController = TextEditingController();
   final TextEditingController allergiesController = TextEditingController();
-  final TextEditingController currentMedicationsController =
-      TextEditingController();
+  final TextEditingController currentMedicationsController = TextEditingController();
+  final TextEditingController emergencyContactController = TextEditingController();
 
-  String selectedRole = 'patient';
-  String? selectedGender;
-  bool isRegistering = false;
-  bool isGettingLocation = false;
-  bool obscurePassword = true;
-  bool obscureConfirmPassword = true;
+  // Doctor/Nurse specific controllers
+  final TextEditingController specialtyController = TextEditingController();
+  final TextEditingController licenseController = TextEditingController();
+  final TextEditingController experienceController = TextEditingController();
+  final TextEditingController clinicNameController = TextEditingController();
+  final TextEditingController serviceAreasController = TextEditingController();
+  final TextEditingController bioController = TextEditingController();
 
-  double? gpsLat;
-  double? gpsLng;
-  String? selectedPlaceName;
-  Uint8List? profileImageBytes;
-  String? profileImageName;
-  bool showProfileImageUrlField = false;
-  final RegExp _emailRegex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+  String _selectedGender = 'male';
+  String _consultationType = 'both'; // home, online, both
+  bool _homeCareAvailability = true;
 
-  final AuthService _signupAuth = AuthService();
-  final TextEditingController _emailOtpController = TextEditingController();
-  final TextEditingController _phoneOtpController = TextEditingController();
+  double? _gpsLat;
+  double? _gpsLng;
+
+  // Country Picker State
+  late Country _selectedCountry;
+
+  // Verification state
+  final AuthService _authService = AuthService();
+  final TextEditingController _otpController = TextEditingController();
   String? _emailVerificationToken;
-  bool _emailOtpVerified = false;
-  int _emailResendSeconds = 0;
-  Timer? _emailResendTimer;
-  bool _emailOtpBusy = false;
-
   String? _phoneVerificationToken;
-  bool _phoneOtpVerified = false;
-  int _phoneResendSeconds = 0;
-  Timer? _phoneResendTimer;
-  bool _phoneOtpBusy = false;
 
-  static const double _kSheetTopRadius = 22;
-  static const Color _accent = AppColors.primary;
-  static const Color _accentGradientEnd = Color(0xFF3ABEB0);
+
+  Timer? _countdownTimer;
+  int _secondsRemaining = 0;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
   bool get _isDark => themeController.isDark;
-  Color get _pageBg => _isDark ? const Color(0xFF021018) : AppColors.background;
-  Color get _cardBg => _isDark ? const Color(0xFF0A252E) : Colors.white;
-  Color get _cardBgSoft =>
-      _isDark ? const Color(0xFF0D2E38) : const Color(0xFFF0F7F5);
-  Color get _inputBg =>
-      _isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.white;
-  Color get _inputBorderDark =>
-      _isDark ? const Color(0xFF1E3A44) : AppColors.border;
-  Color get _textPrimary =>
-      _isDark ? const Color(0xFFF5FBFC) : AppColors.textDark;
-  Color get _textSecondary =>
-      _isDark ? const Color(0xFF8FA7AE) : const Color(0xFF5C6C73);
 
   @override
   void initState() {
     super.initState();
-    selectedRole = 'patient';
-    selectedGender = 'prefer_not_to_say';
+    // Default country based on region
+    try {
+      final countryCode = PlatformDispatcher.instance.locale.countryCode?.toUpperCase();
+      if (countryCode == 'JO') {
+        _selectedCountry = _countries.firstWhere((c) => c.code == 'JO');
+      } else if (countryCode == 'EG') {
+        _selectedCountry = _countries.firstWhere((c) => c.code == 'EG');
+      } else {
+        _selectedCountry = _countries.firstWhere((c) => c.code == 'PS');
+      }
+    } catch (_) {
+      _selectedCountry = _countries.first;
+    }
+
+    passwordController.addListener(_onPasswordChanged);
+  }
+
+  void _onPasswordChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  String get _fullPhoneNumber {
+    final raw = phoneController.text.trim();
+    final cleanRaw = raw.startsWith('0') ? raw.substring(1) : raw;
+    final dial = _selectedCountry.dialCode;
+    return '$dial$cleanRaw';
+  }
+
+  void _showCountryPicker() {
+    final p = CarelinkPalette.of(context);
+    final isAr = CarelinkL10n.of(context).isArabic;
+    String searchQuery = '';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateBottomSheet) {
+            final filteredCountries = _countries.where((c) {
+              final query = searchQuery.toLowerCase();
+              return c.name.toLowerCase().contains(query) ||
+                  c.nameAr.contains(query) ||
+                  c.dialCode.contains(query);
+            }).toList();
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.65,
+              decoration: BoxDecoration(
+                color: p.surface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                border: Border(top: BorderSide(color: p.stroke)),
+              ),
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 40,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: p.stroke,
+                        borderRadius: BorderRadius.circular(2.5),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      isAr ? 'اختر الدولة' : 'Select Country',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: p.inkDark,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Container(
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: p.isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: p.stroke),
+                        ),
+                        child: TextField(
+                          style: GoogleFonts.inter(color: p.inkDark, fontSize: 14),
+                          decoration: InputDecoration(
+                            hintText: isAr ? 'البحث عن دولة...' : 'Search country...',
+                            hintStyle: GoogleFonts.inter(color: p.inkMuted, fontSize: 14),
+                            prefixIcon: Icon(Icons.search, color: p.inkMuted, size: 20),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onChanged: (val) {
+                            setStateBottomSheet(() {
+                              searchQuery = val;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: filteredCountries.isEmpty
+                          ? Center(
+                              child: Text(
+                                isAr ? 'لا توجد نتائج' : 'No countries found',
+                                style: GoogleFonts.inter(color: p.inkMuted),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: filteredCountries.length,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              itemBuilder: (context, index) {
+                                final country = filteredCountries[index];
+                                final isSelected = country.code == _selectedCountry.code;
+                                return ListTile(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedCountry = country;
+                                    });
+                                    Navigator.pop(context);
+                                  },
+                                  leading: Text(
+                                    country.flag,
+                                    style: const TextStyle(fontSize: 24),
+                                  ),
+                                  title: Text(
+                                    isAr ? country.nameAr : country.name,
+                                    style: GoogleFonts.inter(
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                      color: p.inkDark,
+                                    ),
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        country.dialCode,
+                                        style: GoogleFonts.inter(
+                                          fontWeight: FontWeight.bold,
+                                          color: isSelected ? AppColors.primary : p.inkMuted,
+                                        ),
+                                      ),
+                                      if (isSelected) ...[
+                                        const SizedBox(width: 8),
+                                        const Icon(Icons.check_circle, color: AppColors.primary, size: 20),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildGenderCard({
+    required String label,
+    required String value,
+    required IconData icon,
+    required bool isSelected,
+    required CarelinkPalette p,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _selectedGender = value;
+          });
+        },
+        borderRadius: BorderRadius.circular(14),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          height: 52,
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.primary.withValues(alpha: p.isDark ? 0.15 : 0.08)
+                : (p.isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.white),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isSelected ? AppColors.primary : p.stroke,
+              width: isSelected ? 1.8 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                color: isSelected ? AppColors.primary : p.inkMuted,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 14.5,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  color: isSelected ? AppColors.primary : p.inkDark,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChecklistItem(String text, bool isMet, CarelinkPalette p) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isMet ? Icons.check_circle_outline_rounded : Icons.radio_button_unchecked_rounded,
+            size: 16,
+            color: isMet ? Colors.green.shade600 : p.inkMuted,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              color: isMet ? Colors.green.shade700 : p.inkMuted,
+              fontWeight: isMet ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -189,34 +433,56 @@ class _SignupScreenState extends State<SignupScreen> {
     phoneController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
-    specializationController.dispose();
-    experienceYearsController.dispose();
-    licenseNumberController.dispose();
-    serviceTypeController.dispose();
-    addressController.dispose();
-    profileImageUrlController.dispose();
     dateOfBirthController.dispose();
+    addressController.dispose();
     chronicDiseasesController.dispose();
     allergiesController.dispose();
     currentMedicationsController.dispose();
-    _emailOtpController.dispose();
-    _phoneOtpController.dispose();
-    _emailResendTimer?.cancel();
-    _phoneResendTimer?.cancel();
+    emergencyContactController.dispose();
+    specialtyController.dispose();
+    licenseController.dispose();
+    experienceController.dispose();
+    clinicNameController.dispose();
+    serviceAreasController.dispose();
+    bioController.dispose();
+    _otpController.dispose();
+    _countdownTimer?.cancel();
     super.dispose();
   }
 
   void _showMessage(String text, {Color? color}) {
+    final cleanText = text.replaceFirst('Exception: ', '');
     final messenger = appScaffoldMessengerKey.currentState;
     if (messenger == null) return;
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
-        content: Text(text),
+        content: Text(cleanText),
         backgroundColor: color ?? const Color(0xFF1E2E2E),
         behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
       ),
     );
+  }
+
+  void _startTimer() {
+    _countdownTimer?.cancel();
+    setState(() => _secondsRemaining = 300); // 5 minutes code expiry
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      if (_secondsRemaining <= 1) {
+        timer.cancel();
+        setState(() => _secondsRemaining = 0);
+      } else {
+        setState(() => _secondsRemaining--);
+      }
+    });
+  }
+
+  String _formatTime(int totalSeconds) {
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
   Future<void> _pickDateOfBirth() async {
@@ -225,45 +491,32 @@ class _SignupScreenState extends State<SignupScreen> {
       currentIsoDate: dateOfBirthController.text,
     );
     if (picked != null) {
-      dateOfBirthController.text = picked.toIso8601String().split('T').first;
-      setState(() {});
+      setState(() {
+        dateOfBirthController.text = picked.toIso8601String().split('T').first;
+      });
     }
   }
 
-  Future<void> getLocation() async {
+  Future<void> _pickLocation() async {
     FocusScope.of(context).unfocus();
-    setState(() => isGettingLocation = true);
-
-    try {
-      final result = await showModalBottomSheet<_PickedLocation>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => _MapLocationPickerSheet(
-          initialLat: gpsLat,
-          initialLng: gpsLng,
+    final result = await Navigator.push<SignupLocationResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SignupLocationPickerScreen(
           initialAddress: addressController.text.trim(),
-          initialPlaceName: selectedPlaceName,
+          initialLatitude: _gpsLat,
+          initialLongitude: _gpsLng,
         ),
-      );
-
-      if (result == null) return;
-
+      ),
+    );
+    if (result != null) {
       setState(() {
-        gpsLat = result.latitude;
-        gpsLng = result.longitude;
-        selectedPlaceName = result.placeName;
+        addressController.text = result.address;
+        _gpsLat = result.latitude;
+        _gpsLng = result.longitude;
       });
-      addressController.text = result.address;
-      _showMessage('Location selected from map', color: Colors.green);
-    } catch (e) {
-      _showMessage(
-        e.toString().replaceFirst('Exception: ', ''),
-        color: Colors.red,
-      );
-    } finally {
-      if (mounted) setState(() => isGettingLocation = false);
+      if (!mounted) return;
+      _showMessage(context.tr('auth.locationVerifiedSuccess'), color: Colors.green.shade700);
     }
   }
 
@@ -272,380 +525,505 @@ class _SignupScreenState extends State<SignupScreen> {
     return regex.hasMatch(input);
   }
 
-  bool _isLikelyUrl(String input) {
-    final value = input.trim();
-    if (value.isEmpty) return true;
-    final uri = Uri.tryParse(value);
-    return uri != null && uri.hasScheme && uri.host.isNotEmpty;
-  }
+  Future<void> _sendVerificationCode() async {
+    FocusScope.of(context).unfocus();
+    if (!_step2FormKey.currentState!.validate()) {
+      _showMessage(context.tr('auth.checkForm'), color: Colors.red.shade700);
+      return;
+    }
 
-  Future<void> _pickProfileImage(ImageSource source) async {
+    if (_selectedRole == 'doctor' && addressController.text.trim().isEmpty) {
+      _showMessage('Location/Clinic address is required for Doctors', color: Colors.red.shade700);
+      return;
+    }
+    if (_selectedRole == 'nurse' && addressController.text.trim().isEmpty) {
+      _showMessage('Location/Service area address is required for Nurses', color: Colors.red.shade700);
+      return;
+    }
+
+    setState(() => _isLoading = true);
     try {
-      final picker = ImagePicker();
-      final file = await picker.pickImage(
-        source: source,
-        imageQuality: 80,
-        maxWidth: 1080,
+      // Send email verification (and phone verification if phone provided).
+      final emailRes = await _authService.sendEmailVerificationCode(
+        email: emailController.text.trim(),
+        purpose: VerificationPurpose.signup,
       );
-      if (file == null) return;
-      final bytes = await file.readAsBytes();
-      if (!mounted) return;
-      setState(() {
-        profileImageBytes = bytes;
-        profileImageName = file.name;
-        if (profileImageUrlController.text.trim().isNotEmpty) {
-          profileImageUrlController.clear();
-        }
-      });
-      _showMessage('Profile image selected', color: Colors.green);
-    } on MissingPluginException {
-      _showMessage(
-        'Image picker needs full app restart. Please stop and run again.',
-        color: Colors.red,
-      );
-    } catch (_) {
-      if (kIsWeb && source == ImageSource.camera) {
-        _showMessage(
-          'Camera not available on this browser/device. Try phone browser or Gallery.',
-          color: Colors.red,
+      // Optionally send phone code; ignore failure so email can proceed.
+      try {
+        await _authService.sendPhoneVerificationCode(
+          phoneDigits: _fullPhoneNumber,
+          purpose: VerificationPurpose.signup,
         );
-      } else {
-        _showMessage(
-          'Could not pick image. Please try again.',
-          color: Colors.red,
+      } catch (_) {}
+
+      if (!mounted) return;
+      final isAr = CarelinkL10n.of(context).isArabic;
+      final successMsg = isAr
+          ? 'تم إرسال رمز التحقق إلى بريدك الإلكتروني.'
+          : (emailRes.userMessage.isNotEmpty
+              ? emailRes.userMessage
+              : 'A verification code has been sent to your email.');
+
+      _startTimer();
+      _otpController.clear();
+      setState(() {
+        _stepIndex = 2; // advance to Step 3
+      });
+      _showMessage(successMsg, color: Colors.green.shade700);
+    } catch (e) {
+      _showMessage(e.toString(), color: Colors.red.shade700);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _verifyOtpAndRegister() async {
+    FocusScope.of(context).unfocus();
+    final otp = _otpController.text.trim();
+    if (otp.length != 6) {
+      _showMessage(context.tr('auth.invalidOtp'), color: Colors.red.shade700);
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      // 1. Verify codes separately (backend exposes email & phone verification endpoints)
+      final emailResult = await ApiService().verifyEmailCode(
+        email: emailController.text.trim(),
+        code: otp,
+        purpose: VerificationPurpose.signup,
+      );
+      String? emailToken = (emailResult['emailVerificationToken'] ?? emailResult['resetToken'])?.toString();
+
+      String? phoneToken;
+      try {
+        final phoneResult = await ApiService().verifyPhoneVerificationCode(
+          phoneDigits: _fullPhoneNumber,
+          code: otp,
+          purpose: VerificationPurpose.signup,
         );
+        phoneToken = phoneResult['phoneVerificationToken']?.toString();
+      } catch (_) {
+        // phone verification may be optional or fail silently; continue with email token
+        phoneToken = null;
       }
-    }
-  }
 
-  void _startEmailOtpCooldown() {
-    _emailResendTimer?.cancel();
-    setState(() => _emailResendSeconds = 30);
-    _emailResendTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) return;
-      if (_emailResendSeconds <= 1) {
-        t.cancel();
-        setState(() => _emailResendSeconds = 0);
-      } else {
-        setState(() => _emailResendSeconds--);
-      }
-    });
-  }
+      _emailVerificationToken = emailToken;
+      _phoneVerificationToken = phoneToken;
 
-  void _startPhoneOtpCooldown() {
-    _phoneResendTimer?.cancel();
-    setState(() => _phoneResendSeconds = 30);
-    _phoneResendTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) return;
-      if (_phoneResendSeconds <= 1) {
-        t.cancel();
-        setState(() => _phoneResendSeconds = 0);
-      } else {
-        setState(() => _phoneResendSeconds--);
-      }
-    });
-  }
-
-  void _maybeLogDevCode(SendVerificationResult r) {
-    AuthService.logDevCodeIfAny(r.devCode);
-    if (kDebugMode && r.devCode != null && r.devCode!.isNotEmpty) {
-      _showMessage('Dev code: ${r.devCode}', color: Colors.blueGrey.shade700);
-    }
-  }
-
-  Future<void> _sendSignupEmailCode() async {
-    FocusScope.of(context).unfocus();
-    final email = emailController.text.trim();
-    if (!_emailRegex.hasMatch(email)) {
-      _showMessage(context.tr('auth.enterValidEmail'), color: Colors.red);
-      return;
-    }
-    setState(() => _emailOtpBusy = true);
-    try {
-      final r = await _signupAuth.sendEmailVerificationCode(
-        email: email,
-        purpose: VerificationPurpose.signup,
-      );
-      if (!mounted) return;
-      _maybeLogDevCode(r);
-      setState(() {
-        _emailOtpVerified = false;
-        _emailVerificationToken = null;
-      });
-      _startEmailOtpCooldown();
-      _showMessage(
-        r.userMessage,
-        color: Colors.green.shade700,
-      );
-    } on AuthServiceException catch (e) {
-      if (!mounted) return;
-      _showMessage(e.message, color: Colors.red);
-    } catch (e) {
-      if (!mounted) return;
-      _showMessage(
-        e.toString().replaceFirst('Exception: ', ''),
-        color: Colors.red,
-      );
-    } finally {
-      if (mounted) setState(() => _emailOtpBusy = false);
-    }
-  }
-
-  Future<void> _verifySignupEmailCode() async {
-    FocusScope.of(context).unfocus();
-    final email = emailController.text.trim();
-    final code = _emailOtpController.text.trim();
-    if (!_emailRegex.hasMatch(email)) {
-      _showMessage(context.tr('auth.enterValidEmail'), color: Colors.red);
-      return;
-    }
-    setState(() => _emailOtpBusy = true);
-    try {
-      final res = await _signupAuth.verifyEmailCode(
-        email: email,
-        code: code,
-        purpose: VerificationPurpose.signup,
-      );
-      if (!mounted) return;
-      final t = res.emailVerificationToken;
-      if (t == null || t.isEmpty) {
-        _showMessage(context.tr('auth.invalidVerificationCode'), color: Colors.red);
-        return;
-      }
-      setState(() {
-        _emailVerificationToken = t;
-        _emailOtpVerified = true;
-      });
-      _showMessage(
-        context.tr('auth.emailVerifiedSuccess'),
-        color: Colors.green.shade700,
-      );
-    } on AuthServiceException catch (e) {
-      if (!mounted) return;
-      _showMessage(
-        e.message.toLowerCase().contains('invalid') ||
-                e.message.toLowerCase().contains('expired') ||
-                e.message.toLowerCase().contains('too many')
-            ? context.tr('auth.invalidVerificationCode')
-            : e.message,
-        color: Colors.red,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _showMessage(
-        e.toString().replaceFirst('Exception: ', ''),
-        color: Colors.red,
-      );
-    } finally {
-      if (mounted) setState(() => _emailOtpBusy = false);
-    }
-  }
-
-  Future<void> _sendSignupPhoneCode() async {
-    FocusScope.of(context).unfocus();
-    final digits = AuthService.normalizePhoneDigits(phoneController.text);
-    if (!AuthService.isValidPhoneLength(digits)) {
-      _showMessage(context.tr('auth.invalidPhone'), color: Colors.red);
-      return;
-    }
-    setState(() => _phoneOtpBusy = true);
-    try {
-      final r = await _signupAuth.sendPhoneVerificationCode(
-        phoneDigits: digits,
-        purpose: VerificationPurpose.signup,
-      );
-      if (!mounted) return;
-      _maybeLogDevCode(r);
-      setState(() {
-        _phoneOtpVerified = false;
-        _phoneVerificationToken = null;
-      });
-      _startPhoneOtpCooldown();
-      _showMessage(
-        r.userMessage,
-        color: Colors.green.shade700,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _showMessage(
-        e.toString().replaceFirst('Exception: ', ''),
-        color: Colors.red,
-      );
-    } finally {
-      if (mounted) setState(() => _phoneOtpBusy = false);
-    }
-  }
-
-  Future<void> _verifySignupPhoneCode() async {
-    FocusScope.of(context).unfocus();
-    final digits = AuthService.normalizePhoneDigits(phoneController.text);
-    final code = _phoneOtpController.text.trim();
-    if (!AuthService.isValidPhoneLength(digits)) {
-      _showMessage(context.tr('auth.invalidPhone'), color: Colors.red);
-      return;
-    }
-    setState(() => _phoneOtpBusy = true);
-    try {
-      final res = await _signupAuth.verifyPhoneCode(
-        phoneDigits: digits,
-        code: code,
-        purpose: VerificationPurpose.signup,
-      );
-      if (!mounted) return;
-      final t = res.phoneVerificationToken;
-      if (t == null || t.isEmpty) {
-        _showMessage(context.tr('auth.invalidVerificationCode'), color: Colors.red);
-        return;
-      }
-      setState(() {
-        _phoneVerificationToken = t;
-        _phoneOtpVerified = true;
-      });
-      _showMessage(
-        context.tr('auth.phoneVerifiedSuccess'),
-        color: Colors.green.shade700,
-      );
-    } on AuthServiceException catch (e) {
-      if (!mounted) return;
-      _showMessage(
-        e.message.toLowerCase().contains('invalid') ||
-                e.message.toLowerCase().contains('expired') ||
-                e.message.toLowerCase().contains('too many')
-            ? context.tr('auth.invalidVerificationCode')
-            : e.message,
-        color: Colors.red,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _showMessage(
-        e.toString().replaceFirst('Exception: ', ''),
-        color: Colors.red,
-      );
-    } finally {
-      if (mounted) setState(() => _phoneOtpBusy = false);
-    }
-  }
-
-  Future<void> registerUser() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    if (selectedRole == 'patient') {
-      if (dateOfBirthController.text.trim().isEmpty) {
-        _showMessage('Please select date of birth', color: Colors.red);
-        return;
-      }
-      if (selectedGender == null || selectedGender!.trim().isEmpty) {
-        _showMessage('Please select gender', color: Colors.red);
-        return;
-      }
-    }
-
-    if (!_emailOtpVerified ||
-        _emailVerificationToken == null ||
-        _emailVerificationToken!.isEmpty) {
-      _showMessage(
-        context.tr('auth.verifyEmailFirst'),
-        color: Colors.red,
-      );
-      return;
-    }
-
-    if (!_phoneOtpVerified ||
-        _phoneVerificationToken == null ||
-        _phoneVerificationToken!.isEmpty) {
-      _showMessage(
-        context.tr('auth.verifyPhoneFirst'),
-        color: Colors.red,
-      );
-      return;
-    }
-
-    if (selectedRole == 'doctor' || selectedRole == 'nurse') {
-      final years = int.tryParse(experienceYearsController.text.trim());
-      if (years == null) {
-        _showMessage(
-          'Experience years must be a valid number',
-          color: Colors.red,
-        );
-        return;
-      }
-      if (selectedRole == 'doctor' &&
-          licenseNumberController.text.trim().isEmpty) {
-        _showMessage('Please enter doctor license number', color: Colors.red);
-        return;
-      }
-    }
-
-    setState(() => isRegistering = true);
-
-    String? profileImagePayload;
-    final imageBytes = profileImageBytes;
-    if (imageBytes != null && imageBytes.isNotEmpty) {
-      profileImagePayload =
-          'data:image/jpeg;base64,${base64Encode(imageBytes)}';
-    } else {
-      final u = profileImageUrlController.text.trim();
-      if (u.isNotEmpty) profileImagePayload = u;
-    }
-
-    try {
+      // 2. Perform register
       final response = await ApiService().register(
         nameController.text.trim(),
         emailController.text.trim(),
-        phoneController.text.trim(),
+        _fullPhoneNumber,
         passwordController.text,
-        selectedRole,
+        _selectedRole,
         confirmPassword: confirmPasswordController.text,
-        specialization: selectedRole == 'patient'
+        specialization: _selectedRole == 'patient' ? null : specialtyController.text.trim(),
+        addressText: addressController.text.trim().isEmpty ? null : addressController.text.trim(),
+        gpsLat: _gpsLat,
+        gpsLng: _gpsLng,
+        dateOfBirth: _selectedRole == 'patient' ? dateOfBirthController.text.trim() : null,
+        gender: _selectedRole == 'patient' ? _selectedGender : null,
+        chronicDiseases: _selectedRole == 'patient' ? chronicDiseasesController.text.trim() : null,
+        allergies: _selectedRole == 'patient' ? allergiesController.text.trim() : null,
+        currentMedications: _selectedRole == 'patient' ? currentMedicationsController.text.trim() : null,
+        experienceYears: _selectedRole == 'patient' ? null : int.tryParse(experienceController.text.trim()),
+        licenseNumber: _selectedRole == 'patient' ? null : licenseController.text.trim(),
+        serviceType: _selectedRole == 'patient'
             ? null
-            : specializationController.text.trim(),
-        addressText: addressController.text.trim(),
-        gpsLat: gpsLat,
-        gpsLng: gpsLng,
-        dateOfBirth: selectedRole == 'patient'
-            ? dateOfBirthController.text.trim()
-            : null,
-        gender: selectedRole == 'patient' ? selectedGender : null,
-        chronicDiseases: selectedRole == 'patient'
-            ? chronicDiseasesController.text.trim()
-            : null,
-        allergies: selectedRole == 'patient'
-            ? allergiesController.text.trim()
-            : null,
-        currentMedications: selectedRole == 'patient'
-            ? currentMedicationsController.text.trim()
-            : null,
-        profileImageUrl: profileImagePayload,
-        experienceYears: selectedRole == 'patient'
-            ? null
-            : int.tryParse(experienceYearsController.text.trim()),
-        licenseNumber: selectedRole == 'patient'
-            ? null
-            : licenseNumberController.text.trim(),
-        serviceType: selectedRole == 'patient'
-            ? null
-            : serviceTypeController.text.trim(),
+            : (_selectedRole == 'doctor' ? _consultationType : (_homeCareAvailability ? 'home care' : 'online')),
         phoneVerificationToken: _phoneVerificationToken,
         emailVerificationToken: _emailVerificationToken,
       );
 
+      // Add emergency contact if it was entered and table supports it
+      final newUserId = response['userId']?.toString();
+      if (newUserId != null && _selectedRole == 'patient' && emergencyContactController.text.trim().isNotEmpty) {
+        try {
+          await ApiService().updatePatientProfile(newUserId, {
+            'emergencyContact': emergencyContactController.text.trim(),
+          });
+        } catch (e) {
+          debugPrint('Could not save emergency contact: $e');
+        }
+      }
+
       _showMessage(
         response['message']?.toString() ?? 'Account created successfully',
-        color: Colors.green,
+        color: Colors.green.shade700,
       );
-      appNavigatorKey.currentState?.pop();
+
+      // Redirect home
+      navigateCarelinkHomeForUserMap(response);
     } catch (e) {
-      _showMessage(
-        e.toString().replaceFirst('Exception: ', ''),
-        color: Colors.red,
-      );
+      _showMessage(e.toString(), color: Colors.red.shade700);
     } finally {
-      if (mounted) setState(() => isRegistering = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Widget _customField({
-    String? label,
+  Widget _buildStepIndicator(CarelinkPalette p) {
+    final steps = ['Account Info', 'Role Details', 'Verification'];
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: List.generate(steps.length, (index) {
+            final isCompleted = _stepIndex > index;
+            final isCurrent = _stepIndex == index;
+            return Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isCompleted
+                          ? AppColors.primary
+                          : (isCurrent ? AppColors.primary : p.stroke),
+                      border: isCurrent
+                          ? Border.all(color: Colors.white, width: 2)
+                          : null,
+                    ),
+                    child: Center(
+                      child: isCompleted
+                          ? const Icon(Icons.check, size: 16, color: Colors.white)
+                          : Text(
+                              '${index + 1}',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: isCurrent || isCompleted ? Colors.white : p.inkMuted,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    steps[index],
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                      color: isCurrent ? p.inkDark : p.inkMuted,
+                    ),
+                  ),
+                  if (index < steps.length - 1)
+                    Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        height: 2,
+                        color: _stepIndex > index ? AppColors.primary : p.stroke,
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 16),
+        LinearProgressIndicator(
+          value: (_stepIndex + 1) / steps.length,
+          backgroundColor: p.stroke,
+          color: AppColors.primary,
+          minHeight: 4,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStep1BasicInfo(CarelinkPalette p) {
+    final isAr = CarelinkL10n.of(context).isArabic;
+    return Form(
+      key: _step1FormKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Name Field
+          _buildTextField(
+            p,
+            label: context.tr('auth.fullName'),
+            hint: context.tr('auth.placeholder.fullName'),
+            icon: Icons.person_outline_rounded,
+            controller: nameController,
+            validator: (v) {
+              if ((v ?? '').trim().length < 2) {
+                return isAr ? 'يرجى إدخال الاسم الكامل' : 'Please enter your full name';
+              }
+              return null;
+            },
+          ),
+          
+          // Phone number
+          _buildFieldWrapper(
+            p,
+            label: context.tr('auth.phoneNumber'),
+            child: TextFormField(
+              controller: phoneController,
+              keyboardType: TextInputType.phone,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              style: GoogleFonts.inter(
+                color: p.inkDark,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+              cursorColor: AppColors.primary,
+              validator: (v) {
+                final raw = v ?? '';
+                if (raw.isEmpty) {
+                  return isAr ? 'يرجى إدخال رقم الهاتف' : 'Please enter phone number';
+                }
+                final fullPhoneDigits = AuthService.normalizePhoneDigits(_fullPhoneNumber);
+                if (!AuthService.isValidPhoneLength(fullPhoneDigits)) {
+                  return context.tr('auth.invalidPhone');
+                }
+                return null;
+              },
+              decoration: InputDecoration(
+                hintText: context.tr('auth.placeholder.phone'),
+                hintStyle: GoogleFonts.inter(
+                  color: p.inkMuted,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14.5,
+                ),
+                prefixIcon: InkWell(
+                  onTap: _showCountryPicker,
+                  borderRadius: isAr
+                      ? const BorderRadius.only(
+                          topRight: Radius.circular(14),
+                          bottomRight: Radius.circular(14),
+                        )
+                      : const BorderRadius.only(
+                          topLeft: Radius.circular(14),
+                          bottomLeft: Radius.circular(14),
+                        ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(width: 14),
+                      Text(
+                        _selectedCountry.flag,
+                        style: const TextStyle(fontSize: 20),
+                      ),
+                      const SizedBox(width: 6),
+                      Directionality(
+                        textDirection: TextDirection.ltr,
+                        child: Text(
+                          _selectedCountry.dialCode,
+                          style: GoogleFonts.inter(
+                            color: p.inkDark,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.arrow_drop_down_rounded,
+                        color: p.inkMuted,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        width: 1,
+                        height: 24,
+                        color: p.stroke,
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                  ),
+                ),
+                filled: true,
+                fillColor: p.isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.white,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  vertical: 14,
+                  horizontal: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: p.stroke, width: 1),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: p.stroke, width: 1),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                ),
+                errorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.red.shade400, width: 1),
+                ),
+                focusedErrorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.red.shade600, width: 1.5),
+                ),
+                errorStyle: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: Colors.red.shade600,
+                ),
+              ),
+            ),
+          ),
+
+          // Email
+          _buildTextField(
+            p,
+            label: context.tr('auth.emailAddress'),
+            hint: context.tr('auth.placeholder.email'),
+            icon: Icons.email_outlined,
+            controller: emailController,
+            keyboardType: TextInputType.emailAddress,
+            validator: (v) {
+              final email = (v ?? '').trim();
+              if (email.isEmpty) {
+                return isAr ? 'البريد الإلكتروني مطلوب' : 'Email is required';
+              }
+              if (!AuthService.isValidEmailFormat(email)) {
+                return context.tr('auth.enterValidEmail');
+              }
+              return null;
+            },
+          ),
+
+          // Password
+          _buildTextField(
+            p,
+            label: context.tr('auth.password'),
+            hint: context.tr('auth.placeholder.password'),
+            icon: Icons.lock_outline_rounded,
+            controller: passwordController,
+            obscure: _obscurePassword,
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                color: p.inkMuted,
+              ),
+              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+            ),
+            validator: (v) {
+              if (v == null || v.isEmpty) {
+                return context.tr('auth.passwordRequired');
+              }
+              if (!_isStrongPassword(v)) {
+                return isAr ? 'كلمة المرور لا تستوفي الشروط' : 'Password does not meet requirements';
+              }
+              return null;
+            },
+          ),
+
+          // Password Checklist
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14, left: 4, right: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildChecklistItem(
+                  context.tr('auth.passwordChecklist.minChars'),
+                  passwordController.text.length >= 8,
+                  p,
+                ),
+                _buildChecklistItem(
+                  context.tr('auth.passwordChecklist.uppercase'),
+                  passwordController.text.contains(RegExp(r'[A-Z]')),
+                  p,
+                ),
+                _buildChecklistItem(
+                  context.tr('auth.passwordChecklist.number'),
+                  passwordController.text.contains(RegExp(r'\d')),
+                  p,
+                ),
+              ],
+            ),
+          ),
+
+          // Confirm Password
+          _buildTextField(
+            p,
+            label: context.tr('auth.confirmPassword'),
+            hint: context.tr('auth.placeholder.confirmPassword'),
+            icon: Icons.lock_outline_rounded,
+            controller: confirmPasswordController,
+            obscure: _obscureConfirmPassword,
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscureConfirmPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                color: p.inkMuted,
+              ),
+              onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+            ),
+            validator: (v) {
+              if (v != passwordController.text) {
+                return context.tr('auth.passwordsNoMatch');
+              }
+              return null;
+            },
+          ),
+
+          const SizedBox(height: 24),
+
+          // Continue Button
+          ElevatedButton(
+            onPressed: () {
+              if (_step1FormKey.currentState!.validate()) {
+                setState(() {
+                  _stepIndex = 1;
+                });
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              elevation: 0,
+            ),
+            child: Text(
+              isAr ? 'متابعة' : 'Continue',
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFieldWrapper(
+    CarelinkPalette p, {
+    required String label,
+    required Widget child,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: p.inkDark,
+            ),
+          ),
+          const SizedBox(height: 6),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextField(
+    CarelinkPalette p, {
+    required String label,
     required String hint,
     required IconData icon,
     required TextEditingController controller,
@@ -655,686 +1033,648 @@ class _SignupScreenState extends State<SignupScreen> {
     String? Function(String?)? validator,
     bool readOnly = false,
     VoidCallback? onTap,
-    double bottomPadding = 14,
-    int? maxLines,
-    void Function(String)? onChanged,
-    List<TextInputFormatter>? inputFormatters,
+    List<TextInputFormatter>? formatters,
   }) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottomPadding),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (label != null) ...[
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: _textPrimary,
-              ),
-            ),
-            const SizedBox(height: 7),
-          ],
-          Container(
-            decoration: BoxDecoration(
-              color: _inputBg,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _inputBorderDark, width: 1),
-            ),
-            child: TextFormField(
-              controller: controller,
-              obscureText: obscure,
-              keyboardType: (maxLines ?? 1) > 1
-                  ? TextInputType.multiline
-                  : keyboardType,
-              validator: validator,
-              readOnly: readOnly,
-              onTap: onTap,
-              onChanged: onChanged,
-              inputFormatters: inputFormatters,
-              maxLines: maxLines ?? 1,
-              minLines: (maxLines ?? 1) > 1 ? 2 : null,
-              style: GoogleFonts.inter(
-                color: _textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-              ),
-              cursorColor: _accent,
-              decoration: InputDecoration(
-                hintText: hint,
-                hintStyle: GoogleFonts.inter(
-                  color: _textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-                prefixIcon: Icon(icon, color: _textSecondary, size: 22),
-                suffixIcon: suffixIcon,
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                  vertical: 16,
-                  horizontal: 12,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRoleTabs() {
-    const roles = [
-      ('patient', 'Patient', Icons.favorite_rounded),
-      ('nurse', 'Nurse', Icons.local_hospital_outlined),
-      ('doctor', 'Doctor', Icons.medical_services_outlined),
-    ];
-
-    return Row(
-      children: roles.map((entry) {
-        final isSelected = selectedRole == entry.$1;
-        return Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => setState(() => selectedRole = entry.$1),
-                borderRadius: BorderRadius.circular(16),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? _accent.withValues(alpha: 0.14)
-                        : _inputBg,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isSelected ? _accent : _inputBorderDark,
-                      width: isSelected ? 1.2 : 1,
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        entry.$3,
-                        size: 20,
-                        color: isSelected ? _accent : _textSecondary,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        entry.$2,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          color: isSelected ? _accent : _textSecondary,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  String _heroSubtitle() {
-    switch (selectedRole) {
-      case 'doctor':
-        return 'Join CareLink to manage consultations, patient requests, and trusted clinical access.';
-      case 'nurse':
-        return 'Join CareLink to support patients, coordinate care, and stay connected securely.';
-      default:
-        return 'Join CareLink to manage appointments, records, and secure health updates in one place.';
-    }
-  }
-
-  String _detailsSectionTitle() {
-    return selectedRole == 'patient'
-        ? 'Patient Details'
-        : 'Professional Details';
-  }
-
-  String _submitButtonLabel() {
-    switch (selectedRole) {
-      case 'doctor':
-        return 'Create Doctor Account';
-      case 'nurse':
-        return 'Create Nurse Account';
-      default:
-        return 'Create Patient Account';
-    }
-  }
-
-  Widget _sectionHeading(IconData icon, String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10, top: 4),
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: _accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: _accent, size: 18),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: GoogleFonts.inter(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              color: _textPrimary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGenderDropdown() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: _inputBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _inputBorderDark, width: 1),
-      ),
-      child: DropdownButtonFormField<String>(
-        initialValue: selectedGender,
-        dropdownColor: _cardBgSoft,
+    return _buildFieldWrapper(
+      p,
+      label: label,
+      child: TextFormField(
+        controller: controller,
+        obscureText: obscure,
+        keyboardType: keyboardType,
+        validator: validator,
+        readOnly: readOnly,
+        onTap: onTap,
+        inputFormatters: formatters,
         style: GoogleFonts.inter(
-          color: _textPrimary,
+          color: p.inkDark,
           fontSize: 15,
           fontWeight: FontWeight.w500,
         ),
+        cursorColor: AppColors.primary,
         decoration: InputDecoration(
-          border: InputBorder.none,
-          prefixIcon: Icon(
-            Icons.person_outline_rounded,
-            color: _textSecondary,
-            size: 22,
+          hintText: hint,
+          hintStyle: GoogleFonts.inter(
+            color: p.inkMuted,
+            fontWeight: FontWeight.w500,
+            fontSize: 14.5,
           ),
+          prefixIcon: Icon(icon, color: p.inkMuted, size: 22),
+          suffixIcon: suffixIcon,
+          filled: true,
+          fillColor: p.isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.white,
+          isDense: true,
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 8,
             vertical: 14,
+            horizontal: 12,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: p.stroke, width: 1),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: p.stroke, width: 1),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.red.shade400, width: 1),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.red.shade600, width: 1.5),
+          ),
+          errorStyle: GoogleFonts.inter(
+            fontSize: 12,
+            color: Colors.red.shade600,
           ),
         ),
-        icon: Icon(Icons.keyboard_arrow_down_rounded, color: _textSecondary),
-        items: [
-          DropdownMenuItem(
-            value: 'male',
-            child: Text('Male', style: GoogleFonts.inter(color: _textPrimary)),
-          ),
-          DropdownMenuItem(
-            value: 'female',
-            child: Text(
-              'Female',
-              style: GoogleFonts.inter(color: _textPrimary),
-            ),
-          ),
-          DropdownMenuItem(
-            value: 'other',
-            child: Text('Other', style: GoogleFonts.inter(color: _textPrimary)),
-          ),
-          DropdownMenuItem(
-            value: 'prefer_not_to_say',
-            child: Text(
-              'Prefer not to say',
-              style: GoogleFonts.inter(color: _textPrimary),
-            ),
-          ),
-        ],
-        onChanged: (v) => setState(() => selectedGender = v),
       ),
     );
   }
 
-  Widget _buildMapSelectionHint() {
-    final hasLocation = gpsLat != null && gpsLng != null;
-    if (!hasLocation) return const SizedBox.shrink();
-    final placeLabel = (selectedPlaceName ?? '').trim();
-    final addressLabel = addressController.text.trim();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8, top: 2),
-      child: Row(
-        children: [
-          Icon(
-            Icons.check_circle_rounded,
-            color: Colors.green.shade600,
-            size: 16,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              placeLabel.isNotEmpty
-                  ? placeLabel
-                  : (addressLabel.isNotEmpty
-                        ? addressLabel
-                        : 'Map location saved'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: const Color(0xFFB7D8D4),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
+  Widget _buildStep2RoleDetails(CarelinkPalette p) {
+    final isAr = CarelinkL10n.of(context).isArabic;
+    final roles = [
+      (
+        'patient',
+        context.tr('auth.patient'),
+        context.tr('auth.patientDesc'),
+        Icons.person_pin_rounded
       ),
-    );
-  }
+      (
+        'doctor',
+        context.tr('auth.doctor'),
+        context.tr('auth.doctorDesc'),
+        Icons.medical_services_rounded
+      ),
+      (
+        'nurse',
+        context.tr('auth.nurse'),
+        context.tr('auth.nurseDesc'),
+        Icons.local_hospital_rounded
+      ),
+    ];
 
-  Widget _buildAddressRow() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Form(
+      key: _step2FormKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: _customField(
-              label: null,
-              hint: 'Full Address',
-              icon: Icons.location_on_outlined,
-              controller: addressController,
-              bottomPadding: 0,
-              validator: (v) {
-                if (selectedRole == 'patient' &&
-                    (v == null || v.trim().isEmpty)) {
-                  return 'Address is required for patient';
-                }
-                return null;
-              },
+          Text(
+            context.tr('auth.chooseAccountType'),
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: p.inkDark,
             ),
+            textAlign: TextAlign.center,
           ),
-          const SizedBox(width: 8),
-          Padding(
-            padding: const EdgeInsets.only(top: 0),
-            child: SizedBox(
-              height: 56,
-              child: isGettingLocation
-                  ? const Center(
-                      child: SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: _accent,
-                        ),
-                      ),
-                    )
-                  : OutlinedButton(
-                      onPressed: getLocation,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _accent,
-                        side: BorderSide(color: _inputBorderDark, width: 1.2),
-                        backgroundColor: _inputBg,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.map_outlined, size: 18),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Open Map',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+          const SizedBox(height: 16),
+          ...roles.map((item) {
+            final roleKey = item.$1;
+            final title = item.$2;
+            final desc = item.$3;
+            final icon = item.$4;
+            final isSelected = _selectedRole == roleKey;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    setState(() => _selectedRole = roleKey);
+                  },
+                  borderRadius: BorderRadius.circular(16),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.primary.withValues(alpha: 0.1)
+                          : p.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isSelected ? AppColors.primary : p.stroke,
+                        width: isSelected ? 2 : 1,
                       ),
                     ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Same max-width strategy as [LoginScreen] for wide web windows.
-  double _signupCardMaxWidth(double screenW) {
-    if (screenW >= 1200) return 520;
-    if (screenW >= 900) return 480;
-    if (screenW >= 600) return 440;
-    return 420;
-  }
-
-  /// Matches login: back control + avatar + title + subtitle inside the card.
-  Widget _buildCompactSignupHeader() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Center(
-          child: CarelinkBrandLogo(
-            height: 36,
-            fallbackTextColor: _textPrimary,
-            forceDarkLogo: _isDark,
-          ),
-        ),
-        const SizedBox(height: 18),
-        Text(
-          'Sign Up',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.inter(
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            color: _textPrimary,
-            letterSpacing: -0.4,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          _heroSubtitle(),
-          textAlign: TextAlign.center,
-          style: GoogleFonts.inter(
-            color: _textSecondary,
-            fontSize: 13.5,
-            height: 1.45,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _showImageSourceSheet() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      backgroundColor: _cardBg,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(
-                Icons.photo_library_outlined,
-                color: _textSecondary,
-              ),
-              title: Text(
-                'Choose from gallery',
-                style: GoogleFonts.inter(
-                  color: _textPrimary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickProfileImage(ImageSource.gallery);
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.camera_alt_outlined, color: _textSecondary),
-              title: Text(
-                'Take a photo',
-                style: GoogleFonts.inter(
-                  color: _textPrimary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickProfileImage(ImageSource.camera);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProfileImagePicker() {
-    final hasImage = profileImageBytes != null;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              CircleAvatar(
-                radius: 32,
-                backgroundColor: _cardBgSoft,
-                backgroundImage: hasImage
-                    ? MemoryImage(profileImageBytes!)
-                    : null,
-                child: hasImage
-                    ? null
-                    : Icon(
-                        Icons.person_outline_rounded,
-                        size: 32,
-                        color: _textSecondary,
-                      ),
-              ),
-              Positioned(
-                right: -2,
-                bottom: -2,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: _cardBg,
-                    shape: BoxShape.circle,
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x1A000000),
-                        blurRadius: 4,
-                        offset: Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    Icons.camera_alt_rounded,
-                    size: 16,
-                    color: _accent,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Profile Photo (Optional)',
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: _textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  hasImage
-                      ? (profileImageName ?? 'Photo selected')
-                      : 'Upload your profile photo',
-                  style: GoogleFonts.inter(
-                    fontSize: 12.5,
-                    color: _textSecondary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 4),
-          OutlinedButton(
-            onPressed: _showImageSourceSheet,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _accent,
-              side: BorderSide(color: _inputBorderDark, width: 1.2),
-              backgroundColor: _inputBg,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.camera_alt_outlined, size: 16),
-                SizedBox(width: 4),
-                Text('Upload', style: TextStyle(fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOptionalImageUrl() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton(
-            onPressed: () {
-              setState(() {
-                showProfileImageUrlField = !showProfileImageUrlField;
-              });
-            },
-            child: Text(
-              showProfileImageUrlField
-                  ? 'Hide image URL'
-                  : 'Use image URL instead',
-              style: GoogleFonts.inter(
-                color: _accent,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-        if (showProfileImageUrlField)
-          _customField(
-            label: null,
-            hint: 'https://example.com/image.jpg',
-            icon: Icons.link_rounded,
-            controller: profileImageUrlController,
-            validator: (v) {
-              final value = (v ?? '').trim();
-              if (value.isEmpty) return null;
-              if (!_isLikelyUrl(value)) return 'Please enter a valid URL';
-              return null;
-            },
-          ),
-      ],
-    );
-  }
-
-  Widget _buildSubmitButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 54,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(999),
-          gradient: LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: isRegistering
-                ? [
-                    _accent.withValues(alpha: 0.55),
-                    _accentGradientEnd.withValues(alpha: 0.55),
-                  ]
-                : const [_accent, _accentGradientEnd],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: _accent.withValues(alpha: 0.24),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: isRegistering ? null : registerUser,
-            borderRadius: BorderRadius.circular(999),
-            child: Center(
-              child: isRegistering
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2.4,
-                      ),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    child: Row(
                       children: [
-                        const Icon(
-                          Icons.person_add_alt_1_rounded,
-                          size: 20,
-                          color: Colors.white,
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppColors.primary
+                                : p.stroke.withValues(alpha: 0.5),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            icon,
+                            color: isSelected ? Colors.white : p.inkMuted,
+                            size: 24,
+                          ),
                         ),
-                        const SizedBox(width: 10),
-                        Text(
-                          _submitButtonLabel(),
-                          style: GoogleFonts.inter(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: isSelected ? AppColors.primary : p.inkDark,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                desc,
+                                style: GoogleFonts.inter(
+                                  fontSize: 12.5,
+                                  color: p.inkMuted,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
+                  ),
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 24),
+
+          // Date of Birth
+          _buildTextField(
+            p,
+            label: context.tr('auth.dateOfBirth'),
+            hint: context.tr('auth.placeholder.dateOfBirth'),
+            icon: Icons.calendar_today_rounded,
+            controller: dateOfBirthController,
+            readOnly: true,
+            onTap: _pickDateOfBirth,
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) {
+                return isAr ? 'تاريخ الميلاد مطلوب' : 'Date of birth is required';
+              }
+              return null;
+            },
+          ),
+
+          // Gender
+          _buildFieldWrapper(
+            p,
+            label: context.tr('auth.gender'),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildGenderCard(
+                    label: isAr ? 'ذكر' : 'Male',
+                    value: 'male',
+                    icon: Icons.male_rounded,
+                    isSelected: _selectedGender == 'male',
+                    p: p,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildGenderCard(
+                    label: isAr ? 'أنثى' : 'Female',
+                    value: 'female',
+                    icon: Icons.female_rounded,
+                    isSelected: _selectedGender == 'female',
+                    p: p,
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
+          const SizedBox(height: 18),
+
+          // Location (Required for Doctors/Nurses, Optional for Patients)
+          _buildTextField(
+            p,
+            label: context.tr('auth.location'),
+            hint: isAr ? 'اختر الموقع' : 'Select location',
+            icon: Icons.location_on_outlined,
+            controller: addressController,
+            readOnly: true,
+            onTap: _pickLocation,
+            suffixIcon: IconButton(
+              tooltip: isAr ? 'تحديد على الخريطة' : 'Pick on map',
+              icon: const Icon(Icons.map_outlined, color: AppColors.primary),
+              onPressed: _pickLocation,
+            ),
+            validator: (v) {
+              if (_selectedRole != 'patient') {
+                if (v == null || v.trim().isEmpty) {
+                  return isAr ? 'الموقع مطلوب' : 'Location is required';
+                }
+              }
+              return null;
+            },
+          ),
+
+          // Role specific Patient fields
+          if (_selectedRole == 'patient') ...[
+            _buildTextField(
+              p,
+              label: context.tr('auth.chronicDiseases'),
+              hint: 'e.g. Diabetes, Hypertension',
+              icon: Icons.medical_information_outlined,
+              controller: chronicDiseasesController,
+            ),
+            _buildTextField(
+              p,
+              label: context.tr('auth.allergies'),
+              hint: 'e.g. Penicillin, Peanuts',
+              icon: Icons.warning_amber_rounded,
+              controller: allergiesController,
+            ),
+            _buildTextField(
+              p,
+              label: context.tr('auth.currentMedications'),
+              hint: 'e.g. Metformin 500mg',
+              icon: Icons.medication_outlined,
+              controller: currentMedicationsController,
+            ),
+            _buildTextField(
+              p,
+              label: context.tr('auth.emergencyContact'),
+              hint: 'e.g. Brother: +970599000000',
+              icon: Icons.contact_phone_outlined,
+              controller: emergencyContactController,
+            ),
+          ],
+
+          // Role specific Doctor fields
+          if (_selectedRole == 'doctor') ...[
+            _buildTextField(
+              p,
+              label: context.tr('auth.specialization'),
+              hint: 'e.g. Cardiologist',
+              icon: Icons.health_and_safety_outlined,
+              controller: specialtyController,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Specialty is required';
+                return null;
+              },
+            ),
+            _buildTextField(
+              p,
+              label: context.tr('auth.licenseNumber'),
+              hint: 'Medical license ID number',
+              icon: Icons.badge_outlined,
+              controller: licenseController,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'License number is required';
+                return null;
+              },
+            ),
+            _buildTextField(
+              p,
+              label: context.tr('auth.experienceYears'),
+              hint: 'Years of experience',
+              icon: Icons.timeline_outlined,
+              controller: experienceController,
+              keyboardType: TextInputType.number,
+              formatters: [FilteringTextInputFormatter.digitsOnly],
+              validator: (v) {
+                final n = int.tryParse(v ?? '');
+                if (n == null || n < 0 || n > 80) return 'Enter a valid number between 0 and 80';
+                return null;
+              },
+            ),
+            _buildFieldWrapper(
+              p,
+              label: context.tr('auth.consultationType'),
+              child: DropdownButtonFormField<String>(
+                initialValue: _consultationType,
+                dropdownColor: p.surface,
+                icon: Icon(Icons.expand_more_rounded, color: p.inkMuted),
+                style: GoogleFonts.inter(
+                  color: p.inkDark,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: p.isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.white,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 12,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: p.stroke, width: 1),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: p.stroke, width: 1),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                  ),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'home', child: Text('Home visits only')),
+                  DropdownMenuItem(value: 'online', child: Text('Online consultations only')),
+                  DropdownMenuItem(value: 'both', child: Text('Home & Online consultations')),
+                ],
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => _consultationType = v);
+                  }
+                },
+              ),
+            ),
+            const SizedBox(height: 18),
+            _buildTextField(
+              p,
+              label: context.tr('auth.bio'),
+              hint: 'Brief professional background bio',
+              icon: Icons.description_outlined,
+              controller: bioController,
+            ),
+          ],
+
+          // Role specific Nurse fields
+          if (_selectedRole == 'nurse') ...[
+            _buildTextField(
+              p,
+              label: isAr ? 'تخصص التمريض' : 'Nursing Specialty',
+              hint: 'e.g. Pediatric Nurse',
+              icon: Icons.health_and_safety_outlined,
+              controller: specialtyController,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Specialty is required';
+                return null;
+              },
+            ),
+            _buildTextField(
+              p,
+              label: context.tr('auth.licenseNumber'),
+              hint: 'Nursing license ID number',
+              icon: Icons.badge_outlined,
+              controller: licenseController,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'License number is required';
+                return null;
+              },
+            ),
+            _buildTextField(
+              p,
+              label: context.tr('auth.experienceYears'),
+              hint: 'Years of experience',
+              icon: Icons.timeline_outlined,
+              controller: experienceController,
+              keyboardType: TextInputType.number,
+              formatters: [FilteringTextInputFormatter.digitsOnly],
+              validator: (v) {
+                final n = int.tryParse(v ?? '');
+                if (n == null || n < 0 || n > 80) return 'Enter a valid number between 0 and 80';
+                return null;
+              },
+            ),
+            _buildFieldWrapper(
+              p,
+              label: isAr ? 'متاح للرعاية المنزلية' : 'Home Care Availability',
+              child: SwitchListTile(
+                title: Text(
+                  context.tr('auth.homeCareAvailability'),
+                  style: GoogleFonts.inter(fontSize: 14, color: p.inkDark),
+                ),
+                value: _homeCareAvailability,
+                activeThumbColor: AppColors.primary,
+                onChanged: (val) => setState(() => _homeCareAvailability = val),
+              ),
+            ),
+            _buildTextField(
+              p,
+              label: context.tr('auth.serviceAreas'),
+              hint: 'e.g. Ramallah, Al-Bireh',
+              icon: Icons.map_outlined,
+              controller: serviceAreasController,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Service areas are required';
+                return null;
+              },
+            ),
+            _buildTextField(
+              p,
+              label: context.tr('auth.bio'),
+              hint: 'Brief background bio',
+              icon: Icons.description_outlined,
+              controller: bioController,
+            ),
+          ],
+
+          const SizedBox(height: 24),
+
+          // Sticky action buttons
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isLoading ? null : () => setState(() => _stepIndex = 0),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: p.inkDark,
+                    side: BorderSide(color: p.stroke),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Text(isAr ? 'السابق' : 'Back'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _sendVerificationCode,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : Text(
+                          context.tr('auth.sendCode'),
+                          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  Widget _passwordRuleHint() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 2, bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.check_circle_outline_rounded,
-            size: 16,
-            color: _textSecondary,
+  Widget _buildStep3VerifyOtp(CarelinkPalette p) {
+    final defaultPinTheme = PinTheme(
+      width: 48,
+      height: 52,
+      textStyle: GoogleFonts.inter(
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+        color: p.inkDark,
+      ),
+      decoration: BoxDecoration(
+        color: p.isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: p.stroke),
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          context.tr('auth.otpCode'),
+          style: GoogleFonts.inter(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: p.inkDark,
           ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              'Password must contain uppercase, lowercase, number, and at least 8 characters.',
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: _textSecondary,
-                fontWeight: FontWeight.w500,
-                height: 1.35,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          CarelinkL10n.of(context).isArabic
+              ? 'لقد أرسلنا رمز التحقق إلى بريدك الإلكتروني:\n${emailController.text.trim()}'
+              : 'We sent a verification code to your email:\n${emailController.text.trim()}',
+          style: GoogleFonts.inter(
+            fontSize: 13.5,
+            color: p.inkMuted,
+            height: 1.4,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
+
+        // OTP inputs using pinput
+        Center(
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Pinput(
+              length: 6,
+              controller: _otpController,
+              defaultPinTheme: defaultPinTheme,
+              focusedPinTheme: defaultPinTheme.copyWith(
+                decoration: defaultPinTheme.decoration!.copyWith(
+                  border: Border.all(color: AppColors.primary, width: 1.5),
+                ),
               ),
+              submittedPinTheme: defaultPinTheme.copyWith(
+                decoration: defaultPinTheme.decoration!.copyWith(
+                  color: AppColors.primary.withValues(alpha: 0.05),
+                ),
+              ),
+              hapticFeedbackType: HapticFeedbackType.lightImpact,
+              onCompleted: (pin) => _verifyOtpAndRegister(),
             ),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 24),
+
+        // Countdown Timer & Resend
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_secondsRemaining > 0) ...[
+              const Icon(Icons.timer_outlined, size: 16, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                'Expires in ${_formatTime(_secondsRemaining)}',
+                style: GoogleFonts.inter(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ] else
+              TextButton.icon(
+                onPressed: _isLoading ? null : _sendVerificationCode,
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: Text(context.tr('auth.resendCode')),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+          ],
+        ),
+
+
+        const SizedBox(height: 24),
+
+        // Verify button
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _isLoading ? null : () => setState(() => _stepIndex = 1),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: p.inkDark,
+                  side: BorderSide(color: p.stroke),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text('Back'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _verifyOtpAndRegister,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 0,
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text(
+                        context.tr('auth.verifyAndContinue'),
+                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -1342,1389 +1682,91 @@ class _SignupScreenState extends State<SignupScreen> {
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
     final viewInsets = MediaQuery.viewInsetsOf(context).bottom;
-    final sw = MediaQuery.sizeOf(context).width;
-    final cardMaxW = _signupCardMaxWidth(sw);
-    const hPad = 24.0;
+    final isAr = CarelinkL10n.of(context).isArabic;
 
     return Scaffold(
-      backgroundColor: p.isDark ? const Color(0xFF021018) : _pageBg,
+      backgroundColor: p.pageBg,
       resizeToAvoidBottomInset: true,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _SignupBackdropPainter(isDark: p.isDark),
+      body: Directionality(
+        textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+        child: Stack(
+          children: [
+            // Healthcare background custom painter
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _SignupBackdropPainter(isDark: _isDark),
+              ),
             ),
-          ),
-          SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  height: 48,
-                  child: Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: Padding(
-                      padding: const EdgeInsetsDirectional.only(start: 6),
-                      child: IconButton(
-                        onPressed: () {
-                          if (Navigator.canPop(context)) {
-                            Navigator.pop(context);
-                          } else {
-                            appNavigatorKey.currentState?.pushReplacementNamed(
-                              '/login',
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.arrow_back_rounded),
-                        color: p.inkDark,
-                        iconSize: 24,
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 42,
-                          height: 42,
+
+            SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Custom Back Button Header
+                  SizedBox(
+                    height: 56,
+                    child: Row(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: IconButton(
+                            icon: const Icon(Icons.arrow_back_rounded),
+                            color: p.inkDark,
+                            onPressed: () {
+                              if (_stepIndex > 0) {
+                                setState(() {
+                                  _stepIndex--;
+                                });
+                              } else {
+                                Navigator.pop(context);
+                              }
+                            },
+                          ),
                         ),
-                        padding: EdgeInsets.zero,
-                      ),
+                        const Spacer(),
+                        const CarelinkBrandLogo(height: 28),
+                        const Spacer(),
+                        CarelinkLocaleIconButton(color: p.inkDark),
+                        CarelinkThemeIconButton(color: p.inkDark),
+                        const SizedBox(width: 8),
+                      ],
                     ),
                   ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(
-                      hPad,
-                      0,
-                      hPad,
-                      24 + viewInsets,
-                    ),
+
+                  // Form Container Card
+                  Expanded(
                     child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: cardMaxW),
-                        child: Form(
-                          key: _formKey,
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + viewInsets),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 460),
                           child: Container(
-                            padding: const EdgeInsets.fromLTRB(22, 22, 22, 24),
+                            padding: const EdgeInsets.all(24),
                             decoration: BoxDecoration(
-                              color: _cardBg,
-                              borderRadius: BorderRadius.circular(
-                                _kSheetTopRadius,
-                              ),
-                              border: Border.all(
-                                color: _inputBorderDark.withValues(alpha: 0.55),
-                              ),
+                              color: p.surface.withValues(alpha: _isDark ? 0.94 : 1.0),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: p.stroke.withValues(alpha: 0.7)),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.25),
-                                  blurRadius: 24,
-                                  offset: const Offset(0, 12),
+                                  color: Colors.black.withValues(alpha: _isDark ? 0.4 : 0.06),
+                                  blurRadius: 36,
+                                  offset: const Offset(0, 16),
                                 ),
                               ],
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                _buildCompactSignupHeader(),
+                                _buildStepIndicator(p),
                                 const SizedBox(height: 24),
-                                Text(
-                                  'Choose Account Type',
-                                  style: GoogleFonts.inter(
-                                    color: _textPrimary,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                _buildRoleTabs(),
-                                const SizedBox(height: 18),
-                                _sectionHeading(
-                                  Icons.person_outline_rounded,
-                                  'Basic Information',
-                                ),
-                                _customField(
-                                  label: null,
-                                  hint: 'Full Name',
-                                  icon: Icons.person_outline,
-                                  controller: nameController,
-                                  validator: (v) {
-                                    final value = (v ?? '').trim();
-                                    if (value.isEmpty) {
-                                      return 'Please enter your full name';
-                                    }
-                                    if (value.length < 2) {
-                                      return 'Name is too short';
-                                    }
-                                    if (RegExp(r'^\d+$').hasMatch(value)) {
-                                      return 'Name cannot be numbers only';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                _customField(
-                                  label: null,
-                                  hint: 'Email Address',
-                                  icon: Icons.email_outlined,
-                                  controller: emailController,
-                                  keyboardType: TextInputType.emailAddress,
-                                  onChanged: (_) {
-                                    if (_emailOtpVerified) {
-                                      setState(() {
-                                        _emailOtpVerified = false;
-                                        _emailVerificationToken = null;
-                                      });
-                                    }
-                                  },
-                                  validator: (v) {
-                                    final value = (v ?? '').trim();
-                                    if (value.isEmpty) {
-                                      return 'Please enter your email';
-                                    }
-                                    if (!_emailRegex.hasMatch(value)) {
-                                      return 'Invalid email format';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 14),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      Text(
-                                        'Email verification',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: _textPrimary,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        context.tr('auth.enterCodeHint'),
-                                        style: GoogleFonts.inter(
-                                          fontSize: 12,
-                                          color: _textSecondary,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        height: 48,
-                                        child: OutlinedButton(
-                                          onPressed: (_emailOtpBusy ||
-                                                  _emailResendSeconds > 0 ||
-                                                  isRegistering)
-                                              ? null
-                                              : _sendSignupEmailCode,
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: _accent,
-                                            side: BorderSide(
-                                              color: _inputBorderDark,
-                                              width: 1.2,
-                                            ),
-                                            backgroundColor: _inputBg,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                            ),
-                                          ),
-                                          child: _emailOtpBusy
-                                              ? const SizedBox(
-                                                  width: 22,
-                                                  height: 22,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    color: _accent,
-                                                  ),
-                                                )
-                                              : Text(
-                                                  _emailResendSeconds > 0
-                                                      ? context.tr(
-                                                          'auth.resendIn',
-                                                          args: {
-                                                            'seconds':
-                                                                _emailResendSeconds
-                                                                    .toString(),
-                                                          },
-                                                        )
-                                                      : context
-                                                          .tr('auth.sendCode'),
-                                                  style: GoogleFonts.inter(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      _customField(
-                                        label: null,
-                                        hint: context.tr('auth.otpCode'),
-                                        icon: Icons.pin_outlined,
-                                        controller: _emailOtpController,
-                                        keyboardType: TextInputType.number,
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter
-                                              .digitsOnly,
-                                        ],
-                                        bottomPadding: 10,
-                                        validator: (_) => null,
-                                      ),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        height: 48,
-                                        child: OutlinedButton(
-                                          onPressed: (_emailOtpBusy ||
-                                                  isRegistering)
-                                              ? null
-                                              : _verifySignupEmailCode,
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: _accent,
-                                            side: BorderSide(
-                                              color: _inputBorderDark,
-                                              width: 1.2,
-                                            ),
-                                            backgroundColor: _inputBg,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                            ),
-                                          ),
-                                          child: _emailOtpBusy
-                                              ? const SizedBox(
-                                                  width: 22,
-                                                  height: 22,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    color: _accent,
-                                                  ),
-                                                )
-                                              : Text(
-                                                  context.tr(
-                                                    'auth.verifyAndContinue',
-                                                  ),
-                                                  style: GoogleFonts.inter(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                        ),
-                                      ),
-                                      if (_emailOtpVerified) ...[
-                                        const SizedBox(height: 8),
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.check_circle_rounded,
-                                              color: Colors.green.shade600,
-                                              size: 20,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              context.tr(
-                                                'auth.emailVerifiedSuccess',
-                                              ),
-                                              style: GoogleFonts.inter(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600,
-                                                color: Colors.green.shade700,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                _customField(
-                                  label: null,
-                                  hint: 'Phone number (digits only)',
-                                  icon: Icons.phone_outlined,
-                                  controller: phoneController,
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly,
-                                  ],
-                                  onChanged: (_) {
-                                    if (_phoneOtpVerified) {
-                                      setState(() {
-                                        _phoneOtpVerified = false;
-                                        _phoneVerificationToken = null;
-                                      });
-                                    }
-                                  },
-                                  validator: (v) {
-                                    final digits =
-                                        AuthService.normalizePhoneDigits(
-                                      (v ?? '').toString(),
-                                    );
-                                    if (digits.isEmpty) {
-                                      return 'Please enter your phone number';
-                                    }
-                                    if (!AuthService.isValidPhoneLength(digits)) {
-                                      return 'Phone must be 8-15 digits';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 14),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      Text(
-                                        'Phone verification',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: _textPrimary,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        context.tr('auth.enterCodeHint'),
-                                        style: GoogleFonts.inter(
-                                          fontSize: 12,
-                                          color: _textSecondary,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        height: 48,
-                                        child: OutlinedButton(
-                                          onPressed: (_phoneOtpBusy ||
-                                                  _phoneResendSeconds > 0 ||
-                                                  isRegistering)
-                                              ? null
-                                              : _sendSignupPhoneCode,
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: _accent,
-                                            side: BorderSide(
-                                              color: _inputBorderDark,
-                                              width: 1.2,
-                                            ),
-                                            backgroundColor: _inputBg,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                            ),
-                                          ),
-                                          child: _phoneOtpBusy
-                                              ? const SizedBox(
-                                                  width: 22,
-                                                  height: 22,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    color: _accent,
-                                                  ),
-                                                )
-                                              : Text(
-                                                  _phoneResendSeconds > 0
-                                                      ? context.tr(
-                                                          'auth.resendIn',
-                                                          args: {
-                                                            'seconds':
-                                                                _phoneResendSeconds
-                                                                    .toString(),
-                                                          },
-                                                        )
-                                                      : context
-                                                          .tr('auth.sendCode'),
-                                                  style: GoogleFonts.inter(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      _customField(
-                                        label: null,
-                                        hint: context.tr('auth.otpCode'),
-                                        icon: Icons.pin_outlined,
-                                        controller: _phoneOtpController,
-                                        keyboardType: TextInputType.number,
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter
-                                              .digitsOnly,
-                                        ],
-                                        bottomPadding: 10,
-                                        validator: (_) => null,
-                                      ),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        height: 48,
-                                        child: OutlinedButton(
-                                          onPressed: (_phoneOtpBusy ||
-                                                  isRegistering)
-                                              ? null
-                                              : _verifySignupPhoneCode,
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: _accent,
-                                            side: BorderSide(
-                                              color: _inputBorderDark,
-                                              width: 1.2,
-                                            ),
-                                            backgroundColor: _inputBg,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                            ),
-                                          ),
-                                          child: _phoneOtpBusy
-                                              ? const SizedBox(
-                                                  width: 22,
-                                                  height: 22,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    color: _accent,
-                                                  ),
-                                                )
-                                              : Text(
-                                                  context.tr(
-                                                    'auth.verifyAndContinue',
-                                                  ),
-                                                  style: GoogleFonts.inter(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                        ),
-                                      ),
-                                      if (_phoneOtpVerified) ...[
-                                        const SizedBox(height: 8),
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.check_circle_rounded,
-                                              color: Colors.green.shade600,
-                                              size: 20,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              context.tr(
-                                                'auth.phoneVerifiedSuccess',
-                                              ),
-                                              style: GoogleFonts.inter(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600,
-                                                color: Colors.green.shade700,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                _sectionHeading(
-                                  Icons.lock_outline_rounded,
-                                  'Security',
-                                ),
-                                _customField(
-                                  label: null,
-                                  hint: 'Password',
-                                  icon: Icons.lock_outline,
-                                  controller: passwordController,
-                                  obscure: obscurePassword,
-                                  suffixIcon: IconButton(
-                                    onPressed: () {
-                                      setState(
-                                        () =>
-                                            obscurePassword = !obscurePassword,
-                                      );
-                                    },
-                                    icon: Icon(
-                                      obscurePassword
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
-                                      color: _textSecondary,
-                                    ),
-                                  ),
-                                  validator: (v) {
-                                    final value = v ?? '';
-                                    if (value.isEmpty) {
-                                      return 'Please enter a password';
-                                    }
-                                    if (!_isStrongPassword(value)) {
-                                      return 'Use 8+ chars with upper/lower/number';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                _customField(
-                                  label: null,
-                                  hint: 'Confirm Password',
-                                  icon: Icons.verified_user_outlined,
-                                  controller: confirmPasswordController,
-                                  obscure: obscureConfirmPassword,
-                                  suffixIcon: IconButton(
-                                    onPressed: () {
-                                      setState(
-                                        () => obscureConfirmPassword =
-                                            !obscureConfirmPassword,
-                                      );
-                                    },
-                                    icon: Icon(
-                                      obscureConfirmPassword
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
-                                      color: _textSecondary,
-                                    ),
-                                  ),
-                                  validator: (v) {
-                                    if ((v ?? '').isEmpty) {
-                                      return 'Please confirm your password';
-                                    }
-                                    if (v != passwordController.text) {
-                                      return 'Passwords do not match';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                _passwordRuleHint(),
-                                const SizedBox(height: 4),
-                                _sectionHeading(
-                                  Icons.assignment_ind_outlined,
-                                  _detailsSectionTitle(),
-                                ),
-                                _buildProfileImagePicker(),
-                                _buildOptionalImageUrl(),
-                                _buildAddressRow(),
-                                _buildMapSelectionHint(),
-                                if (selectedRole == 'patient') ...[
-                                  _customField(
-                                    label: null,
-                                    hint: 'Date of Birth',
-                                    icon: Icons.calendar_today_outlined,
-                                    controller: dateOfBirthController,
-                                    readOnly: true,
-                                    onTap: _pickDateOfBirth,
-                                    validator: (v) {
-                                      if (v == null || v.trim().isEmpty) {
-                                        return 'Date of birth is required';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                  _buildGenderDropdown(),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Health baseline (optional)',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: _textPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'Helps providers give safer care. You can update this anytime in your profile.',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      color: _textSecondary,
-                                      height: 1.35,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  _customField(
-                                    label: null,
-                                    hint: 'Chronic conditions (if any)',
-                                    icon: Icons.healing_outlined,
-                                    controller: chronicDiseasesController,
-                                    maxLines: 4,
-                                    keyboardType: TextInputType.multiline,
-                                  ),
-                                  _customField(
-                                    label: null,
-                                    hint: 'Allergies (if any)',
-                                    icon: Icons.warning_amber_outlined,
-                                    controller: allergiesController,
-                                    maxLines: 3,
-                                    keyboardType: TextInputType.multiline,
-                                  ),
-                                  _customField(
-                                    label: null,
-                                    hint: 'Current medications (if any)',
-                                    icon: Icons.medication_outlined,
-                                    controller: currentMedicationsController,
-                                    maxLines: 4,
-                                    keyboardType: TextInputType.multiline,
-                                  ),
-                                ] else ...[
-                                  _customField(
-                                    label: null,
-                                    hint: 'Specialization',
-                                    icon: Icons.medical_services_outlined,
-                                    controller: specializationController,
-                                    validator: (v) {
-                                      if ((v ?? '').trim().isEmpty) {
-                                        return 'Please enter specialization';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                  _customField(
-                                    label: null,
-                                    hint: 'Service Type (Optional)',
-                                    icon: Icons.local_hospital_outlined,
-                                    controller: serviceTypeController,
-                                  ),
-                                  _customField(
-                                    label: null,
-                                    hint: 'Experience Years',
-                                    icon: Icons.workspace_premium_outlined,
-                                    controller: experienceYearsController,
-                                    keyboardType: TextInputType.number,
-                                    validator: (v) {
-                                      final value = (v ?? '').trim();
-                                      final years = int.tryParse(value);
-                                      if (value.isEmpty) {
-                                        return 'Please enter experience years';
-                                      }
-                                      if (years == null ||
-                                          years < 0 ||
-                                          years > 80) {
-                                        return 'Invalid years';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                  _customField(
-                                    label: null,
-                                    hint: selectedRole == 'doctor'
-                                        ? 'License Number'
-                                        : 'License Number (Optional)',
-                                    icon: Icons.badge_outlined,
-                                    controller: licenseNumberController,
-                                    validator: (v) {
-                                      if (selectedRole == 'doctor' &&
-                                          (v == null || v.trim().isEmpty)) {
-                                        return 'License number is required for doctor';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ],
-                                const SizedBox(height: 10),
-                                _buildSubmitButton(),
-                                const SizedBox(height: 18),
-                                Center(
-                                  child: Wrap(
-                                    crossAxisAlignment:
-                                        WrapCrossAlignment.center,
-                                    alignment: WrapAlignment.center,
-                                    children: [
-                                      Text(
-                                        'Already have an account? ',
-                                        style: GoogleFonts.inter(
-                                          color: _textSecondary,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      GestureDetector(
-                                        onTap: () =>
-                                            appNavigatorKey.currentState?.pop(),
-                                        child: Text(
-                                          'Sign In',
-                                          style: GoogleFonts.inter(
-                                            color: _accent,
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                                if (_stepIndex == 0)
+                                  _buildStep1BasicInfo(p)
+                                else if (_stepIndex == 1)
+                                  _buildStep2RoleDetails(p)
+                                else if (_stepIndex == 2)
+                                  _buildStep3VerifyOtp(p),
                               ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PickedLocation {
-  const _PickedLocation({
-    required this.latitude,
-    required this.longitude,
-    required this.address,
-    required this.placeName,
-  });
-
-  final double latitude;
-  final double longitude;
-  final String address;
-  final String placeName;
-}
-
-class _PlaceSearchResult {
-  const _PlaceSearchResult({
-    required this.title,
-    required this.subtitle,
-    required this.latitude,
-    required this.longitude,
-  });
-
-  factory _PlaceSearchResult.fromNominatim(Map<String, dynamic> json) {
-    final lat = double.tryParse((json['lat'] ?? '').toString()) ?? 0;
-    final lng = double.tryParse((json['lon'] ?? '').toString()) ?? 0;
-    final displayName = (json['display_name'] ?? '').toString();
-    final name = (json['name'] ?? '').toString().trim();
-    final address = json['address'];
-    String title = name.isNotEmpty ? name : displayName;
-    String subtitle = displayName;
-
-    if (address is Map<String, dynamic>) {
-      final city =
-          (address['city'] ??
-                  address['town'] ??
-                  address['village'] ??
-                  address['state'] ??
-                  '')
-              .toString();
-      final country = (address['country'] ?? '').toString();
-      final compact = [
-        city,
-        country,
-      ].where((e) => e.trim().isNotEmpty).join(', ');
-      if (compact.isNotEmpty) {
-        subtitle = compact;
-      }
-    }
-
-    if (title.trim().isEmpty) {
-      title = subtitle;
-    }
-
-    return _PlaceSearchResult(
-      title: title,
-      subtitle: subtitle,
-      latitude: lat,
-      longitude: lng,
-    );
-  }
-
-  final String title;
-  final String subtitle;
-  final double latitude;
-  final double longitude;
-}
-
-class _MapLocationPickerSheet extends StatefulWidget {
-  const _MapLocationPickerSheet({
-    required this.initialLat,
-    required this.initialLng,
-    required this.initialAddress,
-    required this.initialPlaceName,
-  });
-
-  final double? initialLat;
-  final double? initialLng;
-  final String initialAddress;
-  final String? initialPlaceName;
-
-  @override
-  State<_MapLocationPickerSheet> createState() =>
-      _MapLocationPickerSheetState();
-}
-
-class _MapLocationPickerSheetState extends State<_MapLocationPickerSheet> {
-  static const LatLng _defaultCenter = LatLng(31.9539, 35.9106);
-  static const Color _sheetCard = Color(0xFF0E3D3A);
-  static const Color _sheetInput = Color(0xFF123F3C);
-  static const Color _sheetBorder = Color(0xFF3A6863);
-  static const Color _sheetAccent = AppColors.primary;
-  static const Color _sheetMuted = Color(0xFFC5D9D4);
-
-  final MapController _mapController = MapController();
-  final TextEditingController _searchController = TextEditingController();
-
-  late LatLng _pickedPoint;
-  late String _address;
-  late String _placeName;
-  final List<String> _recentSearches = [];
-  final List<_PlaceSearchResult> _searchResults = [];
-  Timer? _searchDebounce;
-  bool _resolvingAddress = false;
-  bool _locatingCurrent = false;
-  bool _searchingPlace = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _pickedPoint = (widget.initialLat != null && widget.initialLng != null)
-        ? LatLng(widget.initialLat!, widget.initialLng!)
-        : _defaultCenter;
-    _address = widget.initialAddress;
-    _placeName = widget.initialPlaceName?.trim() ?? '';
-    _searchController.text = _placeName.isNotEmpty ? _placeName : _address;
-
-    if (_address.isEmpty) {
-      _resolveAddressForPoint(_pickedPoint);
-    }
-  }
-
-  @override
-  void dispose() {
-    _searchDebounce?.cancel();
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  void _onSearchChanged(String value) {
-    _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 450), () {
-      _runPlacesSearch(value);
-    });
-  }
-
-  Future<List<_PlaceSearchResult>> _fetchPlacesFromNominatim(
-    String query,
-  ) async {
-    final uri = Uri.https('nominatim.openstreetmap.org', '/search', <String, String>{
-      'q': query,
-      'format': 'jsonv2',
-      'addressdetails': '1',
-      'limit': '6',
-      'accept-language': 'ar,en',
-    });
-
-    final response = await http.get(
-      uri,
-      headers: const <String, String>{
-        'Accept': 'application/json',
-        'User-Agent': 'carelink.app',
-      },
-    );
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Search service unavailable');
-    }
-
-    final decoded = jsonDecode(response.body);
-    if (decoded is! List) return [];
-
-    return decoded
-        .whereType<Map<String, dynamic>>()
-        .map(_PlaceSearchResult.fromNominatim)
-        .where((e) => e.latitude != 0 || e.longitude != 0)
-        .toList();
-  }
-
-  Future<void> _runPlacesSearch(String value) async {
-    final query = value.trim();
-    if (query.length < 2) {
-      if (!mounted) return;
-      setState(() {
-        _searchingPlace = false;
-        _searchResults.clear();
-      });
-      return;
-    }
-
-    setState(() => _searchingPlace = true);
-    try {
-      final nominatimResults = await _fetchPlacesFromNominatim(query);
-      if (!mounted) return;
-      setState(() {
-        _searchResults
-          ..clear()
-          ..addAll(nominatimResults);
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _searchResults.clear());
-    } finally {
-      if (mounted) {
-        setState(() => _searchingPlace = false);
-      }
-    }
-  }
-
-  Future<void> _applySearchResult(_PlaceSearchResult result) async {
-    FocusScope.of(context).unfocus();
-    final point = LatLng(result.latitude, result.longitude);
-    setState(() {
-      _pickedPoint = point;
-      _searchController.text = result.title;
-      _recentSearches.removeWhere(
-        (entry) => entry.toLowerCase() == result.title.toLowerCase(),
-      );
-      _recentSearches.insert(0, result.title);
-      if (_recentSearches.length > 6) {
-        _recentSearches.removeRange(6, _recentSearches.length);
-      }
-      _searchResults.clear();
-    });
-    _mapController.move(point, 16.5);
-    await _resolveAddressForPoint(point);
-  }
-
-  Future<void> _searchPlaceByName([String? customQuery]) async {
-    final query = (customQuery ?? _searchController.text).trim();
-    if (query.isEmpty) return;
-
-    if (_searchResults.isEmpty) {
-      await _runPlacesSearch(query);
-    }
-
-    if (_searchResults.isNotEmpty) {
-      await _applySearchResult(_searchResults.first);
-      return;
-    }
-
-    // Fallback to platform geocoding if remote search returns nothing.
-    try {
-      final fallback = await locationFromAddress(query);
-      if (fallback.isNotEmpty) {
-        final first = fallback.first;
-        await _applySearchResult(
-          _PlaceSearchResult(
-            title: query,
-            subtitle: 'Location from device geocoder',
-            latitude: first.latitude,
-            longitude: first.longitude,
-          ),
-        );
-        return;
-      }
-    } catch (_) {}
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Could not find this place name'),
-        backgroundColor: Colors.red.shade800,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  Widget _buildSearchSuggestions() {
-    final query = _searchController.text.trim();
-    if (query.length < 2 && _recentSearches.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    if (_searchingPlace && _searchResults.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-        child: LinearProgressIndicator(
-          minHeight: 2,
-          color: _sheetAccent,
-          backgroundColor: _sheetBorder,
-        ),
-      );
-    }
-
-    final showRecentOnly = query.length < 2 || _searchResults.isEmpty;
-    if (showRecentOnly && _recentSearches.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      decoration: BoxDecoration(
-        color: _sheetInput,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _sheetBorder),
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 180),
-        child: ListView(
-          padding: EdgeInsets.zero,
-          shrinkWrap: true,
-          children: showRecentOnly
-              ? _recentSearches
-                    .map(
-                      (entry) => ListTile(
-                        dense: true,
-                        leading: const Icon(
-                          Icons.history,
-                          size: 18,
-                          color: _sheetMuted,
-                        ),
-                        title: Text(
-                          entry,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            color: Colors.white,
-                            fontSize: 14,
-                          ),
-                        ),
-                        onTap: () {
-                          _searchController.text = entry;
-                          _searchPlaceByName(entry);
-                        },
-                      ),
-                    )
-                    .toList()
-              : _searchResults
-                    .map(
-                      (result) => ListTile(
-                        dense: true,
-                        leading: const Icon(
-                          Icons.place_outlined,
-                          size: 18,
-                          color: _sheetMuted,
-                        ),
-                        title: Text(
-                          result.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          result.subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            color: _sheetMuted,
-                            fontSize: 12,
-                          ),
-                        ),
-                        onTap: () => _applySearchResult(result),
-                      ),
-                    )
-                    .toList(),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _moveToCurrentLocation() async {
-    setState(() => _locatingCurrent = true);
-    try {
-      final enabled = await Geolocator.isLocationServiceEnabled();
-      if (!enabled) {
-        throw Exception('Location services are disabled');
-      }
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        throw Exception('Location permission is not granted');
-      }
-
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-      final point = LatLng(pos.latitude, pos.longitude);
-      if (!mounted) return;
-      setState(() => _pickedPoint = point);
-      _mapController.move(point, 16);
-      await _resolveAddressForPoint(point);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Could not get current location'),
-          backgroundColor: Colors.red.shade800,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _locatingCurrent = false);
-      }
-    }
-  }
-
-  Future<void> _resolveAddressForPoint(LatLng point) async {
-    setState(() => _resolvingAddress = true);
-    try {
-      final placemarks = await placemarkFromCoordinates(
-        point.latitude,
-        point.longitude,
-      );
-      final first = placemarks.isNotEmpty ? placemarks.first : null;
-
-      final place = [
-        first?.name,
-        first?.subLocality,
-        first?.locality,
-      ].whereType<String>().where((e) => e.trim().isNotEmpty).join(', ');
-
-      final fullAddress = [
-        first?.street,
-        first?.subLocality,
-        first?.locality,
-        first?.administrativeArea,
-        first?.country,
-      ].whereType<String>().where((e) => e.trim().isNotEmpty).join(', ');
-
-      if (!mounted) return;
-      setState(() {
-        _placeName = place;
-        _address = fullAddress;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _placeName = '';
-        _address = '';
-      });
-    } finally {
-      if (mounted) setState(() => _resolvingAddress = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final latText = _pickedPoint.latitude.toStringAsFixed(6);
-    final lngText = _pickedPoint.longitude.toStringAsFixed(6);
-    final title = _placeName.isNotEmpty ? _placeName : 'Selected location';
-    final address = _address.isNotEmpty
-        ? _address
-        : 'Address could not be resolved';
-
-    return Container(
-      decoration: const BoxDecoration(
-        color: _sheetCard,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.88,
-        child: Column(
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 44,
-              height: 4.5,
-              decoration: BoxDecoration(
-                color: _sheetBorder,
-                borderRadius: BorderRadius.circular(6),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Choose Location from Map',
-                      style: GoogleFonts.inter(
-                        fontSize: 16.5,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(foregroundColor: _sheetAccent),
-                    onPressed: _locatingCurrent ? null : _moveToCurrentLocation,
-                    icon: _locatingCurrent
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: _sheetAccent,
-                            ),
-                          )
-                        : const Icon(Icons.my_location_outlined, size: 18),
-                    label: Text(
-                      'My Location',
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w600,
-                        color: _sheetAccent,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-              child: TextField(
-                controller: _searchController,
-                onChanged: _onSearchChanged,
-                onSubmitted: (_) => _searchPlaceByName(),
-                textInputAction: TextInputAction.search,
-                style: GoogleFonts.inter(color: Colors.white, fontSize: 15),
-                cursorColor: _sheetAccent,
-                decoration: InputDecoration(
-                  hintText: 'Search city, street, or area',
-                  hintStyle: GoogleFonts.inter(color: _sheetMuted),
-                  prefixIcon: const Icon(Icons.search, color: _sheetMuted),
-                  suffixIcon: _searchingPlace
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: _sheetAccent,
-                            ),
-                          ),
-                        )
-                      : IconButton(
-                          icon: const Icon(Icons.arrow_forward_rounded),
-                          color: _sheetAccent,
-                          onPressed: _searchPlaceByName,
-                        ),
-                  isDense: true,
-                  filled: true,
-                  fillColor: _sheetInput,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: _sheetBorder),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: _sheetBorder),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: _sheetAccent,
-                      width: 1.5,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            _buildSearchSuggestions(),
-            Expanded(
-              child: FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter: _pickedPoint,
-                  initialZoom: 15,
-                  onTap: (_, point) {
-                    setState(() => _pickedPoint = point);
-                    _resolveAddressForPoint(point);
-                  },
-                ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'carelink.app',
-                  ),
-                  MarkerLayer(
-                    markers: [
-                      Marker(
-                        point: _pickedPoint,
-                        width: 52,
-                        height: 52,
-                        child: const Icon(
-                          Icons.location_pin,
-                          size: 42,
-                          color: _sheetAccent,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-              decoration: const BoxDecoration(
-                color: _sheetInput,
-                border: Border(top: BorderSide(color: _sheetBorder)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_resolvingAddress)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 6),
-                      child: LinearProgressIndicator(
-                        minHeight: 2,
-                        color: _sheetAccent,
-                        backgroundColor: _sheetBorder,
-                      ),
-                    ),
-                  Text(
-                    title,
-                    style: GoogleFonts.inter(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    address,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      fontSize: 12.5,
-                      color: _sheetMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 7),
-                  Text(
-                    'Lat: $latText  |  Lng: $lngText',
-                    style: GoogleFonts.inter(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: _sheetMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        gradient: const LinearGradient(
-                          colors: [_sheetAccent, Color(0xFF2DD4E8)],
-                        ),
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () {
-                            final locationAddress = _address.isNotEmpty
-                                ? _address
-                                : '$latText, $lngText';
-                            Navigator.pop(
-                              context,
-                              _PickedLocation(
-                                latitude: _pickedPoint.latitude,
-                                longitude: _pickedPoint.longitude,
-                                address: locationAddress,
-                                placeName: _placeName,
-                              ),
-                            );
-                          },
-                          child: Center(
-                            child: Text(
-                              'Use This Location',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                                fontSize: 16,
-                              ),
                             ),
                           ),
                         ),
