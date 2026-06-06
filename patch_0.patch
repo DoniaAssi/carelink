@@ -1,0 +1,54 @@
+--- a/lib/features/patient/screens/patient_home_screen.dart
++++ b/lib/features/patient/screens/patient_home_screen.dart
+@@ -1,6 +1,6 @@
+ # CareLink UX Audit Fixes
+ 
+-This implementation plan covers the final polishing pass to improve the UX, localization, and visual clarity of the CareLink app, focusing strictly on UI/UX fixes without touching backend logic.
++This implementation plan covers the final polishing pass to improve the UX, localization, and visual clarity of the CareLink app. The goal is cleaner UX, better mobile experience, readability, and navigation without touching AI recommendation logic, medical record processing, or database schema.
+ 
+ ## User Review Required
+ 
+@@ -7,4 +7,4 @@
+-> The AI Assistant redesign will turn the current empty screen into a chat-style view with suggestions. The microphone button will be moved inside the input field. Please review if you have any specific design preferences for the chat layout!
++> The implementation plan has been updated to reflect your feedback. The AI Assistant will maintain its healthcare focus, match scores will remain separate, headers will be standardized flexibly, and notification persistence is prioritized. Please review these final updates before we begin coding.
+ 
+ ## Proposed Changes
+ 
+@@ -40,8 +40,8 @@
+   - `lib/features/ai/widgets/ai_provider_recommendation_card.dart`:
+     - Remove the duplicated "Why This Provider" button and the detailed score breakdown dialog from the result card.
+     - Reduce to a single primary action ("View Details") or make the entire card tapable.
+-    - Combine "Medical Match" and "Overall Match" pills into one percentage indicator.
+     - Add a single short recommendation reason string directly on the card.
++    - **Keep Medical Match and Overall Match separate**, bu
+<truncated 861 bytes>
+d layout for mobile UX.
++    - Restyle the "Quick suggestions" (chips).
++    - Preserve existing healthcare matching logic and functionality.
+ 
+ ---
+ 
+@@ -65,4 +65,4 @@
+-Audit and adjust mobile paddings to avoid bottom navigation/home indicator overlaps. Standardize all headers to use `PatientAppBar`.
++Audit and adjust mobile paddings to avoid bottom navigation/home indicator overlaps. Standardize visual hierarchy, spacing, sizing, and back-button placement across headers.
+ - **Affected Files:**
+   - `lib/features/ai/screens/find_provider_screen.dart`
+   - `lib/features/ai/screens/ai_provider_details_screen.dart`
+@@ -69,7 +69,16 @@
+   - `lib/features/patient/screens/booking_details_screen.dart`
+   - `lib/features/patient/screens/medical_records_screen.dart`
+   - `lib/features/notifications/notifications_screen.dart`
+-  - *Other main screens to ensure `SafeArea` is respected at the bottom and `PatientAppBar` is used.*
++  - *Other main screens to ensure `SafeArea` is respected and design language is consistent without blindly forcing identical headers.*
++
++---
++
++### 7. Notification Read-State Persistence
++Ensure notifications immediately mark as read, persist correctly, and update all relevant badges instantly.
++- **Affected Files:**
++  - `lib/shared/services/notification_center.dart`: Review `load()` and `markRead()` logic to ensure local read state is immediately applied and robustly persisted.
++  - `lib/features/patient/widgets/patient_navigation_shell.dart`: Add a notification badge (e.g., using `Badge` widget) that listens to `unreadCount` so the navigation updates immediately.
++  - `lib/features/patient/screens/patient_home_screen.dart`: Ensure the home screen badge perfectly syncs with `notificationCenter.unreadCount`.
+ 
+ ## Verification Plan
+ ### Manual Verification

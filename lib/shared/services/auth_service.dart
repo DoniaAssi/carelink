@@ -1,0 +1,356 @@
+import 'package:carelink/shared/services/api_service.dart';
+
+/// Thrown for expected auth/validation failures (show message to user).
+class AuthServiceException implements Exception {
+  AuthServiceException(this.message, {this.retryAfterSeconds});
+
+  final String message;
+  final int? retryAfterSeconds;
+
+  @override
+  String toString() => message;
+}
+
+/// Purposes accepted by CareLink verification APIs.
+abstract final class VerificationPurpose {
+  static const String signup = 'signup';
+  static const String passwordReset = 'password_reset';
+}
+
+class SendVerificationResult {
+  SendVerificationResult({
+    required this.userMessage,
+    this.devCode,
+    this.emailDeliveryFailed = false,
+  });
+
+  final String userMessage;
+
+  /// Only present when backend runs in non-production and opts in to dev exposure.
+  final String? devCode;
+  final bool emailDeliveryFailed;
+}
+
+/// High-level auth flows. Uses [ApiService] for HTTP.
+class AuthService {
+  AuthService([ApiService? api]) : _api = api ?? ApiService();
+
+  final ApiService _api;
+
+  static final RegExp emailFormat = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+
+  static bool isValidEmailFormat(String email) =>
+      emailFormat.hasMatch(email.trim());
+
+  static String normalizePhoneDigits(String input) =>
+      input.replaceAll(RegExp(r'\D'), '');
+
+  static bool isValidPhoneLength(String digitsOnly) {
+    final n = digitsOnly.length;
+    return n >= 8 && n <= 15;
+  }
+
+  Never _throwFromException(Object e) {
+    if (e is AuthServiceException) throw e;
+    final s = e.toString().replaceFirst('Exception: ', '');
+    throw AuthServiceException(s);
+  }
+
+  Future<SendVerificationResult> sendUnifiedVerificationCode({
+    required String email,
+    required String phoneDigits,
+    required String purpose,
+  }) async {
+    final trimmed = email.trim().toLowerCase();
+    if (!isValidEmailFormat(trimmed)) {
+      throw AuthServiceException('Invalid email address');
+    }
+    try {
+      final map = await _api.postJson('/auth/send-verification-code', {
+        'email': trimmed,
+        'phone': normalizePhoneDigits(phoneDigits),
+        'purpose': purpose,
+      });
+      final msg =
+          map['message']?.toString() ?? 'Verification code sent to your email';
+      final dev = map['devVerificationCode']?.toString();
+      final hasDeliveryNote = map['emailDeliveryNote'] != null;
+      return SendVerificationResult(
+        userMessage: msg,
+        devCode: (dev != null && dev.isNotEmpty) ? dev : null,
+        emailDeliveryFailed: hasDeliveryNote,
+      );
+    } catch (e) {
+      _throwFromException(e);
+    }
+  }
+
+  Future<({String emailVerificationToken, String phoneVerificationToken})>
+  verifyUnifiedCode({
+    required String email,
+    required String phoneDigits,
+    required String code,
+    required String purpose,
+  }) async {
+    final trimmed = email.trim().toLowerCase();
+    if (!isValidEmailFormat(trimmed)) {
+      throw AuthServiceException('Invalid email address');
+    }
+    final c = code.trim();
+    if (c.isEmpty) {
+      throw AuthServiceException('Enter the verification code');
+    }
+    try {
+      final map = await _api.postJson('/auth/verify-code', {
+        'email': trimmed,
+        'phone': normalizePhoneDigits(phoneDigits),
+        'code': c,
+        'purpose': purpose,
+      });
+      if (map['verified'] != true) {
+        throw AuthServiceException('Invalid verification code');
+      }
+      final et = map['emailVerificationToken']?.toString() ?? '';
+      final pt = map['phoneVerificationToken']?.toString() ?? '';
+      if (et.isEmpty || pt.isEmpty) {
+        throw AuthServiceException('Verification incomplete');
+      }
+      return (emailVerificationToken: et, phoneVerificationToken: pt);
+    } catch (e) {
+      final s = e.toString().replaceFirst('Exception: ', '');
+      if (s.toLowerCase().contains('invalid') ||
+          s.toLowerCase().contains('expired') ||
+          s.toLowerCase().contains('too many')) {
+        throw AuthServiceException(s);
+      }
+      _throwFromException(e);
+    }
+  }
+
+  Future<SendVerificationResult> sendEmailVerificationCode({
+    required String email,
+    required String purpose,
+  }) async {
+    final trimmed = email.trim().toLowerCase();
+    if (!isValidEmailFormat(trimmed)) {
+      throw AuthServiceException('Invalid email address');
+    }
+    try {
+      final map = await _api.sendEmailVerificationCode(
+        email: trimmed,
+        purpose: purpose,
+      );
+      final msg =
+          map['message']?.toString() ?? 'Verification code sent to your email';
+      final dev = map['devVerificationCode']?.toString();
+      return SendVerificationResult(
+        userMessage: msg,
+        devCode: (dev != null && dev.isNotEmpty) ? dev : null,
+      );
+    } catch (e) {
+      _throwFromException(e);
+    }
+  }
+
+  Future<SendVerificationResult> sendPhoneVerificationCode({
+    required String phoneDigits,
+    required String purpose,
+  }) async {
+    final d = normalizePhoneDigits(phoneDigits);
+    if (!isValidPhoneLength(d)) {
+      throw AuthServiceException('Enter a valid phone number (8–15 digits)');
+    }
+    try {
+      final map = await _api.sendPhoneVerificationCode(
+        phoneDigits: d,
+        purpose: purpose,
+      );
+      final msg =
+          map['message']?.toString() ?? 'Verification code sent to your phone';
+      final dev = map['devVerificationCode']?.toString();
+      return SendVerificationResult(
+        userMessage: msg,
+        devCode: (dev != null && dev.isNotEmpty) ? dev : null,
+      );
+    } catch (e) {
+      _throwFromException(e);
+    }
+  }
+
+  /// Signup → `emailVerificationToken`. Password reset → `resetToken` for [completePasswordReset].
+  Future<({String? emailVerificationToken, String? resetToken})>
+  verifyEmailCode({
+    required String email,
+    required String code,
+    required String purpose,
+  }) async {
+    final trimmed = email.trim().toLowerCase();
+    if (!isValidEmailFormat(trimmed)) {
+      throw AuthServiceException('Invalid email address');
+    }
+    final c = code.trim();
+    if (c.isEmpty) {
+      throw AuthServiceException('Enter the verification code');
+    }
+    try {
+      final map = await _api.verifyEmailCode(
+        email: trimmed,
+        code: c,
+        purpose: purpose,
+      );
+      if (map['verified'] != true) {
+        throw AuthServiceException('Invalid verification code');
+      }
+      if (purpose == VerificationPurpose.signup) {
+        final t = map['emailVerificationToken']?.toString() ?? '';
+        if (t.isEmpty) {
+          throw AuthServiceException('Email verification incomplete');
+        }
+        return (emailVerificationToken: t, resetToken: null);
+      }
+      final t = map['resetToken']?.toString() ?? '';
+      if (t.isEmpty) {
+        throw AuthServiceException('Could not continue password reset');
+      }
+      return (emailVerificationToken: null, resetToken: t);
+    } catch (e) {
+      final s = e.toString().replaceFirst('Exception: ', '');
+      if (s.toLowerCase().contains('invalid') ||
+          s.toLowerCase().contains('expired') ||
+          s.toLowerCase().contains('too many')) {
+        throw AuthServiceException(s);
+      }
+      _throwFromException(e);
+    }
+  }
+
+  Future<({String? phoneVerificationToken, String? resetToken})>
+  verifyPhoneCode({
+    required String phoneDigits,
+    required String code,
+    required String purpose,
+  }) async {
+    final d = normalizePhoneDigits(phoneDigits);
+    if (!isValidPhoneLength(d)) {
+      throw AuthServiceException('Invalid phone number');
+    }
+    final c = code.trim();
+    if (c.isEmpty) {
+      throw AuthServiceException('Enter the verification code');
+    }
+    try {
+      final map = await _api.verifyPhoneVerificationCode(
+        phoneDigits: d,
+        code: c,
+        purpose: purpose,
+      );
+      if (map['verified'] != true) {
+        throw AuthServiceException('Invalid verification code');
+      }
+      if (purpose == VerificationPurpose.signup) {
+        final t = map['phoneVerificationToken']?.toString() ?? '';
+        if (t.isEmpty) {
+          throw AuthServiceException('Phone verification incomplete');
+        }
+        return (phoneVerificationToken: t, resetToken: null);
+      }
+      final t = map['resetToken']?.toString() ?? '';
+      if (t.isEmpty) {
+        throw AuthServiceException('Could not continue password reset');
+      }
+      return (phoneVerificationToken: null, resetToken: t);
+    } catch (e) {
+      final s = e.toString().replaceFirst('Exception: ', '');
+      if (s.toLowerCase().contains('invalid') ||
+          s.toLowerCase().contains('expired') ||
+          s.toLowerCase().contains('too many')) {
+        throw AuthServiceException(s);
+      }
+      _throwFromException(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> completePasswordReset({
+    required String resetToken,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    if (newPassword != confirmPassword) {
+      throw AuthServiceException('Passwords do not match');
+    }
+    return _api.resetPassword(token: resetToken, newPassword: newPassword);
+  }
+
+  Future<SendVerificationResult> sendForgotPasswordCode({
+    required String email,
+  }) async {
+    final trimmed = email.trim().toLowerCase();
+    if (!isValidEmailFormat(trimmed)) {
+      throw AuthServiceException('Invalid email address');
+    }
+    try {
+      final map = await _api.sendForgotPasswordCode(email: trimmed);
+      return SendVerificationResult(
+        userMessage:
+            map['message']?.toString() ??
+            'If this email is registered, a verification code was sent.',
+        devCode: map['devVerificationCode']?.toString(),
+      );
+    } catch (e) {
+      _throwFromException(e);
+    }
+  }
+
+  Future<String> verifyForgotPasswordCode({
+    required String email,
+    required String code,
+  }) async {
+    final trimmed = email.trim().toLowerCase();
+    if (!isValidEmailFormat(trimmed)) {
+      throw AuthServiceException('Invalid email address');
+    }
+    if (!RegExp(r'^\d{6}$').hasMatch(code.trim())) {
+      throw AuthServiceException('Enter the 6-digit verification code');
+    }
+    try {
+      final map = await _api.verifyForgotPasswordCode(
+        email: trimmed,
+        code: code.trim(),
+      );
+      final token = map['resetToken']?.toString() ?? '';
+      if (map['verified'] != true || token.isEmpty) {
+        throw AuthServiceException('Invalid or expired code');
+      }
+      return token;
+    } catch (e) {
+      _throwFromException(e);
+    }
+  }
+
+  Future<void> resetForgottenPassword({
+    required String resetToken,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    if (newPassword != confirmPassword) {
+      throw AuthServiceException('Passwords do not match');
+    }
+    try {
+      await _api.resetForgottenPassword(
+        resetToken: resetToken,
+        newPassword: newPassword,
+      );
+    } catch (e) {
+      _throwFromException(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> login(String email, String password) async {
+    return _api.login(email.trim().toLowerCase(), password);
+  }
+
+  /// Shows dev code in debug console only — never user-facing for production builds.
+  static void logDevCodeIfAny(String? devCode) {
+    return;
+  }
+}

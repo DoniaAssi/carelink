@@ -1,0 +1,91 @@
+--- a/lib/features/patient/screens/patient_home_screen.dart
++++ b/lib/features/patient/screens/patient_home_screen.dart
+@@ -515,2814 +515,1905 @@
+             final aScore = aRawScore is num ? aRawScore.toDouble() : 0.0;
+             return bScore.compareTo(aScore);
+           }))
+-        : ProviderSmartMatch.sortCopy(
+-            providers,
+-            selectedSpecialty: selectedSpecialty,
+-            locationService: _locationService,
+-            patientLat: _patientLat,
+-            patientLng: _patientLng,
+-            careSummary: _recommendationSummary,
+-          );
+-
+-    return AnimatedBuilder(
+-      animation: Listenable.merge([localeController, themeController]),
+-      builder: (context, _) {
+-        return Directionality(
+-          textDirection: localeController.isArabic
+-              ? TextDirection.rtl
+-              : TextDirection.ltr,
+-          child: Scaffold(
+-            backgroundColor: _p.pageBg,
+-            body: SafeArea(
+-              child: RefreshIndicator(
+-                color: AppColors.primary,
+-                onRefresh: () async {
+-                  await _fetchProviders();
+-                  await _loadPatientProfile();
+-                  await _fetchUpcomingAppointment();
+-                  await _loadPatientLocation();
+-                  await _loadFavorites();
+-                  await _loadMedicalSummary();
+-                },
+-                child: SingleChildScrollView(
+-                  physics: const AlwaysScrollableScrollPhysics(
+-                    parent: BouncingScrollPhysics(),
+-                  ),
+-                  padding: const EdgeInsets.fromLTRB(0, 16, 0, 90),
+-                  child: Column(
+-                    crossAxisAlignment: CrossAxisAlignment.stretch
+<truncated 45284 bytes>
+              parent: BouncingScrollPhysics(),
++                  ),
++                  padding: const EdgeInsets.fromLTRB(0, 16, 0, 90),
++                  child: Column(
++                    crossAxisAlignment: CrossAxisAlignment.stretch,
++                    children: _composeSections(recommended),
++                  ),
++                ),
++              ),
++            ),
++          ),
++        );
++      },
++    );
++  }
++
++  /// Section registry. Add a future section by inserting one entry here —
++  /// no layout surgery, uniform spacing, empty sections auto-collapse.
++  /// Section registry — new priority order per the approved redesign.
++  /// To add a future section: insert one line here, no layout surgery needed.
++  List<Widget> _composeSections(List<ProviderModel> recommended) {
++    Widget padded(Widget child) => Padding(
++      padding: const EdgeInsets.symmetric(horizontal: 16),
++      child: child,
++    );
++
++    final hasProvider = recommended.isNotEmpty;
++    final sections = <Widget?>[
++      // 1. Compact header — identity first, no stat strip
++      padded(_buildCompactHeader()),
++      // 2. AI recommendation — highest-value feature near top
++      if (hasProvider) padded(_buildAiProviderCard(recommended)),
++      // 3. Next appointment
++      _buildNextAppointmentCard(),
++      // 4. Quick actions (Book / Find / Records / AI)
++      padded(_buildQuickActions()),
++      // 5. Health insights — 2-3 lines, from ai tags
++      padded(_buildHealthInsightsSection()),
++      // 6. Latest medical record — 1 card only
++      if (_recentRecords.isNotEmpty) padded(_buildLatestRecordCard()),
++      // 7. Recommended specialties — compact chip row
++      if (_specialtyFromTags().isNotEmpty) padded(_buildSpecialtyChipsRow()),
++      // 8. Favorites
++      if (_myFavorites.isNotEmpty) _buildFavoritesSection(),
++      // 9. Notifications 
+<truncated 127262 bytes>
+
+NOTE: The output was truncated because it was too long. Use a more targeted query or a smaller range to get the information you need.

@@ -1,0 +1,355 @@
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../../services/doctor_service.dart';
+import '../../../core/app_colors.dart';
+
+class MedicalRecordScreen extends StatefulWidget {
+  final String patientId;
+
+  const MedicalRecordScreen({super.key, required this.patientId});
+
+  @override
+  State<MedicalRecordScreen> createState() => _MedicalRecordScreenState();
+}
+
+class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
+  final _doctorService = DoctorService();
+
+  bool _isLoading = true;
+  Map<String, dynamic> _record = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMedicalRecord();
+  }
+
+  Future<void> _loadMedicalRecord() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final doctorId = prefs.getString('doctor_userId') ?? '';
+      final record = await _doctorService.getPatientMedicalRecord(
+        widget.patientId,
+        doctorId: doctorId,
+      );
+      setState(() {
+        _record = record;
+        _isLoading = false;
+      });
+    } catch (e) {
+      final message = e.toString().toLowerCase();
+      final isMissingRecord = message.contains('medical record not found');
+      setState(() {
+        _record = {};
+        _isLoading = false;
+      });
+      if (isMissingRecord) return;
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading medical record: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Medical Record'),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _record.isEmpty
+          ? _buildEmptyState()
+          : RefreshIndicator(
+              onRefresh: _loadMedicalRecord,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Basic Info Card
+                    _buildSectionCard('Basic Information', [
+                      _buildInfoRow(
+                        'Date of Birth',
+                        _record['dateOfBirth'] ?? 'Not set',
+                      ),
+                      _buildInfoRow('Gender', _record['gender'] ?? 'Not set'),
+                      _buildInfoRow(
+                        'Blood Type',
+                        _record['bloodType'] ?? 'Not set',
+                      ),
+                    ]),
+                    const SizedBox(height: 16),
+                    // Allergies Card
+                    _buildSectionCard(
+                      'Allergies',
+                      _listOf('allergies').isNotEmpty
+                          ? _listOf(
+                              'allergies',
+                            ).map((a) => _buildAllergyRow(a)).toList()
+                          : [
+                              const Text(
+                                'No allergies recorded',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Diseases Card
+                    _buildSectionCard(
+                      'Medical Conditions',
+                      _listOf('diseases').isNotEmpty
+                          ? _listOf(
+                              'diseases',
+                            ).map((d) => _buildDiseaseRow(d)).toList()
+                          : [
+                              const Text(
+                                'No conditions recorded',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Current Medications
+                    _buildSectionCard('Current Medications', [
+                      Text(
+                        _record['currentMedications'] ??
+                            'No medications recorded',
+                        // style: const TextStyle(color: Colors.red),
+                      ),
+                    ]),
+                    const SizedBox(height: 16),
+                    // Past Surgeries
+                    _buildSectionCard('Past Surgeries', [
+                      Text(
+                        _record['pastSurgeries'] ?? 'No surgeries recorded',
+                        // style: const TextStyle(color: Colors.red),
+                      ),
+                    ]),
+                    const SizedBox(height: 16),
+                    // Clinical Notes
+                    if (_listOf('clinicalNotes').isNotEmpty) ...[
+                      _buildSectionCard(
+                        'Clinical Notes',
+                        _listOf(
+                          'clinicalNotes',
+                        ).map((n) => _buildNoteRow(n)).toList(),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    // Lab Results
+                    if (_listOf('labResults').isNotEmpty) ...[
+                      _buildSectionCard(
+                        'Lab Results',
+                        _listOf(
+                          'labResults',
+                        ).map((l) => _buildLabResultRow(l)).toList(),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.folder_open, size: 80, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          Text(
+            'No medical record found',
+            style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionCard(String title, List<Widget> children) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const Divider(),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: AppColors.textSecondary)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<dynamic> _listOf(String key) {
+    final value = _record[key];
+    return value is List ? value : const [];
+  }
+
+  Widget _buildAllergyRow(dynamic allergy) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  allergy['allergyName'] ?? 'Unavailable',
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+                Text(
+                  '${allergy['allergyCategory'] ?? ''} - ${allergy['severity'] ?? 'Unavailable'}',
+                  // style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiseaseRow(dynamic disease) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.medical_services,
+            color: AppColors.primary,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  disease['diseaseName'] ?? 'Unavailable',
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+                Text(
+                  '${disease['icdCode'] ?? ''} - ${disease['diseaseStatus'] ?? ''}',
+                  // style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoteRow(dynamic note) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                note['authorName'] ?? 'Unavailable',
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+              Text(
+                _formatDate(note['createdAt']),
+                // style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(note['noteText'] ?? ''),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLabResultRow(dynamic result) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            result['testName'] ?? 'Unavailable',
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Text(
+                'Result: ${result['resultValue'] ?? 'N/A'}',
+                // style: const TextStyle(color: AppColors.textSecondary),
+              ),
+              if (result['unit'] != null) ...[
+                const Text(' '),
+                Text(
+                  result['unit'],
+                  // style: const TextStyle(color: AppColors.textSecondary),
+                ),
+              ],
+            ],
+          ),
+          if (result['referenceRange'] != null)
+            Text(
+              'Reference: ${result['referenceRange']}',
+              // style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(String dateStr) {
+    try {
+      final date = DateTime.parse(dateStr);
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return dateStr;
+    }
+  }
+}

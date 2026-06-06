@@ -1,0 +1,76 @@
+--- a/lib/features/patient/screens/patient_home_screen.dart
++++ b/lib/features/patient/screens/patient_home_screen.dart
+@@ -17,1060 +17,41 @@
+     show profileAvatarOrPlaceholder, profileImageUrlFromMap;
+ import 'package:carelink/core/theme_controller.dart';
+ import 'package:carelink/shared/models/appointment_model.dart';
+-import 'package:carelink/shared/models/booking_request_model.dart';
+-import 'package:carelink/shared/models/provider_model.dart';
+-import 'package:carelink/shared/services/api_service.dart';
+-import 'package:carelink/shared/services/notification_center.dart';
+-import 'package:carelink/features/patient/screens/patient_favorites_screen.dart';
+-import 'package:carelink/shared/services/patient_favorites_service.dart';
+-import 'package:carelink/shared/services/location_service.dart';
+-import 'package:carelink/features/ai/care_intent_parser.dart';
+-
+-import 'package:carelink/shared/services/medical_record_service.dart';
+-import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
+-import 'package:carelink/features/patient/services/patient_care_summary.dart';
+-import 'package:carelink/features/ai/provider_smart_match.dart';
++// ignore_for_file: unused_element, unused_field, unused_element_parameter
++
++import 'dart:async';
++import 'dart:convert';
++import 'dart:math' as math;
++
++import 'package:flutter/material.dart';
++import 'package:http/http.dart' as http;
++import 'package:geocoding/geocoding.dart';
++import 'package:speech_to_text/speech_to_text.dart' as stt;
++
++import 'package:carelink/core/app_colors.dart';
++import 'package:carelink/core/app_localizations.dart';
++import 'package:carelink/core/locale_controller.dart';
++import 'package:carelink/core/patient_home_palette.dart';
++import 'package:carelink/core/profile_a
+<truncated 35227 bytes>
+': 'أخصائي صحة القلب',
+-      'endocrinology': 'أخصائي السكري والغدد',
+-    };
+-    if (_ar && ar.containsKey(key)) return ar[key]!;
+-    if (map.containsKey(key)) return map[key]!;
+-    // Already-friendly label (contains spaces / not a known tag) → use as-is.
+     if (tag.contains(' ')) return tag;
+     return key
+         .split('_')
+@@ -1139,7 +1139,7 @@
+     final seen = <String>{};
+     final out = <String>[];
+     for (final t in tags) {
+-      final line = _friendlyReason(t);
++      final line = AiTagTranslator.friendlyReason(t);
+       if (seen.add(line)) out.add(line);
+       if (out.length == 3) break;
+     }
+@@ -2322,7 +2322,7 @@
+     final ovPct = _backendMatchPercent(rec);
+     final reasons = _backendMedicalReasons(
+       rec,
+-    ).map(_friendlyReason).toSet().take(2).toList();
++    ).map(AiTagTranslator.friendlyReason).toSet().take(2).toList();
+     final hasMed = medPct != null && medPct > 0;
+ 
+     return Container(
+@@ -3467,10 +3467,10 @@
+     final medicalMatchPercent = _backendMedicalMatchPercent(
+       backendRecommendation,
+     );
+-    // Always route through _friendlyReason so no raw snake_case tag is shown.
++    // Always route through AiTagTranslator.friendlyReason so no raw snake_case tag is shown.
+     final medicalReasons = _backendMedicalReasons(
+       backendRecommendation,
+-    ).map(_friendlyReason).toSet().take(3).toList();
++    ).map(AiTagTranslator.friendlyReason).toSet().take(3).toList();
+     final medicalTags = _backendMedicalTags(backendRecommendation);
+     final hasMedicalContext =
+         medicalReasons.isNotEmpty || medicalTags.isNotEmpty;
