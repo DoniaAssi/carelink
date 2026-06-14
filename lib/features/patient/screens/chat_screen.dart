@@ -26,11 +26,17 @@ class ChatScreen extends StatefulWidget {
     required this.name,
     required this.userId,
     required this.doctorId,
+    this.currentUserId,
+    this.isDoctorView = false,
+    this.peerImageUrl,
   });
 
   final String name;
   final String userId;
   final String doctorId;
+  final String? currentUserId;
+  final bool isDoctorView;
+  final String? peerImageUrl;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
