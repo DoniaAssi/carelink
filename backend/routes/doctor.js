@@ -925,7 +925,8 @@ router.get('/patients/:patientId/medical-record', async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.json({});
+      const visitReports = await getDoctorVisibleVisitReports(patientId, doctorId);
+      return res.json(visitReports.length > 0 ? { visitReports } : {});
     }
 
     const record = rows[0];
@@ -964,6 +965,8 @@ router.get('/patients/:patientId/medical-record', async (req, res) => {
       [record.recordId]
     );
 
+    const visitReports = await getDoctorVisibleVisitReports(patientId, doctorId);
+
     try {
       await ensureMedicalAccessLogTable();
       await db.execute(
@@ -979,12 +982,58 @@ router.get('/patients/:patientId/medical-record', async (req, res) => {
       allergies: allergyRows,
       diseases: diseaseRows,
       labResults: labRows,
-      clinicalNotes: noteRows
+      clinicalNotes: noteRows,
+      visitReports
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+async function getDoctorVisibleVisitReports(patientId, doctorId) {
+  let visitReports = [];
+
+  try {
+    if (await medicalRecordService.tableExists('visit_reports')) {
+      visitReports = await medicalRecordService.listVisitReportsForPatient(patientId);
+      visitReports = visitReports.filter(
+        (report) => (report.provider_id || '').toString() === doctorId
+      );
+    }
+  } catch (_) {}
+
+  if (visitReports.length > 0 || !(await hasTable('visitreport'))) {
+    return visitReports;
+  }
+
+  const [legacyRows] = await db.query(
+    `SELECT
+       r.reportId AS id,
+       sr.patientUserId AS patient_id,
+       sr.providerUserId AS provider_id,
+       sr.requestId AS appointment_id,
+       'visit_report' AS record_type,
+       COALESCE(NULLIF(TRIM(r.diagnosis), ''), 'Visit report') AS title,
+       r.diagnosis,
+       r.notes,
+       NULL AS medications,
+       NULL AS treatment_plan,
+       NULL AS recommendations,
+       COALESCE(sr.completedAt, sr.scheduledAt) AS visit_date,
+       COALESCE(sr.completedAt, sr.scheduledAt) AS created_at,
+       u.fullName AS providerName
+     FROM visitreport r
+     JOIN visit v ON BINARY v.visitId = BINARY r.visitId
+     JOIN servicerequest sr ON BINARY sr.requestId = BINARY v.requestId
+     LEFT JOIN user u ON BINARY u.userId = BINARY sr.providerUserId
+     WHERE BINARY sr.patientUserId = BINARY ?
+       AND BINARY sr.providerUserId = BINARY ?
+     ORDER BY COALESCE(sr.completedAt, sr.scheduledAt) DESC`,
+    [patientId, doctorId]
+  );
+
+  return legacyRows;
+}
 
 // ============================================
 // SUBMIT MEDICAL REPORT
@@ -1420,6 +1469,12 @@ router.get('/dashboard/:doctorId', async (req, res) => {
       [doctorId]
     );
 
+    // Cancelled requests count
+    const [cancelledResult] = await db.query(
+      "SELECT COUNT(*) as count FROM servicerequest WHERE providerUserId = ? AND status = 'cancelled'",
+      [doctorId]
+    );
+
     // Total earnings
     const [earningsResult] = await db.query(
       "SELECT SUM(amount) as total FROM payment WHERE providerUserId = ? AND paymentStatus = 'paid'",
@@ -1450,14 +1505,25 @@ router.get('/dashboard/:doctorId', async (req, res) => {
       [doctorId]
     );
 
+    const pendingRequests = pendingResult[0].count || 0;
+    const confirmedRequests = confirmedResult[0].count || 0;
+    const completedRequests = completedResult[0].count || 0;
+    const cancelledRequests = cancelledResult[0].count || 0;
+    const totalRequests =
+      pendingRequests + confirmedRequests + completedRequests + cancelledRequests;
+    const respondedRequests = confirmedRequests + completedRequests + cancelledRequests;
+    const responseRate =
+      totalRequests > 0 ? Math.round((respondedRequests / totalRequests) * 100) : 0;
+
     res.json({
-      pendingRequests: pendingResult[0].count || 0,
-      confirmedRequests: confirmedResult[0].count || 0,
-      completedRequests: completedResult[0].count || 0,
+      pendingRequests,
+      confirmedRequests,
+      completedRequests,
       totalEarnings: earningsResult[0].total || 0,
       averageRating,
       todayAppointments: todayResult[0].count || 0,
-      totalPatients: patientsResult[0].count || 0
+      totalPatients: patientsResult[0].count || 0,
+      responseRate
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

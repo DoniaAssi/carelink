@@ -312,7 +312,7 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
     }
 
     try {
-      final picked = await FilePicker.platform.pickFiles(
+      final picked = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'txt'],
         withData: true,

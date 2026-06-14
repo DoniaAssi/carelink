@@ -75,6 +75,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool get _isArabic => context.l10n.isArabic;
   String _text(String english, String arabic) => _isArabic ? arabic : english;
+  String get _currentUserId {
+    final clean = widget.currentUserId?.trim() ?? '';
+    return clean.isEmpty ? widget.userId : clean;
+  }
+
+  String get _otherUserId =>
+      widget.isDoctorView ? widget.userId : widget.doctorId;
 
   @override
   void initState() {
@@ -106,8 +113,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_typingSent) {
       unawaited(
         _api.setChatTyping(
-          senderId: widget.userId,
-          receiverId: widget.doctorId,
+          senderId: _currentUserId,
+          receiverId: _otherUserId,
           isTyping: false,
         ),
       );
@@ -134,8 +141,8 @@ class _ChatScreenState extends State<ChatScreen> {
       _typingSent = true;
       unawaited(
         _api.setChatTyping(
-          senderId: widget.userId,
-          receiverId: widget.doctorId,
+          senderId: _currentUserId,
+          receiverId: _otherUserId,
           isTyping: true,
         ),
       );
@@ -146,8 +153,8 @@ class _ChatScreenState extends State<ChatScreen> {
       _typingSent = false;
       unawaited(
         _api.setChatTyping(
-          senderId: widget.userId,
-          receiverId: widget.doctorId,
+          senderId: _currentUserId,
+          receiverId: _otherUserId,
           isTyping: false,
         ),
       );
@@ -155,6 +162,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _loadProvider() async {
+    if (widget.isDoctorView) return;
     try {
       final data = await _api.getProviderById(widget.doctorId);
       if (mounted) setState(() => _provider = ProviderModel.fromJson(data));
@@ -174,7 +182,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final rows = await _api.getChatMessages(
         widget.userId,
         widget.doctorId,
-        viewerId: widget.userId,
+        viewerId: _currentUserId,
       );
       final loaded =
           rows
@@ -225,21 +233,21 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _markRead() async {
     try {
       await _api.markChatRead(
-        readerId: widget.userId,
-        otherUserId: widget.doctorId,
+        readerId: _currentUserId,
+        otherUserId: _otherUserId,
       );
     } catch (_) {}
   }
 
   Future<void> _sendHeartbeat() async {
     try {
-      await _api.updateChatPresence(widget.userId);
+      await _api.updateChatPresence(_currentUserId);
     } catch (_) {}
   }
 
   Future<void> _loadPresence() async {
     try {
-      final data = await _api.getChatPresence(widget.doctorId);
+      final data = await _api.getChatPresence(_otherUserId);
       if (!mounted) return;
       setState(() {
         _providerIsOnline = data['isOnline'] == true;
@@ -253,8 +261,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _loadTyping() async {
     try {
       final typing = await _api.getChatTyping(
-        senderId: widget.doctorId,
-        receiverId: widget.userId,
+        senderId: _otherUserId,
+        receiverId: _currentUserId,
       );
       if (mounted && typing != _providerIsTyping) {
         setState(() => _providerIsTyping = typing);
@@ -269,8 +277,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final localId = 'local-${DateTime.now().microsecondsSinceEpoch}';
     final optimistic = ChatMessage(
       messageId: localId,
-      senderId: widget.userId,
-      receiverId: widget.doctorId,
+      senderId: _currentUserId,
+      receiverId: _otherUserId,
       type: ChatMessageType.text,
       text: text,
       createdAt: DateTime.now(),
@@ -284,8 +292,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final response = await _api.sendChatMessage({
-        'senderId': widget.userId,
-        'receiverId': widget.doctorId,
+        'senderId': _currentUserId,
+        'receiverId': _otherUserId,
         'message': text,
         'messageType': 'text',
       });
@@ -326,7 +334,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _pickAttachment() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
       withData: kIsWeb,
@@ -349,8 +357,8 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _isUploading = true);
     try {
       await _api.sendChatAttachment(
-        senderId: widget.userId,
-        receiverId: widget.doctorId,
+        senderId: _currentUserId,
+        receiverId: _otherUserId,
         fileName: fileName,
         filePath: filePath,
         fileBytes: fileBytes,
@@ -368,6 +376,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _shareMedicalRecord() async {
+    if (widget.isDoctorView) return;
     List<Map<String, dynamic>> records;
     try {
       records = await _recordService.listForPatient(
@@ -458,8 +467,8 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _isUploading = true);
     try {
       await _api.sendChatMessage({
-        'senderId': widget.userId,
-        'receiverId': widget.doctorId,
+        'senderId': _currentUserId,
+        'receiverId': _otherUserId,
         'message': _text(
           'Shared from CareLink Records',
           'مشاركة من سجلات CareLink',
@@ -687,6 +696,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   String? _providerImageUrl() => _absoluteUrl(_provider?.profileImageUrl);
+  String? _peerImageUrl() => widget.isDoctorView
+      ? _absoluteUrl(widget.peerImageUrl)
+      : _providerImageUrl();
 
   @override
   Widget build(BuildContext context) {
@@ -698,7 +710,7 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(child: _buildConversation(palette)),
-          _buildQuickActions(palette),
+          if (!widget.isDoctorView) _buildQuickActions(palette),
           _buildComposer(palette),
         ],
       ),
@@ -706,10 +718,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   PreferredSizeWidget _buildHeader(CarelinkPalette palette) {
-    final name = _provider?.fullName.trim().isNotEmpty == true
+    final name =
+        !widget.isDoctorView && _provider?.fullName.trim().isNotEmpty == true
         ? _provider!.fullName
         : widget.name;
-    final imageUrl = _providerImageUrl();
+    final imageUrl = _peerImageUrl();
     final phone = _provider?.phone.trim() ?? '';
     return AppBar(
       toolbarHeight: 68,
@@ -732,8 +745,10 @@ class _ChatScreenState extends State<ChatScreen> {
             backgroundColor: AppColors.primary.withValues(alpha: 0.1),
             foregroundImage: imageUrl == null ? null : NetworkImage(imageUrl),
             child: imageUrl == null
-                ? const Icon(
-                    Icons.medical_services_outlined,
+                ? Icon(
+                    widget.isDoctorView
+                        ? Icons.person_outline_rounded
+                        : Icons.medical_services_outlined,
                     color: AppColors.primary,
                     size: 21,
                   )
@@ -795,7 +810,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
       actions: [
-        if (phone.isNotEmpty)
+        if (!widget.isDoctorView && phone.isNotEmpty)
           Padding(
             padding: const EdgeInsetsDirectional.only(end: 8),
             child: IconButton(
@@ -884,7 +899,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
     }
-    final mine = message.senderId == widget.userId;
+    final mine = message.senderId == _currentUserId;
     return Align(
       alignment: mine
           ? AlignmentDirectional.centerEnd

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/app_colors.dart';
+import '../../../core/app_localizations.dart';
+import '../../../core/locale_controller.dart';
 import '../../../services/doctor_service.dart';
 import 'medical_record_screen.dart';
 import 'requests_list_screen.dart';
@@ -49,9 +51,9 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading patients: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading patients: $e')));
       }
     }
   }
@@ -64,47 +66,52 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
       final name = (patient['patientName'] ?? '').toString().toLowerCase();
       final email = (patient['patientEmail'] ?? '').toString().toLowerCase();
       final phone = (patient['patientPhone'] ?? '').toString().toLowerCase();
-      return name.contains(term) || email.contains(term) || phone.contains(term);
+      return name.contains(term) ||
+          email.contains(term) ||
+          phone.contains(term);
     }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Patients'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search patients',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _query.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _query = '');
-                        },
-                      ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+    return ListenableBuilder(
+      listenable: localeController,
+      builder: (context, _) {
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(context.dtr('doctor.nav.patients')),
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
+          body: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: context.dtr('doctor.patients.search'),
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onChanged: (value) => setState(() => _query = value),
                 ),
               ),
-              onChanged: (value) => setState(() => _query = value),
-            ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _filteredPatients.isEmpty
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _filteredPatients.isEmpty
                     ? _buildEmptyState()
                     : RefreshIndicator(
                         onRefresh: _loadPatients,
@@ -116,9 +123,11 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
                           },
                         ),
                       ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -130,7 +139,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
           Icon(Icons.people_outline, size: 80, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
-            'No patients found',
+            context.dtr('doctor.patients.empty'),
             style: TextStyle(fontSize: 18, color: Colors.grey[600]),
           ),
         ],

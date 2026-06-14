@@ -4,6 +4,7 @@ import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/core/theme_controller.dart';
+import 'package:carelink/features/doctors/doctor/doctor_booking_request_details_screen.dart';
 import 'package:carelink/features/patient/screens/booking_details_screen.dart';
 import 'package:carelink/features/patient/screens/medical_record_details_screen.dart';
 import 'package:carelink/features/patient/screens/patient_payment_history_screen.dart';
@@ -47,7 +48,11 @@ class NotificationCardData {
       read: center.isRead(json),
       at: rawDate == null ? null : DateTime.tryParse(rawDate.toString()),
       relatedId:
-          (json['relatedRequestId'] ?? json['relatedId'] ?? json['requestId'])
+          (json['relatedRequestId'] ??
+                  json['relatedId'] ??
+                  json['requestId'] ??
+                  json['appointmentId'] ??
+                  json['serviceRequestId'])
               ?.toString(),
     );
   }
@@ -163,16 +168,20 @@ NotificationCategory _categoryFromType(String raw) {
 }
 
 class NotificationsScreen extends StatefulWidget {
-  const NotificationsScreen({super.key, this.userId});
+  const NotificationsScreen({super.key, this.userId, this.userRole});
 
   final String? userId;
+  final String? userRole;
 
   @override
   State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  bool get _isArabic => localeController.isArabic;
+  bool get _isDoctor =>
+      (widget.userRole ?? '').trim().toLowerCase() == 'doctor';
+  bool get _isArabic =>
+      _isDoctor ? localeController.isDoctorArabic : localeController.isArabic;
   String _text(String english, String arabic) => _isArabic ? arabic : english;
 
   @override
@@ -186,9 +195,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (!mounted) return;
 
     final userId = widget.userId ?? '';
+    final role = (widget.userRole ?? '').trim().toLowerCase();
     switch (notification.category) {
       case NotificationCategory.appointment:
         final relatedId = notification.relatedId;
+        if (role == 'doctor') {
+          if (relatedId != null && relatedId.isNotEmpty) {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    DoctorBookingRequestDetailsScreen(requestId: relatedId),
+              ),
+            );
+          }
+          return;
+        }
         await Navigator.push(
           context,
           MaterialPageRoute(

@@ -18,6 +18,11 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
   bool _isLoading = true;
   Map<String, dynamic> _record = {};
 
+  bool get _hasRecordData =>
+      _record.isNotEmpty &&
+      (_record.keys.any((key) => key != 'visitReports') ||
+          _listOf('visitReports').isNotEmpty);
+
   @override
   void initState() {
     super.initState();
@@ -65,7 +70,7 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _record.isEmpty
+          : !_hasRecordData
           ? _buildEmptyState()
           : RefreshIndicator(
               onRefresh: _loadMedicalRecord,
@@ -75,69 +80,78 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     // Basic Info Card
-                    _buildSectionCard('Basic Information', [
-                      _buildInfoRow(
-                        'Date of Birth',
-                        _record['dateOfBirth'] ?? 'Not set',
-                      ),
-                      _buildInfoRow('Gender', _record['gender'] ?? 'Not set'),
-                      _buildInfoRow(
-                        'Blood Type',
-                        _record['bloodType'] ?? 'Not set',
-                      ),
-                    ]),
-                    const SizedBox(height: 16),
-                    // Allergies Card
-                    _buildSectionCard(
-                      'Allergies',
-                      _listOf('allergies').isNotEmpty
-                          ? _listOf(
-                              'allergies',
-                            ).map((a) => _buildAllergyRow(a)).toList()
-                          : [
-                              const Text(
-                                'No allergies recorded',
-                                style: TextStyle(
-                                  color: AppColors.textSecondary,
+                    if (_record.keys.any((key) => key != 'visitReports')) ...[
+                      _buildSectionCard('Basic Information', [
+                        _buildInfoRow(
+                          'Date of Birth',
+                          _record['dateOfBirth'] ?? 'Not set',
+                        ),
+                        _buildInfoRow('Gender', _record['gender'] ?? 'Not set'),
+                        _buildInfoRow(
+                          'Blood Type',
+                          _record['bloodType'] ?? 'Not set',
+                        ),
+                      ]),
+                      const SizedBox(height: 16),
+                      // Allergies Card
+                      _buildSectionCard(
+                        'Allergies',
+                        _listOf('allergies').isNotEmpty
+                            ? _listOf(
+                                'allergies',
+                              ).map((a) => _buildAllergyRow(a)).toList()
+                            : [
+                                const Text(
+                                  'No allergies recorded',
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                  ),
                                 ),
-                              ),
-                            ],
-                    ),
-                    const SizedBox(height: 16),
-                    // Diseases Card
-                    _buildSectionCard(
-                      'Medical Conditions',
-                      _listOf('diseases').isNotEmpty
-                          ? _listOf(
-                              'diseases',
-                            ).map((d) => _buildDiseaseRow(d)).toList()
-                          : [
-                              const Text(
-                                'No conditions recorded',
-                                style: TextStyle(
-                                  color: AppColors.textSecondary,
+                              ],
+                      ),
+                      const SizedBox(height: 16),
+                      // Diseases Card
+                      _buildSectionCard(
+                        'Medical Conditions',
+                        _listOf('diseases').isNotEmpty
+                            ? _listOf(
+                                'diseases',
+                              ).map((d) => _buildDiseaseRow(d)).toList()
+                            : [
+                                const Text(
+                                  'No conditions recorded',
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                  ),
                                 ),
-                              ),
-                            ],
-                    ),
-                    const SizedBox(height: 16),
-                    // Current Medications
-                    _buildSectionCard('Current Medications', [
-                      Text(
-                        _record['currentMedications'] ??
-                            'No medications recorded',
-                        // style: const TextStyle(color: Colors.red),
+                              ],
                       ),
-                    ]),
-                    const SizedBox(height: 16),
-                    // Past Surgeries
-                    _buildSectionCard('Past Surgeries', [
-                      Text(
-                        _record['pastSurgeries'] ?? 'No surgeries recorded',
-                        // style: const TextStyle(color: Colors.red),
+                      const SizedBox(height: 16),
+                      // Current Medications
+                      _buildSectionCard('Current Medications', [
+                        Text(
+                          _record['currentMedications'] ??
+                              'No medications recorded',
+                        ),
+                      ]),
+                      const SizedBox(height: 16),
+                      // Past Surgeries
+                      _buildSectionCard('Past Surgeries', [
+                        Text(
+                          _record['pastSurgeries'] ?? 'No surgeries recorded',
+                        ),
+                      ]),
+                      const SizedBox(height: 16),
+                    ],
+                    if (_listOf('visitReports').isNotEmpty) ...[
+                      _buildSectionCard(
+                        'Medical Reports',
+                        _listOf(
+                          'visitReports',
+                        ).map((r) => _buildVisitReportRow(r)).toList(),
                       ),
-                    ]),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 16),
+                    ],
                     // Clinical Notes
                     if (_listOf('clinicalNotes').isNotEmpty) ...[
                       _buildSectionCard(
@@ -342,6 +356,89 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildVisitReportRow(dynamic report) {
+    final item = report is Map ? report : <String, dynamic>{};
+    final title = (item['title'] ?? item['diagnosis'] ?? 'Visit report')
+        .toString();
+    final diagnosis = (item['diagnosis'] ?? '').toString();
+    final notes = (item['notes'] ?? item['treatment_plan'] ?? '').toString();
+    final medications =
+        (item['medications'] ?? item['medications_prescribed'] ?? '')
+            .toString();
+    final provider = (item['providerName'] ?? '').toString();
+    final date = _formatAnyDate(item['visit_date'] ?? item['created_at']);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.description, color: AppColors.primary, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    if (date.isNotEmpty || provider.isNotEmpty)
+                      Text(
+                        [
+                          if (date.isNotEmpty) date,
+                          if (provider.isNotEmpty) provider,
+                        ].join(' - '),
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (diagnosis.isNotEmpty) _reportText('Diagnosis', diagnosis),
+          if (notes.isNotEmpty) _reportText('Treatment / Notes', notes),
+          if (medications.isNotEmpty) _reportText('Medication', medications),
+        ],
+      ),
+    );
+  }
+
+  Widget _reportText(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, left: 30),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(value),
+        ],
+      ),
+    );
+  }
+
+  String _formatAnyDate(dynamic value) {
+    if (value == null) return '';
+    return _formatDate(value.toString());
   }
 
   String _formatDate(String dateStr) {

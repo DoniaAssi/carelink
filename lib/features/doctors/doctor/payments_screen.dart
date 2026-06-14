@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/doctor_service.dart';
 import '../../../core/app_colors.dart';
+import '../../../core/app_localizations.dart';
+import '../../../core/locale_controller.dart';
 
 class DoctorPaymentsScreen extends StatefulWidget {
   const DoctorPaymentsScreen({super.key});
@@ -53,102 +55,109 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
     final totalUnpaid = _toMoney(summary['totalUnpaid']);
     final totalRefunded = _toMoney(summary['totalRefunded']);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Payment History'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadPayments,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Summary Cards
-                    Row(
+    return ListenableBuilder(
+      listenable: localeController,
+      builder: (context, _) {
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(context.dtr('doctor.payments.history')),
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: _loadPayments,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(
-                          child: _buildSummaryCard(
-                            'Total Paid',
-                            '\$${totalPaid.toStringAsFixed(2)}',
-                            Icons.check_circle,
-                            AppColors.success,
+                        // Summary Cards
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildSummaryCard(
+                                context.dtr('doctor.payments.totalPaid'),
+                                '\$${totalPaid.toStringAsFixed(2)}',
+                                Icons.check_circle,
+                                AppColors.success,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildSummaryCard(
+                                context.dtr('doctor.payments.pending'),
+                                '\$${totalUnpaid.toStringAsFixed(2)}',
+                                Icons.pending,
+                                AppColors.warning,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildSummaryCard(
+                                context.dtr('doctor.payments.refunded'),
+                                '\$${totalRefunded.toStringAsFixed(2)}',
+                                Icons.replay,
+                                AppColors.info,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildSummaryCard(
+                                context.dtr('doctor.payments.total'),
+                                '${summary['totalPayments'] ?? 0}',
+                                Icons.receipt_long,
+                                AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        // Payments List
+                        Text(
+                          context.dtr('doctor.payments.transactions'),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildSummaryCard(
-                            'Pending',
-                            '\$${totalUnpaid.toStringAsFixed(2)}',
-                            Icons.pending,
-                            AppColors.warning,
+                        const SizedBox(height: 16),
+                        if (payments.isEmpty)
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(32),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.payment,
+                                    size: 60,
+                                    color: Colors.grey[400],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    context.dtr('doctor.payments.empty'),
+                                    style: TextStyle(color: Colors.grey[600]),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          ...payments.map(
+                            (payment) => _buildPaymentCard(payment),
                           ),
-                        ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildSummaryCard(
-                            'Refunded',
-                            '\$${totalRefunded.toStringAsFixed(2)}',
-                            Icons.replay,
-                            AppColors.info,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildSummaryCard(
-                            'Total',
-                            '${summary['totalPayments'] ?? 0}',
-                            Icons.receipt_long,
-                            AppColors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    // Payments List
-                    const Text(
-                      'Transaction History',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (payments.isEmpty)
-                      Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Column(
-                            children: [
-                              Icon(
-                                Icons.payment,
-                                size: 60,
-                                color: Colors.grey[400],
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'No payments yet',
-                                style: TextStyle(color: Colors.grey[600]),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    else
-                      ...payments.map((payment) => _buildPaymentCard(payment)),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+        );
+      },
     );
   }
 

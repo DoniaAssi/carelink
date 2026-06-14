@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/doctor_service.dart';
 import '../../../core/app_colors.dart';
+import '../../../core/app_localizations.dart';
+import '../../../core/locale_controller.dart';
 
 class DoctorScheduleScreen extends StatefulWidget {
   const DoctorScheduleScreen({super.key});
@@ -12,7 +14,7 @@ class DoctorScheduleScreen extends StatefulWidget {
 
 class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
   final _doctorService = DoctorService();
-  
+
   bool _isLoading = true;
   bool _isAvailable = true;
   List<dynamic> _slots = [];
@@ -42,7 +44,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       _doctorId = prefs.getString('doctor_userId') ?? '';
 
       // Load availability status
-      final availability = await _doctorService.getAvailabilityStatus(_doctorId);
+      final availability = await _doctorService.getAvailabilityStatus(
+        _doctorId,
+      );
       setState(() {
         _isAvailable = availability['isAvailable'] ?? true;
       });
@@ -56,9 +60,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading data: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading data: $e')));
       }
     }
   }
@@ -73,7 +77,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('You are now ${newStatus ? 'available' : 'unavailable'}'),
+            content: Text(
+              'You are now ${newStatus ? 'available' : 'unavailable'}',
+            ),
             backgroundColor: AppColors.success,
           ),
         );
@@ -104,10 +110,11 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
               DropdownButtonFormField<String>(
                 decoration: const InputDecoration(labelText: 'Day'),
                 initialValue: selectedDay,
-                items: _days.map((day) => DropdownMenuItem(
-                  value: day,
-                  child: Text(day),
-                )).toList(),
+                items: _days
+                    .map(
+                      (day) => DropdownMenuItem(value: day, child: Text(day)),
+                    )
+                    .toList(),
                 onChanged: (value) {
                   setDialogState(() => selectedDay = value);
                 },
@@ -121,7 +128,8 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                   onPressed: () async {
                     final time = await showTimePicker(
                       context: context,
-                      initialTime: startTime ?? const TimeOfDay(hour: 9, minute: 0),
+                      initialTime:
+                          startTime ?? const TimeOfDay(hour: 9, minute: 0),
                     );
                     if (time != null) {
                       setDialogState(() => startTime = time);
@@ -140,7 +148,8 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                   onPressed: () async {
                     final time = await showTimePicker(
                       context: context,
-                      initialTime: endTime ?? const TimeOfDay(hour: 17, minute: 0),
+                      initialTime:
+                          endTime ?? const TimeOfDay(hour: 17, minute: 0),
                     );
                     if (time != null) {
                       setDialogState(() => endTime = time);
@@ -160,7 +169,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
             ),
             ElevatedButton(
               onPressed: () {
-                if (selectedDay == null || startTime == null || endTime == null) {
+                if (selectedDay == null ||
+                    startTime == null ||
+                    endTime == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Please fill all fields')),
                   );
@@ -180,18 +191,19 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     ).then((result) async {
       if (result != null) {
         try {
+          if (!mounted) return;
           final startTimeStr = result['startTime'].format(context);
           final endTimeStr = result['endTime'].format(context);
           final timeRange = '$startTimeStr - $endTimeStr';
-          print('Selected time: $timeRange');
-          
+          debugPrint('Selected time: $timeRange');
+
           await _doctorService.addScheduleSlot(
             _doctorId,
             day: result['day'],
             startTime: _formatTimeForApi(result['startTime']),
             endTime: _formatTimeForApi(result['endTime']),
           );
-          
+
           _loadData();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -217,7 +229,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Slot'),
-        content: const Text('Are you sure you want to delete this availability slot?'),
+        content: const Text(
+          'Are you sure you want to delete this availability slot?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -260,144 +274,189 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Schedule & Availability'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                // Availability Toggle
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  color: _isAvailable 
-                      ? AppColors.success.withOpacity(0.1) 
-                      : Colors.red.withOpacity(0.1),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
+    return ListenableBuilder(
+      listenable: localeController,
+      builder: (context, _) {
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(context.dtr('doctor.schedule.title')),
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                  children: [
+                    // Availability Toggle
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      color: _isAvailable
+                          ? AppColors.success.withValues(alpha: 0.1)
+                          : Colors.red.withValues(alpha: 0.1),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Icon(
-                            _isAvailable ? Icons.check_circle : Icons.cancel,
-                            color: _isAvailable ? AppColors.success : Colors.red,
-                          ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          Row(
                             children: [
-                              Text(
-                                _isAvailable ? 'Available' : 'Unavailable',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: _isAvailable ? AppColors.success : Colors.red,
-                                ),
+                              Icon(
+                                _isAvailable
+                                    ? Icons.check_circle
+                                    : Icons.cancel,
+                                color: _isAvailable
+                                    ? AppColors.success
+                                    : Colors.red,
                               ),
-                              Text(
-                                _isAvailable 
-                                    ? 'You are accepting new patients' 
-                                    : 'You are not accepting new patients',
-                                style: TextStyle(
-                                  color: _isAvailable ? AppColors.success : Colors.red,
-                                  fontSize: 12,
-                                ),
+                              const SizedBox(width: 12),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _isAvailable
+                                        ? context.dtr(
+                                            'doctor.schedule.available',
+                                          )
+                                        : context.dtr(
+                                            'doctor.schedule.unavailable',
+                                          ),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: _isAvailable
+                                          ? AppColors.success
+                                          : Colors.red,
+                                    ),
+                                  ),
+                                  Text(
+                                    _isAvailable
+                                        ? context.dtr(
+                                            'doctor.schedule.accepting',
+                                          )
+                                        : context.dtr(
+                                            'doctor.schedule.notAccepting',
+                                          ),
+                                    style: TextStyle(
+                                      color: _isAvailable
+                                          ? AppColors.success
+                                          : Colors.red,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
+                          ),
+                          Switch(
+                            value: _isAvailable,
+                            onChanged: (_) => _toggleAvailability(),
+                            activeThumbColor: AppColors.success,
                           ),
                         ],
                       ),
-                      Switch(
-                        value: _isAvailable,
-                        onChanged: (_) => _toggleAvailability(),
-                        activeThumbColor: AppColors.success,
-                      ),
-                    ],
-                  ),
-                ),
-                // Schedule Header
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Availability Slots',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: _addSlot,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Add'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Slots List
-                Expanded(
-                  child: _slots.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.calendar_today, size: 80, color: Colors.grey[400]),
-                              const SizedBox(height: 16),
-                              Text(
-                                'No availability slots',
-                                style: TextStyle(fontSize: 18, color: Colors.grey[600]),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Add your available times',
-                                style: TextStyle(color: Colors.grey[500]),
-                              ),
-                            ],
+                    ),
+                    // Schedule Header
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            context.dtr('doctor.schedule.slots'),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
                           ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: _slots.length,
-                          itemBuilder: (context, index) {
-                            final slot = _slots[index];
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                leading: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
+                          ElevatedButton.icon(
+                            onPressed: _addSlot,
+                            icon: const Icon(Icons.add),
+                            label: Text(context.dtr('doctor.schedule.add')),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Slots List
+                    Expanded(
+                      child: _slots.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.calendar_today,
+                                    size: 80,
+                                    color: Colors.grey[400],
                                   ),
-                                  child: const Icon(Icons.access_time, color: AppColors.primary),
-                                ),
-                                title: Text(
-                                  slot['day'] ?? '',
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                subtitle: Text(
-                                  '${slot['startTime']} - ${slot['endTime']}',
-                                ),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  onPressed: () => _deleteSlot(slot['slot_id']),
-                                ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    context.dtr('doctor.schedule.empty'),
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    context.dtr(
+                                      'doctor.schedule.emptySubtitle',
+                                    ),
+                                    style: TextStyle(color: Colors.grey[500]),
+                                  ),
+                                ],
                               ),
-                            );
-                          },
-                        ),
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              itemCount: _slots.length,
+                              itemBuilder: (context, index) {
+                                final slot = _slots[index];
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  child: ListTile(
+                                    leading: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Icons.access_time,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                    title: Text(
+                                      slot['day'] ?? '',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      '${slot['startTime']} - ${slot['endTime']}',
+                                    ),
+                                    trailing: IconButton(
+                                      icon: const Icon(
+                                        Icons.delete,
+                                        color: Colors.red,
+                                      ),
+                                      onPressed: () =>
+                                          _deleteSlot(slot['slot_id']),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+        );
+      },
     );
   }
 }

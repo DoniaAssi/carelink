@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/app_colors.dart';
+import '../../../core/app_localizations.dart';
+import '../../../core/locale_controller.dart';
+import '../../../core/theme_controller.dart';
 import 'package:carelink/features/notifications/notifications_screen.dart';
 import '../../../services/doctor_service.dart';
 import '../../../shared/widgets/carelink_brand_logo.dart';
@@ -79,17 +82,49 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   void _openNotifications() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => NotificationsScreen(userId: _doctorId)),
+      MaterialPageRoute(
+        builder: (_) =>
+            NotificationsScreen(userId: _doctorId, userRole: 'doctor'),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4FAF8),
-      body: _buildBody(),
-      bottomNavigationBar: _buildBottomNav(),
+    return ListenableBuilder(
+      listenable: localeController,
+      builder: (context, _) {
+        return Directionality(
+          textDirection: localeController.isDoctorArabic
+              ? TextDirection.rtl
+              : TextDirection.ltr,
+          child: Scaffold(
+            backgroundColor: _pageColor,
+            body: _buildBody(),
+            bottomNavigationBar: _buildBottomNav(),
+          ),
+        );
+      },
     );
+  }
+
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+
+  Color get _pageColor =>
+      _isDark ? const Color(0xFF0F1716) : const Color(0xFFF4FAF8);
+
+  Color get _cardColor => _isDark ? const Color(0xFF182321) : Colors.white;
+
+  Color get _primaryText => _isDark ? const Color(0xFFF3FAF8) : Colors.black;
+
+  Color get _secondaryText =>
+      _isDark ? const Color(0xFFB7C5C1) : const Color(0xFF68727D);
+
+  Color get _dividerColor =>
+      _isDark ? Colors.white.withValues(alpha: 0.08) : Colors.grey.shade100;
+
+  Color _softColor(Color lightColor) {
+    return _isDark ? AppColors.primary.withValues(alpha: 0.14) : lightColor;
   }
 
   Widget _buildBody() {
@@ -153,7 +188,22 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       children: [
         const CarelinkBrandLogo(height: 34),
         const Spacer(),
-        _roundIcon(Icons.language_rounded, () {}),
+        _roundIcon(
+          Icons.language_rounded,
+          () => localeController.toggleDoctor(),
+        ),
+        const SizedBox(width: 12),
+        ListenableBuilder(
+          listenable: themeController,
+          builder: (context, _) {
+            return _roundIcon(
+              themeController.isDark
+                  ? Icons.light_mode_rounded
+                  : Icons.dark_mode_rounded,
+              () => themeController.toggle(),
+            );
+          },
+        ),
         const SizedBox(width: 12),
         Stack(
           clipBehavior: Clip.none,
@@ -179,7 +229,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
 
   Widget _roundIcon(IconData icon, VoidCallback onTap) {
     return Material(
-      color: Colors.white,
+      color: _cardColor,
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onTap,
@@ -187,7 +237,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         child: SizedBox(
           width: 46,
           height: 46,
-          child: Icon(icon, color: const Color(0xFF151823), size: 27),
+          child: Icon(icon, color: _primaryText, size: 27),
         ),
       ),
     );
@@ -220,24 +270,30 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Hi, Dr. $_doctorName',
+                context.dtr(
+                  'doctor.dashboard.helloDoctor',
+                  args: {'name': _doctorName},
+                ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 28,
                   height: 1.08,
                   fontWeight: FontWeight.w900,
-                  color: Colors.black,
+                  color: _primaryText,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                '${_greeting()}, here\'s your\noverview',
-                style: const TextStyle(
+                context.dtr(
+                  'doctor.dashboard.overviewLine',
+                  args: {'greeting': _greeting()},
+                ),
+                style: TextStyle(
                   fontSize: 17,
                   height: 1.35,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF4E5963),
+                  color: _secondaryText,
                 ),
               ),
             ],
@@ -267,6 +323,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                 side: BorderSide(
                   color: AppColors.primary.withValues(alpha: 0.18),
                 ),
+                foregroundColor: AppColors.primary,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(18),
                 ),
@@ -287,6 +344,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     final today = _toInt(_stats['todayAppointments']);
     final pending = _toInt(_stats['pendingRequests']);
     final rating = _toDouble(_stats['averageRating']);
+    final responseRate = _toDouble(_stats['responseRate']);
 
     return GridView.count(
       crossAxisCount: 2,
@@ -298,28 +356,28 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       children: [
         _metricCard(
           value: today.toString(),
-          label: 'Appointments\nToday',
+          label: context.dtr('doctor.dashboard.appointmentsToday'),
           icon: Icons.medical_services_outlined,
           color: AppColors.primary,
           background: const Color(0xFFE7F7F2),
         ),
         _metricCard(
           value: pending.toString(),
-          label: 'Upcoming\nRequests',
+          label: context.dtr('doctor.dashboard.upcomingRequests'),
           icon: Icons.event_note_outlined,
           color: AppColors.info,
           background: const Color(0xFFEAF4FF),
         ),
         _metricCard(
-          value: rating > 0 ? rating.toStringAsFixed(1) : '4.8',
-          label: 'Average\nRating',
+          value: rating.toStringAsFixed(1),
+          label: context.dtr('doctor.dashboard.averageRating'),
           icon: Icons.favorite_border_rounded,
           color: const Color(0xFFE91E63),
           background: const Color(0xFFFCE7EF),
         ),
         _metricCard(
-          value: '98%',
-          label: 'Response\nRate',
+          value: '${responseRate.round()}%',
+          label: context.dtr('doctor.dashboard.responseRate'),
           icon: Icons.link_rounded,
           color: AppColors.primary,
           background: const Color(0xFFE7F7F2),
@@ -330,7 +388,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
 
   Widget _buildReportsCard() {
     return Material(
-      color: Colors.white,
+      color: _cardColor,
       borderRadius: BorderRadius.circular(22),
       child: InkWell(
         onTap: () => setState(() => _selectedIndex = 4),
@@ -353,7 +411,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                 width: 70,
                 height: 70,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE7F7F2),
+                  color: _softColor(const Color(0xFFE7F7F2)),
                   borderRadius: BorderRadius.circular(22),
                 ),
                 child: const Icon(
@@ -363,26 +421,26 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                 ),
               ),
               const SizedBox(width: 16),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Medical Reports',
+                      context.dtr('doctor.dashboard.medicalReports'),
                       style: TextStyle(
                         fontSize: 19,
                         fontWeight: FontWeight.w900,
-                        color: Colors.black,
+                        color: _primaryText,
                       ),
                     ),
-                    SizedBox(height: 5),
+                    const SizedBox(height: 5),
                     Text(
-                      'Create, manage and send medical reports',
+                      context.dtr('doctor.dashboard.medicalReportsSubtitle'),
                       style: TextStyle(
                         fontSize: 15,
                         height: 1.35,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF68727D),
+                        color: _secondaryText,
                       ),
                     ),
                   ],
@@ -392,7 +450,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               ElevatedButton.icon(
                 onPressed: () => setState(() => _selectedIndex = 4),
                 icon: const Icon(Icons.add_rounded, size: 22),
-                label: const Text('New Report'),
+                label: Text(context.dtr('doctor.dashboard.newReport')),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -432,11 +490,11 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 18, 18, 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _cardColor,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withValues(alpha: _isDark ? 0.16 : 0.04),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -449,7 +507,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
             width: 58,
             height: 58,
             decoration: BoxDecoration(
-              color: background,
+              color: _softColor(background),
               borderRadius: BorderRadius.circular(18),
             ),
             child: Icon(icon, color: color, size: 28),
@@ -457,21 +515,21 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
           const Spacer(),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 30,
               height: 1,
               fontWeight: FontWeight.w900,
-              color: Colors.black,
+              color: _primaryText,
             ),
           ),
           const SizedBox(height: 10),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 17,
               height: 1.25,
               fontWeight: FontWeight.w800,
-              color: Colors.black,
+              color: _primaryText,
             ),
           ),
         ],
@@ -483,12 +541,12 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Text(
-          "Today's Schedule",
+        Text(
+          context.dtr('doctor.dashboard.todaysSchedule'),
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w900,
-            color: Colors.black,
+            color: _primaryText,
           ),
         ),
         TextButton(
@@ -500,9 +558,9 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               ),
             );
           },
-          child: const Text(
-            'View all >',
-            style: TextStyle(
+          child: Text(
+            context.dtr('doctor.dashboard.viewAll'),
+            style: const TextStyle(
               color: AppColors.primary,
               fontSize: 16,
               fontWeight: FontWeight.w900,
@@ -519,7 +577,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _cardColor,
           borderRadius: BorderRadius.circular(22),
         ),
         child: Column(
@@ -531,9 +589,9 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'No appointments for today',
+              context.dtr('doctor.dashboard.noAppointmentsToday'),
               style: TextStyle(
-                color: Colors.grey.shade600,
+                color: _secondaryText,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -544,7 +602,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _cardColor,
         borderRadius: BorderRadius.circular(22),
       ),
       child: Column(
@@ -552,7 +610,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
           for (var i = 0; i < _schedule.length; i++) ...[
             _scheduleRow(_schedule[i]),
             if (i != _schedule.length - 1)
-              Divider(height: 1, color: Colors.grey.shade100),
+              Divider(height: 1, color: _dividerColor),
           ],
         ],
       ),
@@ -574,16 +632,16 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
             width: 72,
             child: Text(
               _formatTime(scheduledAt),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w800,
-                color: Colors.black,
+                color: _primaryText,
               ),
             ),
           ),
           CircleAvatar(
             radius: 22,
-            backgroundColor: const Color(0xFFE7F7F2),
+            backgroundColor: _softColor(const Color(0xFFE7F7F2)),
             child: Text(
               patientName.isNotEmpty ? patientName[0].toUpperCase() : 'P',
               style: const TextStyle(
@@ -601,10 +659,10 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                   patientName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
-                    color: Colors.black,
+                    color: _primaryText,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -612,10 +670,10 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                   serviceType,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF68727D),
+                    color: _secondaryText,
                   ),
                 ),
               ],
@@ -628,9 +686,9 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _cardColor,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFF0F2F4)),
+              border: Border.all(color: _dividerColor),
             ),
             child: const Icon(
               Icons.videocam_rounded,
@@ -658,10 +716,10 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         ? const Color(0xFFF3F4F6)
         : const Color(0xFFE7F7F2);
     final label = isCanceled
-        ? 'Canceled'
+        ? context.dtr('doctor.dashboard.statusCanceled')
         : isPending
-        ? 'Pending'
-        : 'Confirmed';
+        ? context.dtr('doctor.dashboard.statusPending')
+        : context.dtr('doctor.dashboard.statusConfirmed');
 
     return Container(
       constraints: const BoxConstraints(minWidth: 84),
@@ -687,7 +745,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _cardColor,
           borderRadius: BorderRadius.circular(28),
           boxShadow: [
             BoxShadow(
@@ -706,7 +764,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               if (index == 0) _loadDashboardData();
             },
             selectedItemColor: AppColors.primary,
-            unselectedItemColor: const Color(0xFF7B818A),
+            unselectedItemColor: _secondaryText,
             selectedLabelStyle: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w800,
@@ -715,33 +773,33 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
-            backgroundColor: Colors.white,
+            backgroundColor: _cardColor,
             elevation: 0,
             type: BottomNavigationBarType.fixed,
-            items: const [
+            items: [
               BottomNavigationBarItem(
-                icon: Icon(Icons.home_rounded),
-                label: 'Home',
+                icon: const Icon(Icons.home_rounded),
+                label: context.dtr('doctor.nav.home'),
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.calendar_month_outlined),
-                label: 'Schedule',
+                icon: const Icon(Icons.calendar_month_outlined),
+                label: context.dtr('doctor.nav.schedule'),
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.group_outlined),
-                label: 'Patients',
+                icon: const Icon(Icons.group_outlined),
+                label: context.dtr('doctor.nav.patients'),
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.chat_bubble_outline_rounded),
-                label: 'Payment',
+                icon: const Icon(Icons.chat_bubble_outline_rounded),
+                label: context.dtr('doctor.nav.payment'),
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.article_outlined),
-                label: 'Reports',
+                icon: const Icon(Icons.article_outlined),
+                label: context.dtr('doctor.nav.reports'),
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline_rounded),
-                label: 'Profile',
+                icon: const Icon(Icons.person_outline_rounded),
+                label: context.dtr('doctor.nav.profile'),
               ),
             ],
           ),
@@ -752,9 +810,9 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
 
   String _greeting() {
     final hour = DateTime.now().hour;
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
+    if (hour < 12) return context.dtr('doctor.dashboard.goodMorning');
+    if (hour < 17) return context.dtr('doctor.dashboard.goodAfternoon');
+    return context.dtr('doctor.dashboard.goodEvening');
   }
 
   String _formatTime(dynamic value) {

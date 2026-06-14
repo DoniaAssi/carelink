@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/app_colors.dart';
+import '../../../core/app_localizations.dart';
+import '../../../core/locale_controller.dart';
 import '../../../services/doctor_service.dart';
 import 'medical_report_form.dart';
 
@@ -93,52 +95,57 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4FAF8),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: RefreshIndicator(
-              onRefresh: _loadRequests,
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(24, 18, 24, 118),
-                      children: [
-                        _buildHeader(),
-                        const SizedBox(height: 26),
-                        _buildHeroCard(),
-                        const SizedBox(height: 24),
-                        const Text(
-                          'Completed Visits Ready For Reports',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.black,
-                          ),
+    return ListenableBuilder(
+      listenable: localeController,
+      builder: (context, _) {
+        return Scaffold(
+          backgroundColor: const Color(0xFFF4FAF8),
+          body: SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: RefreshIndicator(
+                  onRefresh: _loadRequests,
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(24, 18, 24, 118),
+                          children: [
+                            _buildHeader(),
+                            const SizedBox(height: 26),
+                            _buildHeroCard(),
+                            const SizedBox(height: 24),
+                            Text(
+                              context.dtr('doctor.reports.completedReady'),
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.black,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            if (_requests.isEmpty)
+                              _buildEmptyState()
+                            else
+                              for (final request in _requests)
+                                _buildReportRequestTile(request),
+                          ],
                         ),
-                        const SizedBox(height: 12),
-                        if (_requests.isEmpty)
-                          _buildEmptyState()
-                        else
-                          for (final request in _requests)
-                            _buildReportRequestTile(request),
-                      ],
-                    ),
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   Widget _buildHeader() {
     return Row(
       children: [
-        const Text(
-          'Medical Reports',
+        Text(
+          context.dtr('doctor.dashboard.medicalReports'),
           style: TextStyle(
             fontSize: 28,
             height: 1,
@@ -150,7 +157,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
         ElevatedButton.icon(
           onPressed: _openFirstReport,
           icon: const Icon(Icons.add_rounded, size: 22),
-          label: const Text('New Report'),
+          label: Text(context.dtr('doctor.dashboard.newReport')),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,

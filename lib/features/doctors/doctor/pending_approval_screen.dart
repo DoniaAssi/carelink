@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/doctor_session.dart';
 import '../../../services/doctor_service.dart';
 import '../../../core/app_colors.dart';
 
@@ -61,22 +62,30 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: AppColors.warning.withOpacity(0.1),
+                  color: AppColors.warning.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  _status == 'approved' ? Icons.check_circle : Icons.hourglass_empty,
+                  _status == 'approved'
+                      ? Icons.check_circle
+                      : Icons.hourglass_empty,
                   size: 80,
-                  color: _status == 'approved' ? AppColors.success : AppColors.warning,
+                  color: _status == 'approved'
+                      ? AppColors.success
+                      : AppColors.warning,
                 ),
               ),
               const SizedBox(height: 32),
               // Title
               Text(
-                _status == 'approved' ? 'Account Approved!' : 'Pending Approval',
+                _status == 'approved'
+                    ? 'Account Approved!'
+                    : 'Pending Approval',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: _status == 'approved' ? AppColors.success : AppColors.warning,
+                  color: _status == 'approved'
+                      ? AppColors.success
+                      : AppColors.warning,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -86,9 +95,9 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                 _status == 'approved'
                     ? 'Your doctor account has been approved. You can now access the system.'
                     : 'Your doctor account is pending approval from the administrator. Please check back later.',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
@@ -103,7 +112,10 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                       const Divider(),
                       _buildInfoRow('Email', widget.email),
                       const Divider(),
-                      _buildInfoRow('Status', _status == 'approved' ? 'Approved' : 'Pending'),
+                      _buildInfoRow(
+                        'Status',
+                        _status == 'approved' ? 'Approved' : 'Pending',
+                      ),
                     ],
                   ),
                 ),
@@ -121,7 +133,9 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                             width: 20,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
                             ),
                           )
                         : const Icon(Icons.refresh),
@@ -138,7 +152,7 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
               const SizedBox(height: 16),
               // Logout Button
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => logoutDoctorToLogin(context),
                 child: const Text('Logout'),
               ),
             ],
@@ -161,12 +175,7 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
               color: AppColors.textSecondary,
             ),
           ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
