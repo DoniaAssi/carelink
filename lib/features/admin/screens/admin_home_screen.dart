@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:carelink/core/app_nav.dart';
 import 'package:carelink/shared/models/user.dart';
@@ -936,6 +937,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       shrinkWrap: true,
                       children: certs.map((cert) {
                         final verified = cert['isVerified'] == true;
+                        final fileUrl = _absoluteUploadUrl(
+                          _text(cert['fileUrl']),
+                        );
                         return ListTile(
                           leading: Icon(
                             verified
@@ -945,11 +949,20 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           ),
                           title: Text(_text(cert['name'])),
                           subtitle: Text(
-                            verified ? 'تم التحقق' : 'بانتظار التحقق',
+                            fileUrl.isEmpty
+                                ? (verified ? 'تم التحقق' : 'بانتظار التحقق')
+                                : '${verified ? 'تم التحقق' : 'بانتظار التحقق'} - ${_text(cert['originalName'], fallback: 'ملف مرفق')}',
                           ),
-                          trailing: verified
-                              ? null
-                              : FilledButton(
+                          trailing: Wrap(
+                            spacing: 6,
+                            children: [
+                              if (fileUrl.isNotEmpty)
+                                OutlinedButton(
+                                  onPressed: () => _openUrl(fileUrl),
+                                  child: const Text('عرض الملف'),
+                                ),
+                              if (!verified)
+                                FilledButton(
                                   style: FilledButton.styleFrom(
                                     backgroundColor: _teal,
                                   ),
@@ -957,10 +970,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                     await _verifyCertification(
                                       _text(cert['certId']),
                                     );
-                                    if (context.mounted) Navigator.pop(context);
+                                    if (context.mounted) {
+                                      Navigator.pop(context);
+                                    }
                                   },
                                   child: const Text('تحقق'),
                                 ),
+                            ],
+                          ),
                         );
                       }).toList(),
                     ),
@@ -988,6 +1005,19 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
     _toast('تم التحقق من الشهادة');
     await _load();
+  }
+
+  String _absoluteUploadUrl(String url) {
+    if (url.isEmpty) return '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return '${ApiService.baseUrl}${url.startsWith('/') ? '' : '/'}$url';
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _toast('تعذر فتح الملف');
+    }
   }
 
   Future<void> _setApproval(

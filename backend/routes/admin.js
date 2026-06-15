@@ -63,6 +63,20 @@ async function ensureAdminColumns() {
       );
       cache.set('provider_certification.verifiedAt', true);
     }
+    const fileColumns = [
+      ['fileUrl', 'VARCHAR(1024) NULL'],
+      ['originalName', 'VARCHAR(512) NULL'],
+      ['mimeType', 'VARCHAR(160) NULL'],
+      ['fileSize', 'BIGINT NULL'],
+    ];
+    for (const [column, definition] of fileColumns) {
+      if (!(await hasColumn('provider_certification', column))) {
+        await db.query(
+          `ALTER TABLE provider_certification ADD COLUMN ${column} ${definition}`,
+        );
+        cache.set(`provider_certification.${column}`, true);
+      }
+    }
   }
 }
 
@@ -218,7 +232,8 @@ async function getCertifications(providerId) {
   if (!(await hasTable('provider_certification'))) return [];
   const [rows] = await db.query(
     `
-    SELECT certId, providerUserId, name, createdAt, COALESCE(isVerified, 0) AS isVerified, verifiedAt
+    SELECT certId, providerUserId, name, fileUrl, originalName, mimeType, fileSize,
+           createdAt, COALESCE(isVerified, 0) AS isVerified, verifiedAt
     FROM provider_certification
     WHERE providerUserId = ?
     ORDER BY createdAt DESC
