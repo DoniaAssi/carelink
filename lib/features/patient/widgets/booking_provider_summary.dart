@@ -60,9 +60,12 @@ class BookingProviderSummary extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  request.specialization.trim().isNotEmpty
-                      ? request.specialization
-                      : request.providerRole,
+                  _specialtyLabel(
+                    context,
+                    request.specialization.trim().isNotEmpty
+                        ? request.specialization
+                        : request.providerRole,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: p.inkMuted, fontSize: 12.5),
@@ -70,7 +73,7 @@ class BookingProviderSummary extends StatelessWidget {
                 if (service.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
-                    service,
+                    _serviceLabel(context, service),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -91,5 +94,34 @@ class BookingProviderSummary extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _specialtyLabel(BuildContext context, String value) {
+    if (value.trim().toLowerCase() == 'endocrinology') {
+      return context.tr('specialty.endocrinology');
+    }
+    return value;
+  }
+
+  String _serviceLabel(BuildContext context, String value) {
+    switch (value.trim().toLowerCase()) {
+      case 'home nursing care':
+        return context.tr('booking.service.homeNursing');
+      case 'general doctor':
+      case 'doctor consultation':
+        return context.tr('booking.service.generalDoctor');
+      case 'post-surgery care':
+      case 'post surgery care':
+        return context.tr('booking.service.postSurgery');
+      case 'elderly care':
+        return context.tr('booking.service.elderlyCare');
+      case 'physiotherapy':
+        return context.tr('booking.service.physiotherapy');
+      case 'mental support':
+      case 'mental health':
+        return context.tr('booking.service.mentalSupport');
+      default:
+        return value;
+    }
   }
 }

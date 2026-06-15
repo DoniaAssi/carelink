@@ -284,6 +284,9 @@ const Map<String, String> _en = {
   'auth.invalidPhone': 'Enter 8–15 digits only',
   'auth.otpCode': 'Verification code',
   'auth.sendCode': 'Send code',
+  'auth.sendCodeAfter': 'Send code in {seconds} seconds',
+  'auth.cooldownWait':
+      'Please wait {seconds} seconds before requesting another code.',
   'auth.resendIn': 'Resend in {seconds}s',
   'auth.resendCode': 'Resend code',
   'auth.verifyAndContinue': 'Verify code',
@@ -341,7 +344,7 @@ const Map<String, String> _en = {
   'auth.confirmPassword': 'Confirm Password',
   'auth.dateOfBirth': 'Date of Birth',
   'auth.locationVerifiedSuccess': 'Location verified successfully',
-  'auth.placeholder.fullName': 'Julia Marwan',
+  'auth.placeholder.fullName': 'UserName',
   'auth.placeholder.phone': '599000000',
   'auth.placeholder.email': 'name@example.com',
   'auth.placeholder.password': 'Enter password',
@@ -526,6 +529,7 @@ const Map<String, String> _en = {
   'providers.nurse': 'Nurse',
   'providers.noMatch': 'No providers match your search and filters.',
   'providers.aiReasonFallback': 'Recommended based on your care needs.',
+  'specialty.endocrinology': 'Endocrinology',
 };
 
 const Map<String, String> _ar = {
@@ -759,6 +763,8 @@ const Map<String, String> _ar = {
   'auth.invalidPhone': 'أدخل 8–15 رقماً فقط',
   'auth.otpCode': 'رمز التحقق',
   'auth.sendCode': 'إرسال الرمز',
+  'auth.sendCodeAfter': 'إرسال الرمز بعد {seconds} ثانية',
+  'auth.cooldownWait': 'يرجى الانتظار {seconds} ثانية قبل طلب رمز جديد.',
   'auth.resendIn': 'أعد الإرسال خلال {seconds} ث',
   'auth.resendCode': 'إعادة إرسال الرمز',
   'auth.verifyAndContinue': 'تحقق من الرمز',
@@ -1384,4 +1390,5 @@ const Map<String, String> _ar = {
   'payment.demoName': 'تجريبي: Julia Duaibes',
   'payment.demoCardDetails':
       'بطاقة تجريبية: Julia Duaibes · 4242 4242 4242 4242 · 12/30 · 123',
+  'specialty.endocrinology': 'طب الغدد الصماء',
 };

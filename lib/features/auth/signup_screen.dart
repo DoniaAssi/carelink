@@ -12,6 +12,7 @@ import 'package:carelink/core/carelink_date_picker.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/theme_controller.dart';
 import 'package:carelink/core/post_auth_navigation.dart';
+import 'package:carelink/core/phone_number_utils.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/auth_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
@@ -24,6 +25,7 @@ class Country {
   final String code;
   final String dialCode;
   final String flag;
+  final int phoneNumberLength;
 
   const Country({
     required this.name,
@@ -31,19 +33,83 @@ class Country {
     required this.code,
     required this.dialCode,
     required this.flag,
+    required this.phoneNumberLength,
   });
 }
 
 const List<Country> _countries = [
-  Country(name: 'Palestine', nameAr: 'فلسطين', code: 'PS', dialCode: '+970', flag: '🇵🇸'),
-  Country(name: 'Jordan', nameAr: 'الأردن', code: 'JO', dialCode: '+962', flag: '🇯🇴'),
-  Country(name: 'Egypt', nameAr: 'مصر', code: 'EG', dialCode: '+20', flag: '🇪🇬'),
-  Country(name: 'Saudi Arabia', nameAr: 'المملكة العربية السعودية', code: 'SA', dialCode: '+966', flag: '🇸🇦'),
-  Country(name: 'United Arab Emirates', nameAr: 'الإمارات العربية المتحدة', code: 'AE', dialCode: '+971', flag: '🇦🇪'),
-  Country(name: 'Qatar', nameAr: 'قطر', code: 'QA', dialCode: '+974', flag: '🇶🇦'),
-  Country(name: 'Kuwait', nameAr: 'الكويت', code: 'KW', dialCode: '+965', flag: '🇰🇼'),
-  Country(name: 'Bahrain', nameAr: 'البحرين', code: 'BH', dialCode: '+973', flag: '🇧🇭'),
-  Country(name: 'Oman', nameAr: 'عمان', code: 'OM', dialCode: '+968', flag: '🇴🇲'),
+  Country(
+    name: 'Palestine',
+    nameAr: 'فلسطين',
+    code: 'PS',
+    dialCode: '+972',
+    flag: '🇵🇸',
+    phoneNumberLength: 10,
+  ),
+  Country(
+    name: 'Jordan',
+    nameAr: 'الأردن',
+    code: 'JO',
+    dialCode: '+962',
+    flag: '🇯🇴',
+    phoneNumberLength: 9,
+  ),
+  Country(
+    name: 'Egypt',
+    nameAr: 'مصر',
+    code: 'EG',
+    dialCode: '+20',
+    flag: '🇪🇬',
+    phoneNumberLength: 10,
+  ),
+  Country(
+    name: 'Saudi Arabia',
+    nameAr: 'المملكة العربية السعودية',
+    code: 'SA',
+    dialCode: '+966',
+    flag: '🇸🇦',
+    phoneNumberLength: 9,
+  ),
+  Country(
+    name: 'United Arab Emirates',
+    nameAr: 'الإمارات العربية المتحدة',
+    code: 'AE',
+    dialCode: '+971',
+    flag: '🇦🇪',
+    phoneNumberLength: 9,
+  ),
+  Country(
+    name: 'Qatar',
+    nameAr: 'قطر',
+    code: 'QA',
+    dialCode: '+974',
+    flag: '🇶🇦',
+    phoneNumberLength: 8,
+  ),
+  Country(
+    name: 'Kuwait',
+    nameAr: 'الكويت',
+    code: 'KW',
+    dialCode: '+965',
+    flag: '🇰🇼',
+    phoneNumberLength: 8,
+  ),
+  Country(
+    name: 'Bahrain',
+    nameAr: 'البحرين',
+    code: 'BH',
+    dialCode: '+973',
+    flag: '🇧🇭',
+    phoneNumberLength: 8,
+  ),
+  Country(
+    name: 'Oman',
+    nameAr: 'عمان',
+    code: 'OM',
+    dialCode: '+968',
+    flag: '🇴🇲',
+    phoneNumberLength: 8,
+  ),
 ];
 
 class SignupScreen extends StatefulWidget {
@@ -136,15 +202,19 @@ class _SignupScreenState extends State<SignupScreen> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
-  final TextEditingController confirmPasswordController = TextEditingController();
+  final TextEditingController confirmPasswordController =
+      TextEditingController();
 
   // Role specific controllers
   final TextEditingController dateOfBirthController = TextEditingController();
   final TextEditingController addressController = TextEditingController();
-  final TextEditingController chronicDiseasesController = TextEditingController();
+  final TextEditingController chronicDiseasesController =
+      TextEditingController();
   final TextEditingController allergiesController = TextEditingController();
-  final TextEditingController currentMedicationsController = TextEditingController();
-  final TextEditingController emergencyContactController = TextEditingController();
+  final TextEditingController currentMedicationsController =
+      TextEditingController();
+  final TextEditingController emergencyContactController =
+      TextEditingController();
 
   // Doctor/Nurse specific controllers
   final TextEditingController specialtyController = TextEditingController();
@@ -169,10 +239,13 @@ class _SignupScreenState extends State<SignupScreen> {
   final TextEditingController _otpController = TextEditingController();
   String? _emailVerificationToken;
   String? _phoneVerificationToken;
-
+  String? _lastVerificationRequestEmail;
+  String? _verifiedEmail;
 
   Timer? _countdownTimer;
+  Timer? _resendCooldownTimer;
   int _secondsRemaining = 0;
+  int _resendSecondsRemaining = 0;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
@@ -183,7 +256,8 @@ class _SignupScreenState extends State<SignupScreen> {
     super.initState();
     // Default country based on region
     try {
-      final countryCode = PlatformDispatcher.instance.locale.countryCode?.toUpperCase();
+      final countryCode = PlatformDispatcher.instance.locale.countryCode
+          ?.toUpperCase();
       if (countryCode == 'JO') {
         _selectedCountry = _countries.firstWhere((c) => c.code == 'JO');
       } else if (countryCode == 'EG') {
@@ -196,6 +270,7 @@ class _SignupScreenState extends State<SignupScreen> {
     }
 
     passwordController.addListener(_onPasswordChanged);
+    emailController.addListener(_onEmailChanged);
   }
 
   void _onPasswordChanged() {
@@ -204,11 +279,76 @@ class _SignupScreenState extends State<SignupScreen> {
     }
   }
 
+  String _normalizeEmail(String value) => value.trim().toLowerCase();
+
+  void _onEmailChanged() {
+    final lastRequestedEmail = _lastVerificationRequestEmail;
+    if (lastRequestedEmail == null ||
+        _normalizeEmail(emailController.text) == lastRequestedEmail) {
+      return;
+    }
+
+    final hasVerificationState =
+        _resendSecondsRemaining > 0 ||
+        _secondsRemaining > 0 ||
+        _otpController.text.isNotEmpty ||
+        _emailVerificationToken != null ||
+        _phoneVerificationToken != null ||
+        _verifiedEmail != null;
+    if (!hasVerificationState) return;
+
+    _resendCooldownTimer?.cancel();
+    _countdownTimer?.cancel();
+    _otpController.clear();
+    _emailVerificationToken = null;
+    _phoneVerificationToken = null;
+    _verifiedEmail = null;
+
+    if (mounted) {
+      setState(() {
+        _resendSecondsRemaining = 0;
+        _secondsRemaining = 0;
+      });
+    }
+  }
+
   String get _fullPhoneNumber {
-    final raw = phoneController.text.trim();
-    final cleanRaw = raw.startsWith('0') ? raw.substring(1) : raw;
-    final dial = _selectedCountry.dialCode;
-    return '$dial$cleanRaw';
+    return PhoneNumberUtils.normalizeForCountry(
+          input: phoneController.text,
+          countryCode: _selectedCountry.code,
+          dialCode: _selectedCountry.dialCode,
+        ) ??
+        '';
+  }
+
+  void _normalizePhoneFieldInput(String value) {
+    if (_selectedCountry.code != 'PS') return;
+
+    final digits = PhoneNumberUtils.digitsOnly(value);
+    String? local;
+    if (digits.startsWith('9720') && digits.length > 4) {
+      local = '0${digits.substring(4)}';
+    } else if (digits.startsWith('972') && digits.length > 3) {
+      local = '0${digits.substring(3)}';
+    }
+    if (local == null || local == phoneController.text) return;
+
+    phoneController.value = TextEditingValue(
+      text: local,
+      selection: TextSelection.collapsed(offset: local.length),
+    );
+  }
+
+  void _selectCountry(Country country) {
+    final maxLength = country.phoneNumberLength;
+    final currentNumber = phoneController.text;
+    if (currentNumber.length > maxLength) {
+      phoneController.value = TextEditingValue(
+        text: currentNumber.substring(0, maxLength),
+        selection: TextSelection.collapsed(offset: maxLength),
+      );
+    }
+    setState(() => _selectedCountry = country);
   }
 
   void _showCountryPicker() {
@@ -234,7 +374,9 @@ class _SignupScreenState extends State<SignupScreen> {
               height: MediaQuery.of(context).size.height * 0.65,
               decoration: BoxDecoration(
                 color: p.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
                 border: Border(top: BorderSide(color: p.stroke)),
               ),
               child: SafeArea(
@@ -264,18 +406,34 @@ class _SignupScreenState extends State<SignupScreen> {
                       child: Container(
                         height: 48,
                         decoration: BoxDecoration(
-                          color: p.isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.grey.shade100,
+                          color: p.isDark
+                              ? const Color(0xFF123640).withValues(alpha: 0.55)
+                              : Colors.grey.shade100,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: p.stroke),
                         ),
                         child: TextField(
-                          style: GoogleFonts.inter(color: p.inkDark, fontSize: 14),
+                          style: GoogleFonts.inter(
+                            color: p.inkDark,
+                            fontSize: 14,
+                          ),
                           decoration: InputDecoration(
-                            hintText: isAr ? 'البحث عن دولة...' : 'Search country...',
-                            hintStyle: GoogleFonts.inter(color: p.inkMuted, fontSize: 14),
-                            prefixIcon: Icon(Icons.search, color: p.inkMuted, size: 20),
+                            hintText: isAr
+                                ? 'البحث عن دولة...'
+                                : 'Search country...',
+                            hintStyle: GoogleFonts.inter(
+                              color: p.inkMuted,
+                              fontSize: 14,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.search,
+                              color: p.inkMuted,
+                              size: 20,
+                            ),
                             border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                            ),
                           ),
                           onChanged: (val) {
                             setStateBottomSheet(() {
@@ -296,15 +454,16 @@ class _SignupScreenState extends State<SignupScreen> {
                             )
                           : ListView.builder(
                               itemCount: filteredCountries.length,
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
                               itemBuilder: (context, index) {
                                 final country = filteredCountries[index];
-                                final isSelected = country.code == _selectedCountry.code;
+                                final isSelected =
+                                    country.code == _selectedCountry.code;
                                 return ListTile(
                                   onTap: () {
-                                    setState(() {
-                                      _selectedCountry = country;
-                                    });
+                                    _selectCountry(country);
                                     Navigator.pop(context);
                                   },
                                   leading: Text(
@@ -314,7 +473,9 @@ class _SignupScreenState extends State<SignupScreen> {
                                   title: Text(
                                     isAr ? country.nameAr : country.name,
                                     style: GoogleFonts.inter(
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                      fontWeight: isSelected
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
                                       color: p.inkDark,
                                     ),
                                   ),
@@ -325,12 +486,18 @@ class _SignupScreenState extends State<SignupScreen> {
                                         country.dialCode,
                                         style: GoogleFonts.inter(
                                           fontWeight: FontWeight.bold,
-                                          color: isSelected ? AppColors.primary : p.inkMuted,
+                                          color: isSelected
+                                              ? AppColors.primary
+                                              : p.inkMuted,
                                         ),
                                       ),
                                       if (isSelected) ...[
                                         const SizedBox(width: 8),
-                                        const Icon(Icons.check_circle, color: AppColors.primary, size: 20),
+                                        const Icon(
+                                          Icons.check_circle,
+                                          color: AppColors.primary,
+                                          size: 20,
+                                        ),
                                       ],
                                     ],
                                   ),
@@ -370,7 +537,9 @@ class _SignupScreenState extends State<SignupScreen> {
           decoration: BoxDecoration(
             color: isSelected
                 ? AppColors.primary.withValues(alpha: p.isDark ? 0.15 : 0.08)
-                : (p.isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.white),
+                : (p.isDark
+                      ? const Color(0xFF123640).withValues(alpha: 0.55)
+                      : Colors.white),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: isSelected ? AppColors.primary : p.stroke,
@@ -408,7 +577,9 @@ class _SignupScreenState extends State<SignupScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            isMet ? Icons.check_circle_outline_rounded : Icons.radio_button_unchecked_rounded,
+            isMet
+                ? Icons.check_circle_outline_rounded
+                : Icons.radio_button_unchecked_rounded,
             size: 16,
             color: isMet ? Colors.green.shade600 : p.inkMuted,
           ),
@@ -428,6 +599,8 @@ class _SignupScreenState extends State<SignupScreen> {
 
   @override
   void dispose() {
+    passwordController.removeListener(_onPasswordChanged);
+    emailController.removeListener(_onEmailChanged);
     nameController.dispose();
     emailController.dispose();
     phoneController.dispose();
@@ -447,6 +620,7 @@ class _SignupScreenState extends State<SignupScreen> {
     bioController.dispose();
     _otpController.dispose();
     _countdownTimer?.cancel();
+    _resendCooldownTimer?.cancel();
     super.dispose();
   }
 
@@ -454,15 +628,105 @@ class _SignupScreenState extends State<SignupScreen> {
     final cleanText = text.replaceFirst('Exception: ', '');
     final messenger = appScaffoldMessengerKey.currentState;
     if (messenger == null) return;
+    final width = MediaQuery.sizeOf(context).width;
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
-        content: Text(cleanText),
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              color == Colors.green.shade700
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.error_outline_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Flexible(child: Text(cleanText)),
+          ],
+        ),
         backgroundColor: color ?? const Color(0xFF1E2E2E),
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
+        width: width > 492 ? 460 : width - 32,
+        duration: const Duration(seconds: 4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
+  }
+
+  void _showCooldownMessage(int seconds) {
+    final messenger = appScaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+
+    final width = MediaQuery.sizeOf(context).width;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.info_outline_rounded,
+              color: Color(0xFF8A5A00),
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                context.tr('auth.cooldownWait', args: {'seconds': '$seconds'}),
+                style: GoogleFonts.inter(
+                  color: const Color(0xFF5D4300),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFFFFF4CE),
+        behavior: SnackBarBehavior.floating,
+        width: width > 452 ? 420 : width - 32,
+        duration: const Duration(seconds: 4),
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Color(0xFFFFD66B)),
+        ),
+      ),
+    );
+  }
+
+  int? _cooldownSecondsFrom(Object error) {
+    if (error is AuthServiceException && error.retryAfterSeconds != null) {
+      return error.retryAfterSeconds;
+    }
+
+    final message = error.toString().replaceFirst('Exception: ', '');
+    final match = RegExp(
+      r'(?:wait|retry(?:\s+after)?)\D*(\d+)\s*(?:seconds?|secs?|s)\b',
+      caseSensitive: false,
+    ).firstMatch(message);
+    return int.tryParse(match?.group(1) ?? '');
+  }
+
+  void _startResendCooldown(int seconds) {
+    _resendCooldownTimer?.cancel();
+    if (!mounted) return;
+
+    setState(() => _resendSecondsRemaining = seconds);
+    _resendCooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_resendSecondsRemaining <= 1) {
+        timer.cancel();
+        setState(() => _resendSecondsRemaining = 0);
+      } else {
+        setState(() => _resendSecondsRemaining--);
+      }
+    });
   }
 
   void _startTimer() {
@@ -516,7 +780,10 @@ class _SignupScreenState extends State<SignupScreen> {
         _gpsLng = result.longitude;
       });
       if (!mounted) return;
-      _showMessage(context.tr('auth.locationVerifiedSuccess'), color: Colors.green.shade700);
+      _showMessage(
+        context.tr('auth.locationVerifiedSuccess'),
+        color: Colors.green.shade700,
+      );
     }
   }
 
@@ -527,34 +794,55 @@ class _SignupScreenState extends State<SignupScreen> {
 
   Future<void> _sendVerificationCode() async {
     FocusScope.of(context).unfocus();
-    if (!_step2FormKey.currentState!.validate()) {
+    if (_stepIndex != 2 && !(_step2FormKey.currentState?.validate() ?? false)) {
       _showMessage(context.tr('auth.checkForm'), color: Colors.red.shade700);
       return;
     }
 
     if (_selectedRole == 'doctor' && addressController.text.trim().isEmpty) {
-      _showMessage('Location/Clinic address is required for Doctors', color: Colors.red.shade700);
+      _showMessage(
+        CarelinkL10n.of(context).isArabic
+            ? 'موقع العيادة مطلوب للطبيب'
+            : 'Location/Clinic address is required for Doctors',
+        color: Colors.red.shade700,
+      );
       return;
     }
     if (_selectedRole == 'nurse' && addressController.text.trim().isEmpty) {
-      _showMessage('Location/Service area address is required for Nurses', color: Colors.red.shade700);
+      _showMessage(
+        CarelinkL10n.of(context).isArabic
+            ? 'موقع منطقة الخدمة مطلوب للممرض'
+            : 'Location/Service area address is required for Nurses',
+        color: Colors.red.shade700,
+      );
+      return;
+    }
+
+    final requestedEmail = _normalizeEmail(emailController.text);
+    if (_resendSecondsRemaining > 0 &&
+        _lastVerificationRequestEmail == requestedEmail) {
       return;
     }
 
     setState(() => _isLoading = true);
     try {
       final res = await _authService.sendUnifiedVerificationCode(
-        email: emailController.text.trim(),
+        email: requestedEmail,
         phoneDigits: _fullPhoneNumber,
         purpose: VerificationPurpose.signup,
       );
 
       if (!mounted) return;
+      if (_normalizeEmail(emailController.text) != requestedEmail) {
+        return;
+      }
       final isAr = CarelinkL10n.of(context).isArabic;
       if (res.emailDeliveryFailed) {
-        throw Exception(isAr
-            ? 'تعذر إرسال رسالة التحقق. يرجى المحاولة مرة أخرى.'
-            : 'Failed to send verification email. Please try again.');
+        throw Exception(
+          isAr
+              ? 'تعذر إرسال رسالة التحقق. يرجى المحاولة مرة أخرى.'
+              : 'Failed to send verification email. Please try again.',
+        );
       }
 
       final successMsg = isAr
@@ -562,13 +850,30 @@ class _SignupScreenState extends State<SignupScreen> {
           : 'A verification code has been sent to your email.';
 
       _startTimer();
+      _startResendCooldown(60);
       _otpController.clear();
       setState(() {
+        _lastVerificationRequestEmail = requestedEmail;
+        _emailVerificationToken = null;
+        _phoneVerificationToken = null;
+        _verifiedEmail = null;
         _stepIndex = 2; // advance to Step 3
       });
       _showMessage(successMsg, color: Colors.green.shade700);
     } catch (e) {
-      _showMessage(e.toString(), color: Colors.red.shade700);
+      if (_normalizeEmail(emailController.text) != requestedEmail) {
+        return;
+      }
+      final cooldownSeconds = _cooldownSecondsFrom(e);
+      if (cooldownSeconds != null &&
+          cooldownSeconds > 0 &&
+          _normalizeEmail(emailController.text) == requestedEmail) {
+        _lastVerificationRequestEmail = requestedEmail;
+        _startResendCooldown(cooldownSeconds);
+        _showCooldownMessage(cooldownSeconds);
+      } else {
+        _showMessage(e.toString(), color: Colors.red.shade700);
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -576,6 +881,17 @@ class _SignupScreenState extends State<SignupScreen> {
 
   Future<void> _verifyOtpAndRegister() async {
     FocusScope.of(context).unfocus();
+    final requestedEmail = _lastVerificationRequestEmail;
+    final currentEmail = _normalizeEmail(emailController.text);
+    if (requestedEmail == null || requestedEmail != currentEmail) {
+      _otpController.clear();
+      _emailVerificationToken = null;
+      _phoneVerificationToken = null;
+      _verifiedEmail = null;
+      setState(() => _stepIndex = 1);
+      return;
+    }
+
     final otp = _otpController.text.trim();
     if (otp.length != 6) {
       _showMessage(context.tr('auth.invalidOtp'), color: Colors.red.shade700);
@@ -586,44 +902,76 @@ class _SignupScreenState extends State<SignupScreen> {
     try {
       // 1. Verify unified code
       final tokens = await _authService.verifyUnifiedCode(
-        email: emailController.text.trim(),
+        email: requestedEmail,
         phoneDigits: _fullPhoneNumber,
         code: otp,
         purpose: VerificationPurpose.signup,
       );
 
+      if (!mounted || _normalizeEmail(emailController.text) != requestedEmail) {
+        _emailVerificationToken = null;
+        _phoneVerificationToken = null;
+        _verifiedEmail = null;
+        return;
+      }
       _emailVerificationToken = tokens.emailVerificationToken;
       _phoneVerificationToken = tokens.phoneVerificationToken;
+      _verifiedEmail = requestedEmail;
+      if (_verifiedEmail != requestedEmail ||
+          _emailVerificationToken == null ||
+          _phoneVerificationToken == null) {
+        return;
+      }
 
       // 2. Perform register
       final response = await ApiService().register(
         nameController.text.trim(),
-        emailController.text.trim(),
+        requestedEmail,
         _fullPhoneNumber,
         passwordController.text,
         _selectedRole,
         confirmPassword: confirmPasswordController.text,
-        specialization: _selectedRole == 'patient' ? null : specialtyController.text.trim(),
-        addressText: addressController.text.trim().isEmpty ? null : addressController.text.trim(),
+        specialization: _selectedRole == 'patient'
+            ? null
+            : specialtyController.text.trim(),
+        addressText: addressController.text.trim().isEmpty
+            ? null
+            : addressController.text.trim(),
         gpsLat: _gpsLat,
         gpsLng: _gpsLng,
-        dateOfBirth: _selectedRole == 'patient' ? dateOfBirthController.text.trim() : null,
+        dateOfBirth: _selectedRole == 'patient'
+            ? dateOfBirthController.text.trim()
+            : null,
         gender: _selectedRole == 'patient' ? _selectedGender : null,
-        chronicDiseases: _selectedRole == 'patient' ? chronicDiseasesController.text.trim() : null,
-        allergies: _selectedRole == 'patient' ? allergiesController.text.trim() : null,
-        currentMedications: _selectedRole == 'patient' ? currentMedicationsController.text.trim() : null,
-        experienceYears: _selectedRole == 'patient' ? null : int.tryParse(experienceController.text.trim()),
-        licenseNumber: _selectedRole == 'patient' ? null : licenseController.text.trim(),
+        chronicDiseases: _selectedRole == 'patient'
+            ? chronicDiseasesController.text.trim()
+            : null,
+        allergies: _selectedRole == 'patient'
+            ? allergiesController.text.trim()
+            : null,
+        currentMedications: _selectedRole == 'patient'
+            ? currentMedicationsController.text.trim()
+            : null,
+        experienceYears: _selectedRole == 'patient'
+            ? null
+            : int.tryParse(experienceController.text.trim()),
+        licenseNumber: _selectedRole == 'patient'
+            ? null
+            : licenseController.text.trim(),
         serviceType: _selectedRole == 'patient'
             ? null
-            : (_selectedRole == 'doctor' ? _consultationType : (_homeCareAvailability ? 'home care' : 'online')),
+            : (_selectedRole == 'doctor'
+                  ? _consultationType
+                  : (_homeCareAvailability ? 'home care' : 'online')),
         phoneVerificationToken: _phoneVerificationToken,
         emailVerificationToken: _emailVerificationToken,
       );
 
       // Add emergency contact if it was entered and table supports it
       final newUserId = response['userId']?.toString();
-      if (newUserId != null && _selectedRole == 'patient' && emergencyContactController.text.trim().isNotEmpty) {
+      if (newUserId != null &&
+          _selectedRole == 'patient' &&
+          emergencyContactController.text.trim().isNotEmpty) {
         try {
           await ApiService().updatePatientProfile(newUserId, {
             'emergencyContact': emergencyContactController.text.trim(),
@@ -648,7 +996,10 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Widget _buildStepIndicator(CarelinkPalette p) {
-    final steps = ['Account Info', 'Role Details', 'Verification'];
+    final isAr = CarelinkL10n.of(context).isArabic;
+    final steps = isAr
+        ? ['معلومات الحساب', 'تفاصيل الدور', 'التحقق']
+        : ['Account Info', 'Role Details', 'Verification'];
     return Column(
       children: [
         Row(
@@ -673,24 +1024,37 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     child: Center(
                       child: isCompleted
-                          ? const Icon(Icons.check, size: 16, color: Colors.white)
+                          ? const Icon(
+                              Icons.check,
+                              size: 16,
+                              color: Colors.white,
+                            )
                           : Text(
                               '${index + 1}',
                               style: GoogleFonts.inter(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
-                                color: isCurrent || isCompleted ? Colors.white : p.inkMuted,
+                                color: isCurrent || isCompleted
+                                    ? Colors.white
+                                    : p.inkMuted,
                               ),
                             ),
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    steps[index],
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-                      color: isCurrent ? p.inkDark : p.inkMuted,
+                  Flexible(
+                    child: Text(
+                      steps[index],
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: isCurrent
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        color: isCurrent ? p.inkDark : p.inkMuted,
+                      ),
                     ),
                   ),
                   if (index < steps.length - 1)
@@ -698,7 +1062,9 @@ class _SignupScreenState extends State<SignupScreen> {
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 8),
                         height: 2,
-                        color: _stepIndex > index ? AppColors.primary : p.stroke,
+                        color: _stepIndex > index
+                            ? AppColors.primary
+                            : p.stroke,
                       ),
                     ),
                 ],
@@ -733,12 +1099,14 @@ class _SignupScreenState extends State<SignupScreen> {
             controller: nameController,
             validator: (v) {
               if ((v ?? '').trim().length < 2) {
-                return isAr ? 'يرجى إدخال الاسم الكامل' : 'Please enter your full name';
+                return isAr
+                    ? 'يرجى إدخال الاسم الكامل'
+                    : 'Please enter your full name';
               }
               return null;
             },
           ),
-          
+
           // Phone number
           _buildFieldWrapper(
             p,
@@ -746,7 +1114,15 @@ class _SignupScreenState extends State<SignupScreen> {
             child: TextFormField(
               controller: phoneController,
               keyboardType: TextInputType.phone,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              onChanged: _normalizePhoneFieldInput,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9+]')),
+                LengthLimitingTextInputFormatter(
+                  _selectedCountry.code == 'PS'
+                      ? 14
+                      : _selectedCountry.phoneNumberLength + 4,
+                ),
+              ],
               style: GoogleFonts.inter(
                 color: p.inkDark,
                 fontSize: 15,
@@ -756,11 +1132,19 @@ class _SignupScreenState extends State<SignupScreen> {
               validator: (v) {
                 final raw = v ?? '';
                 if (raw.isEmpty) {
-                  return isAr ? 'يرجى إدخال رقم الهاتف' : 'Please enter phone number';
+                  return isAr
+                      ? 'يرجى إدخال رقم الهاتف'
+                      : 'Please enter phone number';
                 }
-                final fullPhoneDigits = AuthService.normalizePhoneDigits(_fullPhoneNumber);
-                if (!AuthService.isValidPhoneLength(fullPhoneDigits)) {
-                  return context.tr('auth.invalidPhone');
+                if (PhoneNumberUtils.normalizeForCountry(
+                      input: raw,
+                      countryCode: _selectedCountry.code,
+                      dialCode: _selectedCountry.dialCode,
+                    ) ==
+                    null) {
+                  return isAr
+                      ? 'رقم الهاتف غير صحيح.'
+                      : 'Invalid phone number.';
                 }
                 return null;
               },
@@ -809,17 +1193,15 @@ class _SignupScreenState extends State<SignupScreen> {
                         size: 20,
                       ),
                       const SizedBox(width: 8),
-                      Container(
-                        width: 1,
-                        height: 24,
-                        color: p.stroke,
-                      ),
+                      Container(width: 1, height: 24, color: p.stroke),
                       const SizedBox(width: 12),
                     ],
                   ),
                 ),
                 filled: true,
-                fillColor: p.isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.white,
+                fillColor: p.isDark
+                    ? const Color(0xFF123640).withValues(alpha: 0.55)
+                    : Colors.white,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(
                   vertical: 14,
@@ -835,7 +1217,10 @@ class _SignupScreenState extends State<SignupScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                  borderSide: const BorderSide(
+                    color: AppColors.primary,
+                    width: 1.5,
+                  ),
                 ),
                 errorBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -843,7 +1228,10 @@ class _SignupScreenState extends State<SignupScreen> {
                 ),
                 focusedErrorBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: Colors.red.shade600, width: 1.5),
+                  borderSide: BorderSide(
+                    color: Colors.red.shade600,
+                    width: 1.5,
+                  ),
                 ),
                 errorStyle: GoogleFonts.inter(
                   fontSize: 12,
@@ -883,17 +1271,22 @@ class _SignupScreenState extends State<SignupScreen> {
             obscure: _obscurePassword,
             suffixIcon: IconButton(
               icon: Icon(
-                _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                _obscurePassword
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
                 color: p.inkMuted,
               ),
-              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+              onPressed: () =>
+                  setState(() => _obscurePassword = !_obscurePassword),
             ),
             validator: (v) {
               if (v == null || v.isEmpty) {
                 return context.tr('auth.passwordRequired');
               }
               if (!_isStrongPassword(v)) {
-                return isAr ? 'كلمة المرور لا تستوفي الشروط' : 'Password does not meet requirements';
+                return isAr
+                    ? 'كلمة المرور لا تستوفي الشروط'
+                    : 'Password does not meet requirements';
               }
               return null;
             },
@@ -934,10 +1327,14 @@ class _SignupScreenState extends State<SignupScreen> {
             obscure: _obscureConfirmPassword,
             suffixIcon: IconButton(
               icon: Icon(
-                _obscureConfirmPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                _obscureConfirmPassword
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
                 color: p.inkMuted,
               ),
-              onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+              onPressed: () => setState(
+                () => _obscureConfirmPassword = !_obscureConfirmPassword,
+              ),
             ),
             validator: (v) {
               if (v != passwordController.text) {
@@ -1046,7 +1443,9 @@ class _SignupScreenState extends State<SignupScreen> {
           prefixIcon: Icon(icon, color: p.inkMuted, size: 22),
           suffixIcon: suffixIcon,
           filled: true,
-          fillColor: p.isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.white,
+          fillColor: p.isDark
+              ? const Color(0xFF123640).withValues(alpha: 0.55)
+              : Colors.white,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(
             vertical: 14,
@@ -1088,19 +1487,19 @@ class _SignupScreenState extends State<SignupScreen> {
         'patient',
         context.tr('auth.patient'),
         context.tr('auth.patientDesc'),
-        Icons.person_pin_rounded
+        Icons.person_pin_rounded,
       ),
       (
         'doctor',
         context.tr('auth.doctor'),
         context.tr('auth.doctorDesc'),
-        Icons.medical_services_rounded
+        Icons.medical_services_rounded,
       ),
       (
         'nurse',
         context.tr('auth.nurse'),
         context.tr('auth.nurseDesc'),
-        Icons.local_hospital_rounded
+        Icons.local_hospital_rounded,
       ),
     ];
 
@@ -1174,7 +1573,9 @@ class _SignupScreenState extends State<SignupScreen> {
                                 style: GoogleFonts.inter(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: isSelected ? AppColors.primary : p.inkDark,
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : p.inkDark,
                                 ),
                               ),
                               const SizedBox(height: 4),
@@ -1209,7 +1610,9 @@ class _SignupScreenState extends State<SignupScreen> {
             onTap: _pickDateOfBirth,
             validator: (v) {
               if (v == null || v.trim().isEmpty) {
-                return isAr ? 'تاريخ الميلاد مطلوب' : 'Date of birth is required';
+                return isAr
+                    ? 'تاريخ الميلاد مطلوب'
+                    : 'Date of birth is required';
               }
               return null;
             },
@@ -1274,28 +1677,34 @@ class _SignupScreenState extends State<SignupScreen> {
             _buildTextField(
               p,
               label: context.tr('auth.chronicDiseases'),
-              hint: 'e.g. Diabetes, Hypertension',
+              hint: isAr
+                  ? 'مثال: السكري، ضغط الدم'
+                  : 'e.g. Diabetes, Hypertension',
               icon: Icons.medical_information_outlined,
               controller: chronicDiseasesController,
             ),
             _buildTextField(
               p,
               label: context.tr('auth.allergies'),
-              hint: 'e.g. Penicillin, Peanuts',
+              hint: isAr
+                  ? 'مثال: البنسلين، الفول السوداني'
+                  : 'e.g. Penicillin, Peanuts',
               icon: Icons.warning_amber_rounded,
               controller: allergiesController,
             ),
             _buildTextField(
               p,
               label: context.tr('auth.currentMedications'),
-              hint: 'e.g. Metformin 500mg',
+              hint: isAr ? 'مثال: ميتفورمين 500 ملغ' : 'e.g. Metformin 500mg',
               icon: Icons.medication_outlined,
               controller: currentMedicationsController,
             ),
             _buildTextField(
               p,
               label: context.tr('auth.emergencyContact'),
-              hint: 'e.g. Brother: +970599000000',
+              hint: isAr
+                  ? 'مثال: الأخ: +970599000000'
+                  : 'e.g. Brother: +970599000000',
               icon: Icons.contact_phone_outlined,
               controller: emergencyContactController,
             ),
@@ -1306,36 +1715,46 @@ class _SignupScreenState extends State<SignupScreen> {
             _buildTextField(
               p,
               label: context.tr('auth.specialization'),
-              hint: 'e.g. Cardiologist',
+              hint: isAr ? 'مثال: طبيب قلب' : 'e.g. Cardiologist',
               icon: Icons.health_and_safety_outlined,
               controller: specialtyController,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Specialty is required';
+                if (v == null || v.trim().isEmpty) {
+                  return isAr ? 'التخصص مطلوب' : 'Specialty is required';
+                }
                 return null;
               },
             ),
             _buildTextField(
               p,
               label: context.tr('auth.licenseNumber'),
-              hint: 'Medical license ID number',
+              hint: isAr ? 'رقم الترخيص الطبي' : 'Medical license ID number',
               icon: Icons.badge_outlined,
               controller: licenseController,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'License number is required';
+                if (v == null || v.trim().isEmpty) {
+                  return isAr
+                      ? 'رقم الترخيص مطلوب'
+                      : 'License number is required';
+                }
                 return null;
               },
             ),
             _buildTextField(
               p,
               label: context.tr('auth.experienceYears'),
-              hint: 'Years of experience',
+              hint: isAr ? 'عدد سنوات الخبرة' : 'Years of experience',
               icon: Icons.timeline_outlined,
               controller: experienceController,
               keyboardType: TextInputType.number,
               formatters: [FilteringTextInputFormatter.digitsOnly],
               validator: (v) {
                 final n = int.tryParse(v ?? '');
-                if (n == null || n < 0 || n > 80) return 'Enter a valid number between 0 and 80';
+                if (n == null || n < 0 || n > 80) {
+                  return isAr
+                      ? 'أدخل رقماً صحيحاً بين 0 و80'
+                      : 'Enter a valid number between 0 and 80';
+                }
                 return null;
               },
             ),
@@ -1353,7 +1772,9 @@ class _SignupScreenState extends State<SignupScreen> {
                 ),
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: p.isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.white,
+                  fillColor: p.isDark
+                      ? const Color(0xFF123640).withValues(alpha: 0.55)
+                      : Colors.white,
                   isDense: true,
                   contentPadding: const EdgeInsets.symmetric(
                     vertical: 12,
@@ -1369,13 +1790,35 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                    borderSide: const BorderSide(
+                      color: AppColors.primary,
+                      width: 1.5,
+                    ),
                   ),
                 ),
-                items: const [
-                  DropdownMenuItem(value: 'home', child: Text('Home visits only')),
-                  DropdownMenuItem(value: 'online', child: Text('Online consultations only')),
-                  DropdownMenuItem(value: 'both', child: Text('Home & Online consultations')),
+                items: [
+                  DropdownMenuItem(
+                    value: 'home',
+                    child: Text(
+                      isAr ? 'زيارات منزلية فقط' : 'Home visits only',
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'online',
+                    child: Text(
+                      isAr
+                          ? 'استشارات عن بُعد فقط'
+                          : 'Online consultations only',
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'both',
+                    child: Text(
+                      isAr
+                          ? 'زيارات منزلية واستشارات عن بُعد'
+                          : 'Home & Online consultations',
+                    ),
+                  ),
                 ],
                 onChanged: (v) {
                   if (v != null) {
@@ -1388,7 +1831,9 @@ class _SignupScreenState extends State<SignupScreen> {
             _buildTextField(
               p,
               label: context.tr('auth.bio'),
-              hint: 'Brief professional background bio',
+              hint: isAr
+                  ? 'نبذة مختصرة عن خبرتك المهنية'
+                  : 'Brief professional background bio',
               icon: Icons.description_outlined,
               controller: bioController,
             ),
@@ -1399,36 +1844,46 @@ class _SignupScreenState extends State<SignupScreen> {
             _buildTextField(
               p,
               label: isAr ? 'تخصص التمريض' : 'Nursing Specialty',
-              hint: 'e.g. Pediatric Nurse',
+              hint: isAr ? 'مثال: تمريض أطفال' : 'e.g. Pediatric Nurse',
               icon: Icons.health_and_safety_outlined,
               controller: specialtyController,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Specialty is required';
+                if (v == null || v.trim().isEmpty) {
+                  return isAr ? 'التخصص مطلوب' : 'Specialty is required';
+                }
                 return null;
               },
             ),
             _buildTextField(
               p,
               label: context.tr('auth.licenseNumber'),
-              hint: 'Nursing license ID number',
+              hint: isAr ? 'رقم ترخيص التمريض' : 'Nursing license ID number',
               icon: Icons.badge_outlined,
               controller: licenseController,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'License number is required';
+                if (v == null || v.trim().isEmpty) {
+                  return isAr
+                      ? 'رقم الترخيص مطلوب'
+                      : 'License number is required';
+                }
                 return null;
               },
             ),
             _buildTextField(
               p,
               label: context.tr('auth.experienceYears'),
-              hint: 'Years of experience',
+              hint: isAr ? 'عدد سنوات الخبرة' : 'Years of experience',
               icon: Icons.timeline_outlined,
               controller: experienceController,
               keyboardType: TextInputType.number,
               formatters: [FilteringTextInputFormatter.digitsOnly],
               validator: (v) {
                 final n = int.tryParse(v ?? '');
-                if (n == null || n < 0 || n > 80) return 'Enter a valid number between 0 and 80';
+                if (n == null || n < 0 || n > 80) {
+                  return isAr
+                      ? 'أدخل رقماً صحيحاً بين 0 و80'
+                      : 'Enter a valid number between 0 and 80';
+                }
                 return null;
               },
             ),
@@ -1448,18 +1903,22 @@ class _SignupScreenState extends State<SignupScreen> {
             _buildTextField(
               p,
               label: context.tr('auth.serviceAreas'),
-              hint: 'e.g. Ramallah, Al-Bireh',
+              hint: isAr ? 'مثال: رام الله، البيرة' : 'e.g. Ramallah, Al-Bireh',
               icon: Icons.map_outlined,
               controller: serviceAreasController,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Service areas are required';
+                if (v == null || v.trim().isEmpty) {
+                  return isAr
+                      ? 'مناطق الخدمة مطلوبة'
+                      : 'Service areas are required';
+                }
                 return null;
               },
             ),
             _buildTextField(
               p,
               label: context.tr('auth.bio'),
-              hint: 'Brief background bio',
+              hint: isAr ? 'نبذة تعريفية مختصرة' : 'Brief background bio',
               icon: Icons.description_outlined,
               controller: bioController,
             ),
@@ -1472,7 +1931,9 @@ class _SignupScreenState extends State<SignupScreen> {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _isLoading ? null : () => setState(() => _stepIndex = 0),
+                  onPressed: _isLoading
+                      ? null
+                      : () => setState(() => _stepIndex = 0),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: p.inkDark,
                     side: BorderSide(color: p.stroke),
@@ -1487,7 +1948,9 @@ class _SignupScreenState extends State<SignupScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _sendVerificationCode,
+                  onPressed: _isLoading || _resendSecondsRemaining > 0
+                      ? null
+                      : _sendVerificationCode,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
@@ -1501,11 +1964,22 @@ class _SignupScreenState extends State<SignupScreen> {
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : Text(
-                          context.tr('auth.sendCode'),
-                          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
+                          _resendSecondsRemaining > 0
+                              ? context.tr(
+                                  'auth.sendCodeAfter',
+                                  args: {'seconds': '$_resendSecondsRemaining'},
+                                )
+                              : context.tr('auth.sendCode'),
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                 ),
               ),
@@ -1517,6 +1991,7 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Widget _buildStep3VerifyOtp(CarelinkPalette p) {
+    final isAr = CarelinkL10n.of(context).isArabic;
     final defaultPinTheme = PinTheme(
       width: 48,
       height: 52,
@@ -1526,7 +2001,9 @@ class _SignupScreenState extends State<SignupScreen> {
         color: p.inkDark,
       ),
       decoration: BoxDecoration(
-        color: p.isDark ? const Color(0xFF123640).withValues(alpha: 0.55) : Colors.white,
+        color: p.isDark
+            ? const Color(0xFF123640).withValues(alpha: 0.55)
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: p.stroke),
       ),
@@ -1546,7 +2023,7 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          CarelinkL10n.of(context).isArabic
+          isAr
               ? 'لقد أرسلنا رمز التحقق إلى بريدك الإلكتروني:\n${emailController.text.trim()}'
               : 'We sent a verification code to your email:\n${emailController.text.trim()}',
           style: GoogleFonts.inter(
@@ -1584,33 +2061,57 @@ class _SignupScreenState extends State<SignupScreen> {
         const SizedBox(height: 24),
 
         // Countdown Timer & Resend
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        Column(
           children: [
-            if (_secondsRemaining > 0) ...[
-              const Icon(Icons.timer_outlined, size: 16, color: AppColors.primary),
-              const SizedBox(width: 6),
-              Text(
-                'Expires in ${_formatTime(_secondsRemaining)}',
-                style: GoogleFonts.inter(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+            if (_secondsRemaining > 0)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.timer_outlined,
+                    size: 16,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    isAr
+                        ? 'ينتهي خلال ${_formatTime(_secondsRemaining)}'
+                        : 'Expires in ${_formatTime(_secondsRemaining)}',
+                    style: GoogleFonts.inter(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
               ),
-            ] else
-              TextButton.icon(
-                onPressed: _isLoading ? null : _sendVerificationCode,
-                icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: Text(context.tr('auth.resendCode')),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.primary,
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold),
-                ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: _isLoading || _resendSecondsRemaining > 0
+                  ? null
+                  : _sendVerificationCode,
+              icon: Icon(
+                _resendSecondsRemaining > 0
+                    ? Icons.schedule_rounded
+                    : Icons.refresh_rounded,
+                size: 18,
               ),
+              label: Text(
+                _resendSecondsRemaining > 0
+                    ? context.tr(
+                        'auth.sendCodeAfter',
+                        args: {'seconds': '$_resendSecondsRemaining'},
+                      )
+                    : context.tr('auth.resendCode'),
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                disabledForegroundColor: p.inkMuted,
+                textStyle: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
           ],
         ),
-
 
         const SizedBox(height: 24),
 
@@ -1619,7 +2120,9 @@ class _SignupScreenState extends State<SignupScreen> {
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: _isLoading ? null : () => setState(() => _stepIndex = 1),
+                onPressed: _isLoading
+                    ? null
+                    : () => setState(() => _stepIndex = 1),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: p.inkDark,
                   side: BorderSide(color: p.stroke),
@@ -1628,7 +2131,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                child: const Text('Back'),
+                child: Text(isAr ? 'السابق' : 'Back'),
               ),
             ),
             const SizedBox(width: 12),
@@ -1648,11 +2151,17 @@ class _SignupScreenState extends State<SignupScreen> {
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : Text(
                         context.tr('auth.verifyAndContinue'),
-                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
               ),
             ),
@@ -1720,18 +2229,29 @@ class _SignupScreenState extends State<SignupScreen> {
                   Expanded(
                     child: Center(
                       child: SingleChildScrollView(
-                        padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + viewInsets),
+                        padding: EdgeInsets.fromLTRB(
+                          20,
+                          0,
+                          20,
+                          20 + viewInsets,
+                        ),
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 460),
                           child: Container(
                             padding: const EdgeInsets.all(24),
                             decoration: BoxDecoration(
-                              color: p.surface.withValues(alpha: _isDark ? 0.94 : 1.0),
+                              color: p.surface.withValues(
+                                alpha: _isDark ? 0.94 : 1.0,
+                              ),
                               borderRadius: BorderRadius.circular(24),
-                              border: Border.all(color: p.stroke.withValues(alpha: 0.7)),
+                              border: Border.all(
+                                color: p.stroke.withValues(alpha: 0.7),
+                              ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: _isDark ? 0.4 : 0.06),
+                                  color: Colors.black.withValues(
+                                    alpha: _isDark ? 0.4 : 0.06,
+                                  ),
                                   blurRadius: 36,
                                   offset: const Offset(0, 16),
                                 ),

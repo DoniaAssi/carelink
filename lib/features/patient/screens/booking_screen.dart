@@ -441,7 +441,9 @@ class _BookingScreenState extends State<BookingScreen> {
                         ),
                       ),
                       child: Text(
-                        time,
+                        disabled
+                            ? '$time - ${context.l10n.isArabic ? 'محجوز' : 'Booked'}'
+                            : time,
                         style: TextStyle(
                           color: disabled
                               ? p.inkMuted.withValues(alpha: 0.55)
@@ -537,23 +539,17 @@ class _BookingScreenState extends State<BookingScreen> {
   Future<void> _loadAvailabilityData() async {
     setState(() => _isLoadingTimes = true);
     try {
-      final providerJson = await ApiService().getProviderById(
+      final providerJson = await ApiService().getDoctorById(
         widget.request.providerId,
       );
       final provider = ProviderModel.fromJson(providerJson);
-      final upcoming = await ApiService().getUpcomingAppointments(
-        widget.request.patientId,
+      final blockedSlots = await ApiService().getProviderBlockedSlots(
+        widget.request.providerId,
       );
 
       final blocked = <String>{};
-      for (final item in upcoming) {
-        if (item is! Map<String, dynamic>) continue;
-        final providerId =
-            (item['doctorUserId'] ?? item['providerUserId'] ?? '').toString();
-        final scheduledAt = (item['scheduledAt'] ?? '').toString();
-        if (providerId != widget.request.providerId || scheduledAt.isEmpty) {
-          continue;
-        }
+      for (final scheduledAt in blockedSlots) {
+        if (scheduledAt.isEmpty) continue;
         blocked.add(scheduledAt);
       }
 
@@ -614,7 +610,7 @@ class _BookingScreenState extends State<BookingScreen> {
       final time24 = _normalizeTime(slot.startTime);
       if (time24 == null) continue;
       if (_isTimeInPast(d, time24)) continue;
-      if (unique.add(time24) && !_isBlockedDateTime(d, time24)) {
+      if (unique.add(time24)) {
         formatted.add(_to12h(time24));
       }
     }

@@ -1,15 +1,12 @@
 const bcrypt = require('bcrypt');
 const { randomUUID } = require('crypto');
+const { normalizeSignupPhone } = require('../utils/phoneNormalization');
 
 const columnCache = new Map();
 
-function normalizePhoneDigits(phone) {
-  return String(phone || '').replace(/\D/g, '');
-}
-
 function normalizeRole(role) {
   const value = (role || '').toString().toLowerCase().trim();
-  if (['patient', 'doctor', 'nurse'].includes(value)) return value;
+  if (['patient', 'doctor', 'nurse', 'partner', 'provider', 'admin'].includes(value)) return value;
   return '';
 }
 
@@ -43,7 +40,7 @@ function validateUnifiedSignupBody(body) {
   const email = String(body.email || '').trim().toLowerCase();
   const password = String(body.password || '');
   const phone = String(body.phone || '').trim();
-  const phoneDigits = normalizePhoneDigits(phone);
+  const normalizedPhone = normalizeSignupPhone(phone);
   const role = normalizeRole(body.role);
 
   const specialization = String(body.specialization || '').trim();
@@ -72,7 +69,7 @@ function validateUnifiedSignupBody(body) {
   if (!EMAIL_REGEX.test(email)) {
     return { ok: false, status: 400, error: 'Invalid email format' };
   }
-  if (!/^\d{8,15}$/.test(phoneDigits)) {
+  if (!normalizedPhone) {
     return {
       ok: false,
       status: 400,
@@ -135,7 +132,7 @@ function validateUnifiedSignupBody(body) {
       fullName,
       email,
       password,
-      phoneDigits,
+      phoneDigits: normalizedPhone,
       role,
       specialization,
       addressText,
@@ -510,7 +507,7 @@ module.exports = {
   validateUnifiedSignupBody,
   savePendingRegistration,
   normalizeRole,
-  normalizePhoneDigits,
+  normalizePhoneDigits: normalizeSignupPhone,
   hasColumn,
   randomUUID,
 };

@@ -196,12 +196,15 @@ class _CarelinkRegistrationFlowScreenState
                           child: Align(
                             alignment: AlignmentDirectional.centerStart,
                             child: Padding(
-                              padding:
-                                  const EdgeInsetsDirectional.only(start: 6),
+                              padding: const EdgeInsetsDirectional.only(
+                                start: 6,
+                              ),
                               child: IconButton(
                                 onPressed: () {
                                   final c =
-                                      Get.find<CarelinkRegistrationController>();
+                                      Get.find<
+                                        CarelinkRegistrationController
+                                      >();
                                   if (c.stepIndex.value == 1) {
                                     c.goBackToStep1();
                                   } else {
@@ -236,10 +239,10 @@ class _CarelinkRegistrationFlowScreenState
                               child: Align(
                                 alignment: Alignment.topCenter,
                                 child: ConstrainedBox(
-                                  constraints:
-                                      BoxConstraints(maxWidth: maxCardW),
-                                  child:
-                                      _registerFormCard(p, compact: w < 600),
+                                  constraints: BoxConstraints(
+                                    maxWidth: maxCardW,
+                                  ),
+                                  child: _registerFormCard(p, compact: w < 600),
                                 ),
                               ),
                             ),
@@ -304,35 +307,35 @@ class _CarelinkPrimaryGradientButton extends StatelessWidget {
             splashColor: Colors.white24,
             child: Center(
               child: loading
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.5,
-                        ),
-                      )
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            label,
-                            style: GoogleFonts.inter(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                          if (showTrailingArrow) ...[
-                            const SizedBox(width: 8),
-                            const Icon(
-                              Icons.arrow_forward_rounded,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ],
-                        ],
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
                       ),
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          label,
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                        if (showTrailingArrow) ...[
+                          const SizedBox(width: 8),
+                          const Icon(
+                            Icons.arrow_forward_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ],
+                      ],
+                    ),
             ),
           ),
         ),
@@ -399,8 +402,8 @@ class _Step1FieldsState extends State<_Step1Fields> {
           textInputAction: TextInputAction.next,
           autofillHints: const [AutofillHints.telephoneNumber],
           validator: (v) =>
-              CarelinkRegistrationController.digitsOnly(v).length < 8
-              ? context.tr('auth.invalidPhone')
+              CarelinkRegistrationController.normalizePalestinePhone(v) == null
+              ? 'رقم الهاتف غير صحيح.'
               : null,
         ),
         const SizedBox(height: 14),

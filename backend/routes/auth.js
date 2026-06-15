@@ -4,6 +4,7 @@ const { randomUUID, randomBytes } = require('crypto');
 const { OAuth2Client } = require('google-auth-library');
 const appleSigninAuth = require('apple-signin-auth');
 const db = require('../db');
+const { normalizeSignupPhone } = require('../utils/phoneNormalization');
 const verificationCodes = require('../services/verificationCodes');
 const {
   dispatchEmailVerificationCode,
@@ -23,10 +24,6 @@ const SIGNUP_PROOF_TTL_MS = 15 * 60 * 1000;
 const emailVerificationSecrets = new Map();
 /** After successful phone-code verification for signup: token -> { phone, expiresAt } */
 const phoneVerificationSecrets = new Map();
-
-function normalizePhoneDigits(phone) {
-  return String(phone || '').replace(/\D/g, '');
-}
 
 function pruneEmailVerificationSecrets() {
   const now = Date.now();
@@ -97,7 +94,7 @@ router.get('/social/config', (req, res) => {
 
 function normalizeRole(role) {
   const value = (role || '').toString().toLowerCase();
-  if (['patient', 'doctor', 'nurse', 'admin'].includes(value)) {
+  if (['patient', 'doctor', 'nurse', 'admin', 'partner', 'provider'].includes(value)) {
     return value;
   }
   return 'patient';
@@ -258,7 +255,7 @@ router.post('/register', async (req, res) => {
   const normalizedFullName = (fullName || '').toString().trim();
   const normalizedEmail = (email || '').toString().trim().toLowerCase();
   const normalizedPhone = (phone || '').toString().trim();
-  const phoneDigits = normalizePhoneDigits(normalizedPhone);
+  const phoneDigits = normalizeSignupPhone(normalizedPhone);
   const normalizedPhoneVerification = (phoneVerificationToken || '').toString().trim();
   const normalizedEmailVerification = (emailVerificationToken || '').toString().trim();
   const normalizedRole = normalizeRole(role);
@@ -289,7 +286,7 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Invalid email format' });
   }
 
-  if (!/^\d{8,15}$/.test(phoneDigits)) {
+  if (!phoneDigits) {
     return res.status(400).json({ error: 'Phone must be numeric and 8-15 digits' });
   }
 
@@ -315,7 +312,7 @@ router.post('/register', async (req, res) => {
   if (!phoneVerifyEntry || phoneVerifyEntry.expiresAt < Date.now()) {
     return res.status(400).json({ error: 'Invalid or expired phone verification' });
   }
-  if (normalizePhoneDigits(phoneVerifyEntry.phone) !== phoneDigits) {
+  if (normalizeSignupPhone(phoneVerifyEntry.phone) !== phoneDigits) {
     return res.status(400).json({ error: 'Phone verification does not match this number' });
   }
   phoneVerificationSecrets.delete(normalizedPhoneVerification);
@@ -335,10 +332,10 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Password and confirmPassword do not match' });
   }
 
-  const validRoles = ['patient', 'nurse', 'doctor', 'admin'];
+  const validRoles = ['patient', 'nurse', 'doctor', 'admin', 'partner', 'provider'];
   if (!validRoles.includes(normalizedRole)) {
     return res.status(400).json({
-      error: 'Invalid role. Must be one of: patient, nurse, doctor, admin'
+      error: 'Invalid role. Must be one of: patient, nurse, doctor, admin, partner, provider'
     });
   }
 
@@ -750,9 +747,9 @@ router.post('/verify-email-code', async (req, res) => {
 
 router.post('/send-phone-otp', async (req, res) => {
   const purpose = ((req.body.purpose || 'signup') + '').toLowerCase();
-  const phoneDigits = normalizePhoneDigits((req.body.phone || '').toString());
+  const phoneDigits = normalizeSignupPhone((req.body.phone || '').toString());
 
-  if (!/^\d{8,15}$/.test(phoneDigits)) {
+  if (!phoneDigits) {
     return res.status(400).json({ error: 'Invalid phone number' });
   }
   if (!['signup', 'password_reset'].includes(purpose)) {
@@ -817,11 +814,11 @@ router.post('/send-phone-otp', async (req, res) => {
 });
 
 router.post('/verify-phone-otp', async (req, res) => {
-  const phoneDigits = normalizePhoneDigits((req.body.phone || '').toString());
+  const phoneDigits = normalizeSignupPhone((req.body.phone || '').toString());
   const rawCode = ((req.body.code || '') + '').trim();
   const purpose = ((req.body.purpose || 'signup') + '').toLowerCase();
 
-  if (!/^\d{8,15}$/.test(phoneDigits) || !rawCode) {
+  if (!phoneDigits || !rawCode) {
     return res.status(400).json({ error: 'phone and code are required' });
   }
   if (!['signup', 'password_reset'].includes(purpose)) {
@@ -937,7 +934,7 @@ router.post('/verify-code', async (req, res) => {
   const purpose = ((req.body.purpose || 'signup') + '').toLowerCase();
   const normalizedEmail = (req.body.email || '').toString().trim().toLowerCase();
   const rawPhone = (req.body.phone || '').toString().trim();
-  const phoneDigits = normalizePhoneDigits(rawPhone);
+  const phoneDigits = normalizeSignupPhone(rawPhone);
   const rawCode = ((req.body.code || '') + '').trim();
 
   if (!normalizedEmail || !rawCode) {

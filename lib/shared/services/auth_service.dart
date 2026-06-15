@@ -52,6 +52,12 @@ class AuthService {
 
   Never _throwFromException(Object e) {
     if (e is AuthServiceException) throw e;
+    if (e is ApiServiceException) {
+      throw AuthServiceException(
+        e.message,
+        retryAfterSeconds: e.retryAfterSeconds,
+      );
+    }
     final s = e.toString().replaceFirst('Exception: ', '');
     throw AuthServiceException(s);
   }

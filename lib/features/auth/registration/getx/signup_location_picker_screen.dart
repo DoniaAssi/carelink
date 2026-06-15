@@ -104,11 +104,17 @@ class _SignupLocationPickerScreenState
   String _cleanAddressString(String raw) {
     String formatted = raw
         .replaceAll(
-            RegExp(r'Palestinian Territories', caseSensitive: false), 'Palestine')
+          RegExp(r'Palestinian Territories', caseSensitive: false),
+          'Palestine',
+        )
         .replaceAll(
-            RegExp(r'Palestinian Territory', caseSensitive: false), 'Palestine');
+          RegExp(r'Palestinian Territory', caseSensitive: false),
+          'Palestine',
+        );
     formatted = formatted.replaceAll(
-        RegExp(r'\bArea\s+[A-Z]\b', caseSensitive: false), '');
+      RegExp(r'\bArea\s+[A-Z]\b', caseSensitive: false),
+      '',
+    );
     return formatted
         .split(',')
         .map((e) => e.trim())
@@ -130,22 +136,20 @@ class _SignupLocationPickerScreenState
       if (placemarks.isNotEmpty) {
         final p = placemarks.first;
 
-        final streetClean =
-            (p.street ?? '').toLowerCase().contains('area ') ? null : p.street;
-        final subLocalityClean = (p.subLocality ?? '')
-                .toLowerCase()
-                .contains('area ')
+        final streetClean = (p.street ?? '').toLowerCase().contains('area ')
+            ? null
+            : p.street;
+        final subLocalityClean =
+            (p.subLocality ?? '').toLowerCase().contains('area ')
             ? null
             : p.subLocality;
         final localityClean = p.locality;
-        final subAdminAreaClean = (p.subAdministrativeArea ?? '')
-                .toLowerCase()
-                .contains('area ')
+        final subAdminAreaClean =
+            (p.subAdministrativeArea ?? '').toLowerCase().contains('area ')
             ? null
             : p.subAdministrativeArea;
-        final adminAreaClean = (p.administrativeArea ?? '')
-                .toLowerCase()
-                .contains('area ')
+        final adminAreaClean =
+            (p.administrativeArea ?? '').toLowerCase().contains('area ')
             ? null
             : p.administrativeArea;
 
@@ -170,10 +174,14 @@ class _SignupLocationPickerScreenState
         }
       }
       final fallback = await _reverseGeocodeFromNominatim(point);
-      if (fallback.isNotEmpty) _addressController.text = _cleanAddressString(fallback);
+      if (fallback.isNotEmpty) {
+        _addressController.text = _cleanAddressString(fallback);
+      }
     } catch (_) {
       final fallback = await _reverseGeocodeFromNominatim(point);
-      if (fallback.isNotEmpty) _addressController.text = _cleanAddressString(fallback);
+      if (fallback.isNotEmpty) {
+        _addressController.text = _cleanAddressString(fallback);
+      }
     } finally {
       if (mounted) setState(() => _isResolving = false);
     }
@@ -221,9 +229,7 @@ class _SignupLocationPickerScreenState
             fontWeight: FontWeight.bold,
           ),
         ),
-        iconTheme: IconThemeData(
-          color: colorScheme.onSurface,
-        ),
+        iconTheme: IconThemeData(color: colorScheme.onSurface),
         backgroundColor: colorScheme.surface,
         elevation: 0,
       ),
@@ -242,10 +248,7 @@ class _SignupLocationPickerScreenState
             ),
             child: Text(
               context.tr('booking.location.useThisAddress'),
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
             ),
           ),
         ),
@@ -312,9 +315,13 @@ class _SignupLocationPickerScreenState
             style: TextStyle(color: colorScheme.onSurface),
             decoration: InputDecoration(
               labelText: context.tr('booking.location.address'),
-              labelStyle:
-                  TextStyle(color: colorScheme.onSurface.withOpacity(0.8)),
-              prefixIcon: Icon(Icons.location_on_outlined, color: colorScheme.primary),
+              labelStyle: TextStyle(
+                color: colorScheme.onSurface.withValues(alpha: 0.8),
+              ),
+              prefixIcon: Icon(
+                Icons.location_on_outlined,
+                color: colorScheme.primary,
+              ),
               suffixIcon: _isResolving
                   ? Padding(
                       padding: const EdgeInsets.all(14),
@@ -332,7 +339,9 @@ class _SignupLocationPickerScreenState
               fillColor: colorScheme.surface,
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.3)),
+                borderSide: BorderSide(
+                  color: colorScheme.outline.withValues(alpha: 0.3),
+                ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),

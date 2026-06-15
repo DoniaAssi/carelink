@@ -308,76 +308,114 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 7, 16, 9),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 7),
+        padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
           color: palette.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: palette.stroke),
         ),
-        child: Row(
-          children: days.map((day) {
-            final selected =
-                _selectedDay != null && _sameDay(_selectedDay!, day);
-            final isToday = _sameDay(today, day);
-            final hasBooking = _appointments.any((row) {
-              final date = _dateOf(row);
-              return date != null && _sameDay(date, day);
-            });
-            return Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => setState(() {
-                  _selectedDay = selected ? null : day;
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const spacing = 6.0;
+            final minimumCardWidth = _isArabic ? 76.0 : 64.0;
+            final fittedCardWidth =
+                (constraints.maxWidth - (spacing * 6)) / days.length;
+            final cardWidth = fittedCardWidth > minimumCardWidth
+                ? fittedCardWidth
+                : minimumCardWidth;
+
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: List.generate(days.length, (index) {
+                  final day = days[index];
+                  final selected =
+                      _selectedDay != null && _sameDay(_selectedDay!, day);
+                  final isToday = _sameDay(today, day);
+                  final hasBooking = _appointments.any((row) {
+                    final date = _dateOf(row);
+                    return date != null && _sameDay(date, day);
+                  });
+
+                  return Padding(
+                    padding: EdgeInsetsDirectional.only(
+                      end: index == days.length - 1 ? 0 : spacing,
+                    ),
+                    child: SizedBox(
+                      width: cardWidth,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => setState(() {
+                          _selectedDay = selected ? null : day;
+                        }),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 9,
+                          ),
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? AppColors.primary
+                                : palette.surfaceSoft,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: selected
+                                  ? AppColors.primary
+                                  : isToday
+                                  ? AppColors.primary
+                                  : palette.stroke,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _shortDay(day),
+                                maxLines: 1,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: selected
+                                      ? Colors.white
+                                      : palette.inkDark,
+                                  fontSize: _isArabic ? 12 : 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                '${day.day}',
+                                style: TextStyle(
+                                  color: selected
+                                      ? Colors.white
+                                      : palette.inkDark,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Container(
+                                width: 5,
+                                height: 5,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: hasBooking
+                                      ? selected
+                                            ? Colors.white
+                                            : AppColors.primary
+                                      : Colors.transparent,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
                 }),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(vertical: 7),
-                  decoration: BoxDecoration(
-                    color: selected ? AppColors.primary : Colors.transparent,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        _shortDay(day),
-                        style: TextStyle(
-                          color: selected
-                              ? Colors.white
-                              : isToday
-                              ? AppColors.primary
-                              : palette.inkMuted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        '${day.day}',
-                        style: TextStyle(
-                          color: selected ? Colors.white : palette.inkDark,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Container(
-                        width: 4,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: hasBooking
-                              ? selected
-                                    ? Colors.white
-                                    : AppColors.primary
-                              : Colors.transparent,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ),
             );
-          }).toList(),
+          },
         ),
       ),
     );
@@ -734,9 +772,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   String _shortDay(DateTime date) {
     if (!_isArabic) {
-      return intl.DateFormat('E').format(date).substring(0, 2);
+      return intl.DateFormat('EEE').format(date);
     }
-    const days = ['اث', 'ثل', 'أر', 'خم', 'جم', 'سب', 'أح'];
+    const days = ['إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت', 'أحد'];
     return days[date.weekday - 1];
   }
 

@@ -54,7 +54,7 @@ async function issueOtpForEmail(normalizedEmail) {
     const delta = Date.now() - last;
     if (delta >= 0 && delta < RESEND_INTERVAL_MS) {
       const wait = Math.ceil((RESEND_INTERVAL_MS - delta) / 1000);
-      const err = new Error(`Please wait ${wait} seconds before requesting a new code`);
+      const err = new Error(`يرجى الانتظار قبل طلب رمز جديد.`);
       err.statusCode = 429;
       err.retryAfterSeconds = wait;
       throw err;

@@ -2,6 +2,15 @@ const path = require('path');
 
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
+console.log('[STARTUP] Checking Environment Variables:');
+console.log(`- Loaded .env path: ${path.join(__dirname, '.env')}`);
+console.log(`- MAIL_USER exists: ${!!process.env.MAIL_USER}`);
+console.log(`- MAIL_FROM value: ${process.env.MAIL_FROM || 'not set'}`);
+console.log(`- MAIL_HOST: ${process.env.MAIL_HOST || 'not set'}`);
+console.log(`- MAIL_PORT: ${process.env.MAIL_PORT || 'not set'}`);
+console.log(`- MAIL_REQUIRE_REAL: ${process.env.MAIL_REQUIRE_REAL || 'not set'}`);
+console.log(`- NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
+console.log('----------------------------------------');
 const express = require('express');
 const cors = require('cors');
 

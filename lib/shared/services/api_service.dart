@@ -4,6 +4,17 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
+class ApiServiceException implements Exception {
+  ApiServiceException(this.message, {this.statusCode, this.retryAfterSeconds});
+
+  final String message;
+  final int? statusCode;
+  final int? retryAfterSeconds;
+
+  @override
+  String toString() => message;
+}
+
 class ApiService {
   // غيّري هذا الـ IP إلى IPv4 تبع جهازك إذا كنتِ تشغلين التطبيق على هاتف حقيقي
   static const String _machineIp = '192.168.1.5';
@@ -159,7 +170,7 @@ class ApiService {
       statusCode: statusCode,
       error: reason,
     );
-    return '$reason (Status: $statusCode, URL: $url)';
+    return reason;
   }
 
   Future<void> pingServer() async {
@@ -605,6 +616,24 @@ class ApiService {
 
     throw Exception(
       _extractErrorMessage(response, 'Failed to load doctor details'),
+    );
+  }
+
+  Future<List<String>> getProviderBlockedSlots(String providerId) async {
+    final response = await _sendRequest(
+      http.get(
+        _endpoint('/providers/provider/$providerId/blocked-slots'),
+        headers: _jsonHeaders,
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final decoded = jsonDecode(response.body) as List<dynamic>;
+      return decoded.map((e) => e.toString()).toList();
+    }
+
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to load blocked slots'),
     );
   }
 
@@ -1444,6 +1473,20 @@ class ApiService {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
 
-    throw Exception(_extractErrorMessage(response, errorFallback));
+    int? retryAfterSeconds;
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        retryAfterSeconds = int.tryParse(
+          decoded['retryAfterSeconds']?.toString() ?? '',
+        );
+      }
+    } catch (_) {}
+
+    throw ApiServiceException(
+      _extractErrorMessage(response, errorFallback),
+      statusCode: response.statusCode,
+      retryAfterSeconds: retryAfterSeconds,
+    );
   }
 }

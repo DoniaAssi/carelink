@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 
 import 'package:carelink/features/auth/registration/getx/carelink_registration_models.dart';
 import 'package:carelink/features/auth/services/auth_service.dart';
+import 'package:carelink/core/phone_number_utils.dart';
 import 'package:carelink/shared/models/user.dart';
 
 class CarelinkRegistrationController extends GetxController {
@@ -92,7 +93,12 @@ class CarelinkRegistrationController extends GetxController {
     }
   }
 
-  String _digitsFromPhone() => digitsOnly(safeControllerText(phone));
+  static String? normalizePalestinePhone(Object? raw) {
+    return PhoneNumberUtils.normalizePalestine(_safeString(raw, ''));
+  }
+
+  String? _normalizedPhone() =>
+      normalizePalestinePhone(safeControllerText(phone));
 
   bool _validateStep1Fields() {
     try {
@@ -106,9 +112,9 @@ class CarelinkRegistrationController extends GetxController {
         errorText.value = 'Invalid email or leave empty';
         return false;
       }
-      final d = _digitsFromPhone();
-      if (d.isEmpty || d.length < 8 || d.length > 15) {
-        errorText.value = 'Enter a valid phone number (8–15 digits)';
+      final normalizedPhone = _normalizedPhone();
+      if (normalizedPhone == null) {
+        errorText.value = 'رقم الهاتف غير صحيح.';
         return false;
       }
       if (safeControllerText(password).length < 8) {
@@ -151,12 +157,12 @@ class CarelinkRegistrationController extends GetxController {
 
     isBusy.value = true;
     try {
-      final digits = _digitsFromPhone();
-      if (digits.isEmpty) {
-        errorText.value = 'Enter a valid phone number (8–15 digits)';
+      final normalizedPhone = _normalizedPhone();
+      if (normalizedPhone == null) {
+        errorText.value = 'رقم الهاتف غير صحيح.';
         return;
       }
-      await _api.sendOtp(phoneDigits: digits);
+      await _api.sendOtp(phoneDigits: normalizedPhone);
       pinController.clear();
       stepIndex.value = 1;
       _startResendCountdown(59);
@@ -174,12 +180,12 @@ class CarelinkRegistrationController extends GetxController {
     errorText.value = null;
     isBusy.value = true;
     try {
-      final digits = _digitsFromPhone();
-      if (digits.isEmpty) {
-        errorText.value = 'Enter a valid phone number (8–15 digits)';
+      final normalizedPhone = _normalizedPhone();
+      if (normalizedPhone == null) {
+        errorText.value = 'رقم الهاتف غير صحيح.';
         return;
       }
-      await _api.sendOtp(phoneDigits: digits);
+      await _api.sendOtp(phoneDigits: normalizedPhone);
       _startResendCountdown(59);
     } on AuthApiException catch (e) {
       errorText.value = e.message;
@@ -220,11 +226,11 @@ class CarelinkRegistrationController extends GetxController {
     }
     errorText.value = null;
     isBusy.value = true;
-        try {
+    try {
       final body = await _api.register(
         fullName: safeControllerText(fullName).trim(),
         email: safeControllerText(email).trim(),
-        phoneDigits: _digitsFromPhone(),
+        phoneDigits: _normalizedPhone()!,
         password: safeControllerText(password),
         role: role.apiValue,
         otp: otp,
@@ -247,7 +253,7 @@ class CarelinkRegistrationController extends GetxController {
         return null;
       }
       return User.fromJson(raw);
-        } on AuthApiException catch (e) {
+    } on AuthApiException catch (e) {
       errorText.value = e.message;
       return null;
     } catch (e) {
@@ -271,11 +277,7 @@ class CarelinkRegistrationController extends GetxController {
 
   String formattedPhoneDisplay() {
     try {
-      final d = _digitsFromPhone();
-      if (d.length >= 10) {
-        return '${d.substring(0, 3)} ${d.substring(3)}';
-      }
-      return d.isEmpty ? '—' : d;
+      return _normalizedPhone() ?? '—';
     } catch (_) {
       return '—';
     }

@@ -311,21 +311,37 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
       if (provider == null) continue;
 
       final finalScore = (map['finalScore'] as num?)?.toDouble() ?? 0.0;
-      final matchPct = (map['matchPercentage'] as num?)?.round() ?? (finalScore * 100).round();
+      final matchPct =
+          (map['matchPercentage'] as num?)?.round() ??
+          (finalScore * 100).round();
       final bd = map['scoreBreakdown'];
       final breakdown = ScoreBreakdown(
-        location:             (bd is Map ? (bd['location']             as num?)?.toDouble() : null) ?? 0.5,
-        specialization:       (bd is Map ? (bd['specialization']       as num?)?.toDouble() : null) ?? 0.5,
-        availability:         (bd is Map ? (bd['availability']         as num?)?.toDouble() : null) ?? 0.5,
-        rating:               (bd is Map ? (bd['rating']               as num?)?.toDouble() : null) ?? 0.5,
-        experience:           (bd is Map ? (bd['experience']           as num?)?.toDouble() : null) ?? 0.5,
-        medicalCompatibility: (bd is Map ? (bd['medicalCompatibility'] as num?)?.toDouble() : null) ?? 0.5,
-        history:              (bd is Map ? (bd['history']              as num?)?.toDouble() : null) ?? 0.0,
+        location:
+            (bd is Map ? (bd['location'] as num?)?.toDouble() : null) ?? 0.5,
+        specialization:
+            (bd is Map ? (bd['specialization'] as num?)?.toDouble() : null) ??
+            0.5,
+        availability:
+            (bd is Map ? (bd['availability'] as num?)?.toDouble() : null) ??
+            0.5,
+        rating: (bd is Map ? (bd['rating'] as num?)?.toDouble() : null) ?? 0.5,
+        experience:
+            (bd is Map ? (bd['experience'] as num?)?.toDouble() : null) ?? 0.5,
+        medicalCompatibility:
+            (bd is Map
+                ? (bd['medicalCompatibility'] as num?)?.toDouble()
+                : null) ??
+            0.5,
+        history:
+            (bd is Map ? (bd['history'] as num?)?.toDouble() : null) ?? 0.0,
       );
 
       final rawReasons = map['recommendationReasons'];
       final reasons = rawReasons is List
-          ? rawReasons.map((r) => r.toString()).where((r) => r.trim().isNotEmpty).toList()
+          ? rawReasons
+                .map((r) => r.toString())
+                .where((r) => r.trim().isNotEmpty)
+                .toList()
           : <String>[];
 
       final rawTags = map['matchedTags'] ?? map['medicalTags'];
@@ -333,19 +349,24 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
           ? rawTags.map((t) => t.toString()).where((t) => t.isNotEmpty).toList()
           : <String>[];
 
-      final aiReason = (map['displayReason'] ?? map['aiMatchReason'])?.toString();
+      final aiReason = (map['displayReason'] ?? map['aiMatchReason'])
+          ?.toString();
 
-      out.add(AIRecommendationResult(
-        provider: provider,
-        finalScore: finalScore,
-        matchPercentage: matchPct.clamp(0, 99),
-        breakdown: breakdown,
-        weights: RecommendationWeights.coldStart,
-        recommendationReasons: reasons,
-        aiMatchReason: (aiReason?.trim().isNotEmpty == true) ? aiReason : null,
-        matchedTags: tags,
-        medicalMatchScore: (map['medicalMatchScore'] as num?)?.toDouble(),
-      ));
+      out.add(
+        AIRecommendationResult(
+          provider: provider,
+          finalScore: finalScore,
+          matchPercentage: matchPct.clamp(0, 99),
+          breakdown: breakdown,
+          weights: RecommendationWeights.coldStart,
+          recommendationReasons: reasons,
+          aiMatchReason: (aiReason?.trim().isNotEmpty == true)
+              ? aiReason
+              : null,
+          matchedTags: tags,
+          medicalMatchScore: (map['medicalMatchScore'] as num?)?.toDouble(),
+        ),
+      );
     }
 
     out.sort((a, b) => b.finalScore.compareTo(a.finalScore));
@@ -674,10 +695,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                 : TextDirection.ltr,
             child: Scaffold(
               backgroundColor: p.pageBg,
-              appBar: PatientTopActions(
-                showBack: true,
-                onBack: _handleBack,
-              ),
+              appBar: PatientTopActions(showBack: true, onBack: _handleBack),
               body: SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -779,10 +797,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
             },
             child: Scaffold(
               backgroundColor: p.pageBg,
-              appBar: PatientTopActions(
-                showBack: true,
-                onBack: _handleBack,
-              ),
+              appBar: PatientTopActions(showBack: true, onBack: _handleBack),
               bottomNavigationBar: _buildBottomNav(),
               body: SafeArea(
                 child: Column(
@@ -1019,59 +1034,161 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
     final dark = p.isDark;
     final helperColor = p.inkMuted;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
-      children: [
-        Text(
-          _t('resultsHeadline'),
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: dark ? Colors.blue[300] : AppColors.primary,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            height: 1.25,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          _t('resultsSubtitle'),
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: helperColor,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 16),
-        if (_results.isEmpty)
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              _t('empty'),
-              textAlign: TextAlign.center,
-              style: TextStyle(color: p.inkMuted, fontWeight: FontWeight.w700),
-            ),
-          )
-        else
-          ..._results.asMap().entries.map(
-            (entry) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: AiProviderRecommendationCard(
-                rank: entry.key + 1,
-                result: entry.value,
-                distanceKm: AiProviderRecommendationCard.distanceFrom(
-                  _patLat,
-                  _patLng,
-                  entry.value.provider,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth < 340 ? 1 : 2;
+        final cardAspectRatio = columns == 1 ? 1.75 : 0.82;
+
+        return CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    Text(
+                      _t('resultsHeadline'),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: dark ? p.inkDark : AppColors.primary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _t('resultsSubtitle'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: helperColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _caseController,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _analyzeCase(),
+                      decoration: InputDecoration(
+                        hintText: _t('hint'),
+                        prefixIcon: const Icon(
+                          Icons.search_rounded,
+                          color: AppColors.primary,
+                        ),
+                        suffixIcon: IconButton(
+                          onPressed: _analyzeCase,
+                          icon: const Icon(Icons.arrow_forward_rounded),
+                          color: AppColors.primary,
+                        ),
+                        filled: true,
+                        fillColor: p.surface,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 13,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: p.stroke),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: p.stroke),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(
+                            color: AppColors.primary,
+                            width: 1.3,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 36,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _categoryKeys.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 7),
+                        itemBuilder: (context, index) {
+                          final key = _categoryKeys[index];
+                          final selected = _selectedCategoryKey == key;
+                          return ChoiceChip(
+                            selected: selected,
+                            label: Text(_t(key)),
+                            labelStyle: TextStyle(
+                              color: selected ? Colors.white : p.inkDark,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            selectedColor: AppColors.primary,
+                            backgroundColor: p.surface,
+                            side: BorderSide(
+                              color: selected ? AppColors.primary : p.stroke,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            onSelected: (_) {
+                              _selectCategory(key);
+                              _analyzeCase();
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                 ),
-                onTap: () => _openDetails(entry.value),
-                isArabic: _ar,
               ),
             ),
-          ),
-      ],
+            if (_results.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    _t('empty'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: p.inkMuted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 110),
+                sliver: SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: cardAspectRatio,
+                  ),
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final result = _results[index];
+                    return AiProviderRecommendationCard(
+                      rank: index + 1,
+                      result: result,
+                      highlighted: index == 0,
+                      distanceKm: AiProviderRecommendationCard.distanceFrom(
+                        _patLat,
+                        _patLng,
+                        result.provider,
+                      ),
+                      onTap: () => _openDetails(result),
+                      isArabic: _ar,
+                    );
+                  }, childCount: _results.length),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 

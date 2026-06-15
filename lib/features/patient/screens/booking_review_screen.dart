@@ -20,6 +20,7 @@ class BookingReviewScreen extends StatefulWidget {
 
 class _BookingReviewScreenState extends State<BookingReviewScreen> {
   bool _isSubmitting = false;
+  String? _errorMessage;
 
   bool get _canConfirm {
     final r = widget.request;
@@ -36,7 +37,10 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
   }
 
   Future<void> _confirmBooking() async {
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
     try {
       final request = widget.request.copyWith(
         bookingStatus: 'pending_payment',
@@ -93,9 +97,32 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('booking.review.submitFailed'))),
-      );
+
+      String errorText = e.toString().replaceAll('Exception: ', '');
+      
+      final has409 = errorText.contains('Status: 409');
+      final technicalDetailsRegex = RegExp(r'\s*\(Status: \d+, URL: .*\)');
+      errorText = errorText.replaceAll(technicalDetailsRegex, '').trim();
+
+      if (has409) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              context.l10n.isArabic 
+                  ? 'هذا الموعد لم يعد متاحاً، الرجاء اختيار وقت آخر.' 
+                  : 'This appointment time is no longer available. Please select another time.',
+            ),
+            backgroundColor: Colors.red.shade800,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.of(context).pop();
+        return;
+      }
+
+      setState(() {
+        _errorMessage = errorText.isNotEmpty ? errorText : context.tr('booking.review.submitFailed');
+      });
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -170,6 +197,32 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
             context.tr('booking.review.nextPayment'),
             style: TextStyle(color: p.inkMuted, fontSize: 13.5, height: 1.35),
           ),
+          if (_errorMessage != null)
+            Container(
+              margin: const EdgeInsets.only(top: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error_outline_rounded, color: Colors.red.shade700),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _errorMessage!,
+                      style: TextStyle(
+                        color: Colors.red.shade700,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -178,8 +231,10 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
           child: PatientPrimaryButton(
             onPressed: _isSubmitting || !_canConfirm ? null : _confirmBooking,
             isLoading: _isSubmitting,
-            icon: Icons.lock_outline_rounded,
-            label: context.tr('booking.review.continuePayment'),
+            icon: _errorMessage != null ? Icons.refresh_rounded : Icons.lock_outline_rounded,
+            label: _errorMessage != null 
+                ? context.tr('booking.tryAgain') 
+                : context.tr('booking.review.continuePayment'),
           ),
         ),
       ),
@@ -215,8 +270,8 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 88,
+          Expanded(
+            flex: 2,
             child: Text(
               k,
               style: TextStyle(
@@ -226,7 +281,9 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
               ),
             ),
           ),
+          const SizedBox(width: 8),
           Expanded(
+            flex: 3,
             child: Text(
               v,
               style: TextStyle(

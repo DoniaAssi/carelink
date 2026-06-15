@@ -1,15 +1,5 @@
 const nodemailer = require('nodemailer');
 
-/**
- * Mail + SMS dispatch. Supports Gmail, any SMTP (MAIL_HOST), SendGrid-style, etc.
- *
- * Env (email):
- *   MAIL_USER, MAIL_PASS — required for real delivery
- *   MAIL_FROM — optional sender (default: MAIL_USER)
- *   MAIL_HOST, MAIL_PORT, MAIL_SECURE — optional; if set, use generic SMTP instead of Gmail
- *   MAIL_SERVICE — optional Nodemailer well-known service name (default: gmail when no MAIL_HOST)
- */
-
 function isConfiguredMail() {
   return !!(
     process.env.MAIL_USER &&
@@ -24,10 +14,9 @@ function isProduction() {
 }
 
 function mailFrom() {
-  const from = (process.env.MAIL_FROM || '').trim();
-  if (from) return from;
-  const user = (process.env.MAIL_USER || '').trim();
-  return user ? `"CareLink" <${user}>` : '';
+  const fromName = (process.env.MAIL_FROM_NAME || 'CARELINK').trim();
+  const fromEmail = (process.env.MAIL_FROM || process.env.MAIL_USER || '').trim();
+  return fromEmail ? `"${fromName}" <${fromEmail}>` : '';
 }
 
 /**
@@ -38,32 +27,29 @@ function createMailTransport() {
 
   const user = process.env.MAIL_USER.trim();
   const pass = process.env.MAIL_PASS.trim();
-  const host = (process.env.MAIL_HOST || '').trim();
+  const host = (process.env.MAIL_HOST || 'smtp.gmail.com').trim();
+  const port = parseInt(process.env.MAIL_PORT || '587', 10);
+  const secure = process.env.MAIL_SECURE === 'true' || process.env.MAIL_SECURE === '1' || port === 465;
 
-  if (host) {
-    const port = parseInt(process.env.MAIL_PORT || '587', 10);
-    const secure =
-      process.env.MAIL_SECURE === '1' ||
-      process.env.MAIL_SECURE === 'true' ||
-      String(process.env.MAIL_SECURE || '').toLowerCase() === 'yes' ||
-      port === 465;
-
-    return nodemailer.createTransport({
-      host,
-      port,
-      secure,
-      auth: { user, pass },
-      ...(process.env.MAIL_TLS_REJECT_UNAUTHORIZED === '0'
-        ? { tls: { rejectUnauthorized: false } }
-        : {}),
-    });
-  }
-
-  const service = (process.env.MAIL_SERVICE || 'gmail').trim() || 'gmail';
   return nodemailer.createTransport({
-    service,
+    host,
+    port,
+    secure,
     auth: { user, pass },
+    ...((process.env.MAIL_TLS_REJECT_UNAUTHORIZED === '0' && !isProduction())
+      ? { tls: { rejectUnauthorized: false } }
+      : {}),
   });
+}
+
+function enforceRealDelivery() {
+  return String(process.env.MAIL_REQUIRE_REAL || '').toLowerCase() === 'true' || process.env.MAIL_REQUIRE_REAL === '1';
+}
+
+function getSafeError() {
+  const err = new Error('تعذر إرسال رمز التحقق. حاول مرة أخرى لاحقاً.');
+  err.statusCode = 502;
+  return err;
 }
 
 /**
@@ -72,7 +58,7 @@ function createMailTransport() {
  * @returns {Promise<{ channel: 'smtp' | 'simulated' }>}
  */
 async function sendTransactionalEmail(opts) {
-  const to = (opts.to || '').trim();
+  const to = (opts.to || '').trim().toLowerCase();
   const subject = (opts.subject || '').trim();
   const html = opts.html || '';
   if (!to || !subject) {
@@ -85,12 +71,9 @@ async function sendTransactionalEmail(opts) {
   const from = mailFrom();
 
   if (!transport) {
-    if (isProduction()) {
-      const err = new Error(
-        'Email is not configured. Set MAIL_USER and MAIL_PASS (and optionally MAIL_HOST).',
-      );
-      err.statusCode = 503;
-      throw err;
+    if (isProduction() || enforceRealDelivery()) {
+      console.error('[EMAIL] Missing transport configuration');
+      throw getSafeError();
     }
     console.log('[EMAIL SIMULATED transactional]', { to, subject });
     return { channel: 'simulated' };
@@ -101,12 +84,8 @@ async function sendTransactionalEmail(opts) {
     return { channel: 'smtp' };
   } catch (e) {
     console.error('[EMAIL] transactional sendMail failed:', e.message);
-    if (isProduction()) {
-      const err = new Error(
-        `Could not send email (${e.message}). Verify MAIL_* and app passwords / SMTP.`,
-      );
-      err.statusCode = 502;
-      throw err;
+    if (isProduction() || enforceRealDelivery()) {
+      throw getSafeError();
     }
     console.warn('[EMAIL DEV] Transactional not delivered; content was logged above.');
     return { channel: 'simulated' };
@@ -118,7 +97,15 @@ async function sendTransactionalEmail(opts) {
  * @returns {Promise<{ channel: 'smtp' | 'simulated'; sendError?: string }>}
  */
 async function dispatchEmailVerificationCode(params) {
-  const { to, code, purpose } = params;
+  const to = (params.to || '').trim().toLowerCase();
+  const { code, purpose } = params;
+
+  if (!to) {
+    const err = new Error('Missing recipient email');
+    err.statusCode = 400;
+    throw err;
+  }
+
   const subject =
     purpose === 'signup'
       ? 'CareLink — verify your email'
@@ -135,38 +122,26 @@ async function dispatchEmailVerificationCode(params) {
   const transport = createMailTransport();
   const from = mailFrom();
 
-  if (isProduction() && !transport) {
-    const err = new Error(
-      'Email is not configured. Set MAIL_USER, MAIL_PASS, and optionally MAIL_HOST for your SMTP provider.',
-    );
-    err.statusCode = 503;
-    throw err;
-  }
-
-  if (transport) {
-    try {
-      await transport.sendMail({ from, to, subject, html });
-      return { channel: 'smtp' };
-    } catch (e) {
-      console.error('[EMAIL] verification sendMail failed:', e.message);
-      if (isProduction()) {
-        const err = new Error(
-          `Could not send verification email (${e.message}). For Gmail use an App Password; for other hosts set MAIL_HOST/MAIL_PORT.`,
-        );
-        err.statusCode = 502;
-        throw err;
-      }
-      console.warn(
-        '[EMAIL DEV] SMTP failed; verification code was not logged.',
-      );
-      return { channel: 'simulated', sendError: e.message };
+  if (!transport) {
+    if (isProduction() || enforceRealDelivery()) {
+      console.error('[EMAIL] Missing transport configuration for verification code');
+      throw getSafeError();
     }
+    console.warn('[EMAIL DEV] No MAIL_USER/MAIL_PASS; verification code was not logged.');
+    return { channel: 'simulated' };
   }
 
-  console.warn(
-    '[EMAIL DEV] No MAIL_USER/MAIL_PASS; verification code was not logged.',
-  );
-  return { channel: 'simulated' };
+  try {
+    await transport.sendMail({ from, to, subject, html });
+    return { channel: 'smtp' };
+  } catch (e) {
+    console.error('[EMAIL] verification sendMail failed:', e.message);
+    if (isProduction() || enforceRealDelivery()) {
+      throw getSafeError();
+    }
+    console.warn('[EMAIL DEV] SMTP failed; verification code was not logged.');
+    return { channel: 'simulated', sendError: e.message };
+  }
 }
 
 /**
@@ -211,6 +186,7 @@ async function dispatchSmsVerificationCode(params) {
 
 module.exports = {
   createMailTransport,
+  mailFrom,
   sendTransactionalEmail,
   dispatchEmailVerificationCode,
   dispatchSmsVerificationCode,

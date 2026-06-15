@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
-import 'package:carelink/shared/models/booking_request_model.dart';
+import 'package:carelink/core/profile_avatar.dart'
+    show profileAvatarOrPlaceholder;
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/location_service.dart';
@@ -13,7 +14,6 @@ import 'package:carelink/features/ai/provider_smart_match.dart';
 import 'package:carelink/shared/services/patient_favorites_service.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'provider_details_screen.dart';
-import 'select_service_screen.dart';
 
 enum ProviderSortOption {
   smartMatch,
@@ -717,19 +717,12 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   }
 
   Widget _buildSearchField(CarelinkPalette p) {
-    return Container(
-      decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: p.stroke.withValues(alpha: 0.8)),
-        boxShadow: [
-          BoxShadow(
-            color: p.cardShadowColor(0.05),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: p.stroke.withValues(alpha: 0.85)),
+    );
+    return SizedBox(
+      height: 46,
       child: TextField(
         controller: _searchController,
         onChanged: (v) {
@@ -748,13 +741,18 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
           prefixIcon: const Icon(
             Icons.search_rounded,
             color: AppColors.primary,
-            size: 21,
+            size: 20,
           ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 11,
+          filled: true,
+          fillColor: p.surface,
+          isDense: true,
+          border: border,
+          enabledBorder: border,
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
           ),
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
         ),
       ),
     );
@@ -892,7 +890,30 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        ..._visibleProviders.map((e) => _providerCard(p, e)),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            const spacing = 9.0;
+            final twoColumnCardWidth = (constraints.maxWidth - spacing) / 2;
+            final columns = twoColumnCardWidth >= 168 ? 2 : 1;
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _visibleProviders.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: spacing,
+                mainAxisSpacing: spacing,
+                childAspectRatio: columns == 1 ? 1.8 : 0.98,
+              ),
+              itemBuilder: (context, index) => _providerCard(
+                p,
+                _visibleProviders[index],
+                highlighted:
+                    index == 0 && _sortOption == ProviderSortOption.smartMatch,
+              ),
+            );
+          },
+        ),
       ],
     );
   }
@@ -923,204 +944,217 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     );
   }
 
-  Widget _providerCard(CarelinkPalette p, ProviderModel provider) {
+  Widget _providerCard(
+    CarelinkPalette p,
+    ProviderModel provider, {
+    required bool highlighted,
+  }) {
     final isDoctor = provider.role.toLowerCase() == 'doctor';
-    final distance = _distanceFor(provider);
     final matchPercentage = _matchPercentageFor(provider);
-    final reason = _shortReasonFor(provider);
+
     return InkWell(
       onTap: () => _openProvider(provider),
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(17),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: p.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: p.stroke.withValues(alpha: 0.85)),
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(
+            color: highlighted
+                ? AppColors.primary.withValues(alpha: 0.55)
+                : p.stroke.withValues(alpha: 0.9),
+            width: highlighted ? 1.25 : 1,
+          ),
           boxShadow: [
             BoxShadow(
-              color: p.cardShadowColor(0.06),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
+              color: p.cardShadowColor(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _providerAvatar(p, provider, isDoctor),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    provider.fullName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 15.5,
-                                      fontWeight: FontWeight.w800,
-                                      color: p.inkDark,
-                                      letterSpacing: -0.15,
-                                    ),
-                                  ),
-                                ),
-                                if (_favoriteIds.contains(provider.userId)) ...[
-                                  const SizedBox(width: 4),
-                                  const Icon(
-                                    Icons.favorite_rounded,
-                                    color: Color(0xFFFF6B6B),
-                                    size: 15,
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          if (matchPercentage != null)
-                            _matchBadge(p, matchPercentage),
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        provider.specialization.isEmpty
-                            ? context.tr(
-                                isDoctor
-                                    ? 'providers.doctor'
-                                    : 'providers.nurse',
-                              )
-                            : provider.specialization,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: p.inkMuted,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 7),
-                      Row(
-                        children: [
-                          _metric(
-                            p,
-                            Icons.star_rounded,
-                            provider.overallRating.toStringAsFixed(1),
-                            iconColor: const Color(0xFFFFB020),
-                          ),
-                          const SizedBox(width: 10),
-                          _metric(
-                            p,
-                            Icons.location_on_outlined,
-                            _distanceLabel(distance),
-                          ),
-                          if (provider.consultationFee != null) ...[
-                            const SizedBox(width: 10),
-                            _metric(
-                              p,
-                              Icons.payments_outlined,
-                              '${provider.consultationFee!.toStringAsFixed(0)} ILS',
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                _availabilityBadge(p, provider.isAvailable),
-                if (reason.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
+                _compactProviderAvatar(p, provider, isDoctor),
+                const Spacer(),
+                if (matchPercentage != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.09),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                     child: Text(
-                      reason,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textDirection: context.l10n.isArabic
-                          ? TextDirection.rtl
-                          : TextDirection.ltr,
-                      style: TextStyle(
-                        color: p.inkMuted,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
+                      '$matchPercentage%',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 7),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    provider.fullName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      height: 1.15,
+                      fontWeight: FontWeight.w800,
+                      color: p.inkDark,
+                    ),
+                  ),
+                ),
+                if (_favoriteIds.contains(provider.userId)) ...[
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.favorite_rounded,
+                    color: Color(0xFFFF6B6B),
+                    size: 14,
                   ),
                 ],
               ],
             ),
-            const SizedBox(height: 11),
+            const SizedBox(height: 4),
+            Text(
+              provider.specialization.isEmpty
+                  ? context.tr(
+                      isDoctor ? 'providers.doctor' : 'providers.nurse',
+                    )
+                  : provider.specialization,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: p.inkMuted,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
             Row(
               children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _openProvider(provider),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      side: BorderSide(
-                        color: AppColors.primary.withValues(alpha: 0.45),
-                      ),
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(11),
-                      ),
+                const Icon(
+                  Icons.star_rounded,
+                  size: 15,
+                  color: Color(0xFFFFB020),
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  provider.overallRating.toStringAsFixed(1),
+                  style: TextStyle(
+                    color: p.inkDark,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  provider.consultationFee == null
+                      ? _copy('Price later', 'السعر لاحقاً')
+                      : '${provider.consultationFee!.toStringAsFixed(0)} ILS',
+                  style: TextStyle(
+                    color: p.inkDark,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 7),
+            Row(
+              children: [
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      context.tr('providers.viewDetails'),
+                      context.tr(
+                        provider.isAvailable
+                            ? 'providers.available'
+                            : 'providers.busy',
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 12.5,
+                        color: AppColors.primary,
+                        fontSize: 9,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    onPressed:
-                        (widget.userId?.trim().isNotEmpty ?? false) &&
-                            provider.availableSlots.isNotEmpty
-                        ? () => _bookProvider(provider)
-                        : null,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(11),
-                      ),
+                const Spacer(),
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: IconButton(
+                    onPressed: () => _openProvider(provider),
+                    padding: EdgeInsets.zero,
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                      foregroundColor: AppColors.primary,
                     ),
-                    child: Text(
-                      provider.availableSlots.isEmpty
-                          ? (context.l10n.isArabic
-                                ? 'لا توجد مواعيد'
-                                : 'No slots available')
-                          : context.tr('providers.book'),
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    icon: Icon(
+                      context.l10n.isArabic
+                          ? Icons.arrow_back_rounded
+                          : Icons.arrow_forward_rounded,
+                      size: 15,
                     ),
                   ),
                 ),
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _compactProviderAvatar(
+    CarelinkPalette p,
+    ProviderModel provider,
+    bool isDoctor,
+  ) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: p.isDark ? 0.22 : 0.10),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.22),
+          width: 1.25,
+        ),
+      ),
+      child: ClipOval(
+        child: profileAvatarOrPlaceholder(
+          imageUrl: provider.profileImageUrl,
+          size: 44,
+          placeholderColor: AppColors.primary,
+          placeholderIcon: isDoctor
+              ? Icons.medical_services_outlined
+              : Icons.local_hospital_outlined,
+          iconSize: 21,
         ),
       ),
     );
@@ -1140,92 +1174,6 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     );
   }
 
-  void _bookProvider(ProviderModel provider) {
-    final patientId = widget.userId?.trim() ?? '';
-    if (patientId.isEmpty) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => SelectServiceScreen(
-          request: BookingRequestModel(
-            patientId: patientId,
-            providerId: provider.userId,
-            providerName: provider.fullName,
-            providerRole: provider.role,
-            providerImageUrl: provider.profileImageUrl ?? '',
-            specialization: provider.specialization,
-            serviceType: provider.serviceType,
-            appointmentDate: '',
-            appointmentTime: '',
-            visitLatitude: provider.gpsLat ?? 0,
-            visitLongitude: provider.gpsLng ?? 0,
-            visitAddress: '',
-            locationNote: '',
-            patientReason: '',
-            symptoms: '',
-            isUrgent: false,
-            additionalNotes: '',
-            price: provider.consultationFee ?? 0,
-            extraFees: 0,
-            paymentMethod: '',
-            paymentStatus: '',
-            bookingStatus: 'pending',
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _providerAvatar(
-    CarelinkPalette p,
-    ProviderModel provider,
-    bool isDoctor,
-  ) {
-    final imageUrl = _providerImageUrl(provider.profileImageUrl);
-    final fallback = Container(
-      color: AppColors.primary.withValues(alpha: p.isDark ? 0.22 : 0.10),
-      alignment: Alignment.center,
-      child: Icon(
-        isDoctor
-            ? Icons.medical_services_outlined
-            : Icons.local_hospital_outlined,
-        color: AppColors.primary,
-        size: 24,
-      ),
-    );
-
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.22),
-          width: 1.5,
-        ),
-      ),
-      child: ClipOval(
-        child: imageUrl == null
-            ? fallback
-            : Image.network(
-                imageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => fallback,
-              ),
-      ),
-    );
-  }
-
-  String? _providerImageUrl(String? raw) {
-    final value = raw?.trim() ?? '';
-    if (value.isEmpty || value.toLowerCase() == 'null') return null;
-    if (value.startsWith('http://') || value.startsWith('https://')) {
-      return value;
-    }
-    if (value.startsWith('/')) return '${ApiService.baseUrl}$value';
-    return '${ApiService.baseUrl}/$value';
-  }
-
   int? _matchPercentageFor(ProviderModel provider) {
     final recommendation = _backendRecommendations[provider.userId];
     final rawMatch = recommendation?['matchPercentage'];
@@ -1235,114 +1183,6 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       return (rawMedical.toDouble() * 100).round().clamp(0, 99);
     }
     return null;
-  }
-
-  String _shortReasonFor(ProviderModel provider) {
-    if (_sortOption != ProviderSortOption.smartMatch) return '';
-    if (context.l10n.isArabic) {
-      return context.tr('providers.aiReasonFallback');
-    }
-
-    final recommendation = _backendRecommendations[provider.userId];
-    final rawReasons = recommendation?['medicalReasons'];
-    if (rawReasons is List) {
-      final reasons = rawReasons
-          .map((e) => e.toString().trim())
-          .where((e) => e.isNotEmpty)
-          .take(2)
-          .map((e) => e.toLowerCase())
-          .toList();
-      if (reasons.isNotEmpty) {
-        return 'Matched for ${reasons.join(' and ')}.';
-      }
-    }
-
-    if (_careSummary.hasStructuredData) {
-      return ProviderSmartMatch.recommendationReason(
-        recommendation ?? provider,
-        _careSummary,
-      );
-    }
-    return context.tr('providers.aiReasonFallback');
-  }
-
-  String _distanceLabel(int meters) {
-    if (meters < 1000) return '$meters m';
-    return '${(meters / 1000).toStringAsFixed(1)} km';
-  }
-
-  Widget _matchBadge(CarelinkPalette p, int percentage) {
-    return Container(
-      margin: const EdgeInsetsDirectional.only(start: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: p.isDark ? 0.22 : 0.10),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '$percentage% ${context.tr('providers.match')}',
-        style: const TextStyle(
-          color: AppColors.primary,
-          fontSize: 10.5,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-
-  Widget _availabilityBadge(CarelinkPalette p, bool available) {
-    final color = available ? AppColors.primary : p.inkMuted;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: p.isDark ? 0.18 : 0.09),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            context.tr(available ? 'providers.available' : 'providers.busy'),
-            style: TextStyle(
-              color: color,
-              fontSize: 10.5,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _metric(
-    CarelinkPalette p,
-    IconData icon,
-    String value, {
-    Color iconColor = AppColors.primary,
-  }) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: iconColor),
-        const SizedBox(width: 3),
-        Text(
-          value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 11.5,
-            color: p.inkMuted,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
   }
 
   Widget _errorCard(CarelinkPalette p, String text) {

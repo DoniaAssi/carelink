@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:carelink/core/carelink_date_picker.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/profile_avatar.dart' show profileImageUrlFromMap;
+import 'package:carelink/features/auth/registration/getx/signup_location_picker_screen.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
@@ -40,7 +41,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController dateOfBirthController;
 
   String? selectedGender;
-  String? selectedBloodType;
+  double? _gpsLat;
+  double? _gpsLng;
   bool isLoading = false; // saving
   bool _loading = true; // initial profile load (skeleton)
   Uint8List? _pickedImageBytes;
@@ -83,13 +85,40 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     addressController.text = d['addressText']?.toString() ?? '';
     profileImageUrlController.text =
         profileImageUrlFromMap(Map<String, dynamic>.from(d)) ?? '';
-    dateOfBirthController.text = d['dateOfBirth']?.toString() ?? '';
+    dateOfBirthController.text = _normalizeDateOfBirth(d['dateOfBirth']);
     selectedGender = d['gender']?.toString();
-    selectedBloodType = d['bloodType']?.toString();
+    _gpsLat = _asDouble(d['gpsLat']);
+    _gpsLng = _asDouble(d['gpsLng']);
 
     allergiesList = _splitCsv(d['allergies']);
     chronicList = _splitCsv(d['chronicDiseases'] ?? d['chronicConditions']);
     medicationsList = _splitCsv(d['currentMedications']);
+  }
+
+  double? _asDouble(Object? value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '');
+  }
+
+  String _normalizeDateOfBirth(Object? raw) {
+    final value = raw?.toString().trim() ?? '';
+    if (value.isEmpty) return '';
+    if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) return value;
+
+    final parsed = DateTime.tryParse(value);
+    if (parsed == null) return value;
+    final localDate = parsed.isUtc ? parsed.toLocal() : parsed;
+    final month = localDate.month.toString().padLeft(2, '0');
+    final day = localDate.day.toString().padLeft(2, '0');
+    return '${localDate.year}-$month-$day';
+  }
+
+  String _formatDateOfBirthForDisplay() {
+    final parsed = DateTime.tryParse(dateOfBirthController.text.trim());
+    if (parsed == null) return dateOfBirthController.text.trim();
+    final day = parsed.day.toString().padLeft(2, '0');
+    final month = parsed.month.toString().padLeft(2, '0');
+    return '$day/$month/${parsed.year}';
   }
 
   List<String> _splitCsv(Object? raw) => (raw?.toString() ?? '')
@@ -298,7 +327,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
                 title: Text(
                   _t('Choose from gallery', 'اختر من المعرض'),
-                  style: TextStyle(color: p.inkDark, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: p.inkDark,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 onTap: () => Navigator.pop(context, _PhotoSheetAction.gallery),
               ),
@@ -309,7 +341,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
                 title: Text(
                   _t('Take a photo', 'التقط صورة'),
-                  style: TextStyle(color: p.inkDark, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: p.inkDark,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 onTap: () => Navigator.pop(context, _PhotoSheetAction.camera),
               ),
@@ -415,12 +450,35 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _pickLocation() async {
+    FocusScope.of(context).unfocus();
+    final result = await Navigator.push<SignupLocationResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SignupLocationPickerScreen(
+          initialAddress: addressController.text.trim(),
+          initialLatitude: _gpsLat,
+          initialLongitude: _gpsLng,
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      addressController.text = result.address;
+      _gpsLat = result.latitude;
+      _gpsLng = result.longitude;
+    });
+  }
+
   Future<void> _showGenderSheet() async {
     final items = <MapEntry<String, String>>[
       MapEntry('male', _t('Male', 'ذكر')),
       MapEntry('female', _t('Female', 'أنثى')),
       MapEntry('other', _t('Other', 'آخر')),
-      MapEntry('prefer_not_to_say', _t('Prefer not to say', 'يفضل عدم الإفصاح')),
+      MapEntry(
+        'prefer_not_to_say',
+        _t('Prefer not to say', 'يفضل عدم الإفصاح'),
+      ),
     ];
     final p = CarelinkPalette.of(context);
     final v = await showModalBottomSheet<String>(
@@ -449,7 +507,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               (e) => ListTile(
                 title: Text(
                   e.value,
-                  style: TextStyle(color: p.inkDark, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: p.inkDark,
+                    fontWeight: FontWeight.w600,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 onTap: () => Navigator.pop(context, e.key),
@@ -460,57 +521,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ),
     );
     if (v != null) setState(() => selectedGender = v);
-  }
-
-  Future<void> _showBloodTypeSheet() async {
-    const items = <String>['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-    final p = CarelinkPalette.of(context);
-    final colorScheme = Theme.of(context).colorScheme;
-    final v = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: p.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Text(
-                _t('Blood Type', 'فصيلة الدم'),
-                style: TextStyle(
-                  color: colorScheme.primary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-            const Divider(height: 1),
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                children: items.map((type) {
-                  return ListTile(
-                    title: Text(
-                      type,
-                      style: TextStyle(
-                        color: p.inkDark,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    onTap: () => Navigator.pop(context, type),
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (v != null) setState(() => selectedBloodType = v);
   }
 
   /// Bottom sheet to add a chip item (allergy / condition / medication).
@@ -566,11 +576,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 style: TextStyle(color: p.inkDark, fontWeight: FontWeight.w600),
                 decoration: InputDecoration(
                   hintText: _t('Enter value…', 'أدخل القيمة…'),
-                  hintStyle: TextStyle(color: p.inkMuted.withValues(alpha: 0.55)),
+                  hintStyle: TextStyle(
+                    color: p.inkMuted.withValues(alpha: 0.55),
+                  ),
                   filled: true,
                   fillColor: p.pageBg,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide(color: p.stroke),
@@ -596,7 +610,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  onPressed: () => Navigator.pop(context, controller.text.trim()),
+                  onPressed: () =>
+                      Navigator.pop(context, controller.text.trim()),
                   child: Text(
                     _t('Add', 'إضافة'),
                     style: const TextStyle(
@@ -647,7 +662,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               _AnimatedCheckmark(color: scheme.primary),
               const SizedBox(height: 20),
               Text(
-                _t('Profile updated successfully', 'تم تحديث الملف الشخصي بنجاح'),
+                _t(
+                  'Profile updated successfully',
+                  'تم تحديث الملف الشخصي بنجاح',
+                ),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 16.5,
@@ -681,7 +699,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
     if (emailStr.isEmpty || !emailReg.hasMatch(emailStr)) {
       return _showPolishedSnack(
-        _t('Please enter a valid email address', 'يرجى إدخال بريد إلكتروني صحيح'),
+        _t(
+          'Please enter a valid email address',
+          'يرجى إدخال بريد إلكتروني صحيح',
+        ),
       );
     }
     if (phoneStr.isEmpty) {
@@ -698,8 +719,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       try {
         final filename =
             'profile_${widget.userId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        imagePayload =
-            await ApiService().uploadProfileImage(pickedImageBytes, filename);
+        imagePayload = await ApiService().uploadProfileImage(
+          pickedImageBytes,
+          filename,
+        );
       } catch (e) {
         if (mounted) {
           _showPolishedSnack(
@@ -729,14 +752,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ? null
           : dateOfBirthController.text.trim(),
       'gender': selectedGender,
-      'bloodType': selectedBloodType,
+      'gpsLat': _gpsLat,
+      'gpsLng': _gpsLng,
     };
     if (_isPatient) {
-      body['chronicDiseases'] =
-          chronicList.isEmpty ? null : chronicList.join(', ');
-      body['allergies'] = allergiesList.isEmpty ? null : allergiesList.join(', ');
-      body['currentMedications'] =
-          medicationsList.isEmpty ? null : medicationsList.join(', ');
+      body['chronicDiseases'] = chronicList.isEmpty
+          ? null
+          : chronicList.join(', ');
+      body['allergies'] = allergiesList.isEmpty
+          ? null
+          : allergiesList.join(', ');
+      body['currentMedications'] = medicationsList.isEmpty
+          ? null
+          : medicationsList.join(', ');
     }
 
     try {
@@ -866,7 +894,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             _buildPickerInput(
               label: _t('Date of Birth', 'تاريخ الميلاد'),
-              value: dateOfBirthController.text,
+              value: _formatDateOfBirthForDisplay(),
               placeholder: _t('Select date', 'اختر التاريخ'),
               icon: Icons.calendar_today_outlined,
               onTap: _pickDateOfBirth,
@@ -913,13 +941,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             title: _t('Health Information', 'المعلومات الصحية'),
             icon: Icons.favorite_outline_rounded,
             children: [
-              _buildPickerInput(
-                label: _t('Blood Type', 'فصيلة الدم'),
-                value: selectedBloodType ?? '',
-                placeholder: _t('Select blood type', 'اختر فصيلة الدم'),
-                icon: Icons.bloodtype_outlined,
-                onTap: _showBloodTypeSheet,
-              ),
               _buildChipsField(
                 label: _t('Allergies', 'الحساسية'),
                 items: allergiesList,
@@ -941,7 +962,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 items: medicationsList,
                 icon: Icons.medication_outlined,
                 onAdd: () => _showAddChipSheet(
-                    _t('Medication', 'دواء'), medicationsList),
+                  _t('Medication', 'دواء'),
+                  medicationsList,
+                ),
                 onRemove: (i) => setState(() => medicationsList.removeAt(i)),
                 last: true,
               ),
@@ -951,15 +974,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         // 4 · Address / Location
         _buildSectionCard(
           p,
-          title: _t('Address / Location', 'العنوان / الموقع'),
-          icon: Icons.location_on_outlined,
+          title: _t('Location', 'الموقع'),
+          icon: Icons.edit_location_alt_outlined,
           children: [
-            _buildTextInput(
-              label: _t('Address', 'العنوان'),
-              controller: addressController,
-              icon: Icons.home_outlined,
-              placeholder: _t('Enter your address', 'أدخل عنوانك'),
-              maxLines: 2,
+            _buildPickerInput(
+              label: _t('Edit Location', 'تعديل الموقع'),
+              value: addressController.text,
+              placeholder: _t(
+                'Choose your location on the map',
+                'اختر موقعك على الخريطة',
+              ),
+              icon: Icons.map_outlined,
+              onTap: _pickLocation,
               last: true,
             ),
           ],
@@ -1007,8 +1033,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       child: const SizedBox(
                         width: 36,
                         height: 36,
-                        child: Icon(Icons.camera_alt_rounded,
-                            size: 18, color: Colors.white),
+                        child: Icon(
+                          Icons.camera_alt_rounded,
+                          size: 18,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -1194,12 +1223,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 fontSize: 14,
               ),
               prefixIcon: Icon(icon, color: scheme.primary, size: 20),
-              prefixIconConstraints:
-                  const BoxConstraints(minWidth: 44, minHeight: 44),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 44,
+                minHeight: 44,
+              ),
               filled: true,
               fillColor: p.pageBg,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 14,
+              ),
               border: _border(p.stroke),
               enabledBorder: _border(p.stroke),
               focusedBorder: _border(scheme.primary, width: 1.6),
@@ -1263,8 +1296,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ),
                       ),
                     ),
-                    Icon(Icons.expand_more_rounded,
-                        color: scheme.primary, size: 22),
+                    Icon(
+                      Icons.expand_more_rounded,
+                      color: scheme.primary,
+                      size: 22,
+                    ),
                   ],
                 ),
               ),
@@ -1304,10 +1340,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             children: [
               ...items.asMap().entries.map((e) {
                 return Container(
-                  padding:
-                      const EdgeInsetsDirectional.fromSTEB(12, 7, 6, 7),
+                  padding: const EdgeInsetsDirectional.fromSTEB(12, 7, 6, 7),
                   decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: p.isDark ? 0.18 : 0.1),
+                    color: scheme.primary.withValues(
+                      alpha: p.isDark ? 0.18 : 0.1,
+                    ),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
                       color: scheme.primary.withValues(alpha: 0.25),
@@ -1328,8 +1365,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       InkWell(
                         onTap: () => onRemove(e.key),
                         customBorder: const CircleBorder(),
-                        child: Icon(Icons.close_rounded,
-                            size: 15, color: scheme.primary),
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 15,
+                          color: scheme.primary,
+                        ),
                       ),
                     ],
                   ),
@@ -1340,8 +1380,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 onTap: onAdd,
                 borderRadius: BorderRadius.circular(999),
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(color: scheme.primary, width: 1.3),
@@ -1429,11 +1471,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 // ───────────────────────────── Widgets ───────────────────────────────
 
 class _Skeleton extends StatefulWidget {
-  const _Skeleton({
-    this.width,
-    required this.height,
-    this.radius = 8,
-  });
+  const _Skeleton({this.width, required this.height, this.radius = 8});
 
   final double? width;
   final double height;

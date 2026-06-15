@@ -704,4 +704,21 @@ router.put('/appointments/:requestId/location', async (req, res) => {
   }
 });
 
+router.get('/provider/:userId/blocked-slots', async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT scheduledAt
+       FROM servicerequest
+       WHERE providerUserId = ?
+         AND LOWER(TRIM(CAST(status AS CHAR(64)))) IN
+           ('pending', 'pending_payment', 'payment_pending', 'confirmed')
+         AND scheduledAt >= CURDATE()`,
+      [req.params.userId]
+    );
+    res.json(rows.map((r) => r.scheduledAt));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
