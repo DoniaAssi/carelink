@@ -465,7 +465,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
                 ),
                 const SizedBox(height: 14),
                 _visitStatusBadge(
-                  isPending ? 'Pending' : 'Confirmed',
+                  isPending ? 'Pending' : 'Accepted',
                   isPending ? const Color(0xFFFFEDD5) : const Color(0xFFDCFCE7),
                   isPending ? const Color(0xFFF59E0B) : const Color(0xFF22C55E),
                 ),

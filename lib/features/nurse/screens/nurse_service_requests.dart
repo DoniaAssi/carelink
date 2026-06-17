@@ -45,6 +45,10 @@ bool nurseRequestIsAccepted(ServiceRequest request) {
       value == 'scheduled';
 }
 
+bool nurseRequestIsCancelled(ServiceRequest request) {
+  return request.status.toLowerCase().trim() == 'cancelled';
+}
+
 class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   List<ServiceRequest> requests = [];
   bool isLoading = true;
@@ -125,10 +129,6 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
       case 2:
         return requests.where(_isConfirmedRequest).toList();
       case 3:
-        return requests.where(_isInProgressRequest).toList();
-      case 4:
-        return requests.where((r) => r.status == 'completed').toList();
-      case 5:
         return requests.where((r) => r.status == 'cancelled').toList();
       default:
         return requests;
@@ -136,14 +136,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   }
 
   Widget _tabs() {
-    final tabs = const [
-      'All',
-      'Pending',
-      'Confirmed',
-      'In Progress',
-      'Completed',
-      'Cancelled',
-    ];
+    final tabs = const ['All', 'Pending', 'Accepted', 'Cancelled'];
     return SizedBox(
       height: 38,
       child: ListView.separated(
@@ -249,8 +242,9 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   }
 
   Widget _requestCard(ServiceRequest request) {
+    final clickable = !nurseRequestIsCancelled(request);
     return InkWell(
-      onTap: () => _openDetails(request),
+      onTap: clickable ? () => _openDetails(request) : null,
       borderRadius: BorderRadius.circular(18),
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
@@ -370,104 +364,21 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                 ],
               ),
             ),
-            if (_cardActions(request).isNotEmpty) ...[
-              const SizedBox(height: 14),
-              Padding(
-                padding: const EdgeInsetsDirectional.only(start: 0),
-                child: Row(children: _cardActions(request)),
+            if (nurseRequestIsCancelled(request)) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Cancelled request is read-only',
+                style: TextStyle(
+                  color: Color(0xFF991B1B),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ],
           ],
         ),
       ),
     );
-  }
-
-  List<Widget> _cardActions(ServiceRequest request) {
-    final status = request.status.toLowerCase().trim();
-    if (nurseRequestRequiresDecision(request)) {
-      return [
-        Expanded(
-          child: _compactActionButton(
-            label: 'Reject',
-            icon: Icons.close_rounded,
-            outlined: true,
-            onPressed: () => _confirmRejectRequest(request),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _compactActionButton(
-            label: 'Accept',
-            icon: Icons.check_rounded,
-            onPressed: () => _acceptRequestFromCard(request),
-          ),
-        ),
-      ];
-    }
-    if (_isConfirmedRequest(request) || _isInProgressRequest(request)) {
-      return [
-        Expanded(
-          child: _compactActionButton(
-            label: 'Message',
-            icon: Icons.chat_bubble_outline_rounded,
-            outlined: true,
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ContactPatientScreen(
-                  request: request,
-                  currentUserId: widget.user.userId,
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _compactActionButton(
-            label: 'View Location',
-            icon: Icons.location_on_outlined,
-            outlined: true,
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PatientLocationScreen(request: request),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _compactActionButton(
-            label: 'Start Visit',
-            icon: Icons.play_arrow_rounded,
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => VisitDashboardScreen(
-                  request: request,
-                  user: widget.user,
-                  onChanged: _loadRequests,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ];
-    }
-    if (status == 'completed') {
-      return [
-        Expanded(
-          child: _compactActionButton(
-            label: 'View Report',
-            icon: Icons.description_outlined,
-            onPressed: () => _openDetails(request),
-          ),
-        ),
-      ];
-    }
-    return [];
   }
 
   bool _isConfirmedRequest(ServiceRequest request) {
@@ -478,78 +389,9 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
         status == 'accepted';
   }
 
-  bool _isInProgressRequest(ServiceRequest request) {
-    return request.status.toLowerCase().trim() == 'in_progress';
-  }
-
   String _initial(String value) {
     final clean = value.trim();
     return clean.isEmpty ? 'P' : clean.characters.first.toUpperCase();
-  }
-
-  Widget _compactActionButton({
-    required String label,
-    required IconData icon,
-    required VoidCallback onPressed,
-    bool outlined = false,
-  }) {
-    return SizedBox(
-      height: 34,
-      child: outlined
-          ? OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: label == 'Reject'
-                    ? const Color(0xFFFF4D5E)
-                    : const Color(0xFF0F766E),
-                side: BorderSide(
-                  color: label == 'Reject'
-                      ? const Color(0xFFFF7A84)
-                      : const Color(0xFF0F766E),
-                ),
-                padding: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(7),
-                ),
-              ),
-              onPressed: onPressed,
-              icon: Icon(icon, size: 14),
-              label: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            )
-          : ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                elevation: 0,
-              ),
-              onPressed: onPressed,
-              icon: Icon(icon, size: 14),
-              label: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ),
-    );
   }
 
   Widget _statusPill(String status, Color color) {
@@ -585,90 +427,8 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
     }
   }
 
-  Future<void> _acceptRequestFromCard(ServiceRequest request) async {
-    try {
-      final success = await nurseRepository.createAppointment(
-        request: request,
-        nurseUserId: widget.user.userId,
-      );
-      if (!success) return;
-      final updated = ServiceRequest.fromJson({
-        ...request.toJson(),
-        'status': 'accepted',
-        'confirmedAt': DateTime.now().toIso8601String(),
-      });
-      if (!mounted) return;
-      setState(() {
-        requests = requests
-            .map((item) => item.id == request.id ? updated : item)
-            .toList();
-        selectedTab = 2;
-      });
-      await _loadRequests();
-      if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => AppointmentConfirmedScreen(
-            request: updated,
-            currentUser: widget.user,
-            providerUserId: widget.user.userId,
-            scheduledStart: updated.scheduledDate,
-            durationMinutes: updated.actualDurationMinutes > 0
-                ? updated.actualDurationMinutes
-                : 60,
-            nurseNote: '',
-            onChanged: _loadRequests,
-          ),
-        ),
-      );
-    } catch (e) {
-      _snack(e.toString().replaceFirst('Exception: ', ''));
-    }
-  }
-
-  Future<void> _confirmRejectRequest(ServiceRequest request) async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Reject request'),
-        content: TextField(
-          controller: controller,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: 'Reason (optional)',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: const Text('Reject'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (result == null) return;
-    final success = await nurseRepository.updateRequestStatus(
-      requestId: request.id,
-      status: 'cancelled',
-      nurseUserId: widget.user.userId,
-    );
-    if (!success || !mounted) return;
-    setState(() {
-      requests = requests.where((item) => item.id != request.id).toList();
-      selectedTab = 1;
-    });
-    await _loadRequests();
-  }
-
   void _openDetails(ServiceRequest request) {
+    if (nurseRequestIsCancelled(request)) return;
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -718,7 +478,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
       case 'accepted':
       case 'confirmed':
       case 'scheduled':
-        return 'Confirmed';
+        return 'Accepted';
       case 'in_progress':
         return 'In Progress';
       case 'waiting_report':
@@ -2895,7 +2655,7 @@ class RequestActionButtons extends StatelessWidget {
             ),
             onPressed: isSaving ? null : onReject,
             child: const Text(
-              'Reject',
+              'Reject Request',
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
           ),

@@ -24,8 +24,7 @@ class NurseRepository {
     return value == 'assigned' ||
         value == 'accepted' ||
         value == 'scheduled' ||
-        value == 'confirmed' ||
-        value == 'in_progress';
+        value == 'confirmed';
   }
 
   Future<List<ServiceRequest>> getTodayVisits(String nurseUserId) async {
