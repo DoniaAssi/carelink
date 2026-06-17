@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/doctor_service.dart';
 import '../../../core/app_colors.dart';
+import 'initial_diagnosis_report_screen.dart';
 import 'medical_record_screen.dart';
 import 'medical_report_form.dart';
 
@@ -21,6 +22,13 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
   Map<String, dynamic> _request = {};
   String _doctorId = '';
 
+  bool _asBool(dynamic value) {
+    return value == true ||
+        value == 1 ||
+        value?.toString().toLowerCase() == '1' ||
+        value?.toString().toLowerCase() == 'true';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -35,6 +43,13 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       _doctorId = prefs.getString('doctor_userId') ?? '';
 
       final request = await _doctorService.getRequestDetails(widget.requestId);
+      debugPrint(
+        '[doctor:request-details:loaded] requestId=${widget.requestId} '
+        'patientId=${request['patientUserId']} '
+        'doctorId=${request['providerUserId']} '
+        'hasInitialDiagnosisReport=${request['hasInitialDiagnosisReport']} '
+        'parsed=${_asBool(request['hasInitialDiagnosisReport'])}',
+      );
       setState(() {
         _request = request;
         _isLoading = false;
@@ -346,10 +361,31 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => MedicalReportFormScreen(
-                              requestId: widget.requestId,
-                              requestData: Map<String, dynamic>.from(_request),
-                            ),
+                            builder: (context) {
+                              final requestData = Map<String, dynamic>.from(
+                                _request,
+                              );
+                              final hasInitial = _asBool(
+                                requestData['hasInitialDiagnosisReport'],
+                              );
+                              debugPrint(
+                                '[doctor:request-details:report:navigate] '
+                                'requestId=${widget.requestId} '
+                                'patientId=${requestData['patientUserId']} '
+                                'doctorId=${requestData['providerUserId']} '
+                                'hasInitialDiagnosisReport=${requestData['hasInitialDiagnosisReport']} '
+                                'parsed=$hasInitial',
+                              );
+                              return hasInitial
+                                  ? MedicalReportFormScreen(
+                                      requestId: widget.requestId,
+                                      requestData: requestData,
+                                    )
+                                  : InitialDiagnosisReportScreen(
+                                      requestId: widget.requestId,
+                                      requestData: requestData,
+                                    );
+                            },
                           ),
                         ).then((_) => _loadRequestDetails());
                       },

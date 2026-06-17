@@ -59,7 +59,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       _doctorId = prefs.getString('doctor_userId') ?? '';
-      _doctorName = prefs.getString('doctor_fullName') ?? 'Doctor';
+      _doctorName = prefs.getString('doctor_fullName') ?? '';
 
       if (_doctorId.isNotEmpty) {
         final results = await Future.wait([
@@ -381,10 +381,15 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
 
     final cards = [
       _DashboardAction(
-        title: 'Requests',
+        title: context.dtr('doctor.dashboard.actionRequests'),
         icon: Icons.medical_services_rounded,
         badge: pending > 0 ? '$pending' : null,
-        subtitle: pending > 0 ? '$pending pending' : null,
+        subtitle: pending > 0
+            ? context.dtr(
+                'doctor.dashboard.pendingCount',
+                args: {'count': '$pending'},
+              )
+            : null,
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
@@ -393,31 +398,44 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         ),
       ),
       _DashboardAction(
-        title: 'My Schedule',
+        title: context.dtr('doctor.dashboard.actionMySchedule'),
         icon: Icons.calendar_month_rounded,
-        subtitle: '$today plans',
+        subtitle: context.dtr(
+          'doctor.dashboard.plansCount',
+          args: {'count': '$today'},
+        ),
         onTap: () => setState(() => _selectedIndex = 1),
       ),
       _DashboardAction(
-        title: 'My Patients',
+        title: context.dtr('doctor.dashboard.actionMyPatients'),
         icon: Icons.groups_2_outlined,
-        subtitle: patients > 0 ? '$patients total' : null,
+        subtitle: patients > 0
+            ? context.dtr(
+                'doctor.dashboard.totalCount',
+                args: {'count': '$patients'},
+              )
+            : null,
         onTap: () => setState(() => _selectedIndex = 2),
       ),
       _DashboardAction(
-        title: 'Reports',
+        title: context.dtr('doctor.dashboard.actionReports'),
         icon: Icons.feed_outlined,
-        subtitle: completed > 0 ? '$completed ready' : null,
+        subtitle: completed > 0
+            ? context.dtr(
+                'doctor.dashboard.readyCount',
+                args: {'count': '$completed'},
+              )
+            : null,
         onTap: () => setState(() => _selectedIndex = 4),
       ),
       _DashboardAction(
-        title: 'Earnings',
+        title: context.dtr('doctor.dashboard.actionEarnings'),
         icon: Icons.account_balance_wallet_rounded,
         subtitle: earnings > 0 ? earnings.toStringAsFixed(0) : null,
         onTap: () => setState(() => _selectedIndex = 3),
       ),
       _DashboardAction(
-        title: 'Reviews',
+        title: context.dtr('doctor.dashboard.actionReviews'),
         icon: Icons.star_border_rounded,
         subtitle: rating > 0 ? rating.toStringAsFixed(1) : null,
         onTap: () => Navigator.push(
@@ -426,13 +444,18 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         ),
       ),
       _DashboardAction(
-        title: 'Records',
+        title: context.dtr('doctor.dashboard.actionRecords'),
         icon: Icons.folder_rounded,
-        subtitle: patients > 0 ? '$patients patients' : null,
+        subtitle: patients > 0
+            ? context.dtr(
+                'doctor.dashboard.patientsCount',
+                args: {'count': '$patients'},
+              )
+            : null,
         onTap: _openRecords,
       ),
       _DashboardAction(
-        title: 'More',
+        title: context.dtr('doctor.dashboard.actionMore'),
         icon: Icons.more_horiz_rounded,
         onTap: () => setState(() => _selectedIndex = 5),
       ),
@@ -548,8 +571,8 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     }).length;
 
     return _sectionCard(
-      title: "Today's Overview",
-      action: 'View all',
+      title: context.dtr('doctor.dashboard.todaysOverview'),
+      action: context.dtr('doctor.dashboard.viewAllPlain'),
       onAction: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const RequestsListScreen()),
@@ -567,7 +590,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               _overviewTile(
                 width: itemWidth,
                 value: '$pending',
-                label: 'New Requests',
+                label: context.dtr('doctor.dashboard.newRequests'),
                 icon: Icons.person_add_alt_1_outlined,
                 color: const Color(0xFF1899D6),
                 background: const Color(0xFFEFF4FF),
@@ -575,7 +598,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               _overviewTile(
                 width: itemWidth,
                 value: '$today',
-                label: "Today's Visits",
+                label: context.dtr('doctor.dashboard.todaysVisits'),
                 icon: Icons.biotech_outlined,
                 color: AppColors.primary,
                 background: const Color(0xFFF2F8F4),
@@ -583,7 +606,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               _overviewTile(
                 width: itemWidth,
                 value: '$completed',
-                label: 'Completed',
+                label: context.dtr('doctor.dashboard.completed'),
                 icon: Icons.directions_walk_rounded,
                 color: const Color(0xFFF5A400),
                 background: const Color(0xFFFFF6E8),
@@ -591,7 +614,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               _overviewTile(
                 width: itemWidth,
                 value: '$canceled',
-                label: 'Canceled',
+                label: context.dtr('doctor.dashboard.canceled'),
                 icon: Icons.person_off_outlined,
                 color: const Color(0xFFFF375F),
                 background: const Color(0xFFFFEEF2),
@@ -665,8 +688,8 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     final appointment = _nextAppointment;
 
     return _sectionCard(
-      title: 'Next Appointment',
-      action: 'View all',
+      title: context.dtr('doctor.dashboard.nextAppointment'),
+      action: context.dtr('doctor.dashboard.viewAllPlain'),
       onAction: () => setState(() => _selectedIndex = 1),
       child: appointment == null
           ? _emptyAppointment()
@@ -1027,8 +1050,12 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   }
 
   String _doctorDisplayName(String name) {
-    final clean = name.trim().isEmpty ? _doctorName : name.trim();
-    return clean.toLowerCase().startsWith('dr.') ? clean : 'Dr. $clean';
+    final clean = name.trim().isEmpty
+        ? context.dtr('doctor.dashboard.defaultDoctorName')
+        : name.trim();
+    final lower = clean.toLowerCase();
+    if (lower.startsWith('dr.') || clean.startsWith('د.')) return clean;
+    return context.dtr('doctor.dashboard.doctorPrefix', args: {'name': clean});
   }
 
   String _greeting() {
@@ -1049,7 +1076,9 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         ? date.hour - 12
         : date.hour;
     final minute = date.minute.toString().padLeft(2, '0');
-    final suffix = date.hour >= 12 ? 'PM' : 'AM';
+    final suffix = date.hour >= 12
+        ? context.dtr('doctor.dashboard.timePm')
+        : context.dtr('doctor.dashboard.timeAm');
     return '$hour:$minute\n$suffix';
   }
 }

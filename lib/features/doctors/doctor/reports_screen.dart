@@ -5,6 +5,7 @@ import '../../../core/app_colors.dart';
 import '../../../core/app_localizations.dart';
 import '../../../core/locale_controller.dart';
 import '../../../services/doctor_service.dart';
+import 'initial_diagnosis_report_screen.dart';
 import 'medical_report_form.dart';
 
 class DoctorReportsScreen extends StatefulWidget {
@@ -19,6 +20,13 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
 
   bool _isLoading = true;
   List<dynamic> _requests = [];
+
+  bool _asBool(dynamic value) {
+    return value == true ||
+        value == 1 ||
+        value?.toString().toLowerCase() == '1' ||
+        value?.toString().toLowerCase() == 'true';
+  }
 
   @override
   void initState() {
@@ -85,10 +93,26 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => MedicalReportFormScreen(
-          requestId: requestId,
-          requestData: Map<String, dynamic>.from(rawRequest),
-        ),
+        builder: (context) {
+          final requestData = Map<String, dynamic>.from(rawRequest);
+          final hasInitial = _asBool(requestData['hasInitialDiagnosisReport']);
+          debugPrint(
+            '[doctor:reports:navigate] requestId=$requestId '
+            'patientId=${requestData['patientUserId']} '
+            'doctorId=${requestData['providerUserId']} '
+            'hasInitialDiagnosisReport=${requestData['hasInitialDiagnosisReport']} '
+            'parsed=$hasInitial',
+          );
+          return hasInitial
+              ? MedicalReportFormScreen(
+                  requestId: requestId,
+                  requestData: requestData,
+                )
+              : InitialDiagnosisReportScreen(
+                  requestId: requestId,
+                  requestData: requestData,
+                );
+        },
       ),
     ).then((_) => _loadRequests());
   }

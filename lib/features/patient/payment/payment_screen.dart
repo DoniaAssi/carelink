@@ -13,7 +13,7 @@ import 'package:carelink/shared/models/booking_request_model.dart';
 /// Checkout for an existing booking flow.
 ///
 /// [request] is the complete booking data. Successful
-/// payment creates the booking as `pending_provider_approval`.
+/// payment creates the booking as `pending`.
 class PaymentScreen extends StatefulWidget {
   const PaymentScreen({super.key, required this.request});
 
@@ -74,7 +74,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         additionalNotes: widget.request.additionalNotes,
         paymentMethod: 'mock_card',
         paymentStatus: 'paid',
-        status: 'pending_provider_approval',
+        status: 'pending',
       );
 
       final appointmentId = (booking['appointmentId'] ?? '').toString();

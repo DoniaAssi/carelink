@@ -57,7 +57,7 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
     try {
       final finalRequest = widget.request.copyWith(
         patientReason: _reasonController.text.trim(),
-        bookingStatus: 'pending_provider_approval',
+        bookingStatus: 'pending',
       );
       await BookingPaymentFlow.open(context: context, request: finalRequest);
     } catch (e) {

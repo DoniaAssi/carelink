@@ -255,14 +255,6 @@ async function createApiPayment(body) {
   if (canceled) {
     throw httpError(409, 'Cannot create payment for a cancelled appointment');
   }
-  const currentStatus = (row.status || '').toString().trim().toLowerCase();
-  if (currentStatus === 'pending') {
-    throw httpError(
-      409,
-      'Payment is available after the doctor accepts the request',
-    );
-  }
-
   const normalizedMethod = normalizeElectronicMethod(paymentMethodRaw);
   const methodFinal = isCashLike(normalizedMethod)
     ? normalizedMethod === 'cash_on_visit'
@@ -464,13 +456,6 @@ async function confirmDemoPayment(body) {
   if (!rows.length) throw httpError(404, 'No payment record found for this appointment');
 
   const p = rows[0];
-  if ((p.requestStatus || '').toString().trim().toLowerCase() === 'pending') {
-    throw httpError(
-      409,
-      'Payment is available after the doctor accepts the request',
-    );
-  }
-
   if ((p.paymentStatus || '').toLowerCase() === 'paid') {
     return {
       demo: true,

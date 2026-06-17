@@ -238,6 +238,12 @@ class DoctorService {
     String? diagnosis,
     String? notes,
     String? prescription,
+    bool isInitialDiagnosis = false,
+    String? chiefComplaint,
+    String? symptoms,
+    String? medicalHistory,
+    String? treatmentPlan,
+    String? requiredVisits,
   }) async {
     try {
       final response = await _apiService
@@ -246,6 +252,12 @@ class DoctorService {
             'diagnosis': diagnosis,
             'notes': notes,
             'prescription': prescription,
+            'isInitialDiagnosis': isInitialDiagnosis,
+            'chiefComplaint': chiefComplaint,
+            'symptoms': symptoms,
+            'medicalHistory': medicalHistory,
+            'treatmentPlan': treatmentPlan,
+            'requiredVisits': requiredVisits,
           });
       return response;
     } catch (e) {

@@ -10,6 +10,17 @@ const router = express.Router();
 const columnCache = new Map();
 const tableCache = new Map();
 
+function dbBool(value) {
+  if (typeof value === 'bigint') return value === 1n;
+  if (Buffer.isBuffer(value)) return value.length > 0 && value[0] === 1;
+  return (
+    value === true ||
+    value === 1 ||
+    value === '1' ||
+    value?.toString?.().toLowerCase?.() === 'true'
+  );
+}
+
 async function hasColumn(tableName, columnName) {
   const key = `${tableName}.${columnName}`;
   if (columnCache.has(key)) return columnCache.get(key);
@@ -56,6 +67,116 @@ async function ensureMedicalAccessLogTable() {
       KEY idx_mral_created (createdAt)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
+}
+
+async function ensureInitialDiagnosisReportColumns() {
+  if (!(await hasTable('visit_reports'))) return false;
+
+  const additions = [
+    ['report_kind', "VARCHAR(64) NOT NULL DEFAULT 'visit_report'"],
+    ['chief_complaint', 'TEXT NULL'],
+    ['symptoms', 'TEXT NULL'],
+    ['medical_history', 'TEXT NULL'],
+    ['required_visits', 'VARCHAR(64) NULL'],
+  ];
+
+  for (const [column, definition] of additions) {
+    if (!(await hasColumn('visit_reports', column))) {
+      await db.execute(`ALTER TABLE visit_reports ADD COLUMN ${column} ${definition}`);
+      columnCache.set(`visit_reports.${column}`, true);
+    }
+  }
+
+  return true;
+}
+
+async function initialDiagnosisExistsForCase(patientId, doctorId) {
+  const checks = [];
+  const params = [];
+
+  if (
+    (await hasTable('visit_reports')) &&
+    (await hasColumn('visit_reports', 'report_kind'))
+  ) {
+    checks.push(`EXISTS (
+      SELECT 1
+      FROM visit_reports vr
+      WHERE BINARY vr.patient_id = BINARY ?
+        AND BINARY vr.provider_id = BINARY ?
+        AND vr.report_kind = 'initial_diagnosis'
+      LIMIT 1
+    )`);
+    params.push(patientId, doctorId);
+  }
+
+  if ((await hasTable('visitreport')) && (await hasTable('visit'))) {
+    checks.push(`EXISTS (
+      SELECT 1
+      FROM visitreport legacyReport
+      JOIN visit legacyVisit
+        ON BINARY legacyVisit.visitId = BINARY legacyReport.visitId
+      JOIN servicerequest legacyRequest
+        ON BINARY legacyRequest.requestId = BINARY legacyVisit.requestId
+      WHERE BINARY legacyRequest.patientUserId = BINARY ?
+        AND BINARY legacyRequest.providerUserId = BINARY ?
+        AND legacyReport.notes LIKE 'Chief Complaint:%'
+      LIMIT 1
+    )`);
+    params.push(patientId, doctorId);
+  }
+
+  if (checks.length === 0) return false;
+
+  const [rows] = await db.query(
+    `SELECT (${checks.join(' OR ')}) AS hasInitialDiagnosisReport`,
+    params
+  );
+
+  const exists = dbBool(rows[0]?.hasInitialDiagnosisReport);
+  console.log('[doctor:reports:initial-check]', {
+    patientId,
+    doctorId,
+    rawValue: rows[0]?.hasInitialDiagnosisReport,
+    exists,
+  });
+  return exists;
+}
+
+async function initialDiagnosisSelectSql() {
+  const hasStructuredInitial =
+    (await hasTable('visit_reports')) &&
+    (await hasColumn('visit_reports', 'report_kind'));
+  const hasLegacyInitial =
+    (await hasTable('visitreport')) && (await hasTable('visit'));
+
+  const checks = [];
+  if (hasStructuredInitial) {
+    checks.push(`EXISTS (
+      SELECT 1
+      FROM visit_reports vr
+      WHERE BINARY vr.patient_id = BINARY sr.patientUserId
+        AND BINARY vr.provider_id = BINARY sr.providerUserId
+        AND vr.report_kind = 'initial_diagnosis'
+      LIMIT 1
+    )`);
+  }
+
+  if (hasLegacyInitial) {
+    checks.push(`EXISTS (
+      SELECT 1
+      FROM visitreport legacyReport
+      JOIN visit legacyVisit
+        ON BINARY legacyVisit.visitId = BINARY legacyReport.visitId
+      JOIN servicerequest legacyRequest
+        ON BINARY legacyRequest.requestId = BINARY legacyVisit.requestId
+      WHERE BINARY legacyRequest.patientUserId = BINARY sr.patientUserId
+        AND BINARY legacyRequest.providerUserId = BINARY sr.providerUserId
+        AND legacyReport.notes LIKE 'Chief Complaint:%'
+      LIMIT 1
+    )`);
+  }
+
+  return checks.length ? `(${checks.join(' OR ')})` : '0';
 }
 
 async function ensureDoctorNotificationPreferenceTable() {
@@ -387,11 +508,23 @@ router.get('/requests/pending', async (req, res) => {
         u.email as patientEmail
       FROM servicerequest sr
       JOIN user u ON sr.patientUserId = u.userId
-      WHERE sr.providerUserId = ? AND sr.status = 'pending'
+      WHERE sr.providerUserId = ?
+        AND LOWER(TRIM(CAST(sr.status AS CHAR(64)))) IN ('pending', 'pending_provider_approval')
       ORDER BY sr.scheduledAt ASC
       `,
       [doctorId]
     );
+
+    console.log('[doctor:requests:pending]', {
+      doctorId,
+      count: rows.length,
+      rows: rows.map((row) => ({
+        requestId: row.requestId,
+        status: row.status,
+        providerUserId: row.providerUserId,
+        patientUserId: row.patientUserId,
+      })),
+    });
 
     res.json(rows);
   } catch (err) {
@@ -517,7 +650,7 @@ router.get('/requests/available', async (req, res) => {
         ${distanceSelect}
       FROM servicerequest sr
       JOIN user u ON sr.patientUserId = u.userId
-      WHERE sr.status = 'pending'
+      WHERE LOWER(TRIM(CAST(sr.status AS CHAR(64)))) IN ('pending', 'pending_provider_approval')
         AND (sr.providerUserId IS NULL OR sr.providerUserId = '' OR sr.providerUserId = ?)
         ${serviceWhere}
         ${distanceWhere}
@@ -549,6 +682,8 @@ router.get('/requests', async (req, res) => {
   }
 
   try {
+    const initialDiagnosisSelect = await initialDiagnosisSelectSql();
+
     let query = `
       SELECT 
         sr.requestId,
@@ -565,7 +700,8 @@ router.get('/requests', async (req, res) => {
         sr.providerUserId,
         u.fullName as patientName,
         u.phone as patientPhone,
-        u.email as patientEmail
+        u.email as patientEmail,
+        ${initialDiagnosisSelect} as hasInitialDiagnosisReport
       FROM servicerequest sr
       JOIN user u ON sr.patientUserId = u.userId
       WHERE sr.providerUserId = ?
@@ -574,15 +710,37 @@ router.get('/requests', async (req, res) => {
     const params = [doctorId];
 
     if (status) {
-      query += ' AND sr.status = ?';
-      params.push(status);
+      const normalizedStatus = status.toString().trim().toLowerCase();
+      if (normalizedStatus === 'pending') {
+        query += ` AND LOWER(TRIM(CAST(sr.status AS CHAR(64)))) IN ('pending', 'pending_provider_approval')`;
+      } else {
+        query += ' AND LOWER(TRIM(CAST(sr.status AS CHAR(64)))) = ?';
+        params.push(normalizedStatus);
+      }
     }
 
     query += ' ORDER BY sr.scheduledAt DESC';
 
     const [rows] = await db.query(query, params);
+    const normalizedRows = rows.map((row) => ({
+      ...row,
+      hasInitialDiagnosisReport: dbBool(row.hasInitialDiagnosisReport),
+    }));
 
-    res.json(rows);
+    console.log('[doctor:requests:list]', {
+      doctorId,
+      status: status || 'all',
+      count: normalizedRows.length,
+      rows: normalizedRows.map((row) => ({
+        requestId: row.requestId,
+        status: row.status,
+        providerUserId: row.providerUserId,
+        patientUserId: row.patientUserId,
+        hasInitialDiagnosisReport: row.hasInitialDiagnosisReport,
+      })),
+    });
+
+    res.json(normalizedRows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -595,6 +753,8 @@ router.get('/requests/:requestId', async (req, res) => {
   const { requestId } = req.params;
 
   try {
+    const initialDiagnosisSelect = await initialDiagnosisSelectSql();
+
     const [rows] = await db.query(
       `
       SELECT 
@@ -612,7 +772,8 @@ router.get('/requests/:requestId', async (req, res) => {
         sr.providerUserId,
         u.fullName as patientName,
         u.phone as patientPhone,
-        u.email as patientEmail
+        u.email as patientEmail,
+        ${initialDiagnosisSelect} as hasInitialDiagnosisReport
       FROM servicerequest sr
       JOIN user u ON sr.patientUserId = u.userId
       WHERE sr.requestId = ?
@@ -624,7 +785,20 @@ router.get('/requests/:requestId', async (req, res) => {
       return res.status(404).json({ error: 'Request not found' });
     }
 
-    res.json(rows[0]);
+    const normalizedRow = {
+      ...rows[0],
+      hasInitialDiagnosisReport: dbBool(rows[0].hasInitialDiagnosisReport),
+    };
+
+    console.log('[doctor:requests:detail]', {
+      requestId,
+      status: normalizedRow.status,
+      providerUserId: normalizedRow.providerUserId,
+      patientUserId: normalizedRow.patientUserId,
+      hasInitialDiagnosisReport: normalizedRow.hasInitialDiagnosisReport,
+    });
+
+    res.json(normalizedRow);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -655,13 +829,14 @@ router.post('/requests/:requestId/accept', async (req, res) => {
     }
 
     const request = requestRows[0];
-    if (request.status === 'confirmed') {
+    const currentStatus = (request.status || '').toString().trim().toLowerCase();
+    if (currentStatus === 'confirmed') {
       if (request.providerUserId === doctorId) {
         return res.json({ success: true, message: 'Request already accepted by this doctor' });
       }
       return res.status(400).json({ error: `Cannot accept request with status: ${request.status}` });
     }
-    if (request.status !== 'pending') {
+    if (!['pending', 'pending_provider_approval'].includes(currentStatus)) {
       return res.status(400).json({ error: `Cannot accept request with status: ${request.status}` });
     }
 
@@ -788,7 +963,8 @@ router.post('/requests/:requestId/reject', async (req, res) => {
     }
 
     const request = requestRows[0];
-    if (request.status !== 'pending') {
+    const currentStatus = (request.status || '').toString().trim().toLowerCase();
+    if (!['pending', 'pending_provider_approval'].includes(currentStatus)) {
       return res.status(400).json({ error: `Cannot reject request with status: ${request.status}` });
     }
 
@@ -842,6 +1018,17 @@ router.get('/patients', async (req, res) => {
   }
 
   try {
+    const hasProfileImageUrl = await hasColumn('user', 'profileImageUrl');
+    const hasPatientAddress = await hasColumn('patient', 'addressText');
+    const hasPatientDob = await hasColumn('patient', 'dateOfBirth');
+    const hasPatientGender = await hasColumn('patient', 'gender');
+    const hasPatientLat = await hasColumn('patient', 'gpsLat');
+    const hasPatientLng = await hasColumn('patient', 'gpsLng');
+    const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
+    const visitLocationExpr = hasVisitAddress
+      ? "COALESCE(NULLIF(sr2.visitAddress, ''), NULLIF(sr2.location, ''))"
+      : "NULLIF(sr2.location, '')";
+
     const [rows] = await db.query(
       `
       SELECT *
@@ -851,18 +1038,46 @@ router.get('/patients', async (req, res) => {
           u.fullName as patientName,
           u.phone as patientPhone,
           u.email as patientEmail,
+          ${hasProfileImageUrl ? 'MAX(u.profileImageUrl)' : 'NULL'} as profileImageUrl,
+          ${hasPatientAddress ? 'MAX(p.addressText)' : 'NULL'} as addressText,
+          ${hasPatientAddress ? 'MAX(p.addressText)' : 'NULL'} as patientAddress,
+          ${hasPatientDob ? 'MAX(p.dateOfBirth)' : 'NULL'} as dateOfBirth,
+          ${hasPatientGender ? 'MAX(p.gender)' : 'NULL'} as gender,
+          ${hasPatientLat ? 'MAX(p.gpsLat)' : 'NULL'} as gpsLat,
+          ${hasPatientLng ? 'MAX(p.gpsLng)' : 'NULL'} as gpsLng,
+          (
+            SELECT ${visitLocationExpr}
+            FROM servicerequest sr2
+            WHERE sr2.patientUserId = sr.patientUserId
+              AND sr2.providerUserId = ?
+              AND LOWER(TRIM(CAST(sr2.status AS CHAR(64)))) <> 'draft'
+              AND ${visitLocationExpr} IS NOT NULL
+            ORDER BY sr2.scheduledAt DESC
+            LIMIT 1
+          ) as location,
+          (
+            SELECT ${visitLocationExpr}
+            FROM servicerequest sr2
+            WHERE sr2.patientUserId = sr.patientUserId
+              AND sr2.providerUserId = ?
+              AND LOWER(TRIM(CAST(sr2.status AS CHAR(64)))) <> 'draft'
+              AND ${visitLocationExpr} IS NOT NULL
+            ORDER BY sr2.scheduledAt DESC
+            LIMIT 1
+          ) as visitAddress,
           COUNT(*) as totalVisits,
-          MAX(CASE WHEN sr.status = 'completed' THEN sr.scheduledAt ELSE NULL END) as lastVisit,
-          MIN(CASE WHEN sr.status IN ('pending', 'confirmed') AND sr.scheduledAt >= NOW() THEN sr.scheduledAt ELSE NULL END) as nextVisit
+          MAX(CASE WHEN LOWER(TRIM(CAST(sr.status AS CHAR(64)))) = 'completed' THEN sr.scheduledAt ELSE NULL END) as lastVisit,
+          MIN(CASE WHEN LOWER(TRIM(CAST(sr.status AS CHAR(64)))) IN ('pending', 'pending_provider_approval', 'pending_payment', 'confirmed') AND sr.scheduledAt >= NOW() THEN sr.scheduledAt ELSE NULL END) as nextVisit
         FROM servicerequest sr
         JOIN user u ON sr.patientUserId = u.userId
+        LEFT JOIN patient p ON sr.patientUserId = p.userId
         WHERE sr.providerUserId = ?
-          AND sr.status IN ('pending', 'confirmed', 'completed')
+          AND LOWER(TRIM(CAST(sr.status AS CHAR(64)))) <> 'draft'
         GROUP BY sr.patientUserId, u.fullName, u.phone, u.email
       ) patients
       ORDER BY COALESCE(nextVisit, lastVisit) DESC
       `,
-      [doctorId]
+      [doctorId, doctorId, doctorId]
     );
 
     res.json(rows);
@@ -1021,7 +1236,18 @@ async function getDoctorVisibleVisitReports(patientId, doctorId) {
 // ============================================
 router.post('/requests/:requestId/report', async (req, res) => {
   const { requestId } = req.params;
-  const { doctorId, diagnosis, notes, prescription } = req.body;
+  const {
+    doctorId,
+    diagnosis,
+    notes,
+    prescription,
+    isInitialDiagnosis,
+    chiefComplaint,
+    symptoms,
+    medicalHistory,
+    treatmentPlan,
+    requiredVisits,
+  } = req.body;
 
   if (!doctorId) {
     return res.status(400).json({ error: 'Doctor ID is required' });
@@ -1043,6 +1269,36 @@ router.post('/requests/:requestId/report', async (req, res) => {
       return res.status(400).json({ error: 'Can only submit report for completed visits' });
     }
 
+    const submitInitialDiagnosis =
+      isInitialDiagnosis === true ||
+      isInitialDiagnosis === 'true' ||
+      isInitialDiagnosis === 1 ||
+      isInitialDiagnosis === '1';
+
+    console.log('[doctor:reports:submit:start]', {
+      requestId,
+      doctorId,
+      patientId: request.patientUserId,
+      requestProviderId: request.providerUserId,
+      status: request.status,
+      submitInitialDiagnosis,
+      bodyIsInitialDiagnosis: isInitialDiagnosis,
+    });
+
+    if (submitInitialDiagnosis) {
+      await ensureInitialDiagnosisReportColumns();
+      const initialExists = await initialDiagnosisExistsForCase(
+        request.patientUserId,
+        doctorId
+      );
+
+      if (initialExists) {
+        return res.status(409).json({
+          error: 'Initial diagnosis report already exists for this patient case',
+        });
+      }
+    }
+
     // Create visit record
     const [existingVisitRows] = await db.query(
       'SELECT visitId FROM visit WHERE requestId = ? LIMIT 1',
@@ -1058,27 +1314,86 @@ router.post('/requests/:requestId/report', async (req, res) => {
       );
     }
 
+    const finalDiagnosis = (diagnosis || '').toString();
+    const finalTreatmentPlan = submitInitialDiagnosis
+      ? (treatmentPlan || notes || '').toString()
+      : (notes || '').toString();
+    const legacyNotes = submitInitialDiagnosis
+      ? [
+          chiefComplaint ? `Chief Complaint:\n${chiefComplaint}` : '',
+          symptoms ? `Symptoms:\n${symptoms}` : '',
+          medicalHistory ? `Medical History:\n${medicalHistory}` : '',
+          finalTreatmentPlan ? `Treatment Plan:\n${finalTreatmentPlan}` : '',
+          requiredVisits ? `Required Visits:\n${requiredVisits}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      : (notes || '').toString();
+
     // Create visit report
     const reportId = randomUUID();
     await db.query(
       'INSERT INTO visitreport (reportId, notes, diagnosis, visitId) VALUES (?, ?, ?, ?)',
-      [reportId, notes, diagnosis, visitId]
+      [reportId, legacyNotes, finalDiagnosis, visitId]
     );
 
     try {
       if (await medicalRecordService.tableExists('visit_reports')) {
-        await medicalRecordService.insertVisitReport({
+        if (submitInitialDiagnosis) await ensureInitialDiagnosisReportColumns();
+        const structuredReport = await medicalRecordService.insertVisitReport({
           patient_id: request.patientUserId,
           provider_id: doctorId,
           appointment_id: requestId,
-          diagnosis: diagnosis || '',
-          treatment_plan: notes || '',
+          report_kind: submitInitialDiagnosis
+            ? 'initial_diagnosis'
+            : 'visit_report',
+          chief_complaint: chiefComplaint || '',
+          symptoms: symptoms || '',
+          medical_history: medicalHistory || '',
+          required_visits: requiredVisits || '',
+          diagnosis: finalDiagnosis,
+          treatment_plan: finalTreatmentPlan,
           recommendations: prescription || '',
           medications_prescribed: prescription || '',
           follow_up_required: false,
         });
+        console.log('[doctor:reports:structured-insert]', {
+          requestId,
+          patientId: request.patientUserId,
+          doctorId,
+          reportKind: submitInitialDiagnosis
+            ? 'initial_diagnosis'
+            : 'visit_report',
+          structuredReportId: structuredReport?.id,
+          structuredReportKind:
+            structuredReport?.report_kind ?? structuredReport?.record_type,
+        });
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error('[doctor:reports:structured-insert:error]', {
+        requestId,
+        patientId: request.patientUserId,
+        doctorId,
+        reportKind: submitInitialDiagnosis
+          ? 'initial_diagnosis'
+          : 'visit_report',
+        error: err.message,
+      });
+    }
+
+    const initialExistsAfterSubmit = await initialDiagnosisExistsForCase(
+      request.patientUserId,
+      doctorId
+    );
+    console.log('[doctor:reports:submit:after-save]', {
+      requestId,
+      patientId: request.patientUserId,
+      doctorId,
+      submitInitialDiagnosis,
+      legacyReportId: reportId,
+      visitId,
+      initialExistsAfterSubmit,
+    });
 
     if (prescription && prescription.trim()) {
       const [recordRows] = await db.query(
@@ -1138,6 +1453,7 @@ router.post('/requests/:requestId/report', async (req, res) => {
     res.json({ 
       success: true, 
       message: 'Medical report submitted successfully',
+      reportType: submitInitialDiagnosis ? 'initial_diagnosis' : 'visit_report',
       visitId,
       reportId
     });

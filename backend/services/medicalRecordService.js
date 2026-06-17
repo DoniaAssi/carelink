@@ -47,10 +47,17 @@ async function listVisitReportsForPatient(patientId) {
        vr.id,
        vr.patient_id AS patient_id,
        vr.provider_id,
-       'visit_report' AS record_type,
-       COALESCE(NULLIF(TRIM(vr.diagnosis), ''), 'Visit report') AS title,
+       ${hasReportKind ? 'vr.report_kind' : "'visit_report'"} AS record_type,
+       CASE
+         WHEN ${hasReportKind ? "vr.report_kind = 'initial_diagnosis'" : '0'}
+           THEN 'Initial Diagnosis Report'
+         ELSE COALESCE(NULLIF(TRIM(vr.diagnosis), ''), 'Visit report')
+       END AS title,
        vr.diagnosis,
-       '' AS symptoms,
+       ${hasSymptoms ? 'NULLIF(TRIM(vr.symptoms), \'\')' : "''"} AS symptoms,
+       ${hasChiefComplaint ? 'NULLIF(TRIM(vr.chief_complaint), \'\')' : 'NULL'} AS chiefComplaint,
+       ${hasMedicalHistory ? 'NULLIF(TRIM(vr.medical_history), \'\')' : 'NULL'} AS medicalHistory,
+       ${hasRequiredVisits ? 'NULLIF(TRIM(vr.required_visits), \'\')' : 'NULL'} AS requiredVisits,
        TRIM(BOTH ' ' FROM CONCAT(
          IFNULL(NULLIF(TRIM(vr.treatment_plan), ''), ''),
          IF(
@@ -135,6 +142,20 @@ async function insertVisitReport(payload) {
   const hasVisitDate = await hasColumn('visit_reports', 'visit_date');
   const hasMed = await hasColumn('visit_reports', 'medications_prescribed');
   const hasAll = await hasColumn('visit_reports', 'allergies_noted');
+  const hasReportKind = await hasColumn('visit_reports', 'report_kind');
+  const hasChiefComplaint = await hasColumn(
+    'visit_reports',
+    'chief_complaint'
+  );
+  const hasSymptoms = await hasColumn('visit_reports', 'symptoms');
+  const hasMedicalHistory = await hasColumn(
+    'visit_reports',
+    'medical_history'
+  );
+  const hasRequiredVisits = await hasColumn(
+    'visit_reports',
+    'required_visits'
+  );
 
   const visitDate =
     toDateOnly(payload.visit_date ?? payload.visitDate) ||
@@ -181,6 +202,26 @@ async function insertVisitReport(payload) {
     baseVals.push(
       (payload.allergies_noted ?? payload.allergiesNoted ?? '').toString()
     );
+  }
+  if (hasReportKind) {
+    baseCols.push('report_kind');
+    baseVals.push((payload.report_kind ?? 'visit_report').toString());
+  }
+  if (hasChiefComplaint) {
+    baseCols.push('chief_complaint');
+    baseVals.push((payload.chief_complaint ?? '').toString());
+  }
+  if (hasSymptoms) {
+    baseCols.push('symptoms');
+    baseVals.push((payload.symptoms ?? '').toString());
+  }
+  if (hasMedicalHistory) {
+    baseCols.push('medical_history');
+    baseVals.push((payload.medical_history ?? '').toString());
+  }
+  if (hasRequiredVisits) {
+    baseCols.push('required_visits');
+    baseVals.push((payload.required_visits ?? '').toString());
   }
 
   await db.execute(

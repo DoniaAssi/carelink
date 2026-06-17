@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/app_colors.dart';
 import '../../../services/doctor_service.dart';
+import 'initial_diagnosis_report_screen.dart';
 import 'medical_record_screen.dart';
 import 'medical_report_form.dart';
 import 'request_details_screen.dart';
@@ -34,6 +35,14 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
 
   static const _pageColor = Color(0xFFE8F5F2);
   static const _primary = Color(0xFF0F8B8D);
+
+  bool _asBool(dynamic value) {
+    return value == true ||
+        value == 1 ||
+        value?.toString().toLowerCase() == '1' ||
+        value?.toString().toLowerCase() == 'true';
+  }
+
   static const _textDark = Color(0xFF101828);
   static const _textMuted = Color(0xFF667085);
 
@@ -69,11 +78,23 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
       final availableRequests = _currentStatus == 'available'
           ? requests
           : await _doctorService.getAvailableRequests(doctorId);
+      final nextCounts = _buildFilterCounts(allRequests, availableRequests);
+
+      debugPrint(
+        '[doctor requests screen] doctorId=$doctorId '
+        'selectedStatus=${_currentStatus ?? 'all'} '
+        'received=${requests.length} '
+        'statuses=${requests.map((item) => item is Map ? item['status'] : null).toList()}',
+      );
+      debugPrint(
+        '[doctor requests screen] all=${allRequests.length} '
+        'available=${availableRequests.length} counts=$nextCounts',
+      );
 
       if (!mounted) return;
       setState(() {
         _requests = requests;
-        _filterCounts = _buildFilterCounts(allRequests, availableRequests);
+        _filterCounts = nextCounts;
         _isLoading = false;
       });
     } catch (e) {
@@ -431,7 +452,10 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
         _cleanText(request['reasonForVisit']) ??
         'Consultation';
     final requestId = _requestIdOf(request);
-    final isPending = status.toLowerCase() == 'pending';
+    final normalizedStatus = status.toLowerCase();
+    final isPending =
+        normalizedStatus == 'pending' ||
+        normalizedStatus == 'pending_provider_approval';
     final canOpenRecord = patientId.isNotEmpty;
     final canComplete =
         status.toLowerCase() == 'confirmed' && requestId.isNotEmpty;
@@ -740,10 +764,29 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => MedicalReportFormScreen(
-                      requestId: requestId,
-                      requestData: Map<String, dynamic>.from(request),
-                    ),
+                    builder: (context) {
+                      final requestData = Map<String, dynamic>.from(request);
+                      final hasInitial = _asBool(
+                        requestData['hasInitialDiagnosisReport'],
+                      );
+                      debugPrint(
+                        '[doctor:requests:file-report:navigate] '
+                        'requestId=$requestId '
+                        'patientId=${requestData['patientUserId']} '
+                        'doctorId=${requestData['providerUserId']} '
+                        'hasInitialDiagnosisReport=${requestData['hasInitialDiagnosisReport']} '
+                        'parsed=$hasInitial',
+                      );
+                      return hasInitial
+                          ? MedicalReportFormScreen(
+                              requestId: requestId,
+                              requestData: requestData,
+                            )
+                          : InitialDiagnosisReportScreen(
+                              requestId: requestId,
+                              requestData: requestData,
+                            );
+                    },
                   ),
                 ).then((_) => _loadRequests());
               },
@@ -786,7 +829,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
     if (lower.contains('pending') && lower.contains('payment')) {
       color = const Color(0xFF1570EF);
       background = const Color(0xFFEAF4FF);
-    } else if (lower == 'pending') {
+    } else if (lower == 'pending' || lower == 'pending_provider_approval') {
       color = const Color(0xFFD97706);
       background = const Color(0xFFFFF3E6);
     } else if (lower == 'confirmed') {
@@ -842,6 +885,8 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
       final status = (request['status'] ?? '').toString().toLowerCase();
       if (counts.containsKey(status)) {
         counts[status] = counts[status]! + 1;
+      } else if (status == 'pending_provider_approval') {
+        counts['pending'] = counts['pending']! + 1;
       } else if (status == 'canceled') {
         counts['cancelled'] = counts['cancelled']! + 1;
       }
@@ -884,6 +929,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
   String _statusDisplay(String status) {
     final clean = status.trim().replaceAll('_', ' ');
     if (clean.isEmpty) return 'UNKNOWN';
+    if (clean.toLowerCase() == 'pending provider approval') return 'PENDING';
     return clean.toUpperCase();
   }
 

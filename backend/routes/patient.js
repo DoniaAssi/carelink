@@ -1580,7 +1580,7 @@ router.post('/appointments', async (req, res) => {
       ''
     ).toString().trim();
     const requestedStatus = (status || '').toString().trim().toLowerCase();
-    const finalStatus = ['draft', 'pending_provider_approval'].includes(requestedStatus) ? requestedStatus : 'pending';
+    const finalStatus = requestedStatus === 'draft' ? 'draft' : 'pending';
     const parsedVisitLat = visitLatitude == null || visitLatitude === ''
       ? null
       : Number(visitLatitude);
@@ -1658,6 +1658,24 @@ router.post('/appointments', async (req, res) => {
        VALUES (${columns.map(() => '?').join(', ')})`,
       values
     );
+
+    try {
+      const [insertedRows] = await db.query(
+        `SELECT requestId, status, patientUserId, providerUserId, scheduledAt
+         FROM servicerequest
+         WHERE requestId = ?
+         LIMIT 1`,
+        [requestId]
+      );
+      console.log('[booking:create] inserted request', insertedRows[0] || {
+        requestId,
+        status: finalStatus,
+        patientUserId,
+        providerUserId: finalDoctorUserId,
+      });
+    } catch (logErr) {
+      console.log('[booking:create] insert log failed', logErr.message);
+    }
 
     if (finalStatus !== 'draft') {
       try {
@@ -1821,9 +1839,15 @@ router.post('/appointments/:appointmentId/submit', async (req, res) => {
     }
 
     await connection.execute(
-      `UPDATE servicerequest SET status = 'pending_provider_approval' WHERE requestId = ?`,
+      `UPDATE servicerequest SET status = 'pending' WHERE requestId = ?`,
       [appointmentId]
     );
+    console.log('[booking:submit] submitted request', {
+      requestId: appointmentId,
+      status: 'pending',
+      patientUserId: appt.patientUserId,
+      providerUserId: appt.providerUserId,
+    });
     await connection.commit();
 
     try {
@@ -1877,7 +1901,7 @@ router.post('/appointments/:appointmentId/submit', async (req, res) => {
     res.json({
       success: true,
       appointmentId,
-      status: 'pending_provider_approval',
+      status: 'pending',
       paymentId: appt.paymentId,
       paymentReference: appt.transactionId || appt.paymentId
     });
