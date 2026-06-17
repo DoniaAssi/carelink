@@ -569,6 +569,7 @@ router.get('/requests', async (req, res) => {
       FROM servicerequest sr
       JOIN user u ON sr.patientUserId = u.userId
       WHERE sr.providerUserId = ?
+        AND LOWER(TRIM(CAST(sr.status AS CHAR(64)))) <> 'draft'
     `;
     const params = [doctorId];
 

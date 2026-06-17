@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/app_localizations.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
@@ -570,86 +571,82 @@ class _RescheduleModalState extends State<RescheduleModal> {
             final date = dates[index];
             final times = _getAvailableTimeSlots(date);
             final selected = DateUtils.isSameDay(_selectedDate, date);
-            return Material(
-              color: selected ? AppColors.primary : p.surfaceSoft,
+            return PatientPressable(
+              onTap: () {
+                setState(() {
+                  _selectedDate = date;
+                  _selectedTime = null;
+                });
+              },
               borderRadius: BorderRadius.circular(14),
-              child: InkWell(
-                onTap: () {
-                  setState(() {
-                    _selectedDate = date;
-                    _selectedTime = null;
-                  });
-                },
-                borderRadius: BorderRadius.circular(14),
-                child: Container(
-                  constraints: const BoxConstraints(minHeight: 62),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 62),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: selected ? AppColors.primary : p.stroke,
                   ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: selected ? AppColors.primary : p.stroke,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Colors.white.withValues(alpha: 0.18)
+                            : AppColors.primary.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                      child: Text(
+                        '${date.day}',
+                        style: TextStyle(
+                          color: selected ? Colors.white : AppColors.primary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 42,
-                        height: 42,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? Colors.white.withValues(alpha: 0.18)
-                              : AppColors.primary.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(11),
-                        ),
-                        child: Text(
-                          '${date.day}',
-                          style: TextStyle(
-                            color: selected ? Colors.white : AppColors.primary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _dateTitle(date, isArabic),
+                            style: TextStyle(
+                              color: selected ? Colors.white : p.inkDark,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _dateTitle(date, isArabic),
-                              style: TextStyle(
-                                color: selected ? Colors.white : p.inkDark,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                              ),
+                          const SizedBox(height: 3),
+                          Text(
+                            isArabic
+                                ? '${times.length} أوقات متاحة'
+                                : '${times.length} open ${times.length == 1 ? 'time' : 'times'}',
+                            style: TextStyle(
+                              color: selected
+                                  ? Colors.white.withValues(alpha: 0.82)
+                                  : p.inkMuted,
+                              fontSize: 12,
                             ),
-                            const SizedBox(height: 3),
-                            Text(
-                              isArabic
-                                  ? '${times.length} أوقات متاحة'
-                                  : '${times.length} open ${times.length == 1 ? 'time' : 'times'}',
-                              style: TextStyle(
-                                color: selected
-                                    ? Colors.white.withValues(alpha: 0.82)
-                                    : p.inkMuted,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      Icon(
-                        selected
-                            ? Icons.check_circle_rounded
-                            : Icons.chevron_right_rounded,
-                        color: selected ? Colors.white : AppColors.primary,
-                      ),
-                    ],
-                  ),
+                    ),
+                    Icon(
+                      selected
+                          ? Icons.check_circle_rounded
+                          : Icons.chevron_right_rounded,
+                      color: selected ? Colors.white : AppColors.primary,
+                    ),
+                  ],
                 ),
               ),
             );
@@ -737,34 +734,30 @@ class _RescheduleModalState extends State<RescheduleModal> {
       runSpacing: 10,
       children: availableTimes.map((time) {
         final isSel = _selectedTime == time;
-        return Material(
-          color: isSel ? AppColors.primary : p.surfaceSoft,
+        return PatientPressable(
+          onTap: () {
+            setState(() {
+              _selectedTime = time;
+            });
+          },
           borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            onTap: () {
-              setState(() {
-                _selectedTime = time;
-              });
-            },
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 90, minHeight: 44),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isSel ? AppColors.primary : p.stroke,
-                  width: 1,
-                ),
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 90, minHeight: 44),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSel ? AppColors.primary : p.stroke,
+                width: 1,
               ),
-              child: Text(
-                time,
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  color: isSel ? Colors.white : p.inkDark,
-                ),
+            ),
+            child: Text(
+              time,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                color: isSel ? Colors.white : p.inkDark,
               ),
             ),
           ),

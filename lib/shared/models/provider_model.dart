@@ -1,10 +1,12 @@
 class AvailabilitySlot {
   final String day;
+  final String date;
   final String startTime;
   final String endTime;
 
   const AvailabilitySlot({
     required this.day,
+    this.date = '',
     required this.startTime,
     required this.endTime,
   });
@@ -12,12 +14,14 @@ class AvailabilitySlot {
   factory AvailabilitySlot.fromJson(Map<String, dynamic> json) {
     return AvailabilitySlot(
       day: json['day']?.toString() ?? '',
+      date: json['date']?.toString() ?? '',
       startTime: json['startTime']?.toString() ?? '',
       endTime: json['endTime']?.toString() ?? '',
     );
   }
 
-  String get label => '$day $startTime-$endTime';
+  String get label =>
+      '${date.isEmpty ? '' : '$date '}$day $startTime-$endTime'.trim();
 
   String get formattedDay => day.isEmpty ? 'Day unavailable' : day;
 
@@ -83,6 +87,8 @@ class ProviderModel {
   final int ratingsCount;
   final String role;
   final bool isAvailable;
+  final bool isActive;
+  final bool isProfileComplete;
   final double? consultationFee;
 
   /// سنوات الخبرة (من جدول careprovider) — تُستخدم في التوصية الذكية.
@@ -103,6 +109,8 @@ class ProviderModel {
     this.ratingsCount = 0,
     required this.role,
     required this.isAvailable,
+    this.isActive = true,
+    this.isProfileComplete = true,
     this.consultationFee,
     this.experienceYears,
     this.gpsLat,
@@ -121,6 +129,11 @@ class ProviderModel {
         json['isAvailable'] == true ||
         json['isAvailable'] == 1 ||
         json['isAvailable']?.toString() == '1';
+    final isActive = json['isActive'] == null
+        ? true
+        : json['isActive'] == true ||
+              json['isActive'] == 1 ||
+              json['isActive']?.toString() == '1';
     final gpsLat = double.tryParse(json['gpsLat']?.toString() ?? '');
     final gpsLng = double.tryParse(json['gpsLng']?.toString() ?? '');
     final fee = double.tryParse(
@@ -165,6 +178,10 @@ class ProviderModel {
       profileImageUrl:
           (json['profileImageUrl'] ??
                   json['profile_image_url'] ??
+                  json['profilePictureUrl'] ??
+                  json['profile_picture_url'] ??
+                  json['profilePhotoUrl'] ??
+                  json['photoUrl'] ??
                   json['imageUrl'] ??
                   json['avatarUrl'])
               ?.toString()
@@ -172,6 +189,12 @@ class ProviderModel {
       ratingsCount: rCount,
       role: role,
       isAvailable: isAvailable,
+      isActive: isActive,
+      isProfileComplete: json['isProfileComplete'] == null
+          ? true
+          : json['isProfileComplete'] == true ||
+                json['isProfileComplete'] == 1 ||
+                json['isProfileComplete']?.toString() == '1',
       consultationFee: fee,
       experienceYears: expYears,
       gpsLat: gpsLat,

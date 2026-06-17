@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/profile_avatar.dart'
+    show profileAvatarOrPlaceholder;
 import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/location_service.dart';
 
@@ -27,229 +30,238 @@ class AiProviderRecommendationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = result.provider;
     final scheme = Theme.of(context).colorScheme;
-    final specialty = provider.specialization.trim().isNotEmpty
-        ? provider.specialization.trim()
-        : provider.serviceType.trim().isNotEmpty
-        ? provider.serviceType.trim()
-        : provider.role;
-    final foreground = highlighted ? Colors.white : scheme.onSurface;
-    final muted = highlighted
-        ? Colors.white.withValues(alpha: 0.78)
-        : scheme.onSurfaceVariant;
-    final cardColor = highlighted ? AppColors.primary : scheme.surface;
+    final displayName = _displayName(provider);
+    final specialty = _displaySpecialty(provider);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: highlighted ? AppColors.primary : scheme.outlineVariant,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: highlighted
-                    ? AppColors.primary.withValues(alpha: 0.18)
-                    : Colors.black.withValues(alpha: 0.05),
-                blurRadius: 16,
-                offset: const Offset(0, 7),
-              ),
-            ],
+    return PatientPressable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(17),
+      child: Ink(
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(
+            color: highlighted
+                ? AppColors.primary.withValues(alpha: 0.55)
+                : scheme.outlineVariant,
+            width: highlighted ? 1.25 : 1,
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _avatar(context, provider, highlighted),
-                    const Spacer(),
-                    Container(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.045),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _avatar(provider),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.09),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${result.matchPercentage}%',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              Text(
+                displayName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: scheme.onSurface,
+                  fontSize: 13.5,
+                  height: 1.15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                specialty,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.star_rounded,
+                    color: Color(0xFFFFB020),
+                    size: 15,
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    provider.overallRating.toStringAsFixed(1),
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    _price(provider),
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  Flexible(
+                    child: Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
+                        horizontal: 6,
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: highlighted
-                            ? Colors.white.withValues(alpha: 0.16)
-                            : AppColors.primary.withValues(alpha: 0.09),
+                        color: AppColors.primary.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        '${result.matchPercentage}%',
-                        style: TextStyle(
-                          color: highlighted ? Colors.white : AppColors.primary,
-                          fontSize: 10,
+                        provider.isAvailable
+                            ? (isArabic ? 'متاح' : 'Available')
+                            : (isArabic ? 'مواعيد محدودة' : 'Limited'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 9,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  provider.fullName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: foreground,
-                    fontSize: 14,
-                    height: 1.15,
-                    fontWeight: FontWeight.w800,
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  specialty,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.star_rounded,
-                      color: highlighted ? Colors.white : AppColors.primary,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      provider.overallRating.toStringAsFixed(1),
-                      style: TextStyle(
-                        color: foreground,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      _price(provider),
-                      style: TextStyle(
-                        color: foreground,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 9),
-                Row(
-                  children: [
-                    Flexible(
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onTap,
+                    child: Semantics(
+                      label: isArabic ? 'عرض التفاصيل' : 'View details',
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 5,
-                        ),
+                        width: 28,
+                        height: 28,
                         decoration: BoxDecoration(
-                          color: highlighted
-                              ? Colors.white.withValues(alpha: 0.15)
-                              : AppColors.primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(999),
+                          shape: BoxShape.circle,
+                          color: AppColors.primary.withValues(alpha: 0.1),
                         ),
-                        child: Text(
-                          provider.isAvailable
-                              ? (isArabic ? 'متاح' : 'Available')
-                              : (isArabic ? 'مواعيد محدودة' : 'Limited'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: highlighted
-                                ? Colors.white
-                                : AppColors.primary,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 32,
-                      height: 32,
-                      child: IconButton(
-                        onPressed: onTap,
-                        padding: EdgeInsets.zero,
-                        style: IconButton.styleFrom(
-                          backgroundColor: highlighted
-                              ? Colors.white
-                              : AppColors.primary.withValues(alpha: 0.1),
-                          foregroundColor: highlighted
-                              ? AppColors.primary
-                              : AppColors.primary,
-                        ),
-                        icon: Icon(
+                        alignment: Alignment.center,
+                        child: Icon(
                           isArabic
                               ? Icons.arrow_back_rounded
                               : Icons.arrow_forward_rounded,
-                          size: 17,
+                          color: AppColors.primary,
+                          size: 15,
                         ),
-                        tooltip: isArabic ? 'عرض التفاصيل' : 'View details',
                       ),
                     ),
-                  ],
-                ),
-              ],
-            ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _avatar(
-    BuildContext context,
-    ProviderModel provider,
-    bool highlighted,
-  ) {
+  Widget _avatar(ProviderModel provider) {
     final isDoctor = provider.role.toLowerCase() == 'doctor';
-    final fallback = isDoctor
-        ? 'assets/images/doctorportrait.jpg'
-        : 'assets/images/nursemedical.jpg';
-    final imageUrl = provider.profileImageUrl?.trim() ?? '';
-
-    Widget image;
-    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-      image = Image.network(
-        imageUrl,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Image.asset(fallback, fit: BoxFit.cover),
-      );
-    } else {
-      image = Image.asset(fallback, fit: BoxFit.cover);
-    }
 
     return Container(
-      width: 50,
-      height: 50,
+      width: 44,
+      height: 44,
       decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.09),
         shape: BoxShape.circle,
         border: Border.all(
-          color: highlighted
-              ? Colors.white.withValues(alpha: 0.8)
-              : AppColors.primary.withValues(alpha: 0.25),
-          width: 2,
+          color: AppColors.primary.withValues(alpha: 0.24),
+          width: 1.25,
         ),
       ),
-      child: ClipOval(child: image),
+      child: ClipOval(
+        child: profileAvatarOrPlaceholder(
+          imageUrl: provider.profileImageUrl,
+          size: 44,
+          placeholderColor: AppColors.primary,
+          placeholderIcon: isDoctor
+              ? Icons.medical_services_outlined
+              : Icons.local_hospital_outlined,
+          iconSize: 21,
+        ),
+      ),
     );
   }
 
   String _price(ProviderModel provider) {
     final fee = provider.consultationFee;
     if (fee == null) return isArabic ? 'السعر لاحقاً' : 'Price later';
-    return '\$${fee.toStringAsFixed(0)}';
+    return '${fee.toStringAsFixed(0)} ILS';
+  }
+
+  String _displayName(ProviderModel provider) {
+    final name = provider.fullName.trim();
+    if (_isInvalidDisplayValue(name)) {
+      return isArabic ? 'مقدم رعاية' : 'Care Provider';
+    }
+    return name;
+  }
+
+  String _displaySpecialty(ProviderModel provider) {
+    final specialization = provider.specialization.trim();
+    if (!_isInvalidDisplayValue(specialization)) return specialization;
+
+    final serviceType = provider.serviceType.trim();
+    if (!_isInvalidDisplayValue(serviceType)) return serviceType;
+
+    return isArabic ? 'مقدم رعاية عامة' : 'General Care Provider';
+  }
+
+  bool _isInvalidDisplayValue(String value) {
+    final normalized = value.trim().toLowerCase();
+    return normalized.isEmpty ||
+        const {
+          'null',
+          'unknown',
+          'doctor',
+          'nurse',
+          'provider',
+          'care provider',
+          'carid',
+          'careid',
+          'n/a',
+          '-',
+        }.contains(normalized);
   }
 
   static double? distanceFrom(

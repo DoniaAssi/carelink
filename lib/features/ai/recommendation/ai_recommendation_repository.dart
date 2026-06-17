@@ -2,34 +2,25 @@ import 'dart:convert';
 
 import 'package:carelink/features/ai/recommendation/mock_ai_data.dart';
 import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
+import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/features/patient/services/patient_care_summary.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Loads provider lists and fuses API data with deterministic mock rows.
+/// Loads live providers and their real free appointment slots.
 class AiProviderRepository {
   AiProviderRepository(this._api);
 
   final ApiService _api;
 
   Future<List<ProviderModel>> loadMergedProviders() async {
-    final mock = MockAiData.demoProviders();
-    try {
-      final raw = await _api.getProviders();
-      final fromApi = raw.map((e) => ProviderModel.fromJson(e)).toList();
-      final seen = fromApi.map((p) => p.userId).toSet();
-      final merged = [...fromApi];
-      for (final m in mock) {
-        if (!seen.contains(m.userId)) {
-          merged.add(m);
-        }
-      }
-      return merged;
-    } catch (_) {
-      return mock;
-    }
+    final raw = await _api.getProviders(realAvailability: true);
+    return raw
+        .map((e) => ProviderModel.fromJson(e))
+        .where(ProviderBookingEligibility.canBook)
+        .toList();
   }
 }
 

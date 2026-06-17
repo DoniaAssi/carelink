@@ -9,13 +9,16 @@ import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/core/theme_controller.dart';
+import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/features/ai/recommendation/ai_recommendation_engine.dart';
 import 'package:carelink/features/ai/recommendation/ai_recommendation_repository.dart';
 import 'package:carelink/features/ai/recommendation/mock_ai_data.dart';
 import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
 import 'package:carelink/features/ai/recommendation/recommendation_request_parser.dart';
+import 'package:carelink/features/ai/screens/ai_provider_details_screen.dart';
 import 'package:carelink/features/ai/widgets/ai_provider_recommendation_card.dart';
 import 'package:carelink/features/ai/widgets/ai_recommendation_loader.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/location_service.dart';
@@ -62,6 +65,19 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
     'mental',
   ];
 
+  Map<String, dynamic>? _routeArgs;
+  bool _depsChanged = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_depsChanged) {
+      _routeArgs =
+          ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+      _depsChanged = true;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -71,16 +87,13 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
   }
 
   Future<void> _bootstrap() async {
-    // Safely extract from multiple inputs to protect against direct named-route URL entries
+    // Route args are now extracted in didChangeDependencies
     String resolvedId = widget.userId ?? '';
     String resolvedName = 'Patient';
-    if (mounted) {
-      final routeArgs =
-          ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
-      if (resolvedId.isEmpty) {
-        resolvedId = routeArgs?['userId']?.toString() ?? '';
-      }
-      resolvedName = routeArgs?['displayName']?.toString() ?? 'Patient';
+
+    if (resolvedId.isEmpty && _routeArgs != null) {
+      resolvedId = _routeArgs!['userId']?.toString() ?? '';
+      resolvedName = _routeArgs!['displayName']?.toString() ?? 'Patient';
     }
     if (resolvedId.isEmpty) {
       final prefs = await SharedPreferences.getInstance();
@@ -156,7 +169,17 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
       return;
     }
 
-    final available = await _speech.initialize();
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if (!mounted) return;
+        if (status == 'done' || status == 'notListening') {
+          setState(() => _listening = false);
+        }
+      },
+      onError: (_) {
+        if (mounted) setState(() => _listening = false);
+      },
+    );
     if (!available) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -309,6 +332,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
       }
       provider ??= localById[map['providerId']?.toString() ?? ''];
       if (provider == null) continue;
+      if (!ProviderBookingEligibility.canBook(provider)) continue;
 
       final finalScore = (map['finalScore'] as num?)?.toDouble() ?? 0.0;
       final matchPct =
@@ -374,27 +398,40 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
   }
 
   Future<void> _openDetails(AIRecommendationResult r) async {
-    await _rememberRecent(r.provider.userId);
+    if (!ProviderBookingEligibility.canBook(r.provider)) return;
+    debugPrint('AI provider selected: ${r.provider.fullName}');
+
     final dist = AiProviderRecommendationCard.distanceFrom(
       _patLat,
       _patLng,
       r.provider,
     );
     if (!mounted) return;
-    await Navigator.pushNamed(
+    _rememberRecent(r.provider.userId).catchError((_) {});
+    final becameUnavailable = await Navigator.push<bool>(
       context,
-      '/ai-details',
-      arguments: {
-        'result': r,
-        'selectedProvider': r.provider,
-        'userId': _activeUserId ?? 'guest',
-        'patientUserId': _activeUserId ?? 'guest',
-        'distanceKm': dist,
-        'caseReason': _caseController.text.trim(),
-        'patientRequest': _caseController.text.trim(),
-        'recommendedSpecialization': r.provider.specialization,
-      },
+      MaterialPageRoute(
+        builder: (_) => AiProviderDetailsScreen(
+          result: r,
+          patientUserId:
+              (_activeUserId?.isNotEmpty == true && _activeUserId != 'guest')
+              ? _activeUserId
+              : null,
+          distanceKm: dist,
+          caseReason: _caseController.text.trim(),
+        ),
+      ),
     );
+    if (becameUnavailable == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('هذا الموعد لم يعد متاحاً، الرجاء اختيار وقت آخر.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      await _loadProviders();
+      if (mounted) await _analyzeCase();
+    }
     await _reloadPatientOnly();
   }
 
@@ -833,26 +870,15 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
     final helperColor = p.inkMuted;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 22),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        8,
+        20,
+        38 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: [
-        SizedBox(
-          height: 188,
-          child: Image.asset(
-            'assets/images/ai_robot_illustration.png',
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) {
-              debugPrint(
-                'Warning: Could not load assets/images/ai_robot_illustration.png',
-              );
-              return const Icon(
-                Icons.smart_toy_outlined,
-                size: 96,
-                color: AppColors.primary,
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 10),
+        _robotHero(p),
+        const SizedBox(height: 14),
         Text(
           _t('headline'),
           textAlign: TextAlign.center,
@@ -877,8 +903,8 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
         const SizedBox(height: 22),
         TextField(
           controller: _caseController,
-          minLines: 3,
-          maxLines: 5,
+          minLines: 4,
+          maxLines: 6,
           textInputAction: TextInputAction.newline,
           onChanged: (val) {
             if (_selectedCategoryKey != null) {
@@ -891,23 +917,29 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
           style: TextStyle(color: themeColor),
           decoration: InputDecoration(
             hintText: _t('hint'),
-            hintStyle: TextStyle(color: helperColor),
-            helperText: _t('example'),
-            helperStyle: TextStyle(color: helperColor),
-            helperMaxLines: 2,
+            hintStyle: TextStyle(
+              color: helperColor,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+            suffixIcon: _voiceInputButton(p),
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 76,
+              minHeight: 72,
+            ),
             filled: true,
             fillColor: p.surface,
-            contentPadding: const EdgeInsets.all(16),
+            contentPadding: const EdgeInsetsDirectional.fromSTEB(18, 18, 8, 18),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(20),
               borderSide: BorderSide(color: p.stroke),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(20),
               borderSide: BorderSide(color: p.stroke),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(20),
               borderSide: const BorderSide(
                 color: AppColors.primary,
                 width: 1.4,
@@ -915,7 +947,19 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 7),
+        Padding(
+          padding: const EdgeInsetsDirectional.only(start: 12),
+          child: Text(
+            _listening ? _t('listening') : _t('example'),
+            style: TextStyle(
+              color: _listening ? AppColors.primary : helperColor,
+              fontSize: 11.5,
+              fontWeight: _listening ? FontWeight.w800 : FontWeight.w500,
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
         Text(
           _t('chooseType'),
           textAlign: TextAlign.center,
@@ -926,95 +970,16 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 10,
-          runSpacing: 10,
-          children: _categoryKeys
-              .map(
-                (key) => ChoiceChip(
-                  selected: _selectedCategoryKey == key,
-                  selectedColor: AppColors.primary.withValues(alpha: 0.15),
-                  backgroundColor: p.surface,
-                  side: BorderSide(
-                    color: _selectedCategoryKey == key
-                        ? AppColors.primary
-                        : p.stroke,
-                  ),
-                  avatar: Icon(
-                    _categoryIcon(key),
-                    color: AppColors.primary,
-                    size: 20,
-                  ),
-                  label: Text(
-                    _t(key),
-                    style: TextStyle(
-                      color: _selectedCategoryKey == key
-                          ? AppColors.primary
-                          : themeColor,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  onSelected: (selected) {
-                    if (selected) {
-                      _selectCategory(key);
-                    } else {
-                      setState(() {
-                        _selectedCategoryKey = null;
-                        _caseController.clear();
-                      });
-                    }
-                  },
-                ),
-              )
-              .toList(),
-        ),
-        const SizedBox(height: 22),
-        Center(
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: _toggleVoice,
-            child: Container(
-              width: 82,
-              height: 82,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.primary,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.28),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Icon(
-                _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                color: Colors.white,
-                size: 38,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _listening ? _t('listening') : _t('tapToSpeak'),
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: themeColor,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 18),
+        _careTypeGrid(p, themeColor),
+        const SizedBox(height: 24),
         SizedBox(
-          height: 56,
+          height: 54,
           width: double.infinity,
           child: FilledButton.icon(
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.primary,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(15),
               ),
             ),
             onPressed: _aiRunning ? null : _analyzeCase,
@@ -1029,6 +994,296 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
     );
   }
 
+  Widget _robotHero(CarelinkPalette p) {
+    final robot = Image.asset(
+      'assets/images/ai_robot_illustration.png',
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      errorBuilder: (context, error, stackTrace) {
+        debugPrint(
+          'Warning: Could not load assets/images/ai_robot_illustration.png',
+        );
+        return const Icon(
+          Icons.smart_toy_outlined,
+          size: 90,
+          color: AppColors.primary,
+        );
+      },
+    );
+
+    return Container(
+      height: 194,
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: p.isDark ? 0.08 : 0.045),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: p.isDark ? 0.18 : 0.07),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          PositionedDirectional(
+            top: -38,
+            end: -28,
+            child: Container(
+              width: 118,
+              height: 118,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary.withValues(alpha: 0.06),
+              ),
+            ),
+          ),
+          PositionedDirectional(
+            bottom: -42,
+            start: -20,
+            child: Container(
+              width: 126,
+              height: 126,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary.withValues(alpha: 0.045),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 38, vertical: 2),
+            child: robot,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _voiceInputButton(CarelinkPalette p) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 1, height: 48, color: p.stroke.withValues(alpha: 0.9)),
+        const SizedBox(width: 10),
+        Padding(
+          padding: const EdgeInsetsDirectional.only(end: 8),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _listening
+                  ? AppColors.primary
+                  : AppColors.primary.withValues(alpha: 0.1),
+              boxShadow: _listening
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.25),
+                        blurRadius: 12,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: IconButton(
+              tooltip: _listening ? _t('listening') : _t('tapToSpeak'),
+              onPressed: _toggleVoice,
+              padding: EdgeInsets.zero,
+              icon: Icon(
+                _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                color: _listening ? Colors.white : AppColors.primary,
+                size: 22,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _careTypeGrid(CarelinkPalette p, Color themeColor) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 10.0;
+        if (constraints.maxWidth < 350) {
+          return Column(
+            children: _categoryKeys
+                .map(
+                  (key) => Padding(
+                    padding: const EdgeInsets.only(bottom: spacing),
+                    child: SizedBox(
+                      height: 112,
+                      child: _careTypeCard(p, themeColor, key, compact: true),
+                    ),
+                  ),
+                )
+                .toList(),
+          );
+        }
+
+        return Column(
+          children: [
+            SizedBox(
+              height: 176,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < 3; i++) ...[
+                    if (i > 0) const SizedBox(width: spacing),
+                    Expanded(
+                      child: _careTypeCard(p, themeColor, _categoryKeys[i]),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: spacing),
+            SizedBox(
+              height: 126,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _careTypeCard(
+                      p,
+                      themeColor,
+                      _categoryKeys[3],
+                      compact: true,
+                    ),
+                  ),
+                  const SizedBox(width: spacing),
+                  Expanded(
+                    child: _careTypeCard(
+                      p,
+                      themeColor,
+                      _categoryKeys[4],
+                      compact: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _careTypeCard(
+    CarelinkPalette p,
+    Color themeColor,
+    String key, {
+    bool compact = false,
+  }) {
+    final selected = _selectedCategoryKey == key;
+    final content = compact
+        ? Row(
+            children: [
+              _careTypeIcon(p, key),
+              const SizedBox(width: 10),
+              Expanded(child: _careTypeCopy(themeColor, key, selected)),
+            ],
+          )
+        : Column(
+            children: [
+              _careTypeIcon(p, key),
+              const SizedBox(height: 9),
+              Expanded(child: _careTypeCopy(themeColor, key, selected)),
+            ],
+          );
+
+    return PatientPressable(
+      onTap: () {
+        if (selected) {
+          setState(() {
+            _selectedCategoryKey = null;
+            _caseController.clear();
+          });
+        } else {
+          _selectCategory(key);
+        }
+      },
+      borderRadius: BorderRadius.circular(18),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: EdgeInsets.fromLTRB(compact ? 12 : 9, 12, compact ? 10 : 9, 9),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary.withValues(alpha: 0.1)
+              : p.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? AppColors.primary : p.stroke,
+            width: selected ? 1.25 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: p.cardShadowColor(0.045),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(child: content),
+            PositionedDirectional(
+              end: 0,
+              bottom: 0,
+              child: Icon(
+                _ar ? Icons.arrow_back_rounded : Icons.arrow_forward_rounded,
+                color: AppColors.primary,
+                size: 17,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _careTypeIcon(CarelinkPalette p, String key) {
+    return Container(
+      width: 46,
+      height: 46,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.primary.withValues(alpha: p.isDark ? 0.16 : 0.08),
+      ),
+      child: Icon(_categoryIcon(key), color: AppColors.primary, size: 24),
+    );
+  }
+
+  Widget _careTypeCopy(Color themeColor, String key, bool selected) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _t(key),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: selected ? AppColors.primary : themeColor,
+            fontSize: 12,
+            height: 1.12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          _t('${key}Description'),
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: CarelinkPalette.of(context).inkMuted,
+            fontSize: 10.5,
+            height: 1.25,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _resultsBody() {
     final p = CarelinkPalette.of(context);
     final dark = p.isDark;
@@ -1036,8 +1291,10 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth < 340 ? 1 : 2;
-        final cardAspectRatio = columns == 1 ? 1.75 : 0.82;
+        const gridSpacing = 9.0;
+        final twoColumnCardWidth =
+            (constraints.maxWidth - 32 - gridSpacing) / 2;
+        final columns = twoColumnCardWidth >= 168 ? 2 : 1;
 
         return CustomScrollView(
           slivers: [
@@ -1053,7 +1310,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: dark ? p.inkDark : AppColors.primary,
-                        fontSize: 18,
+                        fontSize: 17,
                         fontWeight: FontWeight.w800,
                         height: 1.2,
                       ),
@@ -1068,53 +1325,67 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _caseController,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) => _analyzeCase(),
-                      decoration: InputDecoration(
-                        hintText: _t('hint'),
-                        prefixIcon: const Icon(
-                          Icons.search_rounded,
-                          color: AppColors.primary,
-                        ),
-                        suffixIcon: IconButton(
-                          onPressed: _analyzeCase,
-                          icon: const Icon(Icons.arrow_forward_rounded),
-                          color: AppColors.primary,
-                        ),
-                        filled: true,
-                        fillColor: p.surface,
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 13,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(color: p.stroke),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(color: p.stroke),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 46,
+                      child: TextField(
+                        controller: _caseController,
+                        textInputAction: TextInputAction.search,
+                        onSubmitted: (_) => _analyzeCase(),
+                        decoration: InputDecoration(
+                          hintText: _t('hint'),
+                          hintStyle: TextStyle(
+                            color: helperColor,
+                            fontSize: 12.5,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.search_rounded,
                             color: AppColors.primary,
-                            width: 1.3,
+                            size: 20,
+                          ),
+                          suffixIcon: IconButton(
+                            onPressed: _analyzeCase,
+                            icon: Icon(
+                              _ar
+                                  ? Icons.arrow_back_rounded
+                                  : Icons.arrow_forward_rounded,
+                              size: 19,
+                            ),
+                            color: AppColors.primary,
+                          ),
+                          filled: true,
+                          fillColor: p.surface,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 11,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(color: p.stroke),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(color: p.stroke),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: AppColors.primary,
+                              width: 1.3,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 9),
                     SizedBox(
-                      height: 36,
+                      height: 34,
                       child: ListView.separated(
+                        padding: EdgeInsets.zero,
                         scrollDirection: Axis.horizontal,
                         itemCount: _categoryKeys.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 7),
+                        separatorBuilder: (_, _) => const SizedBox(width: 6),
                         itemBuilder: (context, index) {
                           final key = _categoryKeys[index];
                           final selected = _selectedCategoryKey == key;
@@ -1123,7 +1394,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                             label: Text(_t(key)),
                             labelStyle: TextStyle(
                               color: selected ? Colors.white : p.inkDark,
-                              fontSize: 11,
+                              fontSize: 10.5,
                               fontWeight: FontWeight.w700,
                             ),
                             selectedColor: AppColors.primary,
@@ -1131,7 +1402,13 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                             side: BorderSide(
                               color: selected ? AppColors.primary : p.stroke,
                             ),
-                            visualDensity: VisualDensity.compact,
+                            showCheckmark: false,
+                            visualDensity: const VisualDensity(
+                              horizontal: -1,
+                              vertical: -2,
+                            ),
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
                             onSelected: (_) {
                               _selectCategory(key);
                               _analyzeCase();
@@ -1140,7 +1417,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                         },
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 12),
                   ],
                 ),
               ),
@@ -1161,13 +1438,18 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 110),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  0,
+                  16,
+                  148 + MediaQuery.paddingOf(context).bottom,
+                ),
                 sliver: SliverGrid(
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: columns,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    childAspectRatio: cardAspectRatio,
+                    mainAxisSpacing: gridSpacing,
+                    crossAxisSpacing: gridSpacing,
+                    mainAxisExtent: columns == 1 ? 174 : 184,
                   ),
                   delegate: SliverChildBuilderDelegate((context, index) {
                     final result = _results[index];
@@ -1226,10 +1508,15 @@ const _enStrings = <String, String>{
   'example': 'Example: I need a nurse for my father after surgery',
   'chooseType': 'Or choose care type',
   'homeNurse': 'Home Nursing',
+  'homeNurseDescription': 'Nurses who can visit you at home',
   'elderly': 'Elderly Care',
+  'elderlyDescription': 'Care and support for seniors',
   'afterSurgery': 'Post-Surgery Care',
+  'afterSurgeryDescription': 'Recovery and aftercare at home',
   'physio': 'Physiotherapy',
+  'physioDescription': 'Exercise and therapy for better movement',
   'mental': 'Mental Health Support',
+  'mentalDescription': 'Emotional support and guidance',
   'tapToSpeak': 'Tap to speak',
   'listening': 'Listening...',
   'analyze': 'Analyze Condition',
@@ -1264,10 +1551,15 @@ const _arStrings = <String, String>{
   'example': 'مثال: أحتاج ممرضة لرعاية والدي بعد العملية',
   'chooseType': 'أو اختر نوع الرعاية',
   'homeNurse': 'رعاية تمريضية منزلية',
+  'homeNurseDescription': 'ممرضون يمكنهم زيارتك في المنزل',
   'elderly': 'رعاية كبار السن',
+  'elderlyDescription': 'رعاية ودعم لكبار السن',
   'afterSurgery': 'رعاية ما بعد الجراحة',
+  'afterSurgeryDescription': 'التعافي والرعاية اللاحقة في المنزل',
   'physio': 'علاج طبيعي',
+  'physioDescription': 'تمارين وعلاج لتحسين الحركة',
   'mental': 'دعم الصحة النفسية',
+  'mentalDescription': 'دعم عاطفي وإرشاد',
   'tapToSpeak': 'اضغط للتحدث',
   'listening': 'جاري الاستماع...',
   'analyze': 'تحليل الحالة',

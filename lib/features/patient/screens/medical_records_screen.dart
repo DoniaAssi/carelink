@@ -6,10 +6,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/core/theme_controller.dart';
 import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
+import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
 import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 
@@ -630,12 +633,31 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
       'medication_followup': 'Medication Follow-up',
     };
     return labels[tag.toLowerCase()] ??
-        tag.replaceAll('_', ' ').split(' ').map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : w).join(' ');
+        tag
+            .replaceAll('_', ' ')
+            .split(' ')
+            .map(
+              (w) =>
+                  w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : w,
+            )
+            .join(' ');
   }
 
   // Tag → condition / care-need / specialty bucket
-  static const _conditionTags = {'diabetes', 'hypertension', 'cholesterol', 'cardiovascular_risk'};
-  static const _careNeedTags = {'blood_pressure_monitoring', 'home_nursing', 'wound_care', 'post_surgery_care', 'elderly_care', 'medication_followup'};
+  static const _conditionTags = {
+    'diabetes',
+    'hypertension',
+    'cholesterol',
+    'cardiovascular_risk',
+  };
+  static const _careNeedTags = {
+    'blood_pressure_monitoring',
+    'home_nursing',
+    'wound_care',
+    'post_surgery_care',
+    'elderly_care',
+    'medication_followup',
+  };
   static const _specialtyTags = {'cardiology', 'endocrinology'};
 
   String _specialtyLabel(String tag) {
@@ -653,9 +675,15 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
     final ocrText = record.extractedText?.trim() ?? '';
     final hasOcr = ocrText.isNotEmpty;
 
-    final conditions = record.tags.where((t) => _conditionTags.contains(t)).toList();
-    final careNeeds = record.tags.where((t) => _careNeedTags.contains(t)).toList();
-    final specialties = record.tags.where((t) => _specialtyTags.contains(t)).toList();
+    final conditions = record.tags
+        .where((t) => _conditionTags.contains(t))
+        .toList();
+    final careNeeds = record.tags
+        .where((t) => _careNeedTags.contains(t))
+        .toList();
+    final specialties = record.tags
+        .where((t) => _specialtyTags.contains(t))
+        .toList();
     // Infer home nursing provider if home_nursing tag is present
     final showHomeNursing = record.tags.contains('home_nursing');
 
@@ -676,7 +704,9 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
           builder: (ctx, scrollCtrl) => Container(
             decoration: BoxDecoration(
               color: p.surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
             ),
             child: SingleChildScrollView(
               controller: scrollCtrl,
@@ -687,14 +717,22 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
                   // drag handle
                   Center(
                     child: Container(
-                      width: 40, height: 5,
+                      width: 40,
+                      height: 5,
                       margin: const EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(color: p.stroke, borderRadius: BorderRadius.circular(99)),
+                      decoration: BoxDecoration(
+                        color: p.stroke,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
                     ),
                   ),
                   Text(
                     _t('Medical Summary', 'الملخص الطبي'),
-                    style: TextStyle(color: p.inkDark, fontSize: 19, fontWeight: FontWeight.w900),
+                    style: TextStyle(
+                      color: p.inkDark,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const SizedBox(height: 14),
                   // AI Summary text
@@ -705,52 +743,85 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
                       decoration: BoxDecoration(
                         color: scheme.primary.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: scheme.primary.withValues(alpha: 0.12)),
+                        border: Border.all(
+                          color: scheme.primary.withValues(alpha: 0.12),
+                        ),
                       ),
                       child: Text(
                         summary,
-                        style: TextStyle(color: p.inkDark, fontSize: 13.5, height: 1.55),
+                        style: TextStyle(
+                          color: p.inkDark,
+                          fontSize: 13.5,
+                          height: 1.55,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 18),
                   ] else ...[
                     Text(
-                      _t('No AI summary available yet.', 'لا يوجد ملخص ذكاء اصطناعي بعد.'),
+                      _t(
+                        'No AI summary available yet.',
+                        'لا يوجد ملخص ذكاء اصطناعي بعد.',
+                      ),
                       style: TextStyle(color: p.inkMuted, fontSize: 13),
                     ),
                     const SizedBox(height: 18),
                   ],
                   // Detected Conditions
                   if (conditions.isNotEmpty) ...[
-                    _summarySection(ctx, p, scheme,
-                        _t('Detected Conditions', 'الحالات المكتشفة'),
-                        Icons.monitor_heart_outlined, Colors.red.shade700,
-                        conditions.map(_tagLabel).toList()),
+                    _summarySection(
+                      ctx,
+                      p,
+                      scheme,
+                      _t('Detected Conditions', 'الحالات المكتشفة'),
+                      Icons.monitor_heart_outlined,
+                      Colors.red.shade700,
+                      conditions.map(_tagLabel).toList(),
+                    ),
                     const SizedBox(height: 14),
                   ],
                   // Detected Care Needs
                   if (careNeeds.isNotEmpty) ...[
-                    _summarySection(ctx, p, scheme,
-                        _t('Detected Care Needs', 'احتياجات الرعاية المكتشفة'),
-                        Icons.medical_services_outlined, Colors.teal,
-                        careNeeds.map(_tagLabel).toList()),
+                    _summarySection(
+                      ctx,
+                      p,
+                      scheme,
+                      _t('Detected Care Needs', 'احتياجات الرعاية المكتشفة'),
+                      Icons.medical_services_outlined,
+                      Colors.teal,
+                      careNeeds.map(_tagLabel).toList(),
+                    ),
                     const SizedBox(height: 14),
                   ],
                   // Recommended Specialists
                   if (specialties.isNotEmpty || showHomeNursing) ...[
-                    _summarySection(ctx, p, scheme,
-                        _t('Recommended Specialists', 'التخصصات الموصى بها'),
-                        Icons.person_search_outlined, const Color(0xFF7C5CE7),
-                        [
-                          ...specialties.map(_specialtyLabel),
-                          if (showHomeNursing && !specialties.contains('home_nursing'))
-                            _t('Home Nursing Provider', 'مزود رعاية تمريضية منزلية'),
-                        ]),
+                    _summarySection(
+                      ctx,
+                      p,
+                      scheme,
+                      _t('Recommended Specialists', 'التخصصات الموصى بها'),
+                      Icons.person_search_outlined,
+                      const Color(0xFF7C5CE7),
+                      [
+                        ...specialties.map(_specialtyLabel),
+                        if (showHomeNursing &&
+                            !specialties.contains('home_nursing'))
+                          _t(
+                            'Home Nursing Provider',
+                            'مزود رعاية تمريضية منزلية',
+                          ),
+                      ],
+                    ),
                     const SizedBox(height: 14),
                   ],
                   // Advanced: OCR text (collapsed by default)
                   if (hasOcr)
-                    _OcrExpandableSection(ocrText: ocrText, p: p, scheme: scheme, isArabic: _isArabic),
+                    _OcrExpandableSection(
+                      ocrText: ocrText,
+                      p: p,
+                      scheme: scheme,
+                      isArabic: _isArabic,
+                    ),
                 ],
               ),
             ),
@@ -760,38 +831,87 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
     );
   }
 
-  Widget _summarySection(BuildContext ctx, CarelinkPalette p, ColorScheme scheme,
-      String title, IconData icon, Color color, List<String> items) {
+  Widget _summarySection(
+    BuildContext ctx,
+    CarelinkPalette p,
+    ColorScheme scheme,
+    String title,
+    IconData icon,
+    Color color,
+    List<String> items,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 7),
-          Text(title, style: TextStyle(color: p.inkDark, fontSize: 14, fontWeight: FontWeight.w900)),
-        ]),
-        const SizedBox(height: 8),
-        ...items.map((item) => Padding(
-          padding: const EdgeInsets.only(bottom: 5),
-          child: Row(children: [
-            Container(
-              width: 6, height: 6,
-              margin: const EdgeInsets.only(top: 1),
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        Row(
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 7),
+            Text(
+              title,
+              style: TextStyle(
+                color: p.inkDark,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-            const SizedBox(width: 9),
-            Expanded(child: Text(item, style: TextStyle(color: p.inkMuted, fontSize: 13, height: 1.3))),
-          ]),
-        )),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...items.map(
+          (item) => Padding(
+            padding: const EdgeInsets.only(bottom: 5),
+            child: Row(
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  margin: const EdgeInsets.only(top: 1),
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    item,
+                    style: TextStyle(
+                      color: p.inkMuted,
+                      fontSize: 13,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
 
   String? _fileUrl(MedicalRecordEntry record) {
     final url = record.fileUrl?.trim();
-    if (url != null && url.isNotEmpty) return url;
-    if (record.attachments.isNotEmpty) return record.attachments.first;
+    if (url != null && url.isNotEmpty) return _normalizeFileUrl(url);
+    if (record.attachments.isNotEmpty) {
+      return _normalizeFileUrl(record.attachments.first);
+    }
     return null;
+  }
+
+  String _normalizeFileUrl(String raw) {
+    final value = raw.trim();
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return Uri.encodeFull(value);
+    }
+    if (value.startsWith('/uploads/')) {
+      return Uri.encodeFull('${ApiService.baseUrl}$value');
+    }
+    if (value.startsWith('uploads/')) {
+      return Uri.encodeFull('${ApiService.baseUrl}/$value');
+    }
+    return Uri.encodeFull('${ApiService.baseUrl}/uploads/$value');
   }
 
   String _extension(MedicalRecordEntry record, {String? fallbackUrl}) {
@@ -865,7 +985,7 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
                 PatientHeaderActions(
                   showLanguage: true,
                   showTheme: true,
-                  color: Theme.of(context).colorScheme.primary,
+                  color: AppColors.primary,
                 ),
                 const SizedBox(width: 8),
               ],
@@ -915,14 +1035,34 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
       childAspectRatio: 2.35,
       padding: const EdgeInsets.only(bottom: 6),
       children: [
-        _summaryPill(p, _t('Total', 'الإجمالي'), '${_records.length}',
-            Icons.folder_copy_outlined, scheme.primary),
-        _summaryPill(p, _t('Ready', 'جاهز'), '$_readyCount',
-            Icons.check_circle_outline_rounded, Colors.green),
-        _summaryPill(p, _t('Processing', 'قيد المعالجة'), '$_processingCount',
-            Icons.sync_rounded, Colors.blue),
-        _summaryPill(p, _t('Failed', 'فشل'), '$_failedCount',
-            Icons.error_outline_rounded, scheme.error),
+        _summaryPill(
+          p,
+          _t('Total', 'الإجمالي'),
+          '${_records.length}',
+          Icons.folder_copy_outlined,
+          scheme.primary,
+        ),
+        _summaryPill(
+          p,
+          _t('Ready', 'جاهز'),
+          '$_readyCount',
+          Icons.check_circle_outline_rounded,
+          Colors.green,
+        ),
+        _summaryPill(
+          p,
+          _t('Processing', 'قيد المعالجة'),
+          '$_processingCount',
+          Icons.sync_rounded,
+          Colors.blue,
+        ),
+        _summaryPill(
+          p,
+          _t('Failed', 'فشل'),
+          '$_failedCount',
+          Icons.error_outline_rounded,
+          scheme.error,
+        ),
       ],
     );
   }
@@ -986,68 +1126,65 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
 
   Widget _buildUploadCard(CarelinkPalette p) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.stroke),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
+    return PatientPressable(
+      onTap: _openUploadFlow,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        decoration: BoxDecoration(
+          color: p.surface,
           borderRadius: BorderRadius.circular(18),
-          onTap: _openUploadFlow,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
-                    Icons.upload_file_rounded,
-                    color: scheme.primary,
-                    size: 26,
-                  ),
+          border: Border.all(color: p.stroke),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _t('Upload Medical Record', 'رفع سجل طبي'),
-                        style: TextStyle(
-                          color: p.inkDark,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                        ),
+                child: Icon(
+                  Icons.upload_file_rounded,
+                  color: scheme.primary,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _t('Upload Medical Record', 'رفع سجل طبي'),
+                      style: TextStyle(
+                        color: p.inkDark,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _t(
-                          'Reports, scans, prescriptions, images',
-                          'تقارير، صور أشعة، وصفات طبية',
-                        ),
-                        style: TextStyle(
-                          color: p.inkMuted,
-                          fontSize: 13,
-                          height: 1.3,
-                        ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _t(
+                        'Reports, scans, prescriptions, images',
+                        'تقارير، صور أشعة، وصفات طبية',
                       ),
-                    ],
-                  ),
+                      style: TextStyle(
+                        color: p.inkMuted,
+                        fontSize: 13,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
                 ),
-                FilledButton(
-                  onPressed: _openUploadFlow,
-                  child: Text(_t('Upload', 'رفع')),
-                ),
-              ],
-            ),
+              ),
+              FilledButton(
+                onPressed: _openUploadFlow,
+                child: Text(_t('Upload', 'رفع')),
+              ),
+            ],
           ),
         ),
       ),
@@ -1144,11 +1281,16 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
                     children: record.tags.take(5).map((tag) {
                       final label = _tagLabel(tag);
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: scheme.primary.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: scheme.primary.withValues(alpha: 0.18)),
+                          border: Border.all(
+                            color: scheme.primary.withValues(alpha: 0.18),
+                          ),
                         ),
                         child: Text(
                           label,
@@ -1231,7 +1373,7 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
     Color color,
     VoidCallback onTap,
   ) {
-    return InkWell(
+    return PatientPressable(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
@@ -1535,7 +1677,7 @@ class _OcrExpandableSectionState extends State<_OcrExpandableSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
+        PatientPressable(
           onTap: () => setState(() => _expanded = !_expanded),
           borderRadius: BorderRadius.circular(10),
           child: Container(
@@ -1548,14 +1690,20 @@ class _OcrExpandableSectionState extends State<_OcrExpandableSection> {
             child: Row(
               children: [
                 Icon(
-                  _expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                  _expanded
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded,
                   color: widget.p.inkMuted,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   label,
-                  style: TextStyle(color: widget.p.inkMuted, fontSize: 13, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    color: widget.p.inkMuted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
             ),
@@ -1565,7 +1713,11 @@ class _OcrExpandableSectionState extends State<_OcrExpandableSection> {
           const SizedBox(height: 10),
           Text(
             sublabel,
-            style: TextStyle(color: widget.p.inkMuted, fontSize: 11.5, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: widget.p.inkMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 6),
           Container(
@@ -1578,7 +1730,12 @@ class _OcrExpandableSectionState extends State<_OcrExpandableSection> {
             ),
             child: Text(
               widget.ocrText,
-              style: TextStyle(color: widget.p.inkMuted, fontSize: 12, height: 1.5, fontFamily: 'monospace'),
+              style: TextStyle(
+                color: widget.p.inkMuted,
+                fontSize: 12,
+                height: 1.5,
+                fontFamily: 'monospace',
+              ),
             ),
           ),
         ],
@@ -1595,16 +1752,17 @@ class _ImageViewerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
+
     return Scaffold(
       backgroundColor: p.pageBg,
       appBar: AppBar(
         backgroundColor: p.pageBg,
-        foregroundColor: p.inkDark,
+        foregroundColor: AppColors.primary,
         elevation: 0,
         title: Text(
           title,
           style: TextStyle(
-            color: p.inkDark,
+            color: AppColors.primary,
             fontSize: 16,
             fontWeight: FontWeight.w800,
           ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/services/api_service.dart';
@@ -16,7 +17,8 @@ class PatientPaymentHistoryScreen extends StatefulWidget {
       _PatientPaymentHistoryScreenState();
 }
 
-class _PatientPaymentHistoryScreenState extends State<PatientPaymentHistoryScreen> {
+class _PatientPaymentHistoryScreenState
+    extends State<PatientPaymentHistoryScreen> {
   final ApiService _api = ApiService();
   List<dynamic> _rows = [];
   bool _loading = true;
@@ -54,135 +56,138 @@ class _PatientPaymentHistoryScreenState extends State<PatientPaymentHistoryScree
     return '${id.substring(0, 8)}…';
   }
 
-  static String _statusLabel(dynamic v) {
+  String _statusLabel(dynamic v) {
+    final isAr = context.l10n.isArabic;
     final s = (v ?? '').toString().toLowerCase();
     switch (s) {
       case 'paid':
-        return 'Paid';
+        return isAr ? 'مدفوع' : 'Paid';
       case 'pending':
-        return 'Pending';
+        return isAr ? 'قيد الانتظار' : 'Pending';
       case 'unpaid':
-        return 'Unpaid';
+        return isAr ? 'غير مدفوع' : 'Unpaid';
       case 'failed':
-        return 'Failed';
+        return isAr ? 'فشل' : 'Failed';
       case 'refunded':
-        return 'Refunded';
+        return isAr ? 'مسترد' : 'Refunded';
       default:
-        return s.isEmpty ? '—' : s;
+        return s.isEmpty ? (isAr ? 'غير معروف' : 'Unknown') : s;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
+    final isAr = context.l10n.isArabic;
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: PatientAppBar(
-        title: 'Payment history',
-      ),
+      appBar: PatientAppBar(title: isAr ? 'سجل الدفع' : 'Payment history'),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(_error!, textAlign: TextAlign.center),
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: _rows.isEmpty
-                      ? ListView(
-                          padding: const EdgeInsets.all(24),
-                          children: [
-                            const SizedBox(height: 40),
-                            Center(
-                              child: Icon(
-                                Icons.receipt_long_outlined,
-                                size: 64,
-                                color: p.inkMuted,
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(_error!, textAlign: TextAlign.center),
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: _rows.isEmpty
+                  ? ListView(
+                      padding: const EdgeInsets.all(24),
+                      children: [
+                        const SizedBox(height: 40),
+                        Center(
+                          child: Icon(
+                            Icons.receipt_long_outlined,
+                            size: 64,
+                            color: p.inkMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          isAr ? 'لا توجد مدفوعات بعد.' : 'No payments yet.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: p.inkMuted, fontSize: 15),
+                        ),
+                      ],
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                      itemCount: _rows.length,
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final r = Map<String, dynamic>.from(
+                          _rows[index] as Map,
+                        );
+                        final amt = r['amount'];
+                        final cur = (r['currency'] ?? '').toString();
+                        final prov =
+                            (r['providerName'] ??
+                                    (isAr ? 'مقدم الرعاية' : 'Provider'))
+                                .toString();
+                        final method = (r['paymentMethod'] ?? '').toString();
+                        final st = _statusLabel(r['paymentStatus']);
+                        final amtStr = amt == null
+                            ? '—'
+                            : '${amt is num ? amt.toStringAsFixed(2) : amt} ${cur.trim()}';
+                        return Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: p.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: p.stroke),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                prov,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: p.inkDark,
+                                  fontSize: 16,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 24),
-                            Text(
-                              'No payments yet.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: p.inkMuted, fontSize: 15),
-                            ),
-                          ],
-                        )
-                      : ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                          itemCount: _rows.length,
-                          separatorBuilder: (context, index) =>
-                              const SizedBox(height: 12),
-                          itemBuilder: (context, index) {
-                            final r = Map<String, dynamic>.from(
-                              _rows[index] as Map,
-                            );
-                            final amt = r['amount'];
-                            final cur = (r['currency'] ?? '').toString();
-                            final prov =
-                                (r['providerName'] ?? 'Provider').toString();
-                            final method =
-                                (r['paymentMethod'] ?? '').toString();
-                            final st = _statusLabel(r['paymentStatus']);
-                            final amtStr = amt == null
-                                ? '—'
-                                : '${amt is num ? amt.toStringAsFixed(2) : amt} ${cur.trim()}';
-                            return Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: p.surface,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: p.stroke),
+                              const SizedBox(height: 6),
+                              Text(
+                                amtStr,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primary,
+                                ),
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 10,
+                                runSpacing: 6,
                                 children: [
-                                  Text(
-                                    prov,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: p.inkDark,
-                                      fontSize: 16,
+                                  _chip(p, isAr ? 'الحالة' : 'Status', st),
+                                  if (method.isNotEmpty)
+                                    _chip(
+                                      p,
+                                      isAr ? 'الطريقة' : 'Method',
+                                      method,
                                     ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    amtStr,
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.primary,
+                                  if ((r['appointmentId'] ?? '')
+                                      .toString()
+                                      .isNotEmpty)
+                                    _chip(
+                                      p,
+                                      isAr ? 'الزيارة' : 'Visit',
+                                      _shortId(r['appointmentId']!.toString()),
                                     ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Wrap(
-                                    spacing: 10,
-                                    runSpacing: 6,
-                                    children: [
-                                      _chip(p, 'Status', st),
-                                      if (method.isNotEmpty)
-                                        _chip(p, 'Method', method),
-                                      if ((r['appointmentId'] ?? '')
-                                          .toString()
-                                          .isNotEmpty)
-                                        _chip(
-                                          p,
-                                          'Visit',
-                                          _shortId(
-                                            r['appointmentId']!.toString(),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
                                 ],
                               ),
-                            );
-                          },
-                        ),
-                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
     );
   }
 
@@ -194,10 +199,7 @@ class _PatientPaymentHistoryScreenState extends State<PatientPaymentHistoryScree
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: p.stroke),
       ),
-      child: Text(
-        '$k: $v',
-        style: TextStyle(fontSize: 12, color: p.inkMuted),
-      ),
+      child: Text('$k: $v', style: TextStyle(fontSize: 12, color: p.inkMuted)),
     );
   }
 }

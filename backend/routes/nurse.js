@@ -315,7 +315,8 @@ async function listRequestsForProvider(providerUserId, statusQ) {
      LEFT JOIN patient pat ON BINARY pat.userId = BINARY sr.patientUserId
      LEFT JOIN medicalrecord mr ON BINARY mr.patientUserId = BINARY sr.patientUserId
      ${hasPaymentTable ? 'LEFT JOIN payment p ON BINARY p.requestId = BINARY sr.requestId' : ''}
-     WHERE BINARY sr.providerUserId = BINARY ?${statusClause}
+     WHERE BINARY sr.providerUserId = BINARY ?
+       AND LOWER(TRIM(CAST(sr.status AS CHAR(64)))) <> 'draft'${statusClause}
      ORDER BY sr.scheduledAt DESC
      LIMIT 500`,
     params,

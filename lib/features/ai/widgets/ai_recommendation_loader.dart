@@ -1,9 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/app_colors.dart';
-
+import 'package:carelink/core/carelink_palette.dart';
 
 /// Full-screen analysis state reused while the hybrid scorer ranks providers.
 class AiRecommendationLoader extends StatefulWidget {
@@ -68,22 +67,8 @@ class _AiRecommendationLoaderState extends State<AiRecommendationLoader> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(28, 18, 28, 28),
           children: [
-            SizedBox(
-              height: 230,
-              child: Image.asset(
-                'assets/images/ai-robot.png',
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  debugPrint('Warning: Could not load assets/images/ai-robot.png');
-                  return const Icon(
-                    Icons.smart_toy_outlined,
-                    size: 96,
-                    color: AppColors.primary,
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
+            _robotHero(p),
+            const SizedBox(height: 18),
             Text(
               widget.isArabic
                   ? 'نقارن حالتك مع مقدمي الرعاية المتاحين لاختيار الأنسب لك'
@@ -97,74 +82,79 @@ class _AiRecommendationLoaderState extends State<AiRecommendationLoader> {
               ),
             ),
             const SizedBox(height: 24),
-            ...steps.asMap().entries.map(
-              (entry) {
-                final idx = entry.key;
-                final step = entry.value;
-                final isDone = _progress >= (idx + 1) / 6.0;
-                final isActive = _progress >= idx / 6.0 && _progress < (idx + 1) / 6.0;
+            ...steps.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final step = entry.value;
+              final isDone = _progress >= (idx + 1) / 6.0;
+              final isActive =
+                  _progress >= idx / 6.0 && _progress < (idx + 1) / 6.0;
 
-                final Color iconBgColor = isDone
-                    ? AppColors.primary.withValues(alpha: 0.12)
-                    : (isActive ? AppColors.primary.withValues(alpha: 0.15) : Colors.transparent);
-                final Widget leadingWidget = Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: iconBgColor,
-                    shape: BoxShape.circle,
-                    border: isDone ? null : Border.all(color: p.stroke),
-                  ),
-                  child: isDone
-                      ? const Icon(
-                          Icons.check_rounded,
-                          size: 18,
-                          color: AppColors.primary,
-                        )
-                      : (isActive
+              final Color iconBgColor = isDone
+                  ? AppColors.primary.withValues(alpha: 0.12)
+                  : (isActive
+                        ? AppColors.primary.withValues(alpha: 0.15)
+                        : Colors.transparent);
+              final Widget leadingWidget = Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  shape: BoxShape.circle,
+                  border: isDone ? null : Border.all(color: p.stroke),
+                ),
+                child: isDone
+                    ? const Icon(
+                        Icons.check_rounded,
+                        size: 18,
+                        color: AppColors.primary,
+                      )
+                    : (isActive
                           ? const Center(
                               child: SizedBox(
                                 width: 12,
                                 height: 12,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation(AppColors.primary),
+                                  valueColor: AlwaysStoppedAnimation(
+                                    AppColors.primary,
+                                  ),
                                 ),
                               ),
                             )
                           : const SizedBox()),
-                );
+              );
 
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Opacity(
-                    opacity: isDone || isActive ? 1.0 : 0.5,
-                    child: Row(
-                      children: [
-                        leadingWidget,
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            step,
-                            style: TextStyle(
-                              color: isActive ? AppColors.primary : themeColor,
-                              fontSize: 15,
-                              fontWeight: isActive || isDone ? FontWeight.w800 : FontWeight.w600,
-                            ),
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Opacity(
+                  opacity: isDone || isActive ? 1.0 : 0.5,
+                  child: Row(
+                    children: [
+                      leadingWidget,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          step,
+                          style: TextStyle(
+                            color: isActive ? AppColors.primary : themeColor,
+                            fontSize: 15,
+                            fontWeight: isActive || isDone
+                                ? FontWeight.w800
+                                : FontWeight.w600,
                           ),
                         ),
-                        if (isDone)
-                          const Icon(
-                            Icons.check_circle_rounded,
-                            color: AppColors.primary,
-                            size: 20,
-                          ),
-                      ],
-                    ),
+                      ),
+                      if (isDone)
+                        const Icon(
+                          Icons.check_circle_rounded,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
+                    ],
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            }),
             const SizedBox(height: 18),
             Text(
               widget.isArabic ? 'جاري التحليل...' : 'Analyzing...',
@@ -199,6 +189,74 @@ class _AiRecommendationLoaderState extends State<AiRecommendationLoader> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _robotHero(CarelinkPalette p) {
+    final robot = Image.asset(
+      'assets/images/ai_robot_illustration.png',
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      errorBuilder: (context, error, stackTrace) {
+        debugPrint(
+          'Warning: Could not load assets/images/ai_robot_illustration.png',
+        );
+        return const Icon(
+          Icons.smart_toy_outlined,
+          size: 96,
+          color: AppColors.primary,
+        );
+      },
+    );
+
+    return Container(
+      height: 220,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(30),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primary.withValues(alpha: p.isDark ? 0.13 : 0.07),
+            p.pageBg,
+            AppColors.primary.withValues(alpha: p.isDark ? 0.08 : 0.035),
+          ],
+        ),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: p.isDark ? 0.2 : 0.09),
+        ),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          PositionedDirectional(
+            top: -48,
+            end: -35,
+            child: _heroGlow(150, 0.055),
+          ),
+          PositionedDirectional(
+            bottom: -60,
+            start: -42,
+            child: _heroGlow(170, 0.045),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+            child: robot,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _heroGlow(double size, double alpha) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.primary.withValues(alpha: alpha),
       ),
     );
   }

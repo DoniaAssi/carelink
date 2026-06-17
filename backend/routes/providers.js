@@ -73,6 +73,18 @@ async function getProviderExtrasProjection() {
   return `${serviceTypeProjection}, ${feeProjection}`;
 }
 
+async function getProviderStatusProjection() {
+  const hasIsActive = await hasColumn('user', 'isActive');
+  const hasApprovalStatus = await hasColumn('careprovider', 'approvalStatus');
+  const activeProjection = hasIsActive
+    ? 'COALESCE(u.isActive, 1) AS isActive'
+    : '1 AS isActive';
+  const approvalProjection = hasApprovalStatus
+    ? "COALESCE(c.approvalStatus, 'pending') AS approvalStatus"
+    : "'approved' AS approvalStatus";
+  return `${activeProjection}, ${approvalProjection}`;
+}
+
 function useful(value) {
   const text = (value || '').toString().trim();
   return text && text.toLowerCase() !== 'null';
@@ -117,6 +129,178 @@ function medicalReasonsFromTags(tags) {
   return tags
     .map((t) => TAG_REASON_MAP[t.toString().toLowerCase()] || titleTag(t))
     .filter(Boolean);
+}
+
+function withBookingEligibility(provider) {
+  const isActive =
+    provider.isActive === true ||
+    provider.isActive === 1 ||
+    provider.isActive === '1';
+  const approvalStatus = (provider.approvalStatus || 'approved')
+    .toString()
+    .trim()
+    .toLowerCase();
+  const isProfileComplete =
+    approvalStatus === 'approved' &&
+    useful(provider.fullName) &&
+    useful(provider.specialization) &&
+    ['doctor', 'nurse'].includes((provider.role || '').toString().toLowerCase());
+
+  return {
+    ...provider,
+    isActive,
+    approvalStatus,
+    isProfileComplete,
+  };
+}
+
+function providerCanBeBooked(provider) {
+  const price = Number(provider.consultationFee);
+  const hasValidSlot =
+    Array.isArray(provider.availableSlots) &&
+    provider.availableSlots.some((slot) => {
+      if (
+        !useful(slot.day) ||
+        !/^\d{1,2}:\d{2}/.test((slot.startTime || '').toString()) ||
+        !/^\d{1,2}:\d{2}/.test((slot.endTime || '').toString())
+      ) {
+        return false;
+      }
+      const [startHour, startMinute] = slot.startTime
+        .toString()
+        .split(':')
+        .map(Number);
+      const [endHour, endMinute] = slot.endTime
+        .toString()
+        .split(':')
+        .map(Number);
+      const start = startHour * 60 + startMinute;
+      const end = endHour * 60 + endMinute;
+      return Number.isFinite(start) && Number.isFinite(end) && end > start;
+    });
+  return (
+    provider.isActive === true &&
+    provider.isProfileComplete === true &&
+    useful(provider.serviceType) &&
+    Number.isFinite(price) &&
+    price > 0 &&
+    provider.isAvailable === true &&
+    hasValidSlot
+  );
+}
+
+const ACTIVE_BOOKING_STATUSES = [
+  'confirmed',
+  'accepted',
+  'scheduled',
+  'approved',
+  'in_progress',
+];
+
+function dateKey(date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function timeKey(value) {
+  return (value || '').toString().trim().slice(0, 5);
+}
+
+function dayKey(value) {
+  return (value || '').toString().trim().toLowerCase();
+}
+
+async function attachRealAvailableSlots(providers, horizonDays = 28) {
+  if (!providers.length) return [];
+
+  const providerIds = providers.map((provider) => provider.userId);
+  const placeholders = providerIds.map(() => '?').join(',');
+  const statusPlaceholders = ACTIVE_BOOKING_STATUSES.map(() => '?').join(',');
+
+  const [scheduleRows, bookingRows] = await Promise.all([
+    db.query(
+      `SELECT providerUserId, day, startTime, endTime
+       FROM availabilityslot
+       WHERE providerUserId IN (${placeholders})
+       ORDER BY providerUserId, day, startTime`,
+      providerIds,
+    ),
+    db.query(
+      `SELECT providerUserId,
+              DATE_FORMAT(scheduledAt, '%Y-%m-%d') AS bookingDate,
+              TIME_FORMAT(scheduledAt, '%H:%i') AS bookingTime
+       FROM servicerequest
+       WHERE providerUserId IN (${placeholders})
+         AND scheduledAt >= NOW()
+         AND LOWER(TRIM(CAST(status AS CHAR(64)))) IN (${statusPlaceholders})`,
+      [...providerIds, ...ACTIVE_BOOKING_STATUSES],
+    ),
+  ]);
+
+  const schedulesByProvider = new Map();
+  for (const slot of scheduleRows[0]) {
+    const slots = schedulesByProvider.get(slot.providerUserId) || [];
+    slots.push(slot);
+    schedulesByProvider.set(slot.providerUserId, slots);
+  }
+
+  const booked = new Set(
+    bookingRows[0].map(
+      (row) =>
+        `${row.providerUserId}|${row.bookingDate}|${timeKey(row.bookingTime)}`,
+    ),
+  );
+
+  const now = new Date();
+  return providers.map((provider) => {
+    if (!(provider.isAvailable === 1 || provider.isAvailable === true)) {
+      return withBookingEligibility({
+        ...provider,
+        availableSlots: [],
+        availableTimeSlots: [],
+      });
+    }
+
+    const recurring = schedulesByProvider.get(provider.userId) || [];
+    const freeSlots = [];
+    for (let offset = 0; offset < horizonDays; offset += 1) {
+      const date = new Date(now);
+      date.setHours(0, 0, 0, 0);
+      date.setDate(date.getDate() + offset);
+      const weekday = dayKey(
+        date.toLocaleDateString('en-US', { weekday: 'long' }),
+      );
+
+      for (const slot of recurring) {
+        if (dayKey(slot.day) !== weekday) continue;
+        const start = timeKey(slot.startTime);
+        const end = timeKey(slot.endTime);
+        const slotDateTime = new Date(`${dateKey(date)}T${start}:00`);
+        if (slotDateTime <= now) continue;
+        if (booked.has(`${provider.userId}|${dateKey(date)}|${start}`)) {
+          continue;
+        }
+        freeSlots.push({
+          day: slot.day,
+          date: dateKey(date),
+          startTime: start,
+          endTime: end,
+        });
+      }
+    }
+
+    return withBookingEligibility({
+      ...provider,
+      isAvailable: true,
+      availableSlots: freeSlots,
+      availableTimeSlots: freeSlots.map(
+        (slot) =>
+          `${slot.date} ${slot.day} ${slot.startTime}-${slot.endTime}`,
+      ),
+    });
+  });
 }
 
 async function loadRecommendationPatient(patientId) {
@@ -165,6 +349,7 @@ async function loadRecommendationPatient(patientId) {
 async function loadRecommendationProviders() {
   const gpsProjection = await getGpsProjection();
   const providerExtrasProjection = await getProviderExtrasProjection();
+  const providerStatusProjection = await getProviderStatusProjection();
   const rcProj = await ratingsCountProjection();
   const hasExperienceYears = await hasColumn('careprovider', 'experienceYears');
   const experienceProjection = hasExperienceYears
@@ -177,10 +362,12 @@ async function loadRecommendationProviders() {
       u.email,
       u.phone,
       u.role,
+      u.profileImageUrl,
       c.specialization,
       c.overallRating,
       ${rcProj},
       c.isAvailable,
+      ${providerStatusProjection},
       ${experienceProjection},
       ${providerExtrasProjection},
       ${gpsProjection}
@@ -189,45 +376,40 @@ async function loadRecommendationProviders() {
     WHERE u.role IN ('doctor', 'nurse')
   `);
 
-  return Promise.all(
-    rows.map(async (row) => {
-      const [slots] = await db.query(
-        `SELECT day, startTime, endTime
-         FROM availabilityslot
-         WHERE providerUserId = ?
-         ORDER BY day, startTime`,
-        [row.userId]
-      );
-      return {
-        id: row.userId,
-        userId: row.userId,
-        fullName: row.fullName || '',
-        email: row.email,
-        phone: row.phone,
-        role: row.role || '',
-        specialization: row.specialization || '',
-        serviceType: row.serviceType || '',
-        rating: Number(row.overallRating) || 0,
-        overallRating: Number(row.overallRating) || 0,
-        ratingsCount: Number(row.ratingsCount) || 0,
-        isAvailable: row.isAvailable === 1 || row.isAvailable === true,
-        experienceYears: row.experienceYears == null ? null : Number(row.experienceYears),
-        consultationFee: row.consultationFee,
-        locationLatitude: row.gpsLat == null ? null : Number(row.gpsLat),
-        locationLongitude: row.gpsLng == null ? null : Number(row.gpsLng),
-        gpsLat: row.gpsLat,
-        gpsLng: row.gpsLng,
-        availableSlots: slots,
-        availableTimeSlots: slots.map((slot) => `${slot.day} ${slot.startTime}-${slot.endTime}`),
-      };
-    })
+  return attachRealAvailableSlots(
+    rows.map((row) => ({
+      id: row.userId,
+      userId: row.userId,
+      fullName: row.fullName || '',
+      email: row.email,
+      phone: row.phone,
+      role: row.role || '',
+      profileImageUrl: row.profileImageUrl || null,
+      specialization: row.specialization || '',
+      serviceType: row.serviceType || '',
+      rating: Number(row.overallRating) || 0,
+      overallRating: Number(row.overallRating) || 0,
+      ratingsCount: Number(row.ratingsCount) || 0,
+      isAvailable: row.isAvailable === 1 || row.isAvailable === true,
+      isActive: row.isActive,
+      approvalStatus: row.approvalStatus,
+      experienceYears:
+        row.experienceYears == null ? null : Number(row.experienceYears),
+      consultationFee: row.consultationFee,
+      locationLatitude: row.gpsLat == null ? null : Number(row.gpsLat),
+      locationLongitude: row.gpsLng == null ? null : Number(row.gpsLng),
+      gpsLat: row.gpsLat,
+      gpsLng: row.gpsLng,
+    })),
   );
 }
 
 router.get('/recommendations/:patientId', async (req, res) => {
   try {
     const patient = await loadRecommendationPatient(req.params.patientId);
-    const providers = await loadRecommendationProviders();
+    const providers = (await loadRecommendationProviders()).filter(
+      providerCanBeBooked,
+    );
     const request = {
       rawQuery: req.query.q?.toString() || '',
       requestedServiceKeyword: req.query.specialty?.toString() || '',
@@ -267,6 +449,7 @@ router.get('/', async (req, res) => {
   try {
     const gpsProjection = await getGpsProjection();
     const providerExtrasProjection = await getProviderExtrasProjection();
+    const providerStatusProjection = await getProviderStatusProjection();
     const rcProj = await ratingsCountProjection();
     const hasExperienceYears = await hasColumn('careprovider', 'experienceYears');
     const experienceProjection = hasExperienceYears
@@ -279,10 +462,12 @@ router.get('/', async (req, res) => {
         u.email,
         u.phone,
         u.role,
+        u.profileImageUrl,
         c.specialization,
         c.overallRating,
         ${rcProj},
         c.isAvailable,
+        ${providerStatusProjection},
         ${experienceProjection},
         ${providerExtrasProjection},
         ${gpsProjection}
@@ -292,27 +477,31 @@ router.get('/', async (req, res) => {
       ORDER BY c.overallRating DESC, u.fullName ASC
     `);
 
-    const providersWithSlots = await Promise.all(
-      rows.map(async (provider) => {
-        const [slots] = await db.query(
-          `
-          SELECT day, startTime, endTime
-          FROM availabilityslot
-          WHERE providerUserId = ?
-          ORDER BY day, startTime
-          `,
-          [provider.userId]
-        );
-
-        return {
-          ...provider,
-          availableSlots: slots,
-          availableTimeSlots: slots.map(
-            (slot) => `${slot.day} ${slot.startTime}-${slot.endTime}`
-          ),
-        };
-      })
-    );
+    let providersWithSlots;
+    if (req.query.realAvailability === '1') {
+      providersWithSlots = await attachRealAvailableSlots(rows);
+    } else {
+      providersWithSlots = await Promise.all(
+        rows.map(async (provider) => {
+          const [slots] = await db.query(
+            `SELECT day, startTime, endTime
+             FROM availabilityslot
+             WHERE providerUserId = ?
+             ORDER BY day, startTime`,
+            [provider.userId],
+          );
+          return withBookingEligibility({
+            ...provider,
+            isAvailable:
+              provider.isAvailable === 1 || provider.isAvailable === true,
+            availableSlots: slots,
+            availableTimeSlots: slots.map(
+              (slot) => `${slot.day} ${slot.startTime}-${slot.endTime}`,
+            ),
+          });
+        }),
+      );
+    }
 
     res.json(providersWithSlots);
   } catch (err) {
@@ -325,6 +514,7 @@ router.get('/doctors', async (req, res) => {
   try {
     const gpsProjection = await getGpsProjection();
     const providerExtrasProjection = await getProviderExtrasProjection();
+    const providerStatusProjection = await getProviderStatusProjection();
     const rcProj = await ratingsCountProjection();
     const [rows] = await db.query(`
       SELECT 
@@ -333,10 +523,12 @@ router.get('/doctors', async (req, res) => {
         u.email,
         u.phone,
         u.role,
+        u.profileImageUrl,
         c.specialization,
         c.overallRating,
         ${rcProj},
         c.isAvailable,
+        ${providerStatusProjection},
         ${providerExtrasProjection},
         ${gpsProjection}
       FROM user u
@@ -358,6 +550,7 @@ router.get('/provider/:userId', async (req, res) => {
   try {
     const gpsProjection = await getGpsProjection();
     const providerExtrasProjection = await getProviderExtrasProjection();
+    const providerStatusProjection = await getProviderStatusProjection();
     const rcProj = await ratingsCountProjection();
     const [rows] = await db.query(
       `
@@ -367,10 +560,12 @@ router.get('/provider/:userId', async (req, res) => {
         u.email,
         u.phone,
         u.role,
+        u.profileImageUrl,
         c.specialization,
         c.overallRating,
         ${rcProj},
         c.isAvailable,
+        ${providerStatusProjection},
         ${providerExtrasProjection},
         ${gpsProjection}
       FROM user u
@@ -384,24 +579,30 @@ router.get('/provider/:userId', async (req, res) => {
       return res.status(404).json({ error: 'Provider not found' });
     }
 
+    if (req.query.realAvailability === '1') {
+      const [provider] = await attachRealAvailableSlots(rows);
+      return res.json(provider);
+    }
+
     const provider = rows[0];
-
     const [slots] = await db.query(
-      `
-      SELECT day, startTime, endTime
-      FROM availabilityslot
-      WHERE providerUserId = ?
-      ORDER BY day, startTime
-      `,
-      [userId]
+      `SELECT day, startTime, endTime
+       FROM availabilityslot
+       WHERE providerUserId = ?
+       ORDER BY day, startTime`,
+      [userId],
     );
-
-    provider.availableSlots = slots;
-    provider.availableTimeSlots = slots.map(
-      (slot) => `${slot.day} ${slot.startTime}-${slot.endTime}`
+    res.json(
+      withBookingEligibility({
+        ...provider,
+        isAvailable:
+          provider.isAvailable === 1 || provider.isAvailable === true,
+        availableSlots: slots,
+        availableTimeSlots: slots.map(
+          (slot) => `${slot.day} ${slot.startTime}-${slot.endTime}`,
+        ),
+      }),
     );
-
-    res.json(provider);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -423,6 +624,7 @@ router.get('/doctor/:userId', async (req, res) => {
         u.email,
         u.phone,
         u.role,
+        u.profileImageUrl,
         c.specialization,
         c.overallRating,
         ${rcProj},
@@ -498,6 +700,7 @@ router.get('/appointments', async (req, res) => {
        FROM servicerequest sr
        LEFT JOIN user pu ON sr.patientUserId = pu.userId
        WHERE sr.providerUserId = ?
+         AND LOWER(TRIM(CAST(sr.status AS CHAR(64)))) <> 'draft'
        ORDER BY sr.scheduledAt DESC
        LIMIT 500`,
       [providerUserId]
@@ -709,9 +912,9 @@ router.get('/provider/:userId/blocked-slots', async (req, res) => {
     const [rows] = await db.query(
       `SELECT scheduledAt
        FROM servicerequest
-       WHERE providerUserId = ?
+         WHERE providerUserId = ?
          AND LOWER(TRIM(CAST(status AS CHAR(64)))) IN
-           ('pending', 'pending_payment', 'payment_pending', 'confirmed')
+           ('confirmed', 'accepted', 'approved', 'scheduled', 'in_progress')
          AND scheduledAt >= CURDATE()`,
       [req.params.userId]
     );

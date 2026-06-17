@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
 
 class AiScoreBreakdown extends StatelessWidget {
@@ -13,11 +16,7 @@ class AiScoreBreakdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final themeColor = colorScheme.onSurface;
-    final helperColor = colorScheme.onSurfaceVariant;
-    final strokeColor = colorScheme.outlineVariant;
-    final primaryColor = Colors.teal; // Primary teal fill as requested
+    final p = CarelinkPalette.of(context);
 
     final rows = <_Row>[
       _Row(
@@ -59,67 +58,86 @@ class AiScoreBreakdown extends StatelessWidget {
     ];
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: rows
           .map(
             (r) => Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Icon(r.icon, size: 20, color: colorScheme.primary),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          r.label,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: themeColor,
-                          ),
-                        ),
+              padding: const EdgeInsets.only(bottom: 9),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: p.surfaceSoft,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: p.stroke.withValues(alpha: 0.8)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.primary.withValues(alpha: 0.1),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          '${(r.value * 100).round()}%',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            color: colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      minHeight: 8,
-                      value: r.value.clamp(0, 1),
-                      backgroundColor: strokeColor,
-                      color: primaryColor,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Padding(
-                    padding: EdgeInsets.only(left: isArabic ? 0 : 28, right: isArabic ? 28 : 0),
-                    child: Text(
-                      r.explanation,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: helperColor,
+                      child: Icon(
+                        r.value >= 0.5 ? Icons.check_rounded : r.icon,
+                        size: 19,
+                        color: AppColors.primary,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  r.label,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                    color: p.inkDark,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.08,
+                                  ),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  _matchLabel(r.value),
+                                  style: const TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            r.explanation,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              height: 1.35,
+                              color: p.inkMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           )
@@ -130,21 +148,21 @@ class AiScoreBreakdown extends StatelessWidget {
   String _label(String key) {
     if (!isArabic) {
       const en = {
-        'location': 'Location',
-        'specialty': 'Specialization',
-        'availability': 'Availability',
-        'experience': 'Experience',
-        'rating': 'Rating',
+        'location': 'Location Match',
+        'specialty': 'Specialization Match',
+        'availability': 'Availability Match',
+        'experience': 'Experience Match',
+        'rating': 'Patient Rating',
         'health': 'Medical Compatibility',
       };
       return en[key] ?? key;
     }
     const ar = {
-      'location': 'الموقع',
-      'specialty': 'التخصص',
-      'availability': 'التوفر',
-      'experience': 'الخبرة',
-      'rating': 'التقييم',
+      'location': 'توافق الموقع',
+      'specialty': 'توافق التخصص',
+      'availability': 'توافق المواعيد',
+      'experience': 'توافق الخبرة',
+      'rating': 'تقييم المرضى',
       'health': 'التوافق الطبي',
     };
     return ar[key] ?? key;
@@ -154,62 +172,109 @@ class AiScoreBreakdown extends StatelessWidget {
     if (!isArabic) {
       switch (key) {
         case 'location':
-          return score >= 0.8
-              ? 'Very close to your current location.'
-              : 'Available within your service area.';
+          if (score >= 0.8) return 'This provider is close to your location.';
+          if (score >= 0.5) {
+            return 'This provider serves your area but is not the closest option.';
+          }
+          return 'This provider may require a longer travel distance.';
         case 'specialty':
-          return score >= 0.8
-              ? 'Exact match for your requested case type.'
-              : 'Highly compatible healthcare specialty.';
+          if (score >= 0.8) {
+            return 'Specializes in the type of care your condition needs.';
+          }
+          if (score >= 0.5) {
+            return 'Has a related specialty suitable for your care request.';
+          }
+          return 'Can provide general support, but is not an exact specialty match.';
         case 'availability':
-          return score >= 0.8
-              ? 'Has immediate or convenient upcoming slots.'
-              : 'Available slots in the schedule.';
+          if (score >= 0.8) {
+            return 'Convenient appointment slots are available soon.';
+          }
+          if (score >= 0.4) {
+            return 'Some appointment slots are available this week.';
+          }
+          return 'Appointment options are currently limited.';
         case 'experience':
-          return score >= 0.8
-              ? 'Extensive years of clinical experience.'
-              : 'Qualified specialist with proven track record.';
+          if (score >= 0.8) {
+            return 'Highly experienced in this type of care.';
+          }
+          if (score >= 0.5) {
+            return 'Has solid experience providing similar care.';
+          }
+          return 'Meets the basic experience requirements for this service.';
         case 'rating':
-          return score >= 0.8
-              ? 'Outstanding patient ratings and reviews.'
-              : 'Well-rated by other patients.';
+          if (score >= 0.8) return 'Highly rated by other patients.';
+          if (score >= 0.5) return 'Receives positive patient feedback.';
+          return 'Limited patient rating information is available.';
         case 'health':
-          return score >= 0.8
-              ? 'Perfect fit for your clinical profile and history.'
-              : 'Compatible with your health requirements.';
+          if (score >= 0.8) {
+            return 'Strongly matches your health profile and care needs.';
+          }
+          if (score >= 0.5) {
+            return 'Compatible with the main requirements of your condition.';
+          }
+          return 'Provides partial support for your medical requirements.';
         default:
           return '';
       }
     } else {
       switch (key) {
         case 'location':
-          return score >= 0.8
-              ? 'قريب جداً من موقعك الحالي.'
-              : 'متاح في منطقة الخدمة الخاصة بك.';
+          if (score >= 0.8) return 'مقدم الرعاية قريب من موقعك.';
+          if (score >= 0.5) {
+            return 'يخدم منطقتك، لكنه ليس الخيار الأقرب.';
+          }
+          return 'قد تحتاج إلى قطع مسافة أطول للوصول إليه.';
         case 'specialty':
-          return score >= 0.8
-              ? 'تطابق تام مع نوع الرعاية المطلوبة.'
-              : 'تخصص صحي متوافق بدرجة عالية.';
+          if (score >= 0.8) {
+            return 'متخصص في نوع الرعاية التي تحتاجها حالتك.';
+          }
+          if (score >= 0.5) {
+            return 'لديه تخصص قريب ومناسب لطلب الرعاية.';
+          }
+          return 'يمكنه تقديم رعاية عامة، لكنه ليس مطابقاً تماماً للتخصص.';
         case 'availability':
-          return score >= 0.8
-              ? 'لديه مواعيد قريبة ومناسبة جداً.'
-              : 'تتوفر مواعيد مناسبة في الجدول.';
+          if (score >= 0.8) return 'تتوفر مواعيد مناسبة قريباً.';
+          if (score >= 0.4) {
+            return 'تتوفر بعض المواعيد خلال هذا الأسبوع.';
+          }
+          return 'خيارات المواعيد محدودة حالياً.';
         case 'experience':
-          return score >= 0.8
-              ? 'سنوات طويلة من الخبرة العملية.'
-              : 'أخصائي مؤهل ذو خبرة جيدة.';
+          if (score >= 0.8) {
+            return 'يمتلك خبرة عالية في هذا النوع من الرعاية.';
+          }
+          if (score >= 0.5) {
+            return 'لديه خبرة جيدة في تقديم رعاية مشابهة.';
+          }
+          return 'يستوفي متطلبات الخبرة الأساسية لهذه الخدمة.';
         case 'rating':
-          return score >= 0.8
-              ? 'تقييمات وآراء ممتازة من المرضى.'
-              : 'تقييم جيد من المرضى الآخرين.';
+          if (score >= 0.8) return 'حاصل على تقييم مرتفع من المرضى.';
+          if (score >= 0.5) return 'حصل على آراء إيجابية من المرضى.';
+          return 'معلومات تقييم المرضى المتوفرة محدودة.';
         case 'health':
-          return score >= 0.8
-              ? 'مناسب تماماً لملفك الطبي وتاريخك الصحي.'
-              : 'متوافق مع متطلباتك الصحية.';
+          if (score >= 0.8) {
+            return 'متوافق بدرجة عالية مع ملفك الصحي واحتياجاتك.';
+          }
+          if (score >= 0.5) {
+            return 'متوافق مع المتطلبات الأساسية لحالتك.';
+          }
+          return 'يوفر دعماً جزئياً لاحتياجاتك الطبية.';
         default:
           return '';
       }
     }
+  }
+
+  String _matchLabel(double score) {
+    if (score >= 0.85) {
+      return isArabic ? 'توافق ممتاز' : 'Excellent Match';
+    }
+    if (score >= 0.7) {
+      return isArabic ? 'توافق جيد جداً' : 'Very Good Match';
+    }
+    if (score >= 0.5) {
+      return isArabic ? 'توافق جيد' : 'Good Match';
+    }
+    return isArabic ? 'توافق متوسط' : 'Moderate Match';
   }
 }
 

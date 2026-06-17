@@ -140,6 +140,34 @@ class _PatientNavigationShellState extends State<PatientNavigationShell> {
   }
 
   Widget _buildFloatingBottomNav(CarelinkPalette p) {
+    final items = [
+      _PatientNavItem(
+        icon: Icons.home_rounded,
+        activeIcon: Icons.home_rounded,
+        label: _t('Home', 'الرئيسية'),
+      ),
+      _PatientNavItem(
+        icon: Icons.calendar_month_rounded,
+        activeIcon: Icons.calendar_month_rounded,
+        label: _t('Bookings', 'حجوزاتي'),
+      ),
+      _PatientNavItem(
+        icon: Icons.favorite_border_rounded,
+        activeIcon: Icons.favorite_rounded,
+        label: _t('My care', 'رعايتي'),
+      ),
+      _PatientNavItem(
+        icon: Icons.folder_outlined,
+        activeIcon: Icons.folder_rounded,
+        label: _t('Records', 'السجل الطبي'),
+      ),
+      _PatientNavItem(
+        icon: Icons.person_outline_rounded,
+        activeIcon: Icons.person_rounded,
+        label: _t('Profile', 'الملف الشخصي'),
+      ),
+    ];
+
     return Material(
       elevation: 18,
       shadowColor: Colors.black12,
@@ -160,73 +188,165 @@ class _PatientNavigationShellState extends State<PatientNavigationShell> {
         ),
         child: SafeArea(
           top: false,
-          child: BottomNavigationBar(
-            currentIndex: currentIndex,
-            onTap: (index) {
-              setState(() {
-                currentIndex = index;
-              });
-            },
-            selectedItemColor: AppColors.primary,
-            unselectedItemColor: p.navUnselected,
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            type: BottomNavigationBarType.fixed,
-            selectedLabelStyle: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 11,
+          child: SizedBox(
+            height: 70,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final count = items.length;
+                final itemWidth = constraints.maxWidth / count;
+                final visualIndex = _isArabic
+                    ? count - 1 - currentIndex
+                    : currentIndex;
+                return Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 360),
+                      curve: Curves.easeOutBack,
+                      left: visualIndex * itemWidth + 6,
+                      top: 8,
+                      width: itemWidth - 12,
+                      height: 54,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(
+                            alpha: p.isDark ? 0.18 : 0.11,
+                          ),
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.16),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: List.generate(items.length, (index) {
+                        final item = items[index];
+                        final selected = index == currentIndex;
+                        return Expanded(
+                          child: _PatientFloatingNavButton(
+                            item: item,
+                            selected: selected,
+                            palette: p,
+                            onTap: () {
+                              if (currentIndex == index) return;
+                              setState(() => currentIndex = index);
+                            },
+                          ),
+                        );
+                      }),
+                    ),
+                  ],
+                );
+              },
             ),
-            unselectedLabelStyle: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 11,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PatientNavItem {
+  const _PatientNavItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+}
+
+class _PatientFloatingNavButton extends StatefulWidget {
+  const _PatientFloatingNavButton({
+    required this.item,
+    required this.selected,
+    required this.palette,
+    required this.onTap,
+  });
+
+  final _PatientNavItem item;
+  final bool selected;
+  final CarelinkPalette palette;
+  final VoidCallback onTap;
+
+  @override
+  State<_PatientFloatingNavButton> createState() =>
+      _PatientFloatingNavButtonState();
+}
+
+class _PatientFloatingNavButtonState extends State<_PatientFloatingNavButton> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.selected
+        ? AppColors.primary
+        : widget.palette.navUnselected;
+    return Listener(
+      onPointerDown: (_) => _setPressed(true),
+      onPointerUp: (_) => _setPressed(false),
+      onPointerCancel: (_) => _setPressed(false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.96 : (widget.selected ? 1.04 : 1),
+        duration: const Duration(milliseconds: 190),
+        curve: _pressed ? Curves.easeOutCubic : Curves.easeOutBack,
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(22),
+          splashColor: AppColors.primary.withValues(alpha: 0.10),
+          highlightColor: AppColors.primary.withValues(alpha: 0.06),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  switchInCurve: Curves.easeOutBack,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    return ScaleTransition(
+                      scale: animation,
+                      child: FadeTransition(opacity: animation, child: child),
+                    );
+                  },
+                  child: Icon(
+                    widget.selected ? widget.item.activeIcon : widget.item.icon,
+                    key: ValueKey('${widget.item.label}-${widget.selected}'),
+                    size: widget.selected ? 25 : 22,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: widget.selected ? 11.5 : 10.5,
+                    fontWeight: widget.selected
+                        ? FontWeight.w900
+                        : FontWeight.w600,
+                  ),
+                  child: Text(
+                    widget.item.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
-            items: [
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.home_rounded, size: 23),
-                activeIcon: const Icon(
-                  Icons.home_rounded,
-                  size: 23,
-                  color: AppColors.primary,
-                ),
-                label: _t('Home', 'الرئيسية'),
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.calendar_month_rounded, size: 23),
-                activeIcon: const Icon(
-                  Icons.calendar_month_rounded,
-                  size: 23,
-                  color: AppColors.primary,
-                ),
-                label: _t('Bookings', 'حجوزاتي'),
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.favorite_border_rounded, size: 23),
-                activeIcon: const Icon(
-                  Icons.favorite_rounded,
-                  size: 23,
-                  color: AppColors.primary,
-                ),
-                label: _t('My care', 'رعايتي'),
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.folder_outlined, size: 23),
-                activeIcon: const Icon(
-                  Icons.folder_rounded,
-                  size: 23,
-                  color: AppColors.primary,
-                ),
-                label: _t('Records', 'السجل الطبي'),
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.person_outline_rounded, size: 23),
-                activeIcon: const Icon(
-                  Icons.person_rounded,
-                  size: 23,
-                  color: AppColors.primary,
-                ),
-                label: _t('Profile', 'الملف الشخصي'),
-              ),
-            ],
           ),
         ),
       ),

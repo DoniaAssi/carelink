@@ -3,9 +3,9 @@ import 'package:intl/intl.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/locale_controller.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
-import 'package:carelink/core/profile_avatar.dart';
 
 class ChangeProviderModal extends StatefulWidget {
   final AppointmentModel appointment;
@@ -39,14 +39,14 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
     'Prefer another provider',
     'Communication issue',
     'Schedule conflict',
-    'Other'
+    'Other',
   ];
   final List<String> _reasonsAr = [
     'مقدم الرعاية غير متاح',
     'أفضل مقدم رعاية آخر',
     'مشكلة في التواصل',
     'تعارض في الموعد',
-    'سبب آخر'
+    'سبب آخر',
   ];
 
   @override
@@ -68,23 +68,24 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
       // - Exclude current provider
       // - Match serviceType (if appointment has one, and if provider has one)
       // Note: serviceType can be matched loosely or strictly. Here we match loosely.
-      final currentServiceType = widget.appointment.specialization.toLowerCase();
-      
+      final currentServiceType = widget.appointment.specialization
+          .toLowerCase();
+
       final filtered = data.where((p) {
         if (p['userId'] == widget.appointment.providerUserId) return false;
-        
+
         final provService = (p['serviceType'] ?? '').toString().toLowerCase();
         final provSpec = (p['specialization'] ?? '').toString().toLowerCase();
-        
+
         // If we have a service type to match, try to match it
         if (currentServiceType.isNotEmpty) {
-          if (!provService.contains(currentServiceType) && 
+          if (!provService.contains(currentServiceType) &&
               !provSpec.contains(currentServiceType) &&
               !currentServiceType.contains(provService) &&
               !currentServiceType.contains(provSpec)) {
-             // In a strict app, we might exclude. For safety, if they are completely different, exclude.
-             // We'll exclude if no match found.
-             return false;
+            // In a strict app, we might exclude. For safety, if they are completely different, exclude.
+            // We'll exclude if no match found.
+            return false;
           }
         }
         return true;
@@ -107,12 +108,15 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
   Future<void> _confirmChangeProvider() async {
     final isAr = localeController.isArabic;
     final p = CarelinkPalette.of(context);
-    
+
     // Validate time
     if (widget.appointment.scheduledAt != null) {
-      final selectedProv = _providers.firstWhere((element) => element['userId'] == _selectedProviderId, orElse: () => null);
+      final selectedProv = _providers.firstWhere(
+        (element) => element['userId'] == _selectedProviderId,
+        orElse: () => null,
+      );
       if (selectedProv != null) {
-        // Here we could check exact availability slot, but as requested: 
+        // Here we could check exact availability slot, but as requested:
         // "show warning and disable Confirm button" if not available.
         // For now we allow it but show a dialog.
       }
@@ -128,20 +132,26 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
           style: TextStyle(color: p.inkDark, fontWeight: FontWeight.bold),
         ),
         content: Text(
-          isAr 
-            ? 'هل أنت متأكد أنك تريد تغيير مقدم الرعاية؟\nسيبقى وقت موعدك كما هو.'
-            : 'Are you sure you want to change your provider?\nYour appointment time will stay the same.',
+          isAr
+              ? 'هل أنت متأكد أنك تريد تغيير مقدم الرعاية؟\nسيبقى وقت موعدك كما هو.'
+              : 'Are you sure you want to change your provider?\nYour appointment time will stay the same.',
           style: TextStyle(color: p.inkMuted, height: 1.5),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(isAr ? 'إلغاء' : 'Cancel', style: const TextStyle(color: Colors.grey)),
+            child: Text(
+              isAr ? 'إلغاء' : 'Cancel',
+              style: const TextStyle(color: Colors.grey),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(isAr ? 'تأكيد' : 'Confirm', style: const TextStyle(color: Colors.white)),
+            child: Text(
+              isAr ? 'تأكيد' : 'Confirm',
+              style: const TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -155,10 +165,11 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
   Future<void> _executeChange() async {
     if (_selectedProviderId == null) return;
     setState(() => _isChanging = true);
-    
+
     final finalReason = [
       if (_selectedReasonChip != null) _selectedReasonChip,
-      if (_reasonController.text.trim().isNotEmpty) _reasonController.text.trim()
+      if (_reasonController.text.trim().isNotEmpty)
+        _reasonController.text.trim(),
     ].join(' - ');
 
     try {
@@ -169,7 +180,7 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
         reason: finalReason.isNotEmpty ? finalReason : null,
       );
       if (!mounted) return;
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -184,7 +195,10 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.redAccent),
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.redAccent,
+        ),
       );
       setState(() => _isChanging = false);
     }
@@ -202,13 +216,13 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
     final a = widget.appointment;
     final dateStr = a.scheduledAt != null ? _formatDate(a.scheduledAt!) : 'TBD';
     final timeStr = a.scheduledAt != null ? _formatTime(a.scheduledAt!) : 'TBD';
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.05),
+        color: AppColors.primary.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -217,22 +231,32 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
             children: [
               Icon(Icons.calendar_today, size: 16, color: AppColors.primary),
               const SizedBox(width: 8),
-              Text('$dateStr • $timeStr', style: TextStyle(fontWeight: FontWeight.bold, color: p.inkDark)),
+              Text(
+                '$dateStr • $timeStr',
+                style: TextStyle(fontWeight: FontWeight.bold, color: p.inkDark),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              Icon(Icons.medical_services_outlined, size: 16, color: p.inkMuted),
+              Icon(
+                Icons.medical_services_outlined,
+                size: 16,
+                color: p.inkMuted,
+              ),
               const SizedBox(width: 8),
-              Text(a.specialization.isNotEmpty ? a.specialization : 'General', style: TextStyle(color: p.inkMuted)),
+              Text(
+                a.specialization.isNotEmpty ? a.specialization : 'General',
+                style: TextStyle(color: p.inkMuted),
+              ),
             ],
           ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.orange.withOpacity(0.1),
+              color: Colors.orange.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
@@ -241,12 +265,18 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
                 const Icon(Icons.info_outline, size: 14, color: Colors.orange),
                 const SizedBox(width: 6),
                 Text(
-                  isAr ? 'سيبقى وقت الموعد كما هو' : 'Your appointment time will remain the same',
-                  style: const TextStyle(fontSize: 12, color: Colors.deepOrange, fontWeight: FontWeight.w600),
+                  isAr
+                      ? 'سيبقى وقت الموعد كما هو'
+                      : 'Your appointment time will remain the same',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.deepOrange,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
-          )
+          ),
         ],
       ),
     );
@@ -279,11 +309,17 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
                     children: [
                       Text(
                         isAr ? 'تغيير مقدم الخدمة' : 'Change Provider',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: p.inkDark),
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: p.inkDark,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        isAr ? 'اختر مقدم رعاية بديل لهذا الموعد' : 'Choose a replacement provider for this appointment',
+                        isAr
+                            ? 'اختر مقدم رعاية بديل لهذا الموعد'
+                            : 'Choose a replacement provider for this appointment',
                         style: TextStyle(fontSize: 14, color: p.inkMuted),
                       ),
                     ],
@@ -292,12 +328,12 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
                 IconButton(
                   icon: Icon(Icons.close, color: p.inkMuted),
                   onPressed: () => Navigator.pop(context),
-                )
+                ),
               ],
             ),
           ),
           Divider(color: p.stroke, height: 1),
-          
+
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
@@ -306,32 +342,57 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
                 children: [
                   _buildAppointmentSummary(p, isAr),
                   const SizedBox(height: 24),
-                  
+
                   Text(
                     isAr ? 'مقدمو الرعاية المتاحون' : 'Available Providers',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: p.inkDark),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: p.inkDark,
+                    ),
                   ),
                   const SizedBox(height: 12),
-                  
+
                   if (_isLoadingProviders)
-                    const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: AppColors.primary)))
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: CircularProgressIndicator(
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    )
                   else if (_errorMessage != null)
-                    Center(child: Padding(padding: EdgeInsets.all(20), child: Text(_errorMessage!, style: const TextStyle(color: Colors.red))))
+                    Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    )
                   else if (_providers.isEmpty)
                     Center(
                       child: Padding(
                         padding: EdgeInsets.all(32),
                         child: Column(
                           children: [
-                            Icon(Icons.search_off, size: 48, color: p.inkMuted.withOpacity(0.5)),
+                            Icon(
+                              Icons.search_off,
+                              size: 48,
+                              color: p.inkMuted.withValues(alpha: 0.5),
+                            ),
                             const SizedBox(height: 12),
                             Text(
-                              isAr ? 'لا يوجد مقدمو خدمة متاحون' : 'No alternative providers available',
+                              isAr
+                                  ? 'لا يوجد مقدمو خدمة متاحون'
+                                  : 'No alternative providers available',
                               style: TextStyle(color: p.inkMuted, fontSize: 16),
                             ),
                           ],
                         ),
-                      )
+                      ),
                     )
                   else
                     ListView.separated(
@@ -344,23 +405,30 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
                         final id = prov['userId'] ?? '';
                         final name = prov['fullName'] ?? 'Unavailable';
                         final spec = prov['specialization'] ?? '';
-                        final rating = (prov['overallRating'] ?? 0.0).toDouble();
+                        final rating = (prov['overallRating'] ?? 0.0)
+                            .toDouble();
                         final img = prov['profileImageUrl'];
                         final isSelected = _selectedProviderId == id;
-                        
+
                         // Fake availability logic (or use real if availableTimeSlots exist)
-                        final hasSlots = (prov['availableTimeSlots'] as List?)?.isNotEmpty ?? true;
-                        
-                        return InkWell(
+                        final hasSlots =
+                            (prov['availableTimeSlots'] as List?)?.isNotEmpty ??
+                            true;
+
+                        return PatientPressable(
                           onTap: () => setState(() => _selectedProviderId = id),
                           borderRadius: BorderRadius.circular(16),
                           child: Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: isSelected ? AppColors.primary.withOpacity(0.05) : p.surface,
+                              color: isSelected
+                                  ? AppColors.primary.withValues(alpha: 0.05)
+                                  : p.surface,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: isSelected ? AppColors.primary : p.stroke,
+                                color: isSelected
+                                    ? AppColors.primary
+                                    : p.stroke,
                                 width: isSelected ? 2 : 1,
                               ),
                             ),
@@ -369,37 +437,89 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
                                 CircleAvatar(
                                   radius: 28,
                                   backgroundColor: p.surfaceSoft,
-                                  backgroundImage: img != null && img.toString().isNotEmpty ? NetworkImage(img) : null,
-                                  child: img == null || img.toString().isEmpty ? Icon(Icons.person, color: p.inkMuted) : null,
+                                  backgroundImage:
+                                      img != null && img.toString().isNotEmpty
+                                      ? NetworkImage(img)
+                                      : null,
+                                  child: img == null || img.toString().isEmpty
+                                      ? Icon(Icons.person, color: p.inkMuted)
+                                      : null,
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text(name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: p.inkDark)),
-                                      Text(spec, style: TextStyle(color: p.inkMuted, fontSize: 13)),
+                                      Text(
+                                        name,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                          color: p.inkDark,
+                                        ),
+                                      ),
+                                      Text(
+                                        spec,
+                                        style: TextStyle(
+                                          color: p.inkMuted,
+                                          fontSize: 13,
+                                        ),
+                                      ),
                                       const SizedBox(height: 6),
                                       Row(
                                         children: [
-                                          Icon(Icons.star, size: 14, color: Colors.amber),
+                                          Icon(
+                                            Icons.star,
+                                            size: 14,
+                                            color: Colors.amber,
+                                          ),
                                           const SizedBox(width: 4),
-                                          Text(rating > 0 ? rating.toStringAsFixed(1) : 'New', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: p.inkDark)),
+                                          Text(
+                                            rating > 0
+                                                ? rating.toStringAsFixed(1)
+                                                : 'New',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: p.inkDark,
+                                            ),
+                                          ),
                                           const SizedBox(width: 12),
                                           if (!hasSlots)
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                                              child: Text('Needs confirmation', style: TextStyle(fontSize: 10, color: Colors.deepOrange)),
-                                            )
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.orange.withValues(
+                                                  alpha: 0.1,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                'Needs confirmation',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.deepOrange,
+                                                ),
+                                              ),
+                                            ),
                                         ],
-                                      )
+                                      ),
                                     ],
                                   ),
                                 ),
                                 Icon(
-                                  isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                                  color: isSelected ? AppColors.primary : p.stroke,
+                                  isSelected
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_unchecked,
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : p.stroke,
                                 ),
                               ],
                             ),
@@ -407,15 +527,21 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
                         );
                       },
                     ),
-                    
+
                   const SizedBox(height: 24),
-                  
+
                   Text(
-                    isAr ? 'سبب التغيير (اختياري)' : 'Reason for change (Optional)',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: p.inkDark),
+                    isAr
+                        ? 'سبب التغيير (اختياري)'
+                        : 'Reason for change (Optional)',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: p.inkDark,
+                    ),
                   ),
                   const SizedBox(height: 12),
-                  
+
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
@@ -424,47 +550,75 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
                       return ChoiceChip(
                         label: Text(r),
                         selected: selected,
-                        onSelected: (val) => setState(() => _selectedReasonChip = val ? r : null),
-                        selectedColor: AppColors.primary.withOpacity(0.1),
+                        onSelected: (val) => setState(
+                          () => _selectedReasonChip = val ? r : null,
+                        ),
+                        selectedColor: AppColors.primary.withValues(alpha: 0.1),
                         labelStyle: TextStyle(
                           color: selected ? AppColors.primary : p.inkDark,
-                          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: selected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                         ),
                         backgroundColor: p.surfaceSoft,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: selected ? AppColors.primary : Colors.transparent)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          side: BorderSide(
+                            color: selected
+                                ? AppColors.primary
+                                : Colors.transparent,
+                          ),
+                        ),
                       );
                     }).toList(),
                   ),
                   const SizedBox(height: 12),
-                  
+
                   TextField(
                     controller: _reasonController,
                     decoration: InputDecoration(
-                      hintText: isAr ? 'أضف تفاصيل أخرى...' : 'Add other details...',
+                      hintText: isAr
+                          ? 'أضف تفاصيل أخرى...'
+                          : 'Add other details...',
                       filled: true,
                       fillColor: p.surfaceSoft,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                     ),
                     maxLines: 2,
                     style: TextStyle(color: p.inkDark),
                   ),
-                  
+
                   const SizedBox(height: 80), // spacer for bottom actions
                 ],
               ),
             ),
           ),
-          
+
           // Bottom Actions
           Container(
-            padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).viewInsets.bottom + 16),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              16,
+              20,
+              MediaQuery.of(context).viewInsets.bottom + 16,
+            ),
             decoration: BoxDecoration(
               color: p.surface,
               border: Border(top: BorderSide(color: p.stroke)),
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))
-              ]
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, -5),
+                ),
+              ],
             ),
             child: Row(
               children: [
@@ -473,12 +627,18 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
                     onPressed: () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       side: BorderSide(color: p.stroke),
                     ),
                     child: Text(
                       isAr ? 'إلغاء' : 'Cancel',
-                      style: TextStyle(color: p.inkDark, fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(
+                        color: p.inkDark,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                 ),
@@ -486,22 +646,33 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
                 Expanded(
                   flex: 2,
                   child: ElevatedButton(
-                    onPressed: (_selectedProviderId == null || _isChanging) ? null : _confirmChangeProvider,
+                    onPressed: (_selectedProviderId == null || _isChanging)
+                        ? null
+                        : _confirmChangeProvider,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     child: _isChanging
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
                           )
                         : Text(
                             isAr ? 'تأكيد التغيير' : 'Confirm Change',
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                   ),
                 ),

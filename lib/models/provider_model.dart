@@ -1,10 +1,12 @@
 class AvailabilitySlot {
   final String day;
+  final String date;
   final String startTime;
   final String endTime;
 
   const AvailabilitySlot({
     required this.day,
+    this.date = '',
     required this.startTime,
     required this.endTime,
   });
@@ -12,6 +14,7 @@ class AvailabilitySlot {
   factory AvailabilitySlot.fromJson(Map<String, dynamic> json) {
     return AvailabilitySlot(
       day: json['day']?.toString() ?? '',
+      date: json['date']?.toString() ?? '',
       startTime: json['startTime']?.toString() ?? '',
       endTime: json['endTime']?.toString() ?? '',
     );

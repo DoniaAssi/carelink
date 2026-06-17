@@ -4,7 +4,7 @@ import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 
-enum BookingFlowStep { service, dateTime, location, review }
+enum BookingFlowStep { provider, service, dateTime, location, review }
 
 class BookingStepIndicator extends StatelessWidget {
   final BookingFlowStep currentStep;
@@ -12,6 +12,7 @@ class BookingStepIndicator extends StatelessWidget {
   const BookingStepIndicator({super.key, required this.currentStep});
 
   static const _labelKeys = <String>[
+    'booking.step.provider',
     'booking.step.service',
     'booking.step.dateTime',
     'booking.step.location',
@@ -23,20 +24,20 @@ class BookingStepIndicator extends StatelessWidget {
     final p = CarelinkPalette.of(context);
     final currentIndex = currentStep.index;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 4, top: 4),
       child: Column(
         children: [
           Row(
             children: List.generate(_labelKeys.length * 2 - 1, (i) {
               if (i.isOdd) {
                 final connectorIndex = (i - 1) ~/ 2;
-                final active = connectorIndex < currentIndex;
+                final isPassed = connectorIndex < currentIndex;
                 return Expanded(
                   child: Container(
                     height: 2,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    color: active
-                        ? AppColors.primary.withValues(alpha: 0.42)
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    color: isPassed
+                        ? AppColors.primary
                         : p.stroke,
                   ),
                 );
@@ -45,35 +46,33 @@ class BookingStepIndicator extends StatelessWidget {
               final index = i ~/ 2;
               final isDone = index < currentIndex;
               final isCurrent = index == currentIndex;
-              final bg = isDone || isCurrent
-                  ? AppColors.primary
-                  : p.surfaceSoft;
               return _StepDot(
                 label: '${index + 1}',
                 done: isDone,
                 current: isCurrent,
-                color: bg,
               );
             }),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Row(
             children: List.generate(_labelKeys.length, (index) {
-              final isDone = index < currentIndex;
               final isCurrent = index == currentIndex;
+              final isDone = index < currentIndex;
               final color = isCurrent
                   ? AppColors.primary
                   : isDone
-                  ? p.inkDark.withValues(alpha: 0.72)
+                  ? p.inkDark.withValues(alpha: 0.8)
                   : p.inkMuted;
               return Expanded(
                 child: Text(
                   context.tr(_labelKeys[index]),
                   textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: color,
-                    fontSize: 11,
-                    fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w600,
+                    fontSize: 10.5,
+                    fontWeight: isCurrent || isDone ? FontWeight.w700 : FontWeight.w600,
                   ),
                 ),
               );
@@ -89,43 +88,48 @@ class _StepDot extends StatelessWidget {
   final String label;
   final bool done;
   final bool current;
-  final Color color;
 
   const _StepDot({
     required this.label,
     required this.done,
     required this.current,
-    required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
+    
+    Color bgColor;
+    Color iconColor;
+    
+    if (done || current) {
+      bgColor = AppColors.primary;
+      iconColor = Colors.white;
+    } else {
+      bgColor = p.surfaceSoft;
+      iconColor = p.inkMuted;
+    }
+
     return Container(
-      width: 24,
-      height: 24,
+      width: 22,
+      height: 22,
       decoration: BoxDecoration(
-        color: color,
+        color: bgColor,
         shape: BoxShape.circle,
-        boxShadow: current
-            ? [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.2),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ]
-            : null,
+        border: Border.all(
+          color: done || current ? AppColors.primary : p.stroke,
+          width: 1,
+        ),
       ),
       alignment: Alignment.center,
       child: done
-          ? const Icon(Icons.check, color: Colors.white, size: 14)
+          ? const Icon(Icons.check_rounded, color: Colors.white, size: 14)
           : Text(
               label,
               style: TextStyle(
-                color: current ? Colors.white : p.inkMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
+                color: iconColor,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
               ),
             ),
     );

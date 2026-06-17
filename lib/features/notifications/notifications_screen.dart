@@ -127,6 +127,66 @@ class NotificationCardData {
         category == NotificationCategory.medicalRecord ||
         category == NotificationCategory.payment;
   }
+
+  String displayTitle(bool isArabic) {
+    if (!isArabic) return title;
+    final normalized = title.trim().toLowerCase();
+    if (normalized == 'booking request sent') {
+      return 'تم إرسال طلب الحجز';
+    }
+    if (normalized == 'payment required') {
+      return 'مطلوب الدفع';
+    }
+    if (normalized == 'appointment confirmed') {
+      return 'تم تأكيد الموعد';
+    }
+    if (normalized == 'new message') {
+      return 'رسالة جديدة';
+    }
+    if (normalized == 'medical record uploaded') {
+      return 'تم رفع سجل طبي';
+    }
+    if (normalized == 'appointment reminder') {
+      return 'تذكير بالموعد';
+    }
+    if (normalized == 'account security') {
+      return 'أمان الحساب';
+    }
+    if (normalized == 'notification') {
+      return 'إشعار';
+    }
+    return title;
+  }
+
+  String displayDescription(bool isArabic) {
+    if (!isArabic) return description;
+    final text = description.trim();
+    final normalized = text.toLowerCase();
+    final bookingMatch = RegExp(
+      r'^your booking request for (.+) was sent to the care provider\.?$',
+      caseSensitive: false,
+    ).firstMatch(text);
+    if (bookingMatch != null) {
+      final appointmentText = bookingMatch.group(1)!.trim();
+      return 'تم إرسال طلب الحجز في $appointmentText إلى مقدم الرعاية.';
+    }
+    if (normalized ==
+        'your doctor accepted the request. please complete payment before the appointment is confirmed.') {
+      return 'قبِل مقدم الرعاية طلبك. يرجى إكمال الدفع قبل تأكيد الموعد.';
+    }
+    if (normalized == 'your appointment has been confirmed.' ||
+        normalized == 'your appointment is confirmed.') {
+      return 'تم تأكيد موعدك.';
+    }
+    if (normalized == 'doctor sent you a new message.' ||
+        normalized == 'doctor sent you a message.') {
+      return 'أرسل لك مقدم الرعاية رسالة جديدة.';
+    }
+    if (normalized == 'a provider added a file to your records.') {
+      return 'أضاف مقدم الرعاية ملفاً إلى سجلاتك.';
+    }
+    return description;
+  }
 }
 
 NotificationCategory _categoryFromType(String raw) {
@@ -481,6 +541,8 @@ class _NotificationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     const unreadRed = Color(0xFFD93636);
     final unread = !notification.read;
+    final title = notification.displayTitle(isArabic);
+    final description = notification.displayDescription(isArabic);
     final tint = unread
         ? Color.alphaBlend(
             notification.accent.withValues(alpha: palette.isDark ? 0.10 : 0.05),
@@ -549,7 +611,7 @@ class _NotificationCard extends StatelessWidget {
                                 children: [
                                   Expanded(
                                     child: Text(
-                                      notification.title,
+                                      title,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
@@ -580,12 +642,10 @@ class _NotificationCard extends StatelessWidget {
                                   ],
                                 ],
                               ),
-                              if (notification.description
-                                  .trim()
-                                  .isNotEmpty) ...[
+                              if (description.trim().isNotEmpty) ...[
                                 const SizedBox(height: 5),
                                 Text(
-                                  notification.description,
+                                  description,
                                   maxLines: 3,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(

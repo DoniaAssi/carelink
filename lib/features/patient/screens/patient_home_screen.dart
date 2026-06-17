@@ -28,11 +28,13 @@ import 'package:carelink/features/ai/care_intent_parser.dart';
 
 import 'package:carelink/shared/services/medical_record_service.dart';
 import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/features/patient/services/patient_care_summary.dart';
 import 'package:carelink/features/ai/provider_smart_match.dart';
 import 'booking_details_screen.dart';
 import 'booking_start_screen.dart';
 import 'messages_screen.dart';
+import 'chat_screen.dart';
 import 'package:carelink/features/notifications/notifications_screen.dart';
 import 'edit_profile_screen.dart';
 import 'provider_details_screen.dart';
@@ -79,6 +81,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   final TextEditingController _careSearchController = TextEditingController();
   int _unreadNotifications = 0;
   List<Map<String, dynamic>> _latestNotifications = [];
+  AppointmentModel? _ratingPromptAppointment;
+  bool _loadingRatingPrompt = false;
+  bool _ratingBannerHiddenThisSession = false;
+  bool _submittingPromptRating = false;
+  int _promptRatingStars = 0;
   late final AnimationController _aiAnimationController;
   final stt.SpeechToText _speech = stt.SpeechToText();
   Timer? _careSearchDebounce;
@@ -503,6 +510,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     _loadPatientProfile();
     _loadPatientLocation();
     _fetchUpcomingAppointment();
+    _loadRatingPrompt();
     _loadFavorites();
     _loadMedicalSummary();
     notificationCenter.addListener(_onNotificationsChanged);
@@ -846,6 +854,48 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     } finally {
       if (mounted) setState(() => _loadingUpcoming = false);
     }
+  }
+
+  bool _appointmentNeedsRating(AppointmentModel a) {
+    final status = a.status.trim().toLowerCase();
+    final rated = (a.patientRatingStars ?? 0) > 0;
+    return status == 'completed' && !rated;
+  }
+
+  Future<void> _loadRatingPrompt() async {
+    final id = widget.userId?.trim();
+    if (id == null || id.isEmpty) return;
+    if (mounted) setState(() => _loadingRatingPrompt = true);
+    try {
+      final raw = await ApiService().getAppointments(id, status: 'completed');
+      AppointmentModel? latest;
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final appointment = AppointmentModel.fromJson(
+          Map<String, dynamic>.from(item),
+        );
+        if (!_appointmentNeedsRating(appointment)) continue;
+        final currentDate = appointment.scheduledAt ?? DateTime(1970);
+        final latestDate = latest?.scheduledAt ?? DateTime(1970);
+        if (latest == null || currentDate.isAfter(latestDate)) {
+          latest = appointment;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _ratingPromptAppointment = latest;
+        _promptRatingStars = 0;
+        _ratingBannerHiddenThisSession = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _ratingPromptAppointment = null);
+    } finally {
+      if (mounted) setState(() => _loadingRatingPrompt = false);
+    }
+  }
+
+  void _hideRatingBannerTemporarily() {
+    setState(() => _ratingBannerHiddenThisSession = true);
   }
 
   String get _firstName {
@@ -1377,9 +1427,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => BookingStartScreen(
-          patientUserId: widget.userId ?? '',
-        ),
+        builder: (_) => BookingStartScreen(patientUserId: widget.userId ?? ''),
       ),
     );
   }
@@ -1393,12 +1441,28 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   }
 
   void _openMessages() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => MessagesScreen(userId: widget.userId ?? ''),
-      ),
-    );
+    final apt = _upcomingAppointment;
+    if (apt != null && apt.providerUserId.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            name: apt.providerName.isNotEmpty
+                ? apt.providerName
+                : 'Care Provider',
+            userId: widget.userId ?? '',
+            doctorId: apt.providerUserId,
+          ),
+        ),
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MessagesScreen(userId: widget.userId ?? ''),
+        ),
+      );
+    }
   }
 
   void _openProfile() {
@@ -1553,26 +1617,34 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
           child: Scaffold(
             backgroundColor: _p.pageBg,
             body: SafeArea(
-              child: RefreshIndicator(
-                color: AppColors.primary,
-                onRefresh: () async {
-                  await _fetchProviders();
-                  await _loadPatientProfile();
-                  await _fetchUpcomingAppointment();
-                  await _loadPatientLocation();
-                  await _loadFavorites();
-                  await _loadMedicalSummary();
-                },
-                child: SingleChildScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(
-                    parent: BouncingScrollPhysics(),
+              child: Stack(
+                children: [
+                  RefreshIndicator(
+                    color: AppColors.primary,
+                    onRefresh: () async {
+                      await _fetchProviders();
+                      await _loadPatientProfile();
+                      await _fetchUpcomingAppointment();
+                      await _loadRatingPrompt();
+                      await _loadPatientLocation();
+                      await _loadFavorites();
+                      await _loadMedicalSummary();
+                    },
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                      padding: const EdgeInsets.fromLTRB(0, 16, 0, 90),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: _composeSections(recommended),
+                      ),
+                    ),
                   ),
-                  padding: const EdgeInsets.fromLTRB(0, 16, 0, 90),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: _composeSections(recommended),
-                  ),
-                ),
+                  if (_ratingPromptAppointment != null &&
+                      !_ratingBannerHiddenThisSession)
+                    _buildRatingBannerOverlay(_ratingPromptAppointment!),
+                ],
               ),
             ),
           ),
@@ -1591,26 +1663,14 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
       child: child,
     );
 
-    final hasProvider = recommended.isNotEmpty;
     final sections = <Widget?>[
-      // 1. Compact header — identity first, no stat strip
       padded(_buildCompactHeader()),
-      // 2. AI recommendation — highest-value feature near top
-      if (hasProvider) padded(_buildAiProviderCard(recommended)),
-      // 3. Next appointment
+      padded(_buildRecommendationCarousel(recommended)),
       _buildNextAppointmentCard(),
-      // 4. Quick actions (Book / Find / Records / AI)
       padded(_buildQuickActions()),
-      // 5. Health insights — 2-3 lines, from ai tags
-      padded(_buildHealthInsightsSection()),
-      // 6. Latest medical record — 1 card only
+      _buildFavoritesSection(),
       if (_recentRecords.isNotEmpty) padded(_buildLatestRecordCard()),
-      // 7. Recommended specialties — compact chip row
-      if (_specialtyFromTags().isNotEmpty) padded(_buildSpecialtyChipsRow()),
-      // 8. Favorites
-      if (_myFavorites.isNotEmpty) _buildFavoritesSection(),
-      // 9. Notifications preview
-      if (_latestNotifications.isNotEmpty) _buildNotificationsPreview(),
+      padded(_buildHealthInsightsSection()),
     ];
 
     final visible = sections.whereType<Widget>().toList();
@@ -1620,6 +1680,408 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
       out.add(visible[i]);
     }
     return out;
+  }
+
+  String _ratingPromptDate(DateTime? date) {
+    if (date == null) return _homeText('Completed visit', 'زيارة مكتملة');
+    const enMonths = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    const arMonths = [
+      'يناير',
+      'فبراير',
+      'مارس',
+      'أبريل',
+      'مايو',
+      'يونيو',
+      'يوليو',
+      'أغسطس',
+      'سبتمبر',
+      'أكتوبر',
+      'نوفمبر',
+      'ديسمبر',
+    ];
+    final months = _ar ? arMonths : enMonths;
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
+  }
+
+  String _ratingServiceName(AppointmentModel a) {
+    final specialty = a.specialization.trim();
+    if (specialty.isNotEmpty) return specialty;
+    final role = a.providerRole.trim();
+    if (role.isNotEmpty) return role;
+    return _homeText('Care visit', 'زيارة رعاية');
+  }
+
+  Widget _buildRatingBannerOverlay(AppointmentModel appointment) {
+    final providerName = appointment.providerName.trim().isEmpty
+        ? _homeText('Care Provider', 'مقدم الرعاية')
+        : appointment.providerName.trim();
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.25;
+    return Positioned(
+      top: 10,
+      left: 12,
+      right: 12,
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+        offset: Offset.zero,
+        child: Material(
+          color: Colors.transparent,
+          elevation: 12,
+          borderRadius: BorderRadius.circular(22),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: maxHeight.clamp(154.0, 210.0),
+            ),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                color: _p.surface,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: 0.24),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(
+                      alpha: _p.isDark ? 0.32 : 0.14,
+                    ),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        clipBehavior: Clip.antiAlias,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                        ),
+                        child: profileAvatarOrPlaceholder(
+                          imageUrl: appointment.providerImageUrl,
+                          size: 42,
+                          placeholderColor: AppColors.primary,
+                          placeholderIcon: Icons.medical_services_outlined,
+                          iconSize: 21,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _homeText(
+                                'Your visit with $providerName is completed',
+                                'تم إكمال زيارتك مع $providerName',
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _p.inkDark,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _homeText(
+                                'How was your experience?',
+                                'كيف كانت تجربتك؟',
+                              ),
+                              style: TextStyle(
+                                color: _p.inkMuted,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: _homeText('Later', 'لاحقًا'),
+                        onPressed: _hideRatingBannerTemporarily,
+                        icon: Icon(
+                          Icons.close_rounded,
+                          color: _p.inkMuted,
+                          size: 20,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(5, (index) {
+                        final value = index + 1;
+                        final selected = value <= _promptRatingStars;
+                        return IconButton(
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 32,
+                          ),
+                          onPressed: _submittingPromptRating
+                              ? null
+                              : () =>
+                                    setState(() => _promptRatingStars = value),
+                          icon: TweenAnimationBuilder<double>(
+                            tween: Tween(begin: 0, end: selected ? 1 : 0),
+                            duration: const Duration(milliseconds: 210),
+                            curve: Curves.easeOutBack,
+                            builder: (context, t, child) => Transform.scale(
+                              scale: 1 + (0.18 * t),
+                              child: child,
+                            ),
+                            child: Icon(
+                              selected
+                                  ? Icons.star_rounded
+                                  : Icons.star_border_rounded,
+                              color: const Color(0xFFFFB020),
+                              size: 29,
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _submittingPromptRating
+                              ? null
+                              : _hideRatingBannerTemporarily,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(color: AppColors.primary),
+                            minimumSize: const Size.fromHeight(38),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(_homeText('Later', 'لاحقًا')),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: PatientPrimaryButton(
+                          height: 38,
+                          icon: Icons.send_rounded,
+                          isLoading: _submittingPromptRating,
+                          label: _homeText('Submit Rating', 'إرسال التقييم'),
+                          onPressed:
+                              _promptRatingStars < 1 || _submittingPromptRating
+                              ? null
+                              : () => _submitPromptRating(
+                                  appointment,
+                                  _promptRatingStars,
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showRatingPromptSheet(AppointmentModel appointment) async {
+    if (_submittingPromptRating) return;
+    setState(() => _promptRatingStars = 0);
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        var localStars = _promptRatingStars;
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final p = PatientHomePalette.of(context);
+            return Container(
+              margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+              decoration: BoxDecoration(
+                color: p.surface,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: p.stroke),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(
+                      alpha: p.isDark ? 0.30 : 0.12,
+                    ),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_circle_rounded,
+                      color: AppColors.primary,
+                      size: 34,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _homeText(
+                      'Visit completed successfully',
+                      'تم إكمال الزيارة بنجاح',
+                    ),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: p.inkDark,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _homeText('How was your experience?', 'كيف كانت تجربتك؟'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: p.inkMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(5, (index) {
+                        final value = index + 1;
+                        final selected = value <= localStars;
+                        return IconButton(
+                          onPressed: _submittingPromptRating
+                              ? null
+                              : () {
+                                  setState(() => _promptRatingStars = value);
+                                  setSheetState(() => localStars = value);
+                                },
+                          icon: TweenAnimationBuilder<double>(
+                            tween: Tween(begin: 0, end: selected ? 1 : 0),
+                            duration: const Duration(milliseconds: 210),
+                            curve: Curves.easeOutBack,
+                            builder: (context, t, child) => Transform.scale(
+                              scale: 1 + (0.18 * t),
+                              child: child,
+                            ),
+                            child: Icon(
+                              selected
+                                  ? Icons.star_rounded
+                                  : Icons.star_border_rounded,
+                              color: const Color(0xFFFFB020),
+                              size: 34,
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  PatientPrimaryButton(
+                    height: 50,
+                    icon: Icons.send_rounded,
+                    isLoading: _submittingPromptRating,
+                    label: _homeText('Submit Rating', 'إرسال التقييم'),
+                    onPressed: localStars < 1 || _submittingPromptRating
+                        ? null
+                        : () async {
+                            final navigator = Navigator.of(sheetContext);
+                            await _submitPromptRating(appointment, localStars);
+                            if (mounted && navigator.canPop()) {
+                              navigator.pop();
+                            }
+                          },
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _submitPromptRating(
+    AppointmentModel appointment,
+    int stars,
+  ) async {
+    final id = widget.userId?.trim();
+    if (id == null || id.isEmpty) return;
+    setState(() => _submittingPromptRating = true);
+    try {
+      await ApiService().rateCompletedVisit(
+        appointmentId: appointment.appointmentId,
+        patientUserId: id,
+        stars: stars,
+      );
+      if (!mounted) return;
+      setState(() {
+        _ratingPromptAppointment = null;
+        _promptRatingStars = 0;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _homeText(
+              'Thanks! Your rating was submitted.',
+              'شكراً! تم إرسال تقييمك.',
+            ),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      _loadRatingPrompt();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _submittingPromptRating = false);
+    }
   }
 
   // ────────────────── SECTION 1 · PROFILE HEADER ─────────────────────
@@ -1755,6 +2217,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              _heroMessages(),
               const SizedBox(width: 8),
               _heroBell(),
             ],
@@ -1982,6 +2446,34 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     );
   }
 
+  Widget _heroMessages() {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MessagesScreen(userId: widget.userId ?? ''),
+          ),
+        );
+      },
+      customBorder: const CircleBorder(),
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: _p.surface,
+          shape: BoxShape.circle,
+          border: Border.all(color: _p.stroke),
+        ),
+        child: Icon(
+          Icons.chat_bubble_outline_rounded,
+          color: _p.inkDark,
+          size: 22,
+        ),
+      ),
+    );
+  }
+
   Widget _buildHeroChip(IconData icon, String label, VoidCallback onTap) {
     return Material(
       color: Colors.transparent,
@@ -2166,7 +2658,6 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   // ── 1 · COMPACT HEADER ──────────────────────────────────────────────
   Widget _buildCompactHeader() {
     final imageUrl = profileImageUrlFromMap(_patientProfile);
-    final status = _healthStatus();
     final greeting = _dynamicGreeting;
 
     return Row(
@@ -2241,31 +2732,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
             ],
           ),
         ),
-        // Health status badge
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-          decoration: BoxDecoration(
-            color: status.color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: status.color.withValues(alpha: 0.28)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(status.icon, color: status.color, size: 12),
-              const SizedBox(width: 4),
-              Text(
-                status.label,
-                style: TextStyle(
-                  color: status.color,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
+        // Messages icon
+        _heroMessages(),
+        const SizedBox(width: 4),
         // Notification bell
         _heroBell(),
         const SizedBox(width: 4),
@@ -2309,6 +2778,390 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
         ),
       ),
     );
+  }
+
+  Widget _buildRecommendationCarousel(List<ProviderModel> recommended) {
+    final cards = <Widget>[
+      if (recommended.isNotEmpty)
+        _providerRecommendationCarouselCard(
+          provider: recommended.first,
+          title: _homeText('Recommended provider', 'مقدم رعاية موصى به'),
+          actionLabel: _homeText('View details', 'عرض التفاصيل'),
+          onTap: () => _bookProvider(recommended.first),
+        ),
+      if (_quickServices.isNotEmpty)
+        _recommendationCarouselCard(
+          icon: Icons.medical_services_outlined,
+          title: _homeText('Recommended service', 'خدمة مقترحة'),
+          name: _homeText(_quickServices.first.serviceType, 'رعاية منزلية'),
+          reason: _homeText(
+            'Start a booking with available CareLink providers',
+            'ابدأ حجزاً مع مقدمي رعاية متاحين',
+          ),
+          actionLabel: _homeText('View details', 'عرض التفاصيل'),
+          onTap: () => _openQuickServiceBooking(_quickServices.first),
+        ),
+      _recommendationCarouselCard(
+        icon: Icons.auto_awesome_rounded,
+        title: _homeText(
+          'AI recommended care',
+          'رعاية موصى بها بالذكاء الاصطناعي',
+        ),
+        name: _homeText('Smart care matching', 'مطابقة الرعاية الذكية'),
+        reason: _homeText(
+          'Describe your case and get a suitable provider',
+          'اكتب حالتك واحصل على مقدم مناسب',
+        ),
+        actionLabel: _homeText('View details', 'عرض التفاصيل'),
+        onTap: _openAiAssistant,
+      ),
+    ];
+
+    return SizedBox(
+      height: 206,
+      child: PageView.builder(
+        controller: PageController(viewportFraction: 0.92),
+        padEnds: false,
+        itemCount: cards.length,
+        itemBuilder: (context, index) => Padding(
+          padding: EdgeInsetsDirectional.only(
+            end: index == cards.length - 1 ? 0 : 10,
+          ),
+          child: cards[index],
+        ),
+      ),
+    );
+  }
+
+  String _cleanHomeDisplay(Object? value) {
+    final text = value?.toString().trim() ?? '';
+    final normalized = text.toLowerCase();
+    const invalid = {
+      '',
+      'null',
+      'undefined',
+      'user',
+      'carid',
+      'careid',
+      'unknown',
+      'n/a',
+      '-',
+    };
+    return invalid.contains(normalized) ? '' : text;
+  }
+
+  Widget _providerRecommendationCarouselCard({
+    required ProviderModel provider,
+    required String title,
+    required String actionLabel,
+    required VoidCallback onTap,
+  }) {
+    final name = _cleanHomeDisplay(provider.fullName).isEmpty
+        ? _homeText('Care Provider', 'مقدم رعاية')
+        : _cleanHomeDisplay(provider.fullName);
+    final service = _cleanHomeDisplay(provider.serviceType).isNotEmpty
+        ? _cleanHomeDisplay(provider.serviceType)
+        : _cleanHomeDisplay(provider.specialization).isNotEmpty
+        ? _cleanHomeDisplay(provider.specialization)
+        : _shortProviderReason(provider);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _p.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: _p.isDark ? 0.12 : 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 100,
+            height: 100,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.primary.withValues(alpha: 0.10),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.22),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(
+                    alpha: _p.isDark ? 0.16 : 0.10,
+                  ),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: profileAvatarOrPlaceholder(
+                imageUrl: provider.profileImageUrl,
+                size: 94,
+                placeholderColor: AppColors.primary,
+                placeholderIcon: Icons.medical_services_outlined,
+                iconSize: 38,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.16),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.verified_user_outlined,
+                          color: AppColors.primary,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _p.inkDark,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  service,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _p.inkMuted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.star_rounded,
+                      color: Color(0xFFFFB020),
+                      size: 14,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      provider.overallRating.toStringAsFixed(1),
+                      style: TextStyle(
+                        color: _p.inkDark,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF21A35B),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _homeText('Available today', 'متاح اليوم'),
+                      style: const TextStyle(
+                        color: Color(0xFF21A35B),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 9),
+                SizedBox(
+                  height: 34,
+                  child: FilledButton(
+                    onPressed: onTap,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(122, 34),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      actionLabel,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _recommendationCarouselCard({
+    required IconData icon,
+    required String title,
+    required String name,
+    required String reason,
+    required String actionLabel,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: _p.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: _p.isDark ? 0.12 : 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: AppColors.primary, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: _p.inkDark,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            reason,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: _p.inkMuted,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FilledButton(
+              onPressed: onTap,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(116, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                actionLabel,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _shortProviderReason(ProviderModel provider) {
+    final rec = _backendRecommendationFor(provider);
+    final reasons = _backendMedicalReasons(rec).map(_friendlyReason).toList();
+    if (reasons.isNotEmpty) return reasons.first;
+    final specialty = _cleanHomeDisplay(provider.specialization);
+    if (specialty.isNotEmpty) {
+      return _homeText('Matches your care needs', 'يناسب احتياجاتك الصحية');
+    }
+    return _homeText('Available CareLink provider', 'مقدم رعاية متاح');
   }
 
   // ── 2 · AI PROVIDER CARD ────────────────────────────────────────────
@@ -2663,16 +3516,15 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                 // ── Live appointment
                 : Row(
                     children: [
-                      // Date block
                       Container(
-                        width: 52,
+                        width: 56,
                         padding: const EdgeInsets.symmetric(
-                          vertical: 8,
-                          horizontal: 4,
+                          vertical: 9,
+                          horizontal: 5,
                         ),
                         decoration: BoxDecoration(
                           color: AppColors.primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(13),
                           border: Border.all(
                             color: AppColors.primary.withValues(alpha: 0.15),
                           ),
@@ -2686,16 +3538,16 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: AppColors.primary,
-                                fontSize: 9,
+                                fontSize: 9.5,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 3),
                             Text(
                               day,
                               style: TextStyle(
                                 color: _p.inkDark,
-                                fontSize: 20,
+                                fontSize: 21,
                                 fontWeight: FontWeight.w900,
                                 height: 1,
                               ),
@@ -2714,10 +3566,10 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                         ),
                       ),
                       const SizedBox(width: 12),
-                      // Provider info
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               name,
@@ -2725,63 +3577,46 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: _p.inkDark,
-                                fontSize: 14,
+                                fontSize: 14.5,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 3),
                             Text(
                               specialty,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: _p.inkMuted,
-                                fontSize: 11.5,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Row(
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 5,
                               children: [
-                                Icon(
+                                _compactAppointmentMeta(
                                   Icons.access_time_rounded,
-                                  size: 12,
-                                  color: AppColors.primary,
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
                                   time,
-                                  style: const TextStyle(
-                                    color: AppColors.primary,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                                  AppColors.primary,
                                 ),
-                                const SizedBox(width: 8),
-                                Icon(
+                                _compactAppointmentMeta(
                                   isHome
                                       ? Icons.home_outlined
                                       : Icons.videocam_outlined,
-                                  size: 12,
-                                  color: _p.inkMuted,
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
                                   isHome
                                       ? _homeText('Home', 'منزلية')
                                       : _homeText('Remote', 'عن بعد'),
-                                  style: TextStyle(
-                                    color: _p.inkMuted,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                  _p.inkMuted,
                                 ),
                               ],
                             ),
                           ],
                         ),
                       ),
-                      // Status + actions
+                      const SizedBox(width: 8),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         mainAxisSize: MainAxisSize.min,
@@ -2793,10 +3628,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                             ),
                             decoration: BoxDecoration(
                               color: statusColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
                               statusText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: statusColor,
                                 fontSize: 9.5,
@@ -2804,7 +3641,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                               ),
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 9),
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -2829,6 +3666,24 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _compactAppointmentMeta(IconData icon, String label, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12.5, color: color),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
     );
   }
 
@@ -2923,66 +3778,77 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
 
   // ── 5 · HEALTH INSIGHTS (2-3 lines max) ─────────────────────────────
   Widget _buildHealthInsightsSection() {
-    final lines = _healthInsightLines().take(3).toList();
-    if (lines.isEmpty) {
-      return _buildSimplePrompt(
-        icon: Icons.upload_file_outlined,
-        text: _homeText(
-          'Upload a medical report to receive personalised health insights.',
-          'ارفع تقريراً طبياً للحصول على رؤى صحية مخصصة.',
-        ),
-        actionLabel: _homeText('Upload Record', 'رفع سجل'),
-        onAction: _openMedicalRecords,
-      );
-    }
+    final insights = <({IconData icon, String label})>[
+      (
+        icon: Icons.bloodtype_outlined,
+        label: _homeText('Diabetes follow-up', 'متابعة السكري'),
+      ),
+      (
+        icon: Icons.monitor_heart_outlined,
+        label: _homeText('Blood pressure care', 'إدارة ضغط الدم'),
+      ),
+      (
+        icon: Icons.favorite_border_rounded,
+        label: _homeText('Cholesterol', 'الكوليسترول'),
+      ),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionHeader(title: _homeText('Health Insights', 'رؤى صحية')),
         const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          decoration: BoxDecoration(
-            color: _p.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _p.stroke),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: lines.map((line) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 3),
-                      child: Icon(
-                        Icons.check_circle,
-                        size: 13,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        line,
-                        style: TextStyle(
-                          color: _p.inkDark,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          height: 1.3,
-                        ),
-                      ),
-                    ),
-                  ],
+        Row(
+          children: [
+            for (var i = 0; i < insights.length; i++) ...[
+              Expanded(
+                child: _healthInsightChip(
+                  icon: insights[i].icon,
+                  label: insights[i].label,
                 ),
-              );
-            }).toList(),
-          ),
+              ),
+              if (i != insights.length - 1) const SizedBox(width: 8),
+            ],
+          ],
         ),
       ],
+    );
+  }
+
+  Widget _healthInsightChip({required IconData icon, required String label}) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 78),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: _p.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.14)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: _p.isDark ? 0.10 : 0.035),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppColors.primary, size: 20),
+          const SizedBox(height: 14),
+          Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: _p.inkDark,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w900,
+              height: 1.15,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3403,7 +4269,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   Widget _buildQuickServiceCard(_HomeQuickService service) {
     return ConstrainedBox(
       constraints: const BoxConstraints(minWidth: 150, maxWidth: 200),
-      child: InkWell(
+      child: PatientPressable(
         onTap: () => _openQuickServiceBooking(service),
         borderRadius: BorderRadius.circular(14),
         child: Container(
@@ -4385,7 +5251,6 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
 
   // ─────────────── SECTION 9 · FAVORITES (header + reuse) ─────────────
   Widget _buildFavoritesSection() {
-    if (_myFavorites.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -4407,7 +5272,49 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
           ),
         ),
         const SizedBox(height: 10),
-        _buildFavoritesRow(),
+        if (_myFavorites.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+              decoration: BoxDecoration(
+                color: _p.surface,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: _p.stroke),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.favorite_border_rounded,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _homeText('No favorites yet', 'لا يوجد مفضلون بعد'),
+                      style: TextStyle(
+                        color: _p.inkMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          _buildFavoritesRow(),
       ],
     );
   }
@@ -4415,7 +5322,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   // ──────────────── SECTION 10 · NOTIFICATIONS PREVIEW ────────────────
   Widget _buildNotificationsPreview() {
     if (_latestNotifications.isEmpty) return const SizedBox.shrink();
-    final items = _latestNotifications.take(3).toList();
+    final items = _latestNotifications.take(2).toList();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -4623,7 +5530,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                   decoration: InputDecoration(
                     isDense: true,
                     hintText:
-                        'e.g. diabetes follow-up, ط·ط¨ظٹط¨ ط£ط·ظپط§ظ„, cardiology, available now',
+                        'e.g. diabetes follow-up, pediatrician, cardiology, available now',
                     hintStyle: TextStyle(color: _p.inkMuted),
                     filled: true,
                     fillColor: _p.filterSurface,
@@ -5905,7 +6812,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                               ),
                             ),
                             child: Text(
-                              'ظ…ظˆطµظ‰ ط¨ظ‡',
+                              _homeText('Recommended', 'موصى به'),
                               style: TextStyle(
                                 fontSize: 9,
                                 fontWeight: FontWeight.w800,
@@ -6111,7 +7018,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     );
   }
 
-  /// ط£ظٹظ‚ظˆظ†ط© طھط¨ظˆظٹط¨ ط§ظ„ظ…ظ„ظپ: طµظˆط±ط© ط§ظ„ظ…ط±ظٹط¶ ط¥ظ† ظˆظڈط¬ط¯طھطŒ ظˆط¥ظ„ط§ ط£ظٹظ‚ظˆظ†ط© ط´ط®طµ.
+  /// Profile tab icon: patient photo when available, otherwise a person icon.
   Widget _buildProfileTabIcon() {
     const size = 24.0;
     if (isProfileLoading) {

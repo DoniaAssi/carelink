@@ -36,6 +36,7 @@ const chatTyping = new Map();
 let chatSchemaPromise;
 
 const BOOKING_STATUSES = [
+  'pending_provider_approval',
   'pending',
   'pending_payment',
   'payment_pending',
@@ -1026,6 +1027,37 @@ router.get('/medical-record-lookups/allergies', async (_req, res) => {
   }
 });
 
+router.get('/appointments/check-duplicate', async (req, res) => {
+  try {
+    const { patientId, providerId, serviceType, date, time } = req.query;
+    if (!patientId || !providerId || !date || !time) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    const scheduledAt = normalizeDateTime(date, time);
+    if (!scheduledAt) {
+      return res.status(400).json({ error: 'Invalid date or time' });
+    }
+
+    const [rows] = await db.query(
+      `SELECT requestId
+       FROM servicerequest
+       WHERE patientUserId = ?
+         AND providerUserId = ?
+         AND LOWER(TRIM(serviceType)) = LOWER(TRIM(?))
+         AND scheduledAt = ?
+         AND LOWER(TRIM(CAST(status AS CHAR(64)))) IN
+           ('pending_provider_approval', 'pending', 'pending_payment', 'payment_pending', 'confirmed')
+       LIMIT 1`,
+      [patientId, providerId, (serviceType || 'appointment').toString(), scheduledAt]
+    );
+
+    res.json({ exists: rows.length > 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/appointments/upcoming/:patientUserId', async (req, res) => {
   const { patientUserId } = req.params;
 
@@ -1078,7 +1110,8 @@ router.get('/appointments/upcoming/:patientUserId', async (req, res) => {
        LEFT JOIN user u ON sr.providerUserId = u.userId
        LEFT JOIN careprovider c ON u.userId = c.userId
        WHERE TRIM(sr.patientUserId) = TRIM(?)
-         AND ${normStatusSql} IN ('pending', 'pending_payment', 'payment_pending', 'confirmed')
+         AND ${normStatusSql} IN
+           ('pending_provider_approval', 'pending', 'pending_payment', 'payment_pending', 'confirmed')
        ORDER BY sr.scheduledAt ASC`,
       [patientUserId]
     );
@@ -1231,7 +1264,8 @@ router.get('/appointments/:patientUserId', async (req, res) => {
        ${ratingJoin}
        LEFT JOIN user u ON sr.providerUserId = u.userId
        LEFT JOIN careprovider c ON u.userId = c.userId
-       WHERE TRIM(sr.patientUserId) = TRIM(?)${whereStatus}
+       WHERE TRIM(sr.patientUserId) = TRIM(?)
+         AND ${normStatusSql} <> 'draft'${whereStatus}
        ORDER BY COALESCE(sr.completedAt, sr.scheduledAt) DESC, sr.scheduledAt DESC`,
       params
     );
@@ -1383,10 +1417,43 @@ router.post('/appointments', async (req, res) => {
   const finalDate = appointmentDate || date;
   const finalTime = appointmentTime || time;
 
-  if (!patientUserId || !finalDoctorUserId || !finalDate || !finalTime) {
+  if (!patientUserId || patientUserId === 'guest' || !finalDoctorUserId || !finalDate || !finalTime) {
     return res.status(400).json({
       error: 'patientUserId, doctor/provider userId, date and time are required'
     });
+  }
+
+  try {
+    const [patientUserCheck] = await db.query(
+      'SELECT userId, role FROM user WHERE userId = ?',
+      [patientUserId]
+    );
+    if (patientUserCheck.length === 0) {
+      return res.status(400).json({
+        error: 'Invalid patientUserId. User does not exist.'
+      });
+    }
+    if ((patientUserCheck[0].role || '').toString().trim().toLowerCase() !== 'patient') {
+      return res.status(403).json({
+        error: 'The booking patientUserId must belong to a patient account.'
+      });
+    }
+
+    const [providerUserCheck] = await db.query(
+      `SELECT u.userId
+       FROM user u
+       INNER JOIN careprovider c ON c.userId = u.userId
+       WHERE u.userId = ?
+       LIMIT 1`,
+      [finalDoctorUserId]
+    );
+    if (providerUserCheck.length === 0) {
+      return res.status(400).json({
+        error: 'Invalid providerUserId. Care provider does not exist.'
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 
   const scheduledAt = normalizeDateTime(finalDate, finalTime);
@@ -1428,7 +1495,7 @@ router.post('/appointments', async (req, res) => {
        WHERE providerUserId = ?
          AND scheduledAt = ?
          AND LOWER(TRIM(CAST(status AS CHAR(64)))) IN
-           ('pending', 'pending_payment', 'payment_pending', 'confirmed')
+           ('confirmed', 'accepted', 'approved', 'scheduled', 'in_progress')
        LIMIT 1`,
       [finalDoctorUserId, scheduledAt]
     );
@@ -1445,7 +1512,8 @@ router.post('/appointments', async (req, res) => {
          AND providerUserId = ?
          AND serviceType = ?
          AND scheduledAt = ?
-         AND status IN ('pending', 'pending_payment', 'payment_pending', 'confirmed')`,
+         AND LOWER(TRIM(CAST(status AS CHAR(64)))) IN
+           ('pending_provider_approval', 'pending', 'pending_payment', 'payment_pending', 'confirmed')`,
       [patientUserId, finalDoctorUserId, finalServiceType, scheduledAt]
     );
 
@@ -1462,7 +1530,8 @@ router.post('/appointments', async (req, res) => {
       locationNote ||
       ''
     ).toString().trim();
-    const finalStatus = 'pending';
+    const requestedStatus = (status || '').toString().trim().toLowerCase();
+    const finalStatus = ['draft', 'pending_provider_approval'].includes(requestedStatus) ? requestedStatus : 'pending';
     const parsedVisitLat = visitLatitude == null || visitLatitude === ''
       ? null
       : Number(visitLatitude);
@@ -1535,14 +1604,14 @@ router.post('/appointments', async (req, res) => {
       columns.push('urgencyLevel');
       values.push(normalizedUrgency);
     }
-
     await db.execute(
       `INSERT INTO servicerequest (${columns.join(', ')})
        VALUES (${columns.map(() => '?').join(', ')})`,
       values
     );
 
-    try {
+    if (finalStatus !== 'draft') {
+      try {
       const [patientRows] = await db.query(
         'SELECT fullName FROM user WHERE userId = ?',
         [patientUserId]
@@ -1589,6 +1658,7 @@ router.post('/appointments', async (req, res) => {
     } catch (_) {
       // usernotification table may not be migrated yet
     }
+    }
 
     res.status(201).json({
       message: 'Appointment created successfully',
@@ -1597,6 +1667,217 @@ router.post('/appointments', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+
+// Final booking transition. New clients submit a paid hidden draft. The
+// temporary `pending` allowance recovers rows created by older deployments
+// that ignored the requested draft status before opening checkout.
+router.post('/appointments/:appointmentId/submit', async (req, res) => {
+  const { appointmentId } = req.params;
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.query(
+      `SELECT sr.patientUserId, sr.providerUserId, sr.scheduledAt, sr.serviceType,
+              sr.status,
+              p.paymentId, p.paymentStatus, p.transactionId
+       FROM servicerequest sr
+       LEFT JOIN payment p ON p.requestId = sr.requestId
+       WHERE sr.requestId = ?
+       FOR UPDATE`,
+      [appointmentId]
+    );
+    if (rows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Draft appointment not found' });
+    }
+
+    const appt = rows[0];
+    const currentStatus = (appt.status || '').toString().trim().toLowerCase();
+    if (
+      currentStatus === 'pending_provider_approval' &&
+      (appt.paymentStatus || '').toString().trim().toLowerCase() === 'paid'
+    ) {
+      await connection.commit();
+      return res.json({
+        success: true,
+        alreadySubmitted: true,
+        appointmentId,
+        status: 'pending_provider_approval',
+        paymentId: appt.paymentId,
+        paymentReference: appt.transactionId || appt.paymentId
+      });
+    }
+    const canSubmitPaidBooking =
+      currentStatus === 'draft' || currentStatus === 'pending';
+    if (!canSubmitPaidBooking) {
+      await connection.rollback();
+      return res.status(409).json({
+        error: 'Only a paid booking draft can be submitted.'
+      });
+    }
+    if ((appt.paymentStatus || '').toString().trim().toLowerCase() !== 'paid') {
+      await connection.rollback();
+      return res.status(409).json({
+        error: 'Payment must be completed before submitting the booking request.'
+      });
+    }
+
+    const [duplicates] = await connection.query(
+      `SELECT requestId
+       FROM servicerequest
+       WHERE requestId <> ?
+         AND patientUserId = ?
+         AND providerUserId = ?
+         AND LOWER(TRIM(serviceType)) = LOWER(TRIM(?))
+         AND scheduledAt = ?
+         AND LOWER(TRIM(CAST(status AS CHAR(64)))) IN
+           ('pending_provider_approval', 'pending', 'pending_payment', 'payment_pending', 'confirmed')
+       LIMIT 1
+       FOR UPDATE`,
+      [
+        appointmentId,
+        appt.patientUserId,
+        appt.providerUserId,
+        appt.serviceType,
+        appt.scheduledAt
+      ]
+    );
+    if (duplicates.length > 0) {
+      await connection.rollback();
+      return res.status(409).json({
+        error: 'A booking request already exists for this patient and appointment.'
+      });
+    }
+
+    const [providerConflicts] = await connection.query(
+      `SELECT requestId
+       FROM servicerequest
+       WHERE requestId <> ?
+         AND providerUserId = ?
+         AND scheduledAt = ?
+         AND LOWER(TRIM(CAST(status AS CHAR(64)))) IN
+           ('confirmed', 'accepted', 'approved', 'scheduled', 'in_progress')
+       LIMIT 1
+       FOR UPDATE`,
+      [appointmentId, appt.providerUserId, appt.scheduledAt]
+    );
+    if (providerConflicts.length > 0) {
+      await connection.rollback();
+      return res.status(409).json({
+        error: 'This appointment time is no longer available.'
+      });
+    }
+
+    await connection.execute(
+      `UPDATE servicerequest SET status = 'pending_provider_approval' WHERE requestId = ?`,
+      [appointmentId]
+    );
+    await connection.commit();
+
+    try {
+      const [patientRows] = await db.query(
+        'SELECT fullName FROM user WHERE userId = ?',
+        [appt.patientUserId]
+      );
+      const patientName = patientRows.length > 0
+        ? patientRows[0].fullName.toString().trim()
+        : 'المريض';
+
+      const appointmentText = appt.scheduledAt;
+      const providerPatientName =
+        patientRows.length > 0 && patientRows[0].fullName.toString().trim()
+          ? patientRows[0].fullName.toString().trim()
+          : 'Patient';
+
+      const patientBookingTitle = 'Booking request sent';
+      const patientBookingBody =
+        `Your booking request for ${appointmentText} was sent to the care provider.`;
+      const providerBookingTitle = 'New booking request';
+      const providerBookingBody =
+        `${providerPatientName} booked ${appt.serviceType} at ${appointmentText}. Review service requests to accept or decline.`;
+
+      await insertNotification({
+        userId: appt.patientUserId,
+        type: 'appointment',
+        title: 'تم إرسال طلب الحجز',
+        body: `طلبك للحجز في ${appointmentText} تم إرساله، وسيتابع مقدم الخدمة الرد عليه.`,
+        relatedRequestId: appointmentId
+      });
+      await insertNotification({
+        userId: appt.providerUserId,
+        type: 'appointment',
+        title: 'طلب موعد جديد',
+        body: `المريض ${patientName} حجز موعدًا في ${appointmentText}. راجع قسم طلبات الخدمة لتأكيد أو رفض الموعد.`,
+        relatedRequestId: appointmentId
+      });
+      await db.execute(
+        `UPDATE usernotification SET title = ?, body = ?
+         WHERE relatedRequestId = ? AND userId = ?`,
+        [patientBookingTitle, patientBookingBody, appointmentId, appt.patientUserId]
+      );
+      await db.execute(
+        `UPDATE usernotification SET title = ?, body = ?
+         WHERE relatedRequestId = ? AND userId = ?`,
+        [providerBookingTitle, providerBookingBody, appointmentId, appt.providerUserId]
+      );
+    } catch (_) {}
+
+    res.json({
+      success: true,
+      appointmentId,
+      status: 'pending_provider_approval',
+      paymentId: appt.paymentId,
+      paymentReference: appt.transactionId || appt.paymentId
+    });
+  } catch (err) {
+    try {
+      await connection.rollback();
+    } catch (_) {}
+    res.status(500).json({ error: err.message });
+  } finally {
+    connection.release();
+  }
+});
+
+router.delete('/appointments/:appointmentId', async (req, res) => {
+  const { appointmentId } = req.params;
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.query(
+      `SELECT sr.requestId, p.paymentStatus
+       FROM servicerequest sr
+       LEFT JOIN payment p ON p.requestId = sr.requestId
+       WHERE sr.requestId = ? AND sr.status = 'draft'
+       FOR UPDATE`,
+      [appointmentId]
+    );
+    if (rows.length > 0) {
+      const paid =
+        (rows[0].paymentStatus || '').toString().trim().toLowerCase() === 'paid';
+      if (!paid) {
+        await connection.execute(
+          'DELETE FROM payment WHERE requestId = ?',
+          [appointmentId]
+        );
+        await connection.execute(
+          `DELETE FROM servicerequest WHERE requestId = ? AND status = 'draft'`,
+          [appointmentId]
+        );
+      }
+    }
+    await connection.commit();
+    res.json({ success: true });
+  } catch (err) {
+    try {
+      await connection.rollback();
+    } catch (_) {}
+    res.status(500).json({ error: err.message });
+  } finally {
+    connection.release();
   }
 });
 

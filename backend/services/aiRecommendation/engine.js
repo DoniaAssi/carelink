@@ -442,6 +442,18 @@ function recommendProviders(patient, request, providers, top = 12) {
   const out = [];
 
   for (const provider of providers) {
+    const price = Number(provider.consultationFee);
+    if (
+      provider.isActive !== true ||
+      provider.isProfileComplete !== true ||
+      !provider.serviceType?.trim() ||
+      !Number.isFinite(price) ||
+      price <= 0 ||
+      !provider.isAvailable ||
+      !provider.availableSlots?.length
+    ) {
+      continue;
+    }
     const pLat = provider.locationLatitude ?? plat;
     const pLng = provider.locationLongitude ?? plng;
     const dist = calculateDistance(patientPoint, { lat: pLat, lng: pLng });

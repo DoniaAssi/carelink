@@ -554,6 +554,11 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     final currentUser = User.fromJson(userMap);
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('session_user_id', userId);
+    await prefs.setString('session_display_name', userName);
+
     _showMessage(
       successMessage ?? context.tr('auth.loginSuccessful'),
       color: Colors.green.shade700,

@@ -1054,6 +1054,64 @@ class ApiService {
     throw Exception(_extractErrorMessage(response, 'Failed to create booking'));
   }
 
+  Future<bool> checkDuplicateBooking({
+    required String patientId,
+    required String providerId,
+    required String serviceType,
+    required String date,
+    required String time,
+  }) async {
+    final queryParams = {
+      'patientId': patientId,
+      'providerId': providerId,
+      'serviceType': serviceType,
+      'date': date,
+      'time': time,
+    };
+    final uri = _endpoint('/patient/appointments/check-duplicate').replace(queryParameters: queryParams);
+    final response = await _sendRequest(
+      http.get(uri, headers: _jsonHeaders),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final data = jsonDecode(response.body);
+      if (data is Map<String, dynamic>) {
+        final exists = data['exists'];
+        if (exists is bool) return exists;
+        if (exists is String) return exists.toLowerCase() == 'true';
+        if (exists is int) return exists == 1;
+      }
+      return false;
+    }
+    return false;
+  }
+
+  Future<void> submitBooking(String appointmentId) async {
+    final response = await _sendRequest(
+      http.post(
+        _endpoint('/patient/appointments/$appointmentId/submit'),
+        headers: _jsonHeaders,
+      ),
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return;
+    }
+    throw Exception(_extractErrorMessage(response, 'Failed to submit booking'));
+  }
+
+  Future<void> deleteBooking(String appointmentId) async {
+    final response = await _sendRequest(
+      http.delete(
+        _endpoint('/patient/appointments/$appointmentId'),
+        headers: _jsonHeaders,
+      ),
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return;
+    }
+    throw Exception(_extractErrorMessage(response, 'Failed to delete booking'));
+  }
+
   Future<List<dynamic>> getAppointments(
     String patientUserId, {
     String? status,
@@ -1333,9 +1391,10 @@ class ApiService {
     throw Exception(_extractErrorMessage(response, 'Failed to load payments'));
   }
 
-  Future<List<dynamic>> getProviders() async {
+  Future<List<dynamic>> getProviders({bool realAvailability = false}) async {
+    final suffix = realAvailability ? '?realAvailability=1' : '';
     final response = await _sendRequest(
-      http.get(_endpoint('/providers'), headers: _jsonHeaders),
+      http.get(_endpoint('/providers$suffix'), headers: _jsonHeaders),
     );
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -1382,9 +1441,16 @@ class ApiService {
     );
   }
 
-  Future<Map<String, dynamic>> getProviderById(String userId) async {
+  Future<Map<String, dynamic>> getProviderById(
+    String userId, {
+    bool realAvailability = false,
+  }) async {
+    final suffix = realAvailability ? '?realAvailability=1' : '';
     final response = await _sendRequest(
-      http.get(_endpoint('/providers/provider/$userId'), headers: _jsonHeaders),
+      http.get(
+        _endpoint('/providers/provider/$userId$suffix'),
+        headers: _jsonHeaders,
+      ),
     );
 
     if (response.statusCode >= 200 && response.statusCode < 300) {

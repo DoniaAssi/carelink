@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/features/patient/payment/booking_payment_flow.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
-import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/features/patient/widgets/booking_provider_summary.dart';
@@ -20,8 +20,22 @@ class BookingReviewScreen extends StatefulWidget {
 }
 
 class _BookingReviewScreenState extends State<BookingReviewScreen> {
+  final TextEditingController _reasonController = TextEditingController();
   bool _isSubmitting = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _reasonController.text = widget.request.patientReason;
+    _reasonController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
 
   bool get _canConfirm {
     final r = widget.request;
@@ -31,7 +45,7 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
         r.serviceType.trim().isNotEmpty &&
         r.appointmentDate.trim().isNotEmpty &&
         r.appointmentTime.trim().isNotEmpty &&
-        r.patientReason.trim().isNotEmpty;
+        _reasonController.text.trim().isNotEmpty;
     if (!hasBase) return false;
     if (r.appointmentType == 'remote') return true;
     return r.visitAddress.trim().isNotEmpty;
@@ -43,6 +57,7 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
       _errorMessage = null;
     });
     try {
+<<<<<<< HEAD
       final request = widget.request.copyWith(
         bookingStatus: 'pending',
         paymentMethod: '',
@@ -93,7 +108,13 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
           builder: (_) =>
               PatientNavigationShell(userId: request.patientId, initialTab: 1),
         ),
+=======
+      final finalRequest = widget.request.copyWith(
+        patientReason: _reasonController.text.trim(),
+        bookingStatus: 'pending_provider_approval',
+>>>>>>> d65865e (My latest changes)
       );
+      await BookingPaymentFlow.open(context: context, request: finalRequest);
     } catch (e) {
       if (!mounted) return;
 
@@ -136,68 +157,190 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
 
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: PatientAppBar(title: context.tr('booking.review.title')),
+      appBar: PatientAppBar(title: context.l10n.isArabic ? 'مراجعة الحجز' : context.tr('booking.review.title')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
         children: [
           const BookingStepIndicator(currentStep: BookingFlowStep.review),
           const SizedBox(height: 20),
-          BookingProviderSummary(request: r),
-          const SizedBox(height: 10),
-          Text(
-            '${_appointmentTypeLabel(r.appointmentType)} · ${r.appointmentDate} · ${r.appointmentTime}',
-            style: TextStyle(color: p.inkMuted),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: p.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: p.stroke),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: p.isDark ? 0.22 : 0.045),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _summaryRow(context, Icons.person_outline_rounded, r.providerName),
+                const SizedBox(height: 12),
+                _summaryRow(context, Icons.medical_services_outlined, _serviceLabel(r.serviceType)),
+                const SizedBox(height: 12),
+                _summaryRow(context, Icons.calendar_today_rounded, r.appointmentDate),
+                const SizedBox(height: 12),
+                _summaryRow(context, Icons.schedule_rounded, r.appointmentTime),
+                if (r.visitAddress.trim().isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _summaryRow(context, Icons.location_on_outlined, r.visitAddress),
+                ],
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(height: 1),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      context.l10n.isArabic ? 'المجموع' : 'Total',
+                      style: TextStyle(
+                        color: p.inkMuted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      '${r.totalAmount.toStringAsFixed(0)} ILS',
+                      style: TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
-          _section(p, context.tr('booking.review.currentCase'), [
-            if (r.patientReason.trim().isNotEmpty)
-              _row(context.tr('booking.review.reason'), r.patientReason),
-            if (r.symptoms.trim().isNotEmpty)
-              _row(context.tr('booking.review.symptoms'), r.symptoms),
-            _row(
-              context.tr('booking.review.urgency'),
-              r.isUrgent
-                  ? context.tr('booking.review.urgent')
-                  : context.tr('booking.review.routine'),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: p.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: p.stroke),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: p.isDark ? 0.22 : 0.045),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
-            if (r.visitAddress.trim().isNotEmpty)
-              _row(context.tr('booking.review.address'), r.visitAddress),
-          ]),
-          const SizedBox(height: 12),
-          _section(p, context.tr('booking.review.price'), [
-            _row(
-              context.tr('booking.review.service'),
-              _serviceLabel(r.serviceType),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  context.l10n.isArabic ? 'تفاصيل الزيارة' : 'Visit Details',
+                  style: TextStyle(
+                    color: p.inkDark,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  context.l10n.isArabic ? 'سبب الزيارة' : 'Reason for visit',
+                  style: TextStyle(
+                    color: p.inkDark,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _reasonController,
+                  minLines: 2,
+                  maxLines: 4,
+                  maxLength: 200,
+                  cursorColor: AppColors.primary,
+                  style: TextStyle(
+                    color: p.inkDark,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: context.l10n.isArabic
+                        ? 'اكتب باختصار سبب طلب الموعد'
+                        : 'Briefly describe why you need this appointment',
+                    hintStyle: TextStyle(color: p.inkMuted, fontSize: 13),
+                    filled: true,
+                    fillColor: p.filterSurface,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.primary),
+                    ),
+                  ),
+                ),
+                if (r.locationNote.trim().isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    context.tr('booking.location.note'),
+                    style: TextStyle(
+                      color: p.inkDark,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: p.surfaceSoft,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      r.locationNote,
+                      style: TextStyle(
+                        color: p.inkDark,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
-            _row(
-              context.tr('booking.review.appointmentType'),
-              _appointmentTypeLabel(r.appointmentType),
-            ),
-            _row(
-              context.tr('booking.review.price'),
-              '${r.price.toStringAsFixed(2)} ILS',
-            ),
-            if (r.discount > 0)
-              _row(
-                context.l10n.isArabic ? 'الخصم' : 'Discount',
-                '-${r.discount.toStringAsFixed(2)} ILS',
-              ),
-            if (r.extraFees > 0)
-              _row(
-                context.tr('booking.review.fees'),
-                '${r.extraFees.toStringAsFixed(2)} ILS',
-              ),
-            _row(
-              context.tr('booking.review.total'),
-              '${r.totalAmount.toStringAsFixed(2)} ILS',
-              bold: true,
-            ),
-          ]),
-          const SizedBox(height: 16),
-          Text(
-            context.tr('booking.review.nextPayment'),
-            style: TextStyle(color: p.inkMuted, fontSize: 13.5, height: 1.35),
           ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: p.surfaceSoft,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: p.stroke),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded, color: p.inkMuted, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    context.l10n.isArabic 
+                      ? 'يمكنك إلغاء الطلب قبل موافقة مقدم الرعاية'
+                      : 'You can cancel the request before provider approval',
+                    style: TextStyle(color: p.inkMuted, fontSize: 13, height: 1.4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           if (_errorMessage != null)
             Container(
               margin: const EdgeInsets.only(top: 16),
@@ -234,70 +377,40 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
             isLoading: _isSubmitting,
             icon: _errorMessage != null
                 ? Icons.refresh_rounded
+<<<<<<< HEAD
                 : Icons.lock_outline_rounded,
             label: _errorMessage != null
                 ? context.tr('booking.tryAgain')
                 : context.tr('booking.review.continuePayment'),
+=======
+                : Icons.send_rounded,
+            label: _errorMessage != null
+                ? context.tr('booking.tryAgain')
+                : (context.l10n.isArabic ? 'المتابعة إلى الدفع' : 'Continue to Payment'),
+>>>>>>> d65865e (My latest changes)
           ),
         ),
       ),
     );
   }
 
-  Widget _section(CarelinkPalette p, String title, List<Widget> children) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: p.stroke),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(fontWeight: FontWeight.w800, color: p.inkDark),
-          ),
-          const SizedBox(height: 8),
-          ...children,
-        ],
-      ),
-    );
-  }
-
-  Widget _row(String k, String v, {bool bold = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-              k,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: CarelinkPalette.of(context).inkMuted,
-              ),
+  Widget _summaryRow(BuildContext context, IconData icon, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: AppColors.primary, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: CarelinkPalette.of(context).inkDark,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 3,
-            child: Text(
-              v,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
-                color: CarelinkPalette.of(context).inkDark,
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

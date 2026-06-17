@@ -620,14 +620,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageFocusNode.requestFocus();
   }
 
-  Future<void> _callProvider() async {
-    final phone = _provider?.phone.trim() ?? '';
-    if (phone.isEmpty) return;
-    if (!await launchUrl(Uri(scheme: 'tel', path: phone)) && mounted) {
-      _showError(_text('Unable to start the call.', 'تعذر بدء المكالمة.'));
-    }
-  }
-
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(
@@ -723,7 +715,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ? _provider!.fullName
         : widget.name;
     final imageUrl = _peerImageUrl();
-    final phone = _provider?.phone.trim() ?? '';
+
     return AppBar(
       toolbarHeight: 68,
       elevation: 0,
@@ -734,7 +726,7 @@ class _ChatScreenState extends State<ChatScreen> {
         onPressed: () => Navigator.of(context).maybePop(),
         icon: Icon(
           _isArabic ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
-          color: palette.inkDark,
+          color: AppColors.primary,
         ),
       ),
       titleSpacing: 0,
@@ -764,8 +756,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.inkDark,
+                  style: const TextStyle(
+                    color: AppColors.primary,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                   ),
@@ -809,21 +801,6 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-      actions: [
-        if (!widget.isDoctorView && phone.isNotEmpty)
-          Padding(
-            padding: const EdgeInsetsDirectional.only(end: 8),
-            child: IconButton(
-              tooltip: _text('Call provider', 'اتصل بمقدم الرعاية'),
-              onPressed: _callProvider,
-              style: IconButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                backgroundColor: AppColors.primary.withValues(alpha: 0.09),
-              ),
-              icon: const Icon(Icons.call_outlined, size: 20),
-            ),
-          ),
-      ],
     );
   }
 
@@ -1288,134 +1265,132 @@ class _ChatScreenState extends State<ChatScreen> {
         _messageController.text.trim().isNotEmpty &&
         !_isSending &&
         !_isUploading;
+
     return Material(
       color: palette.surface,
       elevation: 8,
       shadowColor: Colors.black.withValues(alpha: 0.08),
       child: SafeArea(
         top: false,
-        minimum: const EdgeInsets.fromLTRB(10, 7, 10, 9),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            IconButton(
-              tooltip: _text('Attach file', 'إرفاق ملف'),
-              onPressed: _isUploading ? null : _pickAttachment,
-              color: AppColors.primary,
-              icon: _isUploading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.primary,
-                      ),
-                    )
-                  : const Icon(Icons.attach_file_rounded),
-            ),
-            Expanded(
-              child: Container(
-                padding: const EdgeInsetsDirectional.fromSTEB(14, 3, 5, 3),
-                decoration: BoxDecoration(
-                  color: palette.pageBg,
-                  borderRadius: BorderRadius.circular(25),
-                  border: Border.all(color: palette.stroke),
+        minimum: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 50),
+          padding: const EdgeInsetsDirectional.fromSTEB(4, 3, 5, 3),
+          decoration: BoxDecoration(
+            color: palette.pageBg,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: palette.stroke),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              SizedBox(
+                width: 40,
+                height: 44,
+                child: IconButton(
+                  tooltip: _text('Attach file', 'إرفاق ملف'),
+                  onPressed: _isUploading ? null : _pickAttachment,
+                  color: AppColors.primary,
+                  padding: EdgeInsets.zero,
+                  icon: _isUploading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primary,
+                          ),
+                        )
+                      : const Icon(Icons.attach_file_rounded, size: 23),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _messageController,
-                        focusNode: _messageFocusNode,
-                        minLines: 1,
-                        maxLines: 4,
-                        textCapitalization: TextCapitalization.sentences,
-                        keyboardType: TextInputType.multiline,
-                        style: TextStyle(
-                          color: palette.inkDark,
-                          fontSize: 14.5,
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _messageController,
+                  focusNode: _messageFocusNode,
+                  minLines: 1,
+                  maxLines: 4,
+                  textCapitalization: TextCapitalization.sentences,
+                  keyboardType: TextInputType.multiline,
+                  style: TextStyle(color: palette.inkDark, fontSize: 14.5),
+                  decoration: InputDecoration(
+                    hintText: _text('Type a message...', 'اكتب رسالة...'),
+                    hintStyle: TextStyle(color: palette.inkMuted),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 13,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              SizedBox(
+                width: 44,
+                height: 44,
+                child: canSend || _isSending
+                    ? IconButton(
+                        tooltip: _text('Send message', 'إرسال الرسالة'),
+                        onPressed: canSend ? _sendMessage : null,
+                        style: IconButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          foregroundColor: Colors.white,
+                          backgroundColor: AppColors.primary,
+                          disabledBackgroundColor: AppColors.primary.withValues(
+                            alpha: 0.55,
+                          ),
                         ),
-                        decoration: InputDecoration(
-                          hintText: _text('Type a message...', 'اكتب رسالة...'),
-                          hintStyle: TextStyle(color: palette.inkMuted),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 11,
+                        icon: _isSending
+                            ? const SizedBox(
+                                width: 17,
+                                height: 17,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Transform.flip(
+                                flipX: _isArabic,
+                                child: const Icon(Icons.send_rounded, size: 20),
+                              ),
+                      )
+                    : GestureDetector(
+                        onLongPressStart: (_) => _startRecording(),
+                        onLongPressEnd: (_) => _finishRecording(),
+                        onLongPressMoveUpdate: (details) {
+                          if (details.localOffsetFromOrigin.dx.abs() > 85) {
+                            _cancelRecording = true;
+                          }
+                        },
+                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            duration: const Duration(seconds: 2),
+                            content: Text(
+                              _text(
+                                'Hold the microphone to record.',
+                                'اضغط مطولاً على الميكروفون للتسجيل.',
+                              ),
+                            ),
+                          ),
+                        ),
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppColors.primary,
+                          ),
+                          child: const Icon(
+                            Icons.mic_rounded,
+                            color: Colors.white,
+                            size: 21,
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 5),
-                    SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: canSend || _isSending
-                          ? IconButton(
-                              tooltip: _text('Send message', 'إرسال الرسالة'),
-                              onPressed: canSend ? _sendMessage : null,
-                              style: IconButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                foregroundColor: Colors.white,
-                                backgroundColor: AppColors.primary,
-                              ),
-                              icon: _isSending
-                                  ? const SizedBox(
-                                      width: 17,
-                                      height: 17,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : Transform.flip(
-                                      flipX: _isArabic,
-                                      child: const Icon(
-                                        Icons.send_rounded,
-                                        size: 19,
-                                      ),
-                                    ),
-                            )
-                          : GestureDetector(
-                              onLongPressStart: (_) => _startRecording(),
-                              onLongPressEnd: (_) => _finishRecording(),
-                              onLongPressMoveUpdate: (details) {
-                                if (details.localOffsetFromOrigin.dx.abs() >
-                                    85) {
-                                  _cancelRecording = true;
-                                }
-                              },
-                              onTap: () =>
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      duration: const Duration(seconds: 2),
-                                      content: Text(
-                                        _text(
-                                          'Hold the microphone to record.',
-                                          'اضغط مطولاً على الميكروفون للتسجيل.',
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              child: Container(
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: AppColors.primary,
-                                ),
-                                child: const Icon(
-                                  Icons.mic_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                              ),
-                            ),
-                    ),
-                  ],
-                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

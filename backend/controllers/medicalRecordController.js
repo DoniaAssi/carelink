@@ -67,6 +67,39 @@ function canPatientViewPatient(actorUserId, actorRole, patientId) {
   return actorUserId && actorUserId === patientId;
 }
 
+function resolveUploadUrl(storedPath, originalName, baseUrl) {
+  const cleanStored = (storedPath || '').toString().trim();
+  const cleanOriginal = (originalName || '').toString().trim();
+
+  const candidates = [];
+  if (cleanStored) candidates.push(path.basename(cleanStored));
+  if (cleanOriginal) candidates.push(path.basename(cleanOriginal));
+
+  for (const candidate of candidates) {
+    const fullPath = path.join(uploadsDir, candidate);
+    if (fs.existsSync(fullPath)) return `${baseUrl}/uploads/${candidate}`;
+  }
+
+  if (cleanOriginal) {
+    try {
+      const match = fs
+        .readdirSync(uploadsDir)
+        .find(
+          (name) =>
+            name === cleanOriginal || name.endsWith(`-${cleanOriginal}`)
+        );
+      if (match) return `${baseUrl}/uploads/${match}`;
+    } catch (_) {}
+  }
+
+  if (!cleanStored) return '';
+  if (cleanStored.startsWith('http://') || cleanStored.startsWith('https://')) {
+    return cleanStored;
+  }
+  const normalized = cleanStored.startsWith('/') ? cleanStored : `/${cleanStored}`;
+  return `${baseUrl}${normalized}`;
+}
+
 /** GET /medical-records/patient/:patientId â€” combined provider visit reports and patient uploads */
 exports.listForPatient = async (req, res) => {
   try {
@@ -84,9 +117,7 @@ exports.listForPatient = async (req, res) => {
       patientId
     );
     patientUploads.forEach(u => {
-      if (u.file_url && !u.file_url.startsWith('http')) {
-        u.file_url = baseUrl + (u.file_url.startsWith('/') ? '' : '/') + u.file_url;
-      }
+      u.file_url = resolveUploadUrl(u.file_url, u.file_name, baseUrl);
     });
 
     const combined = [...visitReports, ...patientUploads];

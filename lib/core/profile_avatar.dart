@@ -7,7 +7,15 @@ import 'package:carelink/shared/services/api_service.dart';
 /// رابط صورة الملف من استجابة الـ API (يدعم اختلاف تسمية المفتاح).
 String? profileImageUrlFromMap(Map<String, dynamic>? map) {
   if (map == null) return null;
-  final v = map['profileImageUrl'] ?? map['profileimageurl'];
+  final v =
+      map['profileImageUrl'] ??
+      map['profileimageurl'] ??
+      map['profilePictureUrl'] ??
+      map['profile_picture_url'] ??
+      map['profilePhotoUrl'] ??
+      map['photoUrl'] ??
+      map['imageUrl'] ??
+      map['avatarUrl'];
   if (v == null) return null;
   final s = v.toString().trim();
   return s.isEmpty ? null : s;
@@ -35,19 +43,19 @@ Uint8List? decodeDataUriImageBytes(String dataUri) {
   }
 }
 
-ImageProvider? profileImageProvider(
-  String? url, {
-  Uint8List? localBytes,
-}) {
+ImageProvider? profileImageProvider(String? url, {Uint8List? localBytes}) {
   if (localBytes != null && localBytes.isNotEmpty) {
     return MemoryImage(localBytes);
   }
   String u = (url ?? '').trim();
   if (u.isEmpty) return null;
-  if (u.toLowerCase().contains('robot') || u.toLowerCase().contains('robohash')) {
+  if (u.toLowerCase().contains('robot') ||
+      u.toLowerCase().contains('robohash')) {
     return null;
   }
-  if (!u.startsWith('data:image') && !u.startsWith('http://') && !u.startsWith('https://')) {
+  if (!u.startsWith('data:image') &&
+      !u.startsWith('http://') &&
+      !u.startsWith('https://')) {
     final base = ApiService.baseUrl;
     final separator = u.startsWith('/') ? '' : '/';
     u = '$base$separator$u';
@@ -68,7 +76,18 @@ Widget _placeholderIcon({
   required Color placeholderColor,
   required double iconSize,
 }) {
-  return Icon(placeholderIcon, size: iconSize, color: placeholderColor);
+  return Container(
+    color: placeholderColor.withValues(alpha: 0.12),
+    child: Center(
+      child: Icon(
+        placeholderIcon == Icons.medical_services_outlined
+            ? Icons.person_rounded
+            : placeholderIcon,
+        size: iconSize,
+        color: placeholderColor,
+      ),
+    ),
+  );
 }
 
 /// Use inside [ClipOval] / [CircleAvatar].
@@ -86,6 +105,15 @@ Widget profileAvatarOrPlaceholder({
       width: size,
       height: size,
       fit: BoxFit.cover,
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (wasSynchronouslyLoaded) return child;
+        return AnimatedOpacity(
+          opacity: frame == null ? 0 : 1,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          child: child,
+        );
+      },
       errorBuilder: (context, error, stackTrace) => _placeholderIcon(
         placeholderIcon: placeholderIcon,
         placeholderColor: placeholderColor,
@@ -94,14 +122,18 @@ Widget profileAvatarOrPlaceholder({
     );
   }
   String u = (imageUrl ?? '').trim();
-  if (u.toLowerCase().contains('robot') || u.toLowerCase().contains('robohash')) {
+  if (u.toLowerCase().contains('robot') ||
+      u.toLowerCase().contains('robohash')) {
     return _placeholderIcon(
       placeholderIcon: placeholderIcon,
       placeholderColor: placeholderColor,
       iconSize: iconSize,
     );
   }
-  if (u.isNotEmpty && !u.startsWith('data:image') && !u.startsWith('http://') && !u.startsWith('https://')) {
+  if (u.isNotEmpty &&
+      !u.startsWith('data:image') &&
+      !u.startsWith('http://') &&
+      !u.startsWith('https://')) {
     final base = ApiService.baseUrl;
     final separator = u.startsWith('/') ? '' : '/';
     u = '$base$separator$u';
@@ -120,6 +152,15 @@ Widget profileAvatarOrPlaceholder({
       width: size,
       height: size,
       fit: BoxFit.cover,
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (wasSynchronouslyLoaded) return child;
+        return AnimatedOpacity(
+          opacity: frame == null ? 0 : 1,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          child: child,
+        );
+      },
       errorBuilder: (context, error, stackTrace) => _placeholderIcon(
         placeholderIcon: placeholderIcon,
         placeholderColor: placeholderColor,
@@ -134,6 +175,15 @@ Widget profileAvatarOrPlaceholder({
       height: size,
       fit: BoxFit.cover,
       headers: const {'Accept': 'image/*'},
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (wasSynchronouslyLoaded) return child;
+        return AnimatedOpacity(
+          opacity: frame == null ? 0 : 1,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          child: child,
+        );
+      },
       errorBuilder: (context, error, stackTrace) => _placeholderIcon(
         placeholderIcon: placeholderIcon,
         placeholderColor: placeholderColor,

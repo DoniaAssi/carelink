@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/app_localizations.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
-import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
-import 'package:carelink/shared/widgets/patient_app_bar.dart';
-import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'booking_details_screen.dart';
 
@@ -49,8 +48,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       setState(() {
         upcoming = upcomingRaw
             .map((e) => AppointmentModel.fromJson(e))
+            .where(_isValidBooking)
             .toList();
-        history = historyRaw.map((e) => AppointmentModel.fromJson(e)).toList();
+        history = historyRaw
+            .map((e) => AppointmentModel.fromJson(e))
+            .where(_isValidBooking)
+            .toList();
         isLoading = false;
       });
     } catch (e) {
@@ -60,6 +63,26 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         isLoading = false;
       });
     }
+  }
+
+  bool _isValidBooking(AppointmentModel a) {
+    final status = a.status.toLowerCase();
+    if (status == 'draft' ||
+        status == 'pending_payment' ||
+        status == 'payment_pending') {
+      return false;
+    }
+
+    final payStatus = a.paymentStatus.toLowerCase();
+    final payMethod = a.paymentMethod.toLowerCase();
+
+    if (payStatus == 'unpaid' &&
+        payMethod != 'cash' &&
+        payMethod != 'cash_on_visit') {
+      return false;
+    }
+
+    return true;
   }
 
   List<AppointmentModel> get _activeList =>
@@ -89,6 +112,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
   Color _statusColor(String status) {
     switch (status.toLowerCase()) {
+      case 'pending_provider_approval':
       case 'pending':
         return Colors.orange;
       case 'confirmed':
@@ -99,6 +123,31 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         return Colors.red;
       default:
         return AppColors.textLight;
+    }
+  }
+
+  String _translateStatus(String status) {
+    final lower = status.toLowerCase();
+    final isAr = context.l10n.isArabic;
+    switch (lower) {
+      case 'pending_provider_approval':
+      case 'pending':
+        return isAr
+            ? 'بانتظار موافقة مقدم الرعاية'
+            : 'Waiting for provider approval';
+      case 'pending_payment':
+      case 'payment_pending':
+        return isAr ? 'بانتظار الدفع' : 'Pending Payment';
+      case 'confirmed':
+        return isAr ? 'مؤكد' : 'Confirmed';
+      case 'completed':
+        return isAr ? 'مكتمل' : 'Completed';
+      case 'cancelled':
+        return isAr ? 'ملغي' : 'Cancelled';
+      case 'in_progress':
+        return isAr ? 'قيد التنفيذ' : 'In Progress';
+      default:
+        return status.toUpperCase();
     }
   }
 
@@ -136,7 +185,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
               else
                 Column(
                   children: _activeList.map((item) {
-                    return GestureDetector(
+                    return PatientPressable(
                       onTap: () async {
                         await Navigator.push(
                           context,
@@ -201,12 +250,28 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                                       (item.patientRatingStars == null ||
                                           item.patientRatingStars! < 1)) ...[
                                     const SizedBox(height: 8),
-                                    Text(
-                                      'Tap to rate this visit',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.primaryDark,
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 9,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(
+                                          0xFFFFB020,
+                                        ).withValues(alpha: 0.14),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        context.l10n.isArabic
+                                            ? 'بانتظار تقييمك'
+                                            : 'Waiting for your rating',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFFB77900),
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -225,7 +290,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
-                                item.status,
+                                _translateStatus(item.status),
                                 style: TextStyle(
                                   color: _statusColor(item.status),
                                   fontWeight: FontWeight.w700,
@@ -249,8 +314,9 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   Widget _tabButton(String label, int tab) {
     final p = CarelinkPalette.of(context);
     final selected = currentTab == tab;
-    return GestureDetector(
+    return PatientPressable(
       onTap: () => setState(() => currentTab = tab),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
@@ -289,8 +355,6 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       ),
     );
   }
-
-
 
   BoxShadow _cardShadow(CarelinkPalette p) {
     return BoxShadow(

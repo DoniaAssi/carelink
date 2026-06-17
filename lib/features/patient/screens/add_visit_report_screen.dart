@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
 
 /// After a visit: provider submits structured report (linked to booking when possible).
@@ -40,8 +41,11 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
   bool _saving = false;
 
   Color get _primary => const Color(MedicalRecordsBrand.primary);
-  Color get _bg => const Color(MedicalRecordsBrand.background);
-  Color get _ink => const Color(MedicalRecordsBrand.textDark);
+  Color get _bg => CarelinkPalette.of(context).pageBg;
+  Color get _surface => CarelinkPalette.of(context).surface;
+  Color get _ink => CarelinkPalette.of(context).inkDark;
+  Color get _muted => CarelinkPalette.of(context).inkMuted;
+  Color get _stroke => CarelinkPalette.of(context).stroke;
 
   @override
   void initState() {
@@ -144,9 +148,9 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -166,114 +170,123 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
-          children: [
-            Text(
-              'Patient: ${widget.patientUserId}',
-              style: TextStyle(color: _ink.withValues(alpha: 0.7)),
-            ),
-            if (widget.appointmentId != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  'Appointment: ${widget.appointmentId}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: _ink.withValues(alpha: 0.6),
-                  ),
-                ),
-              ),
-            TextFormField(
-              controller: _visitDate,
-              readOnly: true,
-              decoration: _dec('Visit date').copyWith(
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.calendar_month),
-                  onPressed: _pickVisitDate,
-                ),
-              ),
-            ),
-            TextFormField(
-              controller: _medicationsPrescribed,
-              decoration: _dec('Medications prescribed (optional)'),
-              maxLines: 3,
-            ),
-            TextFormField(
-              controller: _allergiesNoted,
-              decoration: _dec('Allergies noted this visit (optional)'),
-              maxLines: 2,
-            ),
-            TextFormField(
-              controller: _vitalsJson,
-              decoration: _dec('Vital signs (JSON)'),
-              maxLines: 4,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-            ),
-            TextFormField(
-              controller: _diagnosis,
-              decoration: _dec('Diagnosis'),
-              maxLines: 3,
-            ),
-            TextFormField(
-              controller: _treatment,
-              decoration: _dec('Treatment plan'),
-              maxLines: 4,
-            ),
-            TextFormField(
-              controller: _recommendations,
-              decoration: _dec('Recommendations'),
-              maxLines: 3,
-            ),
-            SwitchListTile(
-              value: _followRequired,
-              onChanged: (v) => setState(() => _followRequired = v),
-              title: const Text('Follow-up required'),
-              activeThumbColor: _primary,
-            ),
-            TextFormField(
-              controller: _followUp,
-              readOnly: true,
-              decoration: _dec('Follow-up date').copyWith(
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.calendar_month),
-                  onPressed: _pickFollowUp,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: _saving ? null : _save,
-              style: FilledButton.styleFrom(
-                backgroundColor: _primary,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              child: _saving
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
+          children:
+              [
+                    Text(
+                      'Patient: ${widget.patientUserId}',
+                      style: TextStyle(color: _muted),
+                    ),
+                    if (widget.appointmentId != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'Appointment: ${widget.appointmentId}',
+                          style: TextStyle(fontSize: 12, color: _muted),
+                        ),
                       ),
-                    )
-                  : const Text('Submit report'),
-            ),
-          ]
-              .map(
-                (w) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: w,
-                ),
-              )
-              .toList(),
+                    TextFormField(
+                      controller: _visitDate,
+                      readOnly: true,
+                      decoration: _dec('Visit date').copyWith(
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.calendar_month),
+                          onPressed: _pickVisitDate,
+                        ),
+                      ),
+                    ),
+                    TextFormField(
+                      controller: _medicationsPrescribed,
+                      decoration: _dec('Medications prescribed (optional)'),
+                      maxLines: 3,
+                    ),
+                    TextFormField(
+                      controller: _allergiesNoted,
+                      decoration: _dec('Allergies noted this visit (optional)'),
+                      maxLines: 2,
+                    ),
+                    TextFormField(
+                      controller: _vitalsJson,
+                      decoration: _dec('Vital signs (JSON)'),
+                      maxLines: 4,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                      ),
+                    ),
+                    TextFormField(
+                      controller: _diagnosis,
+                      decoration: _dec('Diagnosis'),
+                      maxLines: 3,
+                    ),
+                    TextFormField(
+                      controller: _treatment,
+                      decoration: _dec('Treatment plan'),
+                      maxLines: 4,
+                    ),
+                    TextFormField(
+                      controller: _recommendations,
+                      decoration: _dec('Recommendations'),
+                      maxLines: 3,
+                    ),
+                    SwitchListTile(
+                      value: _followRequired,
+                      onChanged: (v) => setState(() => _followRequired = v),
+                      title: Text(
+                        'Follow-up required',
+                        style: TextStyle(color: _ink),
+                      ),
+                      activeThumbColor: _primary,
+                    ),
+                    TextFormField(
+                      controller: _followUp,
+                      readOnly: true,
+                      decoration: _dec('Follow-up date').copyWith(
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.calendar_month),
+                          onPressed: _pickFollowUp,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton(
+                      onPressed: _saving ? null : _save,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _primary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: _saving
+                          ? const SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Submit report'),
+                    ),
+                  ]
+                  .map(
+                    (w) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: w,
+                    ),
+                  )
+                  .toList(),
         ),
       ),
     );
   }
 
   InputDecoration _dec(String l) => InputDecoration(
-        labelText: l,
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-      );
+    labelText: l,
+    labelStyle: TextStyle(color: _muted),
+    filled: true,
+    fillColor: _surface,
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: _stroke),
+    ),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+  );
 }

@@ -3,19 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
-import 'package:carelink/features/patient/widgets/booking_provider_summary.dart';
-import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
-import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
-
+import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'booking_screen.dart';
 
 class SelectServiceScreen extends StatefulWidget {
-  const SelectServiceScreen({super.key, required this.request});
+  const SelectServiceScreen({
+    super.key,
+    required this.request,
+    this.returnWhenUnavailable = false,
+  });
 
   final BookingRequestModel request;
+  final bool returnWhenUnavailable;
 
   @override
   State<SelectServiceScreen> createState() => _SelectServiceScreenState();
@@ -26,36 +29,42 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
     _ServiceOption(
       'Home Nursing Care',
       'booking.service.homeNursing',
+      'booking.service.homeNursing.desc',
       Icons.home_filled,
       80,
     ),
     _ServiceOption(
       'General Doctor',
       'booking.service.generalDoctor',
+      'booking.service.generalDoctor.desc',
       Icons.medical_services_rounded,
       150,
     ),
     _ServiceOption(
       'Elderly Care',
       'booking.service.elderlyCare',
+      'booking.service.elderlyCare.desc',
       Icons.elderly_rounded,
       100,
     ),
     _ServiceOption(
       'Post-Surgery Care',
       'booking.service.postSurgery',
+      'booking.service.postSurgery.desc',
       Icons.healing_rounded,
       120,
     ),
     _ServiceOption(
       'Physiotherapy',
       'booking.service.physiotherapy',
+      'booking.service.physiotherapy.desc',
       Icons.accessibility_new_rounded,
       130,
     ),
     _ServiceOption(
       'Mental Health Support',
       'booking.service.mentalSupport',
+      'booking.service.mentalSupport.desc',
       Icons.psychology_rounded,
       120,
     ),
@@ -64,6 +73,7 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
   ProviderModel? _provider;
   String? _selectedService;
   bool _loading = true;
+  bool _checkingAvailability = false;
 
   @override
   void initState() {
@@ -107,15 +117,52 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
     return widget.request.price > 0 ? widget.request.price : 80;
   }
 
-  void _continue() {
+  Future<void> _continue() async {
     final service = _selectedService;
     final provider = _provider;
     if (service == null ||
         provider == null ||
-        provider.availableSlots.isEmpty) {
+        provider.availableSlots.isEmpty ||
+        _checkingAvailability) {
       return;
     }
-    Navigator.push(
+
+    setState(() => _checkingAvailability = true);
+    try {
+      final freshProvider = ProviderModel.fromJson(
+        await ApiService().getProviderById(
+          provider.userId,
+          realAvailability: true,
+        ),
+      );
+      if (!freshProvider.isAvailable || freshProvider.availableSlots.isEmpty) {
+        if (!mounted) return;
+        if (widget.returnWhenUnavailable) {
+          Navigator.pop(context, true);
+        } else {
+          setState(() => _provider = freshProvider);
+        }
+        return;
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.l10n.isArabic
+                ? 'تعذر التحقق من توفر مقدم الرعاية. حاول مرة أخرى.'
+                : 'Unable to verify provider availability. Please try again.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _checkingAvailability = false);
+    }
+
+    if (!mounted) return;
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => BookingScreen(
@@ -134,6 +181,13 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
         ),
       ),
     );
+
+    if (result == true) {
+      if (!mounted) return;
+      if (widget.returnWhenUnavailable) {
+        Navigator.pop(context, true);
+      }
+    }
   }
 
   @override
@@ -141,67 +195,22 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
     final p = CarelinkPalette.of(context);
     final provider = _provider;
     final hasSlots = provider != null && provider.availableSlots.isNotEmpty;
-    final canContinue = !_loading && hasSlots && _selectedService != null;
-    final summaryRequest = provider == null
-        ? widget.request
-        : widget.request.copyWith(
-            providerName: provider.fullName,
-            providerRole: provider.role,
-            providerImageUrl: provider.profileImageUrl ?? '',
-            specialization: provider.specialization,
-            serviceType: _selectedService ?? provider.serviceType,
-          );
-
+    final canContinue =
+        !_loading &&
+        !_checkingAvailability &&
+        hasSlots &&
+        _selectedService != null;
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: PatientAppBar(title: context.tr('booking.selectService.title')),
+      appBar: PatientAppBar(title: context.l10n.isArabic ? 'اختر الخدمة' : context.tr('booking.selectService.title')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
-          const BookingStepIndicator(currentStep: BookingFlowStep.service),
-          const SizedBox(height: 16),
-          BookingProviderSummary(request: summaryRequest),
           const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: p.surface,
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: p.stroke),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.home_work_outlined, color: AppColors.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        context.tr('booking.appointmentType'),
-                        style: TextStyle(
-                          color: p.inkMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        context.tr('booking.homeVisit'),
-                        style: TextStyle(
-                          color: p.inkDark,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
+          BookingStepIndicator(currentStep: BookingFlowStep.service),
+          const SizedBox(height: 24),
           Text(
-            context.tr('booking.selectService.prompt'),
+            context.l10n.isArabic ? 'ما الخدمة المطلوبة؟' : context.tr('booking.selectService.prompt'),
             style: TextStyle(
               color: p.inkDark,
               fontSize: 20,
@@ -254,6 +263,7 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: PatientPrimaryButton(
             onPressed: canContinue ? _continue : null,
+            isLoading: _checkingAvailability,
             icon: Icons.arrow_forward_rounded,
             label: context.tr('booking.continue'),
           ),
@@ -264,10 +274,11 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
 }
 
 class _ServiceOption {
-  const _ServiceOption(this.name, this.titleKey, this.icon, this.price);
+  const _ServiceOption(this.name, this.titleKey, this.descKey, this.icon, this.price);
 
   final String name;
   final String titleKey;
+  final String descKey;
   final IconData icon;
   final double price;
 }
@@ -288,56 +299,75 @@ class _ServiceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: selected
-            ? AppColors.primary.withValues(alpha: palette.isDark ? 0.18 : 0.08)
-            : palette.surface,
-        borderRadius: BorderRadius.circular(15),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(15),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(
-                color: selected ? AppColors.primary : palette.stroke,
-                width: selected ? 1.5 : 1,
+      padding: const EdgeInsets.only(bottom: 12),
+      child: PatientPressable(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppColors.primary.withValues(
+                    alpha: palette.isDark ? 0.18 : 0.05,
+                  )
+                : palette.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected ? AppColors.primary : palette.stroke,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: selected ? AppColors.primary : palette.inkMuted,
+                size: 22,
               ),
-            ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: AppColors.primary.withValues(alpha: 0.12),
-                  child: Icon(option.icon, color: AppColors.primary),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    context.tr(option.titleKey),
-                    style: TextStyle(
-                      color: palette.inkDark,
-                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              const SizedBox(width: 14),
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                child: Icon(option.icon, color: AppColors.primary, size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.tr(option.titleKey),
+                      style: TextStyle(
+                        color: palette.inkDark,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 4),
+                    Text(
+                      context.tr(option.descKey),
+                      style: TextStyle(
+                        color: palette.inkMuted,
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${option.price.toStringAsFixed(0)} ILS',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  '${option.price.toStringAsFixed(0)} ILS',
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  selected
-                      ? Icons.check_circle_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  color: selected ? AppColors.primary : palette.inkMuted,
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

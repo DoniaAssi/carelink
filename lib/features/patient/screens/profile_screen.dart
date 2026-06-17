@@ -12,6 +12,7 @@ import 'package:carelink/features/auth/login_screen.dart';
 import 'package:carelink/features/notifications/notifications_screen.dart';
 import 'package:carelink/features/patient/screens/patient_favorites_screen.dart';
 import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'edit_profile_screen.dart';
@@ -223,9 +224,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: const PatientTopActions(
-        showBack: false,
-      ),
+      appBar: const PatientTopActions(showBack: false),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : errorMessage != null
@@ -311,7 +310,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ],
     );
   }
-
 
   Widget _buildProfileDetailsCard(CarelinkPalette p) {
     final rows = <_ProfileRow>[];
@@ -556,47 +554,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
     Color? textColor,
     bool showChevron = true,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: (iconColor ?? AppColors.primary).withValues(
-                    alpha: 0.1,
-                  ),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  icon,
-                  color: iconColor ?? AppColors.primary,
-                  size: 20,
+    return PatientPressable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: (iconColor ?? AppColors.primary).withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: iconColor ?? AppColors.primary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: textColor ?? p.inkDark,
                 ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: textColor ?? p.inkDark,
-                  ),
-                ),
+            ),
+            if (showChevron)
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 14,
+                color: p.inkMuted.withValues(alpha: 0.6),
               ),
-              if (showChevron)
-                Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  size: 14,
-                  color: p.inkMuted.withValues(alpha: 0.6),
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );

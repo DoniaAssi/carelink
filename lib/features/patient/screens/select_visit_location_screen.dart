@@ -30,7 +30,6 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
   final MapController _mapController = MapController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
-  final TextEditingController _reasonController = TextEditingController();
 
   LatLng _marker = const LatLng(31.9539, 35.9106);
   bool _isResolving = false;
@@ -40,8 +39,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
   final List<_PlaceSearchResult> _searchResults = [];
 
   bool get _canContinue =>
-      _addressController.text.trim().isNotEmpty &&
-      _reasonController.text.trim().isNotEmpty;
+      _addressController.text.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -52,8 +50,6 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
     );
     _addressController.text = widget.request.visitAddress;
     _noteController.text = widget.request.locationNote;
-    _reasonController.text = widget.request.patientReason;
-    if (_addressController.text.trim().isEmpty) _resolveAddress(_marker);
     _addressController.addListener(() => setState(() {}));
   }
 
@@ -62,7 +58,6 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
     _searchDebounce?.cancel();
     _addressController.dispose();
     _noteController.dispose();
-    _reasonController.dispose();
     super.dispose();
   }
 
@@ -271,7 +266,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
     final p = CarelinkPalette.of(context);
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: PatientAppBar(title: context.tr('booking.location.title')),
+      appBar: PatientAppBar(title: context.l10n.isArabic ? 'اختر الموقع' : context.tr('booking.location.title')),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
@@ -301,7 +296,6 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                             visitLongitude: _marker.longitude,
                             visitAddress: _addressController.text.trim(),
                             locationNote: _noteController.text.trim(),
-                            patientReason: _reasonController.text.trim(),
                           ),
                         ),
                       ),
@@ -316,9 +310,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
         children: [
           const BookingStepIndicator(currentStep: BookingFlowStep.location),
-          const SizedBox(height: 12),
-          BookingProviderSummary(request: widget.request, compact: true),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -402,7 +394,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 OutlinedButton.icon(
                   onPressed: _useCurrentLocation,
                   style: OutlinedButton.styleFrom(
@@ -416,40 +408,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                   icon: const Icon(Icons.my_location_rounded),
                   label: Text(context.tr('booking.location.useCurrent')),
                 ),
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: p.surfaceSoft,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: p.stroke),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.map_outlined,
-                        color: AppColors.primary,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          context.tr('booking.location.adjust'),
-                          style: TextStyle(
-                            color: p.inkMuted,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 _fieldLabel(context.tr('booking.location.address')),
                 const SizedBox(height: 6),
                 TextField(
@@ -461,7 +420,9 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                   decoration: InputDecoration(
-                    hintText: context.tr('booking.location.addressHint'),
+                    hintText: context.l10n.isArabic 
+                        ? 'اختر موقع الزيارة أو ابحث عن عنوان'
+                        : 'Select a location or search address',
                     hintStyle: TextStyle(color: p.inkMuted),
                     filled: true,
                     fillColor: p.filterSurface,
@@ -535,43 +496,6 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 12),
-                _fieldLabel(
-                  context.l10n.isArabic ? 'سبب الزيارة' : 'Reason for visit',
-                ),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: _reasonController,
-                  onChanged: (_) => setState(() {}),
-                  minLines: 2,
-                  maxLines: 4,
-                  maxLength: 200,
-                  cursorColor: AppColors.primary,
-                  style: TextStyle(
-                    color: p.inkDark,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: context.l10n.isArabic
-                        ? 'اكتب باختصار سبب طلب الموعد'
-                        : 'Briefly describe why you need this appointment',
-                    hintStyle: TextStyle(color: p.inkMuted),
-                    filled: true,
-                    fillColor: p.filterSurface,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: p.stroke),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.primary),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
                 _fieldLabel(context.tr('booking.location.note')),
                 const SizedBox(height: 6),
                 TextField(
@@ -612,7 +536,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
               Icon(Icons.lock_outline_rounded, color: p.inkMuted, size: 14),
               const SizedBox(width: 6),
               Text(
-                context.tr('booking.location.private'),
+                context.l10n.isArabic ? 'يتم استخدام موقعك لهذا الحجز فقط' : 'Your location is used for this booking only',
                 style: TextStyle(color: p.inkMuted, fontSize: 11),
               ),
             ],
@@ -639,17 +563,17 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
     required VoidCallback onTap,
   }) {
     final p = CarelinkPalette.of(context);
-    return Material(
-      color: p.surface,
+    return PatientPressable(
+      onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox(
-          width: 42,
-          height: 42,
-          child: Icon(icon, color: AppColors.primary),
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: p.surface,
+          borderRadius: BorderRadius.circular(12),
         ),
+        child: Icon(icon, color: AppColors.primary),
       ),
     );
   }
@@ -689,7 +613,9 @@ class _PlaceSearchResult {
       final text = part.trim();
       if (text.isNotEmpty) return text;
     }
-    return displayName.trim().isEmpty ? 'Location unavailable' : displayName.trim();
+    return displayName.trim().isEmpty
+        ? 'Location unavailable'
+        : displayName.trim();
   }
 
   String get secondaryText {

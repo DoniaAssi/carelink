@@ -8,6 +8,7 @@ import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart'
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/payment_service.dart';
+import 'package:carelink/features/patient/screens/messages_screen.dart';
 
 import 'booking_details_screen.dart';
 
@@ -257,6 +258,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       appBar: PatientAppBar(
         title: _t('My Bookings', 'مواعيدي'),
         showBack: false,
+        showMessages: true,
+        onMessageTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MessagesScreen(userId: widget.patientUserId),
+            ),
+          );
+        },
       ),
       body: SafeArea(
         bottom: false,
@@ -514,7 +524,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             child: Column(
               children: [
                 for (var index = 0; index < entry.value.length; index++) ...[
-                  _appointmentRow(entry.value[index], palette),
+                  PatientAnimatedListItem(
+                    index: index,
+                    child: _appointmentRow(entry.value[index], palette),
+                  ),
                   if (index < entry.value.length - 1)
                     Divider(height: 1, color: palette.stroke),
                 ],
@@ -538,8 +551,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final image = _absoluteImage(
       (row['profileImageUrl'] ?? row['profilePictureUrl'])?.toString(),
     );
-    return InkWell(
+    return PatientPressable(
       onTap: () => _openDetails(row),
+      borderRadius: BorderRadius.circular(14),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(10, 11, 10, 11),
         child: Row(
@@ -613,6 +627,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     children: [
                       _badge(_statusLabel(state), _statusColor(state), palette),
                       _badge(_paymentLabel(row), _paymentColor(row), palette),
+                      if (state == _BookingState.completed && !_hasRating(row))
+                        _badge(
+                          _t('Waiting for your rating', 'بانتظار تقييمك'),
+                          const Color(0xFFFFB020),
+                          palette,
+                        ),
                     ],
                   ),
                 ],
@@ -725,7 +745,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     _BookingState.confirmed => _t('Confirmed', 'مؤكد'),
     _BookingState.inProgress => _t('In Progress', 'قيد التنفيذ'),
     _BookingState.completed => _t('Completed', 'مكتمل'),
-    _BookingState.cancelled => _t('Cancelled', 'ملغى'),
+    _BookingState.cancelled => _t('Cancelled', 'ملغي'),
   };
 
   Color _statusColor(_BookingState state) => switch (state) {

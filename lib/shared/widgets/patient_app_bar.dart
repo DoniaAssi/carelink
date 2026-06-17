@@ -12,9 +12,11 @@ class PatientAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.showLanguage = true,
     this.showTheme = true,
     this.showNotification = false,
+    this.showMessages = false,
     this.showAiRobot = false,
     this.actions,
     this.onBack,
+    this.onMessageTap,
   });
 
   final String? title;
@@ -23,9 +25,11 @@ class PatientAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool showLanguage;
   final bool showTheme;
   final bool showNotification;
+  final bool showMessages;
   final bool showAiRobot;
   final List<Widget>? actions;
   final VoidCallback? onBack;
+  final VoidCallback? onMessageTap;
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +41,7 @@ class PatientAppBar extends StatelessWidget implements PreferredSizeWidget {
       title:
           titleWidget ??
           (title != null
-              ? Text(title!, style: context.patientTx.headline)
+              ? Text(title!, style: context.patientTx.headline.copyWith(color: AppColors.primary))
               : null),
       centerTitle: false,
       leading: showBack
@@ -50,7 +54,7 @@ class PatientAppBar extends StatelessWidget implements PreferredSizeWidget {
       actions: [
         if (showNotification)
           IconButton(
-            icon: const Icon(
+            icon: Icon(
               Icons.notifications_outlined,
               color: AppColors.primary,
             ),
@@ -59,9 +63,18 @@ class PatientAppBar extends StatelessWidget implements PreferredSizeWidget {
               // Triggers notifications or profile page
             },
           ),
+        if (showMessages)
+          IconButton(
+            icon: Icon(
+              Icons.chat_bubble_outline_rounded,
+              color: AppColors.primary,
+            ),
+            iconSize: 24,
+            onPressed: onMessageTap ?? () {},
+          ),
         if (showAiRobot)
           IconButton(
-            icon: const Icon(
+            icon: Icon(
               Icons.smart_toy_outlined,
               color: AppColors.primary,
             ),

@@ -12,7 +12,6 @@ import 'package:carelink/core/theme_controller.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
-import 'package:carelink/shared/services/payment_service.dart';
 import 'package:carelink/features/patient/screens/provider_details_screen.dart';
 import 'package:carelink/features/patient/screens/chat_screen.dart';
 import 'package:carelink/shared/services/patient_recent_chats_service.dart';
@@ -46,7 +45,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   AppointmentModel? appointment;
   ProviderModel? provider;
   Map<String, dynamic>? _paymentOverview;
-  bool _payBusy = false;
 
   Timer? _pollTimer;
   int _draftStars = 0;
@@ -147,26 +145,10 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     return a.paymentStatus;
   }
 
-  bool get _appointmentPaidLive {
-    return _ledgerPaymentStatus(appointment!).toLowerCase() == 'paid';
-  }
-
-  bool get _canPayDemo {
-    if (_payBusy || appointment == null || _isBookingCancelled) return false;
-    if (_appointmentPaidLive) return false;
-    final o = _paymentOverview;
-    if (o != null && o['canPay'] == false) return false;
-    return true;
-  }
-
-  bool get _isBookingCancelled {
-    final s = appointment?.status.toLowerCase() ?? '';
-    return s == 'cancelled' || s == 'canceled';
-  }
-
   bool get _canCancel {
     final status = appointment?.status.toLowerCase();
-    return status == 'pending' ||
+    return status == 'pending_provider_approval' ||
+        status == 'pending' ||
         status == 'pending_payment' ||
         status == 'payment_pending' ||
         status == 'confirmed';
@@ -175,44 +157,14 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   bool get _canReschedule {
     if (appointment == null) return false;
     final s = appointment!.status.toLowerCase().trim();
-    return s == 'pending' ||
+    return s == 'pending_provider_approval' ||
+        s == 'pending' ||
         s == 'pending_payment' ||
         s == 'payment_pending' ||
         s == 'request_sent' ||
         s == 'requested' ||
         s == 'waiting_provider_response' ||
         s == 'waiting response';
-  }
-
-  Future<void> _payNowDemo() async {
-    final a = appointment;
-    if (a == null || _payBusy) return;
-    setState(() => _payBusy = true);
-    try {
-      final svc = PaymentService(api: _api);
-      await svc.payForBooking(
-        appointmentId: widget.appointmentId,
-        patientUserId: widget.patientUserId,
-        providerUserId: a.providerUserId,
-        amountHint: _hintAmountFromOverview(),
-        paymentMethod: 'mock_card',
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Payment successful (DEMO — no real card charge).'),
-        ),
-      );
-      await _load(silent: true);
-      await _refreshPaymentOverview();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-      );
-    } finally {
-      if (mounted) setState(() => _payBusy = false);
-    }
   }
 
   Future<void> _cancel() async {
@@ -584,7 +536,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       subtitle = isAr
           ? 'يمكنك متابعة مقدم الخدمة على الخريطة عندما يشارك موقعه المباشر.'
           : 'You can follow the care provider on the map when they share live location.';
-    } else if (status == 'pending' ||
+    } else if (status == 'pending_provider_approval' ||
+        status == 'pending' ||
         status == 'request_sent' ||
         status == 'requested' ||
         status == 'waiting') {
@@ -771,7 +724,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                 ),
                 if (provider != null) ...[
                   const SizedBox(height: 8),
-                  InkWell(
+                  PatientPressable(
                     onTap: () {
                       Navigator.push(
                         context,
@@ -1093,7 +1046,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
     final st = _ledgerPaymentStatus(appointment!);
 
-    String displayStatus = st.isEmpty ? (isAr ? 'غير مدفوع' : 'Unpaid') : st;
+    String displayStatus = st.isEmpty ? (isAr ? 'غير معروف' : 'Unknown') : st;
     Color statusColor = p.inkDark;
     if (displayStatus.toLowerCase() == 'paid') {
       displayStatus = isAr ? 'مدفوع' : 'Paid';
@@ -1256,45 +1209,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
               ],
             ),
           ),
-
-          if (_canPayDemo) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: FilledButton.icon(
-                  onPressed: _payNowDemo,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  icon: _payBusy
-                      ? const SizedBox.shrink()
-                      : const Icon(Icons.lock_outline_rounded, size: 19),
-                  label: _payBusy
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(
-                          isAr ? 'ادفع الآن (تجريبي)' : 'Pay Now (Demo)',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                        ),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -1446,9 +1360,16 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                       ),
                     ),
                   ),
-                  icon: Icon(
-                    selected ? Icons.star_rounded : Icons.star_border_rounded,
-                    size: 28,
+                  icon: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: selected ? 1 : 0),
+                    duration: const Duration(milliseconds: 210),
+                    curve: Curves.easeOutBack,
+                    builder: (context, t, child) =>
+                        Transform.scale(scale: 1 + (0.16 * t), child: child),
+                    child: Icon(
+                      selected ? Icons.star_rounded : Icons.star_border_rounded,
+                      size: 28,
+                    ),
                   ),
                 ),
               );

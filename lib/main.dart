@@ -17,10 +17,7 @@ import 'package:carelink/shared/models/user.dart';
 // AI Flow Screens
 import 'package:carelink/features/ai/screens/find_provider_screen.dart';
 import 'package:carelink/features/ai/screens/ai_provider_details_screen.dart';
-import 'package:carelink/features/ai/screens/ai_appointment_screen.dart';
-import 'package:carelink/features/ai/screens/ai_booking_confirmed_screen.dart';
 import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
-import 'package:carelink/shared/models/booking_request_model.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -73,7 +70,9 @@ class CareLinkApp extends StatelessWidget {
             '/intro': (context) => const IntroScreen(),
             '/login': (context) => const LoginScreen(),
             '/patient-home': (context) {
-              final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+              final args =
+                  ModalRoute.of(context)?.settings.arguments
+                      as Map<String, dynamic>?;
               final initialTabValue = args?['initialTab'];
               final initialTab = initialTabValue is int
                   ? initialTabValue
@@ -84,14 +83,14 @@ class CareLinkApp extends StatelessWidget {
                 initialTab: initialTab.clamp(0, 4).toInt(),
               );
             },
-            '/patient-profile': (_) => const PatientNavigationShell(initialIndex: 4),
+            '/patient-profile': (_) =>
+                const PatientNavigationShell(initialIndex: 4),
           },
           onGenerateRoute: (settings) {
-            if (settings.name == '/patient/profile' || settings.name == '/patient/profile/') {
+            if (settings.name == '/patient/profile' ||
+                settings.name == '/patient/profile/') {
               return MaterialPageRoute<void>(
-                builder: (_) => const PatientNavigationShell(
-                  initialIndex: 4,
-                ),
+                builder: (_) => const PatientNavigationShell(initialIndex: 4),
                 settings: const RouteSettings(name: '/patient-profile'),
               );
             }
@@ -188,33 +187,6 @@ class CareLinkApp extends StatelessWidget {
                   patientUserId: args?['patientUserId'] as String?,
                   distanceKm: args?['distanceKm'] as double?,
                   caseReason: args?['caseReason'] as String? ?? '',
-                ),
-                settings: settings,
-              );
-            }
-
-            if (settings.name == '/ai-appointment') {
-              final args = settings.arguments as Map<String, dynamic>?;
-              return MaterialPageRoute(
-                builder: (_) => AiAppointmentScreen(
-                  request: args?['request'] as BookingRequestModel?,
-                  aiResult: args?['aiResult'] as AIRecommendationResult?,
-                  displayDate: args?['displayDate'] as String? ?? '',
-                  displayTime: args?['displayTime'] as String? ?? '',
-                ),
-                settings: settings,
-              );
-            }
-
-            if (settings.name == '/ai-booking-confirmed') {
-              final args = settings.arguments as Map<String, dynamic>?;
-              return MaterialPageRoute(
-                builder: (_) => AiBookingConfirmedScreen(
-                  request: args?['request'] as BookingRequestModel?,
-                  appointmentId: args?['appointmentId'] as String? ?? '',
-                  displayDate: args?['displayDate'] as String? ?? '',
-                  displayTime: args?['displayTime'] as String? ?? '',
-                  patientUserId: args?['patientUserId'] as String? ?? '',
                 ),
                 settings: settings,
               );

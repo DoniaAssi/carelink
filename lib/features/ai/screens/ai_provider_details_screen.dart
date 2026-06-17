@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/locale_controller.dart';
+import 'package:carelink/core/profile_avatar.dart'
+    show profileAvatarOrPlaceholder;
 import 'package:carelink/core/theme_controller.dart';
 import '../ai_slot_utils.dart';
+import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
 import 'package:carelink/features/ai/widgets/ai_score_breakdown.dart';
+import 'package:carelink/features/patient/screens/select_service_screen.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
+import 'package:carelink/shared/services/api_service.dart';
 
-/// Why-this-provider view and bridge into the existing AI booking flow.
+/// Why-this-provider view and bridge into the standard booking flow.
 class AiProviderDetailsScreen extends StatefulWidget {
   const AiProviderDetailsScreen({
     super.key,
@@ -36,6 +43,8 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
   String? _activePatientUserId;
   String _activeCaseReason = '';
   bool _bootstrapped = false;
+  bool _isContinuing = false;
+  bool _showMore = false;
 
   ProviderModel? get _p => _activeResult?.provider;
   bool get _ar => Directionality.of(context) == TextDirection.rtl;
@@ -44,14 +53,21 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_bootstrapped) {
-      final routeArgs = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
-      final res = widget.result ?? routeArgs?['result'] as AIRecommendationResult?;
-      String patientId = widget.patientUserId ?? routeArgs?['patientUserId'] as String? ?? '';
-      final reason = widget.caseReason.isEmpty ? (routeArgs?['caseReason'] as String? ?? '') : widget.caseReason;
+      final routeArgs =
+          ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+      final res =
+          widget.result ?? routeArgs?['result'] as AIRecommendationResult?;
+      String patientId =
+          widget.patientUserId ?? routeArgs?['patientUserId'] as String? ?? '';
+      if (patientId == 'guest') patientId = '';
+      final reason = widget.caseReason.isEmpty
+          ? (routeArgs?['caseReason'] as String? ?? '')
+          : widget.caseReason;
 
       if (patientId.isEmpty) {
         patientId = routeArgs?['userId'] as String? ?? '';
       }
+      if (patientId == 'guest') patientId = '';
 
       setState(() {
         _activeResult = res;
@@ -70,7 +86,9 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
   }
 
   Future<void> _loadSessionIfNeeded() async {
-    if (_activePatientUserId == null || _activePatientUserId!.isEmpty) {
+    if (_activePatientUserId == null ||
+        _activePatientUserId!.isEmpty ||
+        _activePatientUserId == 'guest') {
       final prefs = await SharedPreferences.getInstance();
       final savedId = prefs.getString('session_user_id') ?? '';
       if (savedId.isNotEmpty && mounted) {
@@ -81,10 +99,10 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
     }
   }
 
-  void _continueBooking() {
+  Future<void> _continueBooking() async {
     final res = _activeResult;
     final p = _p;
-    if (res == null || p == null) return;
+    if (res == null || p == null || _isContinuing) return;
 
     final id = _activePatientUserId?.trim() ?? '';
     if (id.isEmpty) {
@@ -100,47 +118,73 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
       return;
     }
 
-    final slotDate = AiSlotUtils.nextOccurrence(_slot!.day);
-    final dateStr = slotDate.toIso8601String().split('T').first;
     final reason = _activeCaseReason.trim();
 
-    Navigator.pushNamed(
-      context,
-      '/ai-appointment',
-      arguments: {
-        'request': BookingRequestModel(
-          patientId: id,
-          providerId: p.userId,
-          providerName: p.fullName,
-          providerRole: p.role,
-          specialization: p.specialization,
-          serviceType: p.serviceType.isNotEmpty
-              ? p.serviceType.split(',').first.trim()
-              : (_ar ? 'استشارة طبية' : 'Doctor consultation'),
-          appointmentDate: dateStr,
-          appointmentTime: _slot!.startTime,
-          visitLatitude: p.gpsLat ?? 0,
-          visitLongitude: p.gpsLng ?? 0,
-          visitAddress: '',
-          locationNote: '',
-          patientReason: reason,
-          symptoms: reason,
-          isUrgent: false,
-          additionalNotes: '',
-          price: p.consultationFee ?? 65,
-          paymentMethod: '',
-          paymentStatus: 'unpaid',
-          bookingStatus: 'pending',
+    setState(() => _isContinuing = true);
+    try {
+      final freshProvider = ProviderModel.fromJson(
+        await ApiService().getProviderById(p.userId, realAvailability: true),
+      );
+      if (!ProviderBookingEligibility.canBook(freshProvider)) {
+        if (mounted) Navigator.pop(context, true);
+        return;
+      }
+
+      if (!mounted) return;
+      final becameUnavailable = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SelectServiceScreen(
+            returnWhenUnavailable: true,
+            request: BookingRequestModel(
+              patientId: id,
+              providerId: freshProvider.userId,
+              providerName: freshProvider.fullName,
+              providerRole: freshProvider.role,
+              providerImageUrl: freshProvider.profileImageUrl ?? '',
+              specialization: freshProvider.specialization,
+              serviceType: freshProvider.serviceType,
+              appointmentDate: '',
+              appointmentTime: '',
+              visitLatitude: freshProvider.gpsLat ?? 0,
+              visitLongitude: freshProvider.gpsLng ?? 0,
+              visitAddress: '',
+              locationNote: '',
+              patientReason: reason,
+              symptoms: reason,
+              isUrgent: false,
+              additionalNotes: '',
+              price: freshProvider.consultationFee ?? 0,
+              paymentMethod: '',
+              paymentStatus: 'unpaid',
+              bookingStatus: 'pending_payment',
+            ),
+          ),
         ),
-        'aiResult': res,
-        'displayDate': _readableDate(slotDate),
-        'displayTime': _timeRange(_slot!.startTime, _slot!.endTime),
-        'selectedProvider': p,
-        'patientRequest': reason,
-        'recommendedSpecialization': p.specialization,
-        'userId': id,
-      },
-    );
+      );
+      if (becameUnavailable == true && mounted) {
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final message = e.toString().replaceFirst('Exception: ', '').trim();
+      final unavailable =
+          message.contains('Status: 409') ||
+          message.toLowerCase().contains('no longer available') ||
+          message.toLowerCase().contains('already booked');
+      if (unavailable) {
+        Navigator.pop(context, true);
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message.isEmpty ? _t('bookingFailed') : message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isContinuing = false);
+    }
   }
 
   @override
@@ -148,42 +192,55 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
     return AnimatedBuilder(
       animation: Listenable.merge([localeController, themeController]),
       builder: (context, _) {
-        final colorScheme = Theme.of(context).colorScheme;
-        final themeColor = colorScheme.onSurface;
-        final helperColor = colorScheme.onSurfaceVariant;
-        final pageBgColor = colorScheme.surface;
-        final cardBgColor = colorScheme.surfaceContainer;
-        final strokeColor = colorScheme.outlineVariant;
-        final primaryColor = colorScheme.primary;
+        final palette = CarelinkPalette.of(context);
+        final themeColor = palette.inkDark;
+        final helperColor = palette.inkMuted;
+        final pageBgColor = palette.pageBg;
+        final cardBgColor = palette.surface;
+        final strokeColor = palette.stroke;
+        const primaryColor = AppColors.primary;
 
         if (_bootstrapped && _activeResult == null) {
           return Directionality(
-            textDirection: localeController.isArabic ? TextDirection.rtl : TextDirection.ltr,
+            textDirection: localeController.isArabic
+                ? TextDirection.rtl
+                : TextDirection.ltr,
             child: Scaffold(
               backgroundColor: pageBgColor,
-              appBar: PatientAppBar(
-                title: _t('title'),
-              ),
+              appBar: PatientAppBar(title: _t('title')),
               body: Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24.0),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.error_outline_rounded, size: 64, color: Colors.red),
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        size: 64,
+                        color: Colors.red,
+                      ),
                       const SizedBox(height: 16),
                       Text(
                         _t('dataMissing'),
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: themeColor),
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: themeColor,
+                        ),
                       ),
                       const SizedBox(height: 24),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: primaryColor,
-                          foregroundColor: colorScheme.onPrimary,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                         onPressed: () => Navigator.of(context).pop(),
                         child: Text(_t('goBack')),
@@ -198,40 +255,83 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
 
         final p = _p!;
         final isDoctor = p.role.toLowerCase() == 'doctor';
-        final specialty = p.specialization.isEmpty ? p.role : p.specialization;
+        final specialty = _providerSpecialty(p);
         final distLabel = _distanceLabel(widget.distanceKm);
-        final slotHint = _slot != null ? '${_day(_slot!.day)} ${_clock(_slot!.startTime)}' : (p.isAvailable ? (_ar ? 'متاح اليوم' : 'Open today') : (_ar ? 'مواعيد محدودة' : 'Limited slots'));
+        final slotHint = _slot != null
+            ? '${_day(_slot!.day)} ${_clock(_slot!.startTime)}'
+            : (p.isAvailable
+                  ? (_ar ? 'متاح اليوم' : 'Open today')
+                  : (_ar ? 'مواعيد محدودة' : 'Limited slots'));
 
         return Directionality(
-          textDirection: localeController.isArabic ? TextDirection.rtl : TextDirection.ltr,
+          textDirection: localeController.isArabic
+              ? TextDirection.rtl
+              : TextDirection.ltr,
           child: Scaffold(
             backgroundColor: pageBgColor,
-            appBar: PatientAppBar(
-              title: _t('title'),
-            ),
-            bottomNavigationBar: Container(
-              color: pageBgColor,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-              child: SafeArea(
+            appBar: PatientAppBar(title: _t('title')),
+            bottomNavigationBar: SafeArea(
+              top: false,
+              minimum: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(
+                        alpha: palette.isDark ? 0.24 : 0.2,
+                      ),
+                      blurRadius: 18,
+                      offset: const Offset(0, 7),
+                    ),
+                  ],
+                ),
                 child: SizedBox(
                   height: 50,
-                  width: double.infinity,
-                  child: FilledButton.icon(
+                  child: FilledButton(
                     style: FilledButton.styleFrom(
-                      backgroundColor: Colors.teal, // Primary teal as requested
+                      backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
+                      disabledBackgroundColor: AppColors.primary.withValues(
+                        alpha: 0.65,
+                      ),
+                      disabledForegroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: _continueBooking,
-                    icon: const Icon(Icons.calendar_month_rounded, size: 20),
-                    label: Text(
-                      _t('continue'),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
+                    onPressed: _isContinuing ? null : _continueBooking,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _t('continue'),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(width: 9),
+                        if (_isContinuing)
+                          const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        else
+                          Icon(
+                            _ar
+                                ? Icons.arrow_back_rounded
+                                : Icons.arrow_forward_rounded,
+                            size: 19,
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -239,39 +339,46 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
             ),
             body: SafeArea(
               child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 children: [
                   // 1. Compact Summary Card
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: cardBgColor,
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: strokeColor),
+                      boxShadow: [
+                        BoxShadow(
+                          color: palette.cardShadowColor(0.055),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        ClipOval(
-                          child: Image.asset(
-                            isDoctor
-                                ? 'assets/images/doctorportrait.jpg'
-                                : 'assets/images/nursemedical.jpg',
-                            width: 72,
-                            height: 72,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                width: 72,
-                                height: 72,
-                                color: colorScheme.surfaceContainerHighest,
-                                child: Icon(
-                                  isDoctor ? Icons.person_rounded : Icons.medical_services_rounded,
-                                  color: helperColor,
-                                  size: 36,
-                                ),
-                              );
-                            },
+                        Container(
+                          width: 68,
+                          height: 68,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppColors.primary.withValues(alpha: 0.09),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.24),
+                            ),
+                          ),
+                          child: ClipOval(
+                            child: profileAvatarOrPlaceholder(
+                              imageUrl: p.profileImageUrl,
+                              size: 68,
+                              placeholderColor: AppColors.primary,
+                              placeholderIcon: isDoctor
+                                  ? Icons.medical_services_outlined
+                                  : Icons.local_hospital_outlined,
+                              iconSize: 31,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 14),
@@ -280,7 +387,8 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   Expanded(
                                     child: Text(
@@ -295,15 +403,20 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
                                     ),
                                   ),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF2BB673).withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(8),
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(999),
                                     ),
                                     child: Text(
-                                      '${_activeResult!.matchPercentage}% ${_ar ? 'توافق' : 'match'}',
+                                      _ar ? 'موصى به' : 'Recommended',
                                       style: const TextStyle(
-                                        color: Color(0xFF259c60),
+                                        color: AppColors.primary,
                                         fontWeight: FontWeight.w600,
                                         fontSize: 12,
                                       ),
@@ -322,28 +435,50 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
                               const SizedBox(height: 6),
                               Row(
                                 children: [
-                                  const Icon(Icons.star_rounded, color: Color(0xFFF2B036), size: 16),
+                                  const Icon(
+                                    Icons.star_rounded,
+                                    color: Color(0xFFF2B036),
+                                    size: 16,
+                                  ),
                                   const SizedBox(width: 2),
                                   Text(
                                     p.overallRating.toStringAsFixed(1),
-                                    style: TextStyle(color: themeColor, fontWeight: FontWeight.bold, fontSize: 12),
+                                    style: TextStyle(
+                                      color: themeColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
                                   ),
                                   const SizedBox(width: 8),
-                                  Icon(Icons.location_on_outlined, color: primaryColor, size: 15),
+                                  const Icon(
+                                    Icons.location_on_outlined,
+                                    color: primaryColor,
+                                    size: 15,
+                                  ),
                                   const SizedBox(width: 2),
                                   Text(
                                     distLabel,
-                                    style: TextStyle(color: helperColor, fontSize: 12),
+                                    style: TextStyle(
+                                      color: helperColor,
+                                      fontSize: 12,
+                                    ),
                                   ),
                                   const SizedBox(width: 8),
-                                  Icon(Icons.event_available_rounded, color: primaryColor, size: 15),
+                                  const Icon(
+                                    Icons.event_available_rounded,
+                                    color: primaryColor,
+                                    size: 15,
+                                  ),
                                   const SizedBox(width: 2),
                                   Expanded(
                                     child: Text(
                                       slotHint,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(color: helperColor, fontSize: 12),
+                                      style: TextStyle(
+                                        color: helperColor,
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -354,155 +489,178 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
 
-                  // 2. Explanation Title Section
-                  Text(
-                    _t('explanationTitle'),
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: themeColor,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _t('explanationSubtitle'),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: helperColor,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 3a. Recommendation Reason (from medical records)
-                  if (_activeResult!.aiMatchReason != null ||
-                      _activeResult!.matchedTags.isNotEmpty) ...[
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF7C5CE7).withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: const Color(0xFF7C5CE7).withValues(alpha: 0.18),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.medical_information_outlined,
-                                color: Color(0xFF7C5CE7),
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _ar ? 'لماذا موصى به' : 'Why Recommended',
-                                style: const TextStyle(
-                                  color: Color(0xFF7C5CE7),
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (_activeResult!.aiMatchReason != null) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              _activeResult!.aiMatchReason!,
-                              style: TextStyle(
-                                color: themeColor,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                                height: 1.4,
-                              ),
-                            ),
-                          ],
-                          if (_activeResult!.matchedTags.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: _activeResult!.matchedTags
-                                  .take(5)
-                                  .map(
-                                    (tag) => Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 9,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(
-                                          0xFF7C5CE7,
-                                        ).withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(999),
-                                        border: Border.all(
-                                          color: const Color(
-                                            0xFF7C5CE7,
-                                          ).withValues(alpha: 0.25),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        tag,
-                                        style: const TextStyle(
-                                          color: Color(0xFF5A3FC0),
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // 3b. Score Breakdown Card
+                  // 2. Overall match
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: cardBgColor,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: strokeColor),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.2),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: palette.cardShadowColor(0.05),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
                     ),
-                    child: AiScoreBreakdown(
-                      breakdown: _activeResult!.breakdown,
-                      isArabic: _ar,
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 54,
+                              height: 54,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.primary.withValues(alpha: 0.1),
+                              ),
+                              child: const Icon(
+                                Icons.auto_awesome_rounded,
+                                color: AppColors.primary,
+                                size: 27,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _t('overallMatch'),
+                                    style: TextStyle(
+                                      color: helperColor,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    _overallMatchLabel(
+                                      _activeResult!.matchPercentage,
+                                    ),
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    _t('shortExplanation'),
+                                    style: TextStyle(
+                                      color: themeColor,
+                                      fontSize: 12,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                setState(() => _showMore = !_showMore);
+                              },
+                              child: Text(
+                                _t(_showMore ? 'showLess' : 'showMore'),
+                                style: const TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        AnimatedCrossFade(
+                          duration: const Duration(milliseconds: 200),
+                          crossFadeState: _showMore
+                              ? CrossFadeState.showSecond
+                              : CrossFadeState.showFirst,
+                          firstChild: const SizedBox(width: double.infinity),
+                          secondChild: Column(
+                            children: [
+                              Divider(height: 24, color: strokeColor),
+                              Row(
+                                children: [
+                                  Text(
+                                    _t('matchScore'),
+                                    style: TextStyle(
+                                      color: helperColor,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    '${_activeResult!.matchPercentage}%',
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              AiScoreBreakdown(
+                                breakdown: _activeResult!.breakdown,
+                                isArabic: _ar,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 16),
 
-                  // 4. Privacy Card
+                  // 3. Three clear reasons
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.teal.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.shield_outlined,
-                          color: Colors.teal,
-                          size: 24,
+                      color: cardBgColor,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: strokeColor),
+                      boxShadow: [
+                        BoxShadow(
+                          color: palette.cardShadowColor(0.045),
+                          blurRadius: 14,
+                          offset: const Offset(0, 5),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _t('privacy'),
-                            style: TextStyle(
-                              color: themeColor,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              height: 1.4,
-                            ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _t('mainReasons'),
+                          style: TextStyle(
+                            color: themeColor,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
                           ),
+                        ),
+                        const SizedBox(height: 12),
+                        _reasonRow(
+                          palette,
+                          Icons.health_and_safety_outlined,
+                          _t('reasonCondition'),
+                        ),
+                        const SizedBox(height: 10),
+                        _reasonRow(
+                          palette,
+                          Icons.location_on_outlined,
+                          _t('reasonArea'),
+                        ),
+                        const SizedBox(height: 10),
+                        _reasonRow(
+                          palette,
+                          Icons.star_outline_rounded,
+                          _t('reasonRating'),
                         ),
                       ],
                     ),
@@ -515,6 +673,63 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
         );
       },
     );
+  }
+
+  Widget _reasonRow(CarelinkPalette palette, IconData icon, String label) {
+    return Row(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.primary.withValues(alpha: 0.1),
+          ),
+          child: Icon(icon, size: 19, color: AppColors.primary),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: palette.inkDark,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const Icon(
+          Icons.check_circle_rounded,
+          color: AppColors.primary,
+          size: 20,
+        ),
+      ],
+    );
+  }
+
+  String _overallMatchLabel(int score) {
+    if (score >= 85) return _ar ? 'توافق ممتاز' : 'Excellent Match';
+    if (score >= 70) return _ar ? 'توافق جيد جداً' : 'Very Good Match';
+    if (score >= 50) return _ar ? 'توافق جيد' : 'Good Match';
+    return _ar ? 'توافق متوسط' : 'Moderate Match';
+  }
+
+  String _providerSpecialty(ProviderModel provider) {
+    final specialty = provider.specialization.trim();
+    final invalid = {
+      '',
+      'doctor',
+      'nurse',
+      'provider',
+      'null',
+      'unknown',
+      'carid',
+    };
+    if (!invalid.contains(specialty.toLowerCase())) return specialty;
+
+    final service = provider.serviceType.trim();
+    if (!invalid.contains(service.toLowerCase())) return service;
+    return _ar ? 'مقدم رعاية عامة' : 'General Care Provider';
   }
 
   String _distanceLabel(double? value) {
@@ -541,10 +756,6 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
     return days[day.trim().toLowerCase()] ?? 'متاح';
   }
 
-  String _timeRange(String start, String end) {
-    return '${_clock(start)} - ${_clock(end)}';
-  }
-
   String _clock(String raw) {
     final parts = raw.split(':');
     if (parts.length < 2) return raw;
@@ -560,34 +771,6 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
     return '$h:${minute.toString().padLeft(2, '0')} $period';
   }
 
-  String _readableDate(DateTime d) {
-    if (!_ar) return AiSlotUtils.formatReadable(d);
-    const months = [
-      'يناير',
-      'فبراير',
-      'مارس',
-      'أبريل',
-      'مايو',
-      'يونيو',
-      'يونيو',
-      'أغسطس',
-      'سبتمبر',
-      'أكتوبر',
-      'نوفمبر',
-      'ديسمبر',
-    ];
-    const days = [
-      'الإثنين',
-      'الثلاثاء',
-      'الأربعاء',
-      'الخميس',
-      'الجمعة',
-      'السبت',
-      'الأحد',
-    ];
-    return '${days[d.weekday - 1]}، ${d.day} ${months[d.month - 1]} ${d.year}';
-  }
-
   String _t(String key) {
     final strings = _ar ? _arStrings : _enStrings;
     return strings[key] ?? _enStrings[key] ?? key;
@@ -598,15 +781,24 @@ const _enStrings = <String, String>{
   'title': 'Why this provider?',
   'match': 'match',
   'continue': 'Continue Booking',
-  'privacy': 'Your privacy is protected. We do not share your data with external parties.',
+  'privacy':
+      'Your privacy is protected. We do not share your data with external parties.',
   'signIn': 'Please sign in as a patient to book.',
   'noSlots': 'No available slots for this provider.',
+  'bookingFailed': 'Unable to start booking. Please try again.',
   'language': 'Change language',
   'theme': 'Change theme',
   'dataMissing': 'Provider recommendation details are missing or unavailable.',
   'goBack': 'Go Back',
-  'explanationTitle': 'Why did we recommend this provider?',
-  'explanationSubtitle': 'Compatibility score calculated based on your condition, location, and health profile.',
+  'overallMatch': 'Overall match',
+  'shortExplanation': 'A strong choice for your care needs.',
+  'showMore': 'Show more',
+  'showLess': 'Show less',
+  'matchScore': 'Match score',
+  'mainReasons': 'Why we recommend this provider',
+  'reasonCondition': 'Suitable for your condition',
+  'reasonArea': 'Available in your area',
+  'reasonRating': 'Well rated by patients',
 };
 
 const _arStrings = <String, String>{
@@ -616,10 +808,18 @@ const _arStrings = <String, String>{
   'privacy': 'خصوصيتك محمية، ولا نشارك بياناتك مع أي طرف خارجي.',
   'signIn': 'يرجى تسجيل الدخول كمريض لإتمام الحجز.',
   'noSlots': 'لا توجد مواعيد متاحة لهذا المقدم.',
+  'bookingFailed': 'تعذر بدء الحجز. يرجى المحاولة مرة أخرى.',
   'language': 'تغيير اللغة',
   'theme': 'تغيير المظهر',
   'dataMissing': 'تفاصيل توصية مقدم الخدمة مفقودة أو غير متوفرة.',
   'goBack': 'العودة للخلف',
-  'explanationTitle': 'لماذا رشحنا هذا المقدم؟',
-  'explanationSubtitle': 'تم حساب التوافق بناءً على حالتك وموقعك واحتياجاتك الصحية',
+  'overallMatch': 'التوافق العام',
+  'shortExplanation': 'خيار مناسب لاحتياجاتك الصحية.',
+  'showMore': 'عرض المزيد',
+  'showLess': 'عرض أقل',
+  'matchScore': 'نسبة التوافق',
+  'mainReasons': 'لماذا نوصي بهذا المقدم؟',
+  'reasonCondition': 'مناسب لحالتك',
+  'reasonArea': 'متاح في منطقتك',
+  'reasonRating': 'تقييمه جيد',
 };

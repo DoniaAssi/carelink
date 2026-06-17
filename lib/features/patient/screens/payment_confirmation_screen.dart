@@ -5,6 +5,8 @@ import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/widgets/secure_payment_notice.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/features/patient/payment/payment_screen.dart';
+import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
 
@@ -59,31 +61,28 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   Future<void> _confirm() async {
     setState(() => isLoading = true);
     try {
-      final booking = await ApiService().createBooking(
+      final request = BookingRequestModel(
         patientId: widget.patientUserId,
         providerId: widget.provider.userId,
-        date: widget.date,
-        time: widget.time,
-        notes: _displayReason,
-        serviceType: widget.serviceType,
+        providerName: widget.provider.fullName,
+        providerRole: widget.provider.role,
+        appointmentDate: widget.date,
+        appointmentTime: widget.time,
+        serviceType: widget.serviceType ?? 'General',
+        appointmentType: 'in_person',
+        price: widget.consultationFee,
+        discount: widget.discount,
+        totalAmount: widget.amount,
         visitAddress: widget.visitAddress,
         visitLatitude: widget.visitLatitude,
         visitLongitude: widget.visitLongitude,
         locationNote: widget.locationNote,
         symptoms: widget.notes.trim(),
         isUrgent: widget.isUrgent,
-        urgencyLevel: widget.isUrgent ? 'urgent' : 'routine',
-        additionalNotes: widget.locationNote,
-        paymentMethod: '',
-        paymentStatus: 'unpaid',
       );
 
-      final appointmentId = (booking['appointmentId'] ?? '').toString();
-      if (appointmentId.isEmpty) {
-        throw Exception('Booking created but appointment id is missing');
-      }
-
       if (!mounted) return;
+<<<<<<< HEAD
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Booking request sent to the doctor.'),
@@ -97,6 +96,13 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
           builder: (_) => PatientNavigationShell(
             userId: widget.patientUserId,
             initialTab: 1,
+=======
+      final paymentSuccessData = await Navigator.pushReplacement<Map<String, dynamic>?, dynamic>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PaymentScreen(
+            request: request,
+>>>>>>> d65865e (My latest changes)
           ),
         ),
       );
@@ -131,8 +137,8 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
               Expanded(
                 child: Text(
                   'Total\n${widget.amount.toStringAsFixed(2)} ILS',
-                  style: const TextStyle(
-                    color: AppColors.textDark,
+                  style: TextStyle(
+                    color: p.inkDark,
                     fontWeight: FontWeight.w700,
                     fontSize: 16,
                     height: 1.2,
@@ -184,9 +190,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: p.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE0E7EA)),
+                border: Border.all(color: p.stroke),
               ),
               child: Row(
                 children: [
@@ -194,7 +200,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                     width: 78,
                     height: 78,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEAF3F0),
+                      color: p.surfaceSoft,
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
@@ -214,20 +220,17 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                           widget.provider.fullName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 20,
-                            color: AppColors.textDark,
+                            color: p.inkDark,
                           ),
                         ),
                         Text(
                           specialization,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF7B8C95),
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(color: p.inkMuted, fontSize: 12),
                         ),
                         const SizedBox(height: 7),
                         Row(
@@ -240,9 +243,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                             const SizedBox(width: 3),
                             Text(
                               widget.provider.overallRating.toStringAsFixed(1),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: Color(0xFF4D6774),
+                                color: p.inkMuted,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -298,12 +301,12 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                 ),
             ],
             const SizedBox(height: 14),
-            const Text(
+            Text(
               'Payment Detail',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                color: AppColors.textDark,
+                color: p.inkDark,
               ),
             ),
             const SizedBox(height: 8),
@@ -321,7 +324,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                   ? '-'
                   : '${widget.discount.toStringAsFixed(2)} ILS',
             ),
-            const Divider(height: 20, color: Color(0xFFE1E8EB)),
+            Divider(height: 20, color: p.stroke),
             _paymentLine(
               'Total',
               '${widget.amount.toStringAsFixed(2)} ILS',
@@ -329,13 +332,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
               bold: true,
             ),
             const SizedBox(height: 14),
-            const Text(
+            Text(
               'Next, choose how you pay (cash, card, or wallet).',
-              style: TextStyle(
-                color: Color(0xFF74858E),
-                fontSize: 13.5,
-                height: 1.35,
-              ),
+              style: TextStyle(color: p.inkMuted, fontSize: 13.5, height: 1.35),
             ),
             const SizedBox(height: 14),
             const SecurePaymentNotice(),
@@ -346,22 +345,23 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   }
 
   Widget _sectionHeader(String title, {String? action}) {
+    final p = CarelinkPalette.of(context);
     return Row(
       children: [
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.w700,
             fontSize: 16,
-            color: AppColors.textDark,
+            color: p.inkDark,
           ),
         ),
         const Spacer(),
         if (action != null)
           Text(
             action,
-            style: const TextStyle(
-              color: Color(0xFF8FA0A8),
+            style: TextStyle(
+              color: p.inkMuted,
               fontWeight: FontWeight.w600,
               fontSize: 12,
             ),
@@ -371,13 +371,14 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   }
 
   Widget _lineRow({required IconData icon, required String text}) {
+    final p = CarelinkPalette.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: p.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE0E7EA)),
+        border: Border.all(color: p.stroke),
       ),
       child: Row(
         children: [
@@ -386,10 +387,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
-                color: Color(0xFF435A66),
-                fontWeight: FontWeight.w600,
-              ),
+              style: TextStyle(color: p.inkDark, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -400,9 +398,10 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   Widget _paymentLine(
     String label,
     String value, {
-    Color valueColor = AppColors.textDark,
+    Color? valueColor,
     bool bold = false,
   }) {
+    final p = CarelinkPalette.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
@@ -410,14 +409,17 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
           Text(
             label,
             style: TextStyle(
-              color: const Color(0xFF74858E),
+              color: p.inkMuted,
               fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
             ),
           ),
           const Spacer(),
           Text(
             value,
-            style: TextStyle(color: valueColor, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: valueColor ?? p.inkDark,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),

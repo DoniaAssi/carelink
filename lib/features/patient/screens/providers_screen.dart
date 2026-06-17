@@ -759,7 +759,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   }
 
   Widget _filterButton(CarelinkPalette p) {
-    return InkWell(
+    return PatientPressable(
       onTap: _openFilters,
       borderRadius: BorderRadius.circular(15),
       child: Container(
@@ -952,7 +952,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     final isDoctor = provider.role.toLowerCase() == 'doctor';
     final matchPercentage = _matchPercentageFor(provider);
 
-    return InkWell(
+    return PatientPressable(
       onTap: () => _openProvider(provider),
       borderRadius: BorderRadius.circular(17),
       child: Container(

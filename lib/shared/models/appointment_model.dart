@@ -4,6 +4,7 @@ class AppointmentModel {
   final String providerUserId;
   final String providerName;
   final String providerRole;
+  final String providerImageUrl;
   final String specialization;
   final String status;
   final String location;
@@ -21,6 +22,7 @@ class AppointmentModel {
   final double? providerCurrentLat;
   final double? providerCurrentLng;
   final DateTime? providerLocationUpdatedAt;
+
   /// Set when patient submitted a post-visit rating (1–5).
   final int? patientRatingStars;
   final String patientRatingComment;
@@ -31,6 +33,7 @@ class AppointmentModel {
     required this.providerUserId,
     required this.providerName,
     required this.providerRole,
+    this.providerImageUrl = '',
     required this.specialization,
     required this.status,
     required this.location,
@@ -63,6 +66,13 @@ class AppointmentModel {
       providerName: (json['providerName'] ?? json['doctorName'] ?? '')
           .toString(),
       providerRole: (json['providerRole'] ?? '').toString(),
+      providerImageUrl:
+          (json['providerImageUrl'] ??
+                  json['profileImageUrl'] ??
+                  json['profilePictureUrl'] ??
+                  json['doctorImageUrl'] ??
+                  '')
+              .toString(),
       specialization: (json['specialization'] ?? '').toString(),
       status: (json['status'] ?? 'pending').toString(),
       location: (json['location'] ?? '').toString(),
@@ -90,9 +100,9 @@ class AppointmentModel {
       ),
       providerLocationUpdatedAt: DateTime.tryParse(
         (json['providerLocationUpdatedAt'] ?? '').toString().replaceFirst(
-              ' ',
-              'T',
-            ),
+          ' ',
+          'T',
+        ),
       ),
       patientRatingStars: _parseOptionalInt(json['patientRatingStars']),
       patientRatingComment: (json['patientRatingComment'] ?? '').toString(),

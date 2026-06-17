@@ -296,10 +296,21 @@ async function createApiPayment(body) {
   if (existingRows.length > 0) {
     const ex = existingRows[0];
     if ((ex.paymentStatus || '').toLowerCase() === 'paid') {
-      throw httpError(
-        409,
-        'Payment already completed for this appointment — duplicate charged payments are blocked.',
-      );
+      return {
+        demo: true,
+        success: true,
+        alreadyPaid: true,
+        paymentId: ex.paymentId,
+        appointmentId,
+        bookingId: appointmentId,
+        patientUserId,
+        providerUserId,
+        amount: finalAmount,
+        currency,
+        paymentMethod: ex.paymentMethod,
+        paymentStatus: 'paid',
+        message: 'Payment was already completed; the existing payment was reused.',
+      };
     }
 
     if (hasTransactionId && hasPaidAt) {
