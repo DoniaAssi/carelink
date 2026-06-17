@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:carelink/core/app_colors.dart';
-import 'package:carelink/features/notifications/notifications_screen.dart';
 import 'package:carelink/features/nurse/models/nurse_dashboard_model.dart';
 import 'package:carelink/features/nurse/services/nurse_dashboard_repository.dart';
 import 'package:carelink/shared/models/service_request.dart';
@@ -13,6 +12,7 @@ import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
 import 'nurse_patients.dart';
+import 'nurse_notifications_screen.dart';
 import 'nurse_profile.dart';
 import 'nurse_schedule_screen.dart';
 import 'nurse_service_requests.dart';
@@ -158,7 +158,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => NotificationsScreen(userId: widget.user.userId),
+                builder: (_) => NurseNotificationsScreen(user: widget.user),
               ),
             ).then((_) => dashboardController.refresh());
           },
