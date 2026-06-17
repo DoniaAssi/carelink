@@ -82,27 +82,11 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
       );
 
       if (!mounted) return;
-<<<<<<< HEAD
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Booking request sent to the doctor.'),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PatientNavigationShell(
-            userId: widget.patientUserId,
-            initialTab: 1,
-=======
       final paymentSuccessData = await Navigator.pushReplacement<Map<String, dynamic>?, dynamic>(
         context,
         MaterialPageRoute(
           builder: (_) => PaymentScreen(
             request: request,
->>>>>>> d65865e (My latest changes)
           ),
         ),
       );
