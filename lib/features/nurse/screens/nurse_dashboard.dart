@@ -12,7 +12,7 @@ import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
 import 'nurse_patients.dart';
-import 'nurse_notifications_screen.dart';
+import 'nurse_activity_screen.dart';
 import 'nurse_profile.dart';
 import 'nurse_schedule_screen.dart';
 import 'nurse_service_requests.dart';
@@ -78,7 +78,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
             _homePage(),
             NurseScheduleScreen(user: widget.user),
             NursePatients(user: widget.user),
-            NurseVisitReports(user: widget.user),
+            ActivityScreen(user: widget.user, showBottomNavigation: false),
             NurseProfile(user: widget.user),
           ],
         ),
@@ -154,14 +154,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
         IconButton(
           icon: const Icon(Icons.notifications_none_rounded, size: 32),
           color: const Color(0xFF0F172A),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => NurseNotificationsScreen(user: widget.user),
-              ),
-            ).then((_) => dashboardController.refresh());
-          },
+          onPressed: () => setState(() => selectedIndex = 3),
         ),
         if (count > 0) Positioned(right: 4, top: 3, child: _smallBadge(count)),
       ],
@@ -233,7 +226,12 @@ class _NurseDashboardState extends State<NurseDashboard> {
       (
         Icons.insert_chart_outlined,
         'Reports',
-        () => setState(() => selectedIndex = 3),
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => NurseVisitReports(user: widget.user),
+          ),
+        ),
       ),
     ];
 
@@ -685,7 +683,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
             _drawerItem(Icons.home_rounded, 'Home', 0),
             _drawerItem(Icons.calendar_month_rounded, 'Schedule', 1),
             _drawerItem(Icons.people_outline_rounded, 'Patients', 2),
-            _drawerItem(Icons.insert_chart_outlined, 'Reports', 3),
+            _drawerItem(Icons.notifications_none_rounded, 'Activity', 3),
             _drawerItem(Icons.person_rounded, 'Profile', 4),
           ],
         ),
@@ -769,11 +767,11 @@ class _NurseDashboardState extends State<NurseDashboard> {
 
   Widget _bottomNav() {
     final items = [
-      (Icons.home_rounded, 'Home'),
-      (Icons.calendar_month_rounded, 'Schedule'),
-      (Icons.groups_rounded, 'Patients'),
-      (Icons.folder_copy_outlined, 'Reports'),
-      (Icons.person_rounded, 'Profile'),
+      (Icons.home_outlined, 'Home'),
+      (Icons.calendar_month_outlined, 'Schedule'),
+      (Icons.people_outline_rounded, 'Patients'),
+      (Icons.notifications_none_rounded, 'Activity'),
+      (Icons.person_outline_rounded, 'Profile'),
     ];
     return Container(
       margin: const EdgeInsets.fromLTRB(4, 0, 4, 4),

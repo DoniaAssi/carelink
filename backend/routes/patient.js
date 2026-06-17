@@ -262,7 +262,8 @@ function normalizeChatId(value) {
 async function getConversationForUser(conversationId, userId) {
   const [rows] = await db.query(
     `SELECT * FROM chatconversation
-     WHERE conversationId = ? AND (patientId = ? OR nurseId = ?)
+     WHERE BINARY conversationId = BINARY ?
+       AND (BINARY patientId = BINARY ? OR BINARY nurseId = BINARY ?)
      LIMIT 1`,
     [conversationId, userId, userId]
   );
@@ -274,7 +275,8 @@ async function getConversationMeta(conversation) {
   const nurseId = conversation.nurseId;
   const [users] = await db.query(
     `SELECT userId, fullName, role
-     FROM user WHERE userId IN (?, ?)`,
+     FROM user
+     WHERE BINARY userId = BINARY ? OR BINARY userId = BINARY ?`,
     [patientId, nurseId]
   );
   const patient = users.find((u) => u.userId === patientId) || {};
@@ -2160,7 +2162,9 @@ router.post('/chat/conversations/get-or-create', async (req, res) => {
     await ensureChatSchema();
     const [existing] = await db.query(
       `SELECT * FROM chatconversation
-       WHERE nurseId = ? AND patientId = ? AND requestId = ?
+       WHERE BINARY nurseId = BINARY ?
+         AND BINARY patientId = BINARY ?
+         AND BINARY requestId = BINARY ?
        LIMIT 1`,
       [nurseId, patientId, requestId]
     );
@@ -2211,14 +2215,14 @@ router.get('/chat/conversations', async (req, res) => {
          (
            SELECT COUNT(*)
            FROM message m
-           WHERE m.conversationId = c.conversationId
-             AND m.receiverId = ?
+           WHERE BINARY m.conversationId = BINARY c.conversationId
+             AND BINARY m.receiverId = BINARY ?
              AND m.readAt IS NULL
          ) AS unreadCount
        FROM chatconversation c
-       LEFT JOIN user patient ON patient.userId = c.patientId
-       LEFT JOIN user nurse ON nurse.userId = c.nurseId
-       WHERE c.patientId = ? OR c.nurseId = ?
+       LEFT JOIN user patient ON BINARY patient.userId = BINARY c.patientId
+       LEFT JOIN user nurse ON BINARY nurse.userId = BINARY c.nurseId
+       WHERE BINARY c.patientId = BINARY ? OR BINARY c.nurseId = BINARY ?
        ORDER BY COALESCE(c.lastMessageAt, c.updatedAt) DESC`,
       [userId, userId, userId]
     );
@@ -2235,9 +2239,9 @@ router.get('/chat/unread-count/:userId', async (req, res) => {
   try {
     await ensureChatSchema();
     const [rows] = await db.query(
-      `SELECT COUNT(*) AS unreadCount
+     `SELECT COUNT(*) AS unreadCount
        FROM message
-       WHERE receiverId = ? AND readAt IS NULL`,
+       WHERE BINARY receiverId = BINARY ? AND readAt IS NULL`,
       [userId]
     );
     res.json({ unreadCount: Number(rows[0]?.unreadCount || 0) });
@@ -2263,7 +2267,9 @@ router.get('/chat/conversations/:conversationId/messages', async (req, res) => {
     await db.query(
       `UPDATE message
        SET deliveredAt = COALESCE(deliveredAt, NOW())
-       WHERE conversationId = ? AND receiverId = ? AND deliveredAt IS NULL`,
+       WHERE BINARY conversationId = BINARY ?
+         AND BINARY receiverId = BINARY ?
+         AND deliveredAt IS NULL`,
       [conversationId, viewerId]
     );
 
@@ -2279,7 +2285,7 @@ router.get('/chat/conversations/:conversationId/messages', async (req, res) => {
       `SELECT * FROM (
          SELECT ${chatMessageSelect()}
          FROM message
-         WHERE conversationId = ? ${beforeSql}
+         WHERE BINARY conversationId = BINARY ? ${beforeSql}
          ORDER BY createdAt DESC
          LIMIT ?
        ) latest
@@ -2322,7 +2328,8 @@ router.post('/chat/conversations/:conversationId/messages', async (req, res) => 
       const [dupes] = await db.query(
         `SELECT ${chatMessageSelect()}
          FROM message
-         WHERE conversationId = ? AND clientMessageId = ?
+         WHERE BINARY conversationId = BINARY ?
+           AND BINARY clientMessageId = BINARY ?
          LIMIT 1`,
         [conversationId, clientMessageId]
       );
@@ -2353,7 +2360,7 @@ router.post('/chat/conversations/:conversationId/messages', async (req, res) => 
       `UPDATE chatconversation
        SET lastMessage = ?, lastMessageAt = NOW(), lastSenderId = ?,
            updatedAt = NOW()
-       WHERE conversationId = ?`,
+       WHERE BINARY conversationId = BINARY ?`,
       [text, senderId, conversationId]
     );
 
@@ -2368,7 +2375,7 @@ router.post('/chat/conversations/:conversationId/messages', async (req, res) => 
     } catch (_) {}
 
     const [rows] = await db.query(
-      `SELECT ${chatMessageSelect()} FROM message WHERE messageId = ? LIMIT 1`,
+      `SELECT ${chatMessageSelect()} FROM message WHERE BINARY messageId = BINARY ? LIMIT 1`,
       [messageId]
     );
     res.status(201).json(rows[0]);
@@ -2392,7 +2399,9 @@ router.post('/chat/conversations/:conversationId/read', async (req, res) => {
            readAt = COALESCE(readAt, NOW()),
            isRead = 1,
            status = 'read'
-       WHERE conversationId = ? AND receiverId = ? AND readAt IS NULL`,
+       WHERE BINARY conversationId = BINARY ?
+         AND BINARY receiverId = BINARY ?
+         AND readAt IS NULL`,
       [conversationId, readerId]
     );
     res.json({ updated: result.affectedRows });
@@ -2419,16 +2428,16 @@ router.get('/messages/:userId', async (req, res) => {
           (
             SELECT COUNT(*)
             FROM message m
-            WHERE m.conversationId = c.conversationId
-              AND m.receiverId = ?
+            WHERE BINARY m.conversationId = BINARY c.conversationId
+              AND BINARY m.receiverId = BINARY ?
               AND m.readAt IS NULL
           ) AS unreadCount
        FROM chatconversation c
-       LEFT JOIN user patient ON patient.userId = c.patientId
-       LEFT JOIN user nurse ON nurse.userId = c.nurseId
+       LEFT JOIN user patient ON BINARY patient.userId = BINARY c.patientId
+       LEFT JOIN user nurse ON BINARY nurse.userId = BINARY c.nurseId
        LEFT JOIN careprovider cp
-         ON cp.userId = CASE WHEN c.patientId = ? THEN c.nurseId ELSE c.patientId END
-       WHERE c.patientId = ? OR c.nurseId = ?
+         ON BINARY cp.userId = BINARY (CASE WHEN BINARY c.patientId = BINARY ? THEN c.nurseId ELSE c.patientId END)
+       WHERE BINARY c.patientId = BINARY ? OR BINARY c.nurseId = BINARY ?
        ORDER BY COALESCE(c.lastMessageAt, c.updatedAt) DESC`,
       [userId, userId, userId, userId, userId, userId, userId, userId]
     );
@@ -2451,8 +2460,8 @@ router.get('/chat/:userId/:doctorId', async (req, res) => {
        SET deliveredAt = COALESCE(deliveredAt, NOW()),
            readAt = COALESCE(readAt, NOW()),
            isRead = 1
-       WHERE receiverId = ?
-         AND senderId IN (?, ?)
+       WHERE BINARY receiverId = BINARY ?
+         AND (BINARY senderId = BINARY ? OR BINARY senderId = BINARY ?)
          AND readAt IS NULL`,
       [viewerId, userId, doctorId]
     );
@@ -2462,9 +2471,9 @@ router.get('/chat/:userId/:doctorId', async (req, res) => {
       SELECT ${chatMessageSelect()}
       FROM message
       WHERE
-        (senderId = ? AND receiverId = ?)
+        (BINARY senderId = BINARY ? AND BINARY receiverId = BINARY ?)
         OR
-        (senderId = ? AND receiverId = ?)
+        (BINARY senderId = BINARY ? AND BINARY receiverId = BINARY ?)
       ORDER BY createdAt ASC
       `,
       [userId, doctorId, doctorId, userId]
@@ -2744,7 +2753,7 @@ router.get('/notifications/:userId', async (req, res) => {
           createdAt,
           relatedRequestId
        FROM usernotification
-       WHERE userId = ?
+       WHERE BINARY userId = BINARY ?
        ORDER BY createdAt DESC
        LIMIT 200`,
       [userId]

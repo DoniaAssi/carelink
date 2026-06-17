@@ -882,6 +882,14 @@ async function ensureVisitReportUiColumns() {
       columnCache.set('visit_reports.manual_patient_name', true);
     } catch (_) {}
   }
+  if (!(await hasColumn('visit_reports', 'attachment_urls'))) {
+    try {
+      await db.execute(
+        `ALTER TABLE visit_reports ADD COLUMN attachment_urls TEXT NULL`
+      );
+      columnCache.set('visit_reports.attachment_urls', true);
+    } catch (_) {}
+  }
 }
 
 async function ensurePaymentTable() {
@@ -1003,10 +1011,24 @@ function mapVisitReportRow(r) {
     medications: r.medications_prescribed || '',
     observations: r.treatment_plan || '',
     recommendations: r.recommendations || '',
+    attachments: parseJsonArray(r.attachment_urls),
     status: 'completed',
     createdAt: r.created_at,
     updatedAt: r.created_at,
   };
+}
+
+function parseJsonArray(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+  } catch (_) {
+    return String(value)
+      .split('|')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
 }
 
 function mapLegacyVisitReportRow(r) {
@@ -1030,6 +1052,7 @@ function mapLegacyVisitReportRow(r) {
     medications: '',
     observations: r.diagnosis || '',
     recommendations: '',
+    attachments: [],
     status: 'completed',
     createdAt: scheduled,
     updatedAt: scheduled,
@@ -1046,13 +1069,15 @@ router.get('/reports/:providerId', async (req, res) => {
     const durationSel = hasDuration ? 'vr.duration_hours' : '0 AS duration_hours';
     const hasManualName = await hasColumn('visit_reports', 'manual_patient_name');
     const manualNameSel = hasManualName ? 'vr.manual_patient_name' : "'' AS manual_patient_name";
+    const hasAttachments = await hasColumn('visit_reports', 'attachment_urls');
+    const attachmentsSel = hasAttachments ? 'vr.attachment_urls' : "'' AS attachment_urls";
     const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
     const visitAddressSel = hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress";
 
     let [rows] = await db.query(
       `SELECT vr.id, vr.patient_id, vr.provider_id, vr.appointment_id,
               vr.vital_signs, vr.diagnosis, vr.treatment_plan, vr.recommendations,
-              ${medSel}, ${durationSel}, ${manualNameSel},
+              ${medSel}, ${durationSel}, ${manualNameSel}, ${attachmentsSel},
               vr.created_at, vr.visit_date,
               u.fullName AS patientName,
               sr.serviceType, sr.location, ${visitAddressSel}, sr.scheduledAt
@@ -1068,7 +1093,7 @@ router.get('/reports/:providerId', async (req, res) => {
       [rows] = await db.query(
         `SELECT vr.id, vr.patient_id, vr.provider_id, vr.appointment_id,
                 vr.vital_signs, vr.diagnosis, vr.treatment_plan, vr.recommendations,
-                ${medSel}, ${durationSel}, ${manualNameSel},
+                ${medSel}, ${durationSel}, ${manualNameSel}, ${attachmentsSel},
                 vr.created_at, vr.visit_date,
                 u.fullName AS patientName,
                 sr.serviceType, sr.location, ${visitAddressSel}, sr.scheduledAt
@@ -1121,6 +1146,9 @@ router.post('/reports/:providerId', async (req, res) => {
   const vitalSigns = (b.vitalSigns || '').toString().trim();
   const medications = (b.medications || '').toString().trim();
   const recommendations = (b.recommendations || '').toString().trim();
+  const attachments = Array.isArray(b.attachments)
+    ? JSON.stringify(b.attachments.map((item) => String(item)))
+    : (b.attachments || '').toString().trim();
 
   try {
     await ensureVisitReportUiColumns();
@@ -1156,6 +1184,7 @@ router.post('/reports/:providerId', async (req, res) => {
       const hasVisitDateUp = await hasColumn('visit_reports', 'visit_date');
       const hasDurationUp = await hasColumn('visit_reports', 'duration_hours');
       const hasManualNameUp = await hasColumn('visit_reports', 'manual_patient_name');
+      const hasAttachmentsUp = await hasColumn('visit_reports', 'attachment_urls');
       const sets = [
         'diagnosis = ?',
         'treatment_plan = ?',
@@ -1183,6 +1212,10 @@ router.post('/reports/:providerId', async (req, res) => {
       if (hasManualNameUp) {
         sets.push('manual_patient_name = ?');
         vals.push((b.patientName || '').toString().trim());
+      }
+      if (hasAttachmentsUp) {
+        sets.push('attachment_urls = ?');
+        vals.push(attachments);
       }
       vals.push(reportId, providerId);
       await db.execute(
@@ -1236,13 +1269,17 @@ router.post('/reports/:providerId', async (req, res) => {
         ? 'vr.manual_patient_name'
         : "'' AS manual_patient_name";
       const hasVisitAddressUp = await hasColumn('servicerequest', 'visitAddress');
+      const hasAttachmentsSelectUp = await hasColumn('visit_reports', 'attachment_urls');
       const visitAddressSelUp = hasVisitAddressUp
         ? 'sr.visitAddress'
         : "'' AS visitAddress";
+      const attachmentsSelUp = hasAttachmentsSelectUp
+        ? 'vr.attachment_urls'
+        : "'' AS attachment_urls";
       const [updated] = await db.query(
         `SELECT vr.id, vr.patient_id, vr.provider_id, vr.vital_signs, vr.diagnosis,
                 vr.appointment_id, vr.treatment_plan, vr.recommendations,
-                ${medSelUp}, ${durationSelUp}, ${manualNameSelUp},
+                ${medSelUp}, ${durationSelUp}, ${manualNameSelUp}, ${attachmentsSelUp},
                 vr.created_at, vr.visit_date, u.fullName AS patientName,
                 sr.serviceType, sr.location, ${visitAddressSelUp}, sr.scheduledAt
          FROM visit_reports vr
@@ -1297,6 +1334,12 @@ router.post('/reports/:providerId', async (req, res) => {
         row.id,
       ]);
     }
+    if (attachments && (await hasColumn('visit_reports', 'attachment_urls'))) {
+      await db.execute(`UPDATE visit_reports SET attachment_urls = ? WHERE BINARY id = BINARY ?`, [
+        attachments,
+        row.id,
+      ]);
+    }
     if (appointmentId) {
       await db.execute(
         `UPDATE servicerequest
@@ -1337,10 +1380,14 @@ router.post('/reports/:providerId', async (req, res) => {
     const manualNameSelIns = hasManualNameIns
       ? 'vr.manual_patient_name'
       : "'' AS manual_patient_name";
+    const hasAttachmentsIns = await hasColumn('visit_reports', 'attachment_urls');
+    const attachmentsSelIns = hasAttachmentsIns
+      ? 'vr.attachment_urls'
+      : "'' AS attachment_urls";
     const [full] = await db.query(
       `SELECT vr.id, vr.patient_id, vr.provider_id, vr.vital_signs, vr.diagnosis,
               vr.appointment_id, vr.treatment_plan, vr.recommendations, ${medSelIns},
-              ${durationSelIns}, ${manualNameSelIns}, vr.created_at, vr.visit_date, u.fullName AS patientName,
+              ${durationSelIns}, ${manualNameSelIns}, ${attachmentsSelIns}, vr.created_at, vr.visit_date, u.fullName AS patientName,
               sr.serviceType, sr.location, ${visitAddressSelIns}, sr.scheduledAt
        FROM visit_reports vr
        LEFT JOIN user u ON BINARY u.userId = BINARY vr.patient_id

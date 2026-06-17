@@ -14,7 +14,7 @@ async function ensureNotificationTable() {
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       KEY idx_un_user (userId),
       KEY idx_un_created (createdAt)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 }
 
