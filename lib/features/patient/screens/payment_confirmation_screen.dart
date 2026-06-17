@@ -4,11 +4,9 @@ import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/widgets/secure_payment_notice.dart';
-import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/features/patient/payment/payment_screen.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
-import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
 
 class PaymentConfirmationScreen extends StatefulWidget {
   final String patientUserId;
@@ -66,29 +64,34 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
         providerId: widget.provider.userId,
         providerName: widget.provider.fullName,
         providerRole: widget.provider.role,
+        providerImageUrl: widget.provider.profileImageUrl ?? '',
+        specialization: widget.provider.specialization,
         appointmentDate: widget.date,
         appointmentTime: widget.time,
-        serviceType: widget.serviceType ?? 'General',
-        appointmentType: 'in_person',
+        serviceType:
+            (widget.serviceType ?? widget.provider.serviceType).trim().isEmpty
+            ? 'General'
+            : (widget.serviceType ?? widget.provider.serviceType).trim(),
+        appointmentType: 'home',
         price: widget.consultationFee,
-        discount: widget.discount,
-        totalAmount: widget.amount,
-        visitAddress: widget.visitAddress,
-        visitLatitude: widget.visitLatitude,
-        visitLongitude: widget.visitLongitude,
-        locationNote: widget.locationNote,
-        symptoms: widget.notes.trim(),
+        extraFees: widget.amount - widget.consultationFee,
+        visitAddress: widget.visitAddress ?? '',
+        visitLatitude: widget.visitLatitude ?? 0,
+        visitLongitude: widget.visitLongitude ?? 0,
+        locationNote: widget.locationNote ?? '',
+        patientReason: widget.notes.trim(),
+        symptoms: '',
         isUrgent: widget.isUrgent,
+        additionalNotes: '',
+        paymentMethod: '',
+        paymentStatus: 'unpaid',
+        bookingStatus: 'pending_provider_approval',
       );
 
       if (!mounted) return;
-      final paymentSuccessData = await Navigator.pushReplacement<Map<String, dynamic>?, dynamic>(
+      await Navigator.pushReplacement<Map<String, dynamic>?, dynamic>(
         context,
-        MaterialPageRoute(
-          builder: (_) => PaymentScreen(
-            request: request,
-          ),
-        ),
+        MaterialPageRoute(builder: (_) => PaymentScreen(request: request)),
       );
     } catch (e) {
       if (!mounted) return;

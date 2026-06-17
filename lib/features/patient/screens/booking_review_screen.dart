@@ -7,8 +7,6 @@ import 'package:carelink/features/patient/payment/booking_payment_flow.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
-import 'package:carelink/features/patient/widgets/booking_provider_summary.dart';
-import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
 
 class BookingReviewScreen extends StatefulWidget {
   final BookingRequestModel request;
@@ -57,62 +55,9 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
       _errorMessage = null;
     });
     try {
-<<<<<<< HEAD
-      final request = widget.request.copyWith(
-        bookingStatus: 'pending',
-        paymentMethod: '',
-        paymentStatus: 'unpaid',
-      );
-
-      final booking = await ApiService().createBooking(
-        patientId: request.patientId,
-        providerId: request.providerId,
-        date: request.appointmentDate,
-        time: request.appointmentTime,
-        notes: request.composedNotes,
-        serviceType: request.serviceType,
-        appointmentType: request.appointmentType,
-        visitLatitude: request.visitLatitude,
-        visitLongitude: request.visitLongitude,
-        visitAddress: request.visitAddress,
-        locationNote: request.locationNote,
-        symptoms: request.symptoms,
-        isUrgent: request.isUrgent,
-        urgencyLevel: request.isUrgent ? 'urgent' : 'routine',
-        additionalNotes: request.additionalNotes,
-        paymentMethod: request.paymentMethod,
-        paymentStatus: request.paymentStatus,
-        status: request.bookingStatus,
-      );
-
-      final appointmentId = (booking['appointmentId'] ?? '').toString();
-      if (appointmentId.isEmpty) {
-        throw Exception('missing appointment id');
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            context.l10n.isArabic
-                ? 'تم إرسال طلب الحجز للطبيب.'
-                : 'Booking request sent to the doctor.',
-          ),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) =>
-              PatientNavigationShell(userId: request.patientId, initialTab: 1),
-        ),
-=======
       final finalRequest = widget.request.copyWith(
         patientReason: _reasonController.text.trim(),
         bookingStatus: 'pending_provider_approval',
->>>>>>> d65865e (My latest changes)
       );
       await BookingPaymentFlow.open(context: context, request: finalRequest);
     } catch (e) {
@@ -157,7 +102,11 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
 
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: PatientAppBar(title: context.l10n.isArabic ? 'مراجعة الحجز' : context.tr('booking.review.title')),
+      appBar: PatientAppBar(
+        title: context.l10n.isArabic
+            ? 'مراجعة الحجز'
+            : context.tr('booking.review.title'),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
         children: [
@@ -172,7 +121,9 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
               border: Border.all(color: p.stroke),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: p.isDark ? 0.22 : 0.045),
+                  color: Colors.black.withValues(
+                    alpha: p.isDark ? 0.22 : 0.045,
+                  ),
                   blurRadius: 16,
                   offset: const Offset(0, 8),
                 ),
@@ -181,16 +132,32 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _summaryRow(context, Icons.person_outline_rounded, r.providerName),
+                _summaryRow(
+                  context,
+                  Icons.person_outline_rounded,
+                  r.providerName,
+                ),
                 const SizedBox(height: 12),
-                _summaryRow(context, Icons.medical_services_outlined, _serviceLabel(r.serviceType)),
+                _summaryRow(
+                  context,
+                  Icons.medical_services_outlined,
+                  _serviceLabel(r.serviceType),
+                ),
                 const SizedBox(height: 12),
-                _summaryRow(context, Icons.calendar_today_rounded, r.appointmentDate),
+                _summaryRow(
+                  context,
+                  Icons.calendar_today_rounded,
+                  r.appointmentDate,
+                ),
                 const SizedBox(height: 12),
                 _summaryRow(context, Icons.schedule_rounded, r.appointmentTime),
                 if (r.visitAddress.trim().isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  _summaryRow(context, Icons.location_on_outlined, r.visitAddress),
+                  _summaryRow(
+                    context,
+                    Icons.location_on_outlined,
+                    r.visitAddress,
+                  ),
                 ],
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
@@ -230,7 +197,9 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
               border: Border.all(color: p.stroke),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: p.isDark ? 0.22 : 0.045),
+                  color: Colors.black.withValues(
+                    alpha: p.isDark ? 0.22 : 0.045,
+                  ),
                   blurRadius: 16,
                   offset: const Offset(0, 8),
                 ),
@@ -275,7 +244,10 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
                     hintStyle: TextStyle(color: p.inkMuted, fontSize: 13),
                     filled: true,
                     fillColor: p.filterSurface,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide.none,
@@ -299,7 +271,10 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
                   const SizedBox(height: 6),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: p.surfaceSoft,
                       borderRadius: BorderRadius.circular(10),
@@ -331,10 +306,14 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    context.l10n.isArabic 
-                      ? 'يمكنك إلغاء الطلب قبل موافقة مقدم الرعاية'
-                      : 'You can cancel the request before provider approval',
-                    style: TextStyle(color: p.inkMuted, fontSize: 13, height: 1.4),
+                    context.l10n.isArabic
+                        ? 'يمكنك إلغاء الطلب قبل موافقة مقدم الرعاية'
+                        : 'You can cancel the request before provider approval',
+                    style: TextStyle(
+                      color: p.inkMuted,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
                   ),
                 ),
               ],
@@ -377,17 +356,10 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
             isLoading: _isSubmitting,
             icon: _errorMessage != null
                 ? Icons.refresh_rounded
-<<<<<<< HEAD
                 : Icons.lock_outline_rounded,
             label: _errorMessage != null
                 ? context.tr('booking.tryAgain')
                 : context.tr('booking.review.continuePayment'),
-=======
-                : Icons.send_rounded,
-            label: _errorMessage != null
-                ? context.tr('booking.tryAgain')
-                : (context.l10n.isArabic ? 'المتابعة إلى الدفع' : 'Continue to Payment'),
->>>>>>> d65865e (My latest changes)
           ),
         ),
       ),
@@ -412,12 +384,6 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
         ),
       ],
     );
-  }
-
-  String _appointmentTypeLabel(String value) {
-    return value == 'remote'
-        ? context.tr('booking.remoteConsultation')
-        : context.tr('booking.homeVisit');
   }
 
   String _serviceLabel(String value) {

@@ -79,11 +79,7 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
       _error = null;
     });
     try {
-<<<<<<< HEAD
-      final rows = await ApiService().getProviders();
-=======
       final rows = await ApiService().getProviders(realAvailability: true);
->>>>>>> d65865e (My latest changes)
       final providers =
           rows
               .whereType<Map>()
