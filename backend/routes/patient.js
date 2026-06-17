@@ -1462,7 +1462,7 @@ router.post('/appointments', async (req, res) => {
       locationNote ||
       ''
     ).toString().trim();
-    const finalStatus = 'pending_payment';
+    const finalStatus = 'pending';
     const parsedVisitLat = visitLatitude == null || visitLatitude === ''
       ? null
       : Number(visitLatitude);
@@ -1472,9 +1472,7 @@ router.post('/appointments', async (req, res) => {
     const normalizedPaymentMethod = paymentMethod
       ? paymentMethod.toString().trim().toLowerCase()
       : '';
-    const normalizedPaymentStatus = paymentStatus
-      ? toStatus(paymentStatus, PAYMENT_STATUSES, 'unpaid')
-      : '';
+    const normalizedPaymentStatus = 'unpaid';
 
     const columns = [
       'requestId',

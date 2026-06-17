@@ -5,9 +5,9 @@ import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/profile_avatar.dart';
 import 'package:carelink/features/patient/screens/chat_screen.dart';
+import 'package:carelink/features/patient/screens/profile_screen.dart'
+    as patient_profile;
 import 'package:carelink/services/doctor_service.dart';
-
-import 'medical_record_screen.dart';
 
 class DoctorBookingRequestDetailsScreen extends StatefulWidget {
   const DoctorBookingRequestDetailsScreen({super.key, required this.requestId});
@@ -65,7 +65,7 @@ class _DoctorBookingRequestDetailsScreenState
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => MedicalRecordScreen(patientId: patientId),
+        builder: (_) => patient_profile.ProfileScreen(userId: patientId),
       ),
     );
   }

@@ -1042,7 +1042,7 @@ class ApiService {
           'additionalNotes': additionalNotes?.trim() ?? '',
           'paymentMethod': paymentMethod?.trim() ?? '',
           'paymentStatus': paymentStatus?.trim() ?? '',
-          'status': status?.trim() ?? 'pending_payment',
+          'status': status?.trim() ?? 'pending',
         }),
       ),
     );

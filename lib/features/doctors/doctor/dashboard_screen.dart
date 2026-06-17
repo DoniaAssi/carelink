@@ -1,3 +1,6 @@
+import 'package:carelink/core/profile_avatar.dart';
+import 'package:carelink/features/notifications/notifications_screen.dart';
+import 'package:carelink/shared/services/notification_center.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -5,12 +8,12 @@ import '../../../core/app_colors.dart';
 import '../../../core/app_localizations.dart';
 import '../../../core/locale_controller.dart';
 import '../../../core/theme_controller.dart';
-import 'package:carelink/features/notifications/notifications_screen.dart';
 import '../../../services/doctor_service.dart';
-import '../../../shared/widgets/carelink_brand_logo.dart';
+import 'medical_record_screen.dart';
 import 'patients_screen.dart';
 import 'payments_screen.dart';
 import 'profile_screen.dart';
+import 'ratings_screen.dart';
 import 'reports_screen.dart';
 import 'requests_list_screen.dart';
 import 'schedule_screen.dart';
@@ -28,14 +31,26 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   bool _isLoading = true;
   int _selectedIndex = 0;
   Map<String, dynamic> _stats = {};
-  List<dynamic> _schedule = [];
+  Map<String, dynamic> _profile = {};
+  List<dynamic> _requests = [];
   String _doctorName = '';
   String _doctorId = '';
 
   @override
   void initState() {
     super.initState();
+    notificationCenter.addListener(_onNotificationsChanged);
     _loadDashboardData();
+  }
+
+  @override
+  void dispose() {
+    notificationCenter.removeListener(_onNotificationsChanged);
+    super.dispose();
+  }
+
+  void _onNotificationsChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadDashboardData() async {
@@ -50,13 +65,15 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         final results = await Future.wait([
           _doctorService.getDashboardStats(_doctorId),
           _doctorService.getRequests(_doctorId),
+          _doctorService.getProfile(_doctorId),
+          notificationCenter.load(_doctorId, force: true).then((_) => null),
         ]);
 
         if (!mounted) return;
-        final requests = results[1] as List<dynamic>;
         setState(() {
           _stats = results[0] as Map<String, dynamic>;
-          _schedule = requests.take(4).toList();
+          _requests = results[1] as List<dynamic>;
+          _profile = results[2] as Map<String, dynamic>;
           _isLoading = false;
         });
       } else if (mounted) {
@@ -111,20 +128,26 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
   Color get _pageColor =>
-      _isDark ? const Color(0xFF0F1716) : const Color(0xFFF4FAF8);
+      _isDark ? const Color(0xFF101716) : const Color(0xFFF5F5F5);
 
   Color get _cardColor => _isDark ? const Color(0xFF182321) : Colors.white;
 
-  Color get _primaryText => _isDark ? const Color(0xFFF3FAF8) : Colors.black;
+  Color get _primaryText => _isDark ? const Color(0xFFF4FAF8) : Colors.black;
 
   Color get _secondaryText =>
-      _isDark ? const Color(0xFFB7C5C1) : const Color(0xFF68727D);
-
-  Color get _dividerColor =>
-      _isDark ? Colors.white.withValues(alpha: 0.08) : Colors.grey.shade100;
+      _isDark ? const Color(0xFFB9C8C4) : const Color(0xFF626A78);
 
   Color _softColor(Color lightColor) {
     return _isDark ? AppColors.primary.withValues(alpha: 0.14) : lightColor;
+  }
+
+  BoxShadow _softShadow({double opacity = 0.06, Offset? offset}) {
+    return BoxShadow(
+      color: Colors.black.withValues(alpha: _isDark ? 0.22 : opacity),
+      blurRadius: 24,
+      spreadRadius: _isDark ? -10 : -8,
+      offset: offset ?? const Offset(0, 12),
+    );
   }
 
   Widget _buildBody() {
@@ -159,21 +182,17 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
             constraints: const BoxConstraints(maxWidth: 760),
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(24, 18, 24, 118),
+              padding: const EdgeInsets.fromLTRB(22, 20, 22, 118),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildTopBar(),
-                  const SizedBox(height: 34),
-                  _buildWelcomeHeader(),
-                  const SizedBox(height: 34),
-                  _buildStatsGrid(),
-                  const SizedBox(height: 26),
-                  _buildReportsCard(),
-                  const SizedBox(height: 26),
-                  _buildScheduleTitle(),
-                  const SizedBox(height: 10),
-                  _buildSchedulePanel(),
+                  _buildHeader(),
+                  const SizedBox(height: 28),
+                  _buildActionGrid(),
+                  const SizedBox(height: 24),
+                  _buildTodayOverview(),
+                  const SizedBox(height: 22),
+                  _buildNextAppointment(),
                 ],
               ),
             ),
@@ -183,16 +202,99 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     );
   }
 
-  Widget _buildTopBar() {
+  Widget _buildHeader() {
+    final user = _mapOf(_profile['user']);
+    final profile = _mapOf(_profile['profile']);
+    final name = (user['fullName'] ?? _doctorName).toString();
+    final specialty =
+        (profile['specialization'] ?? profile['serviceType'] ?? '')
+            .toString()
+            .trim();
+
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        const CarelinkBrandLogo(height: 34),
-        const Spacer(),
+        Container(
+          width: 106,
+          height: 106,
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: _cardColor,
+            shape: BoxShape.circle,
+            boxShadow: [_softShadow(opacity: 0.05)],
+          ),
+          child: ClipOval(
+            child: profileAvatarOrPlaceholder(
+              imageUrl:
+                  profileImageUrlFromMap(user) ??
+                  profileImageUrlFromMap(profile),
+              size: 98,
+              placeholderColor: AppColors.primary,
+              placeholderIcon: Icons.medical_services_outlined,
+              iconSize: 48,
+            ),
+          ),
+        ),
+        const SizedBox(width: 18),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${_greeting()},',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _secondaryText,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _doctorDisplayName(name),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _primaryText,
+                  fontSize: 30,
+                  height: 1.05,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 9),
+              Text(
+                specialty.isEmpty
+                    ? context.dtr('doctor.profile.specialization')
+                    : specialty,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _secondaryText,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        _buildHeaderActions(),
+      ],
+    );
+  }
+
+  Widget _buildHeaderActions() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      alignment: WrapAlignment.end,
+      children: [
         _roundIcon(
           Icons.language_rounded,
           () => localeController.toggleDoctor(),
+          color: const Color(0xFF0F8B8D),
         ),
-        const SizedBox(width: 12),
         ListenableBuilder(
           listenable: themeController,
           builder: (context, _) {
@@ -201,278 +303,234 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                   ? Icons.light_mode_rounded
                   : Icons.dark_mode_rounded,
               () => themeController.toggle(),
+              color: themeController.isDark
+                  ? const Color(0xFFFFC928)
+                  : const Color(0xFF132D5B),
             );
           },
         ),
-        const SizedBox(width: 12),
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            _roundIcon(Icons.notifications_none_rounded, _openNotifications),
-            Positioned(
-              top: 6,
-              right: 8,
-              child: Container(
-                width: 10,
-                height: 10,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFF1744),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-          ],
-        ),
+        _notificationButton(),
       ],
     );
   }
 
-  Widget _roundIcon(IconData icon, VoidCallback onTap) {
+  Widget _roundIcon(IconData icon, VoidCallback onTap, {Color? color}) {
     return Material(
-      color: _cardColor,
+      color: Colors.transparent,
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onTap,
         customBorder: const CircleBorder(),
         child: SizedBox(
-          width: 46,
-          height: 46,
-          child: Icon(icon, color: _primaryText, size: 27),
+          width: 42,
+          height: 42,
+          child: Icon(icon, color: color ?? _primaryText, size: 30),
         ),
       ),
     );
   }
 
-  Widget _buildWelcomeHeader() {
-    return Row(
+  Widget _notificationButton() {
+    final count = notificationCenter.unreadCount;
+
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
-        Container(
-          width: 120,
-          height: 120,
-          clipBehavior: Clip.antiAlias,
-          decoration: const BoxDecoration(
-            color: Color(0xFFE2F1F7),
-            shape: BoxShape.circle,
-          ),
-          child: Image.asset(
-            'assets/images/doctorportrait.jpg',
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => const Icon(
-              Icons.person_rounded,
-              color: AppColors.primary,
-              size: 70,
-            ),
-          ),
+        _roundIcon(
+          count > 0
+              ? Icons.notifications_active_rounded
+              : Icons.notifications_rounded,
+          _openNotifications,
+          color: AppColors.primary,
         ),
-        const SizedBox(width: 24),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                context.dtr(
-                  'doctor.dashboard.helloDoctor',
-                  args: {'name': _doctorName},
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 28,
-                  height: 1.08,
+        if (count > 0)
+          Positioned(
+            top: -2,
+            right: -2,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF1744),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: _pageColor, width: 2),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                count > 9 ? '9+' : '$count',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
                   fontWeight: FontWeight.w900,
-                  color: _primaryText,
+                  height: 1,
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                context.dtr(
-                  'doctor.dashboard.overviewLine',
-                  args: {'greeting': _greeting()},
-                ),
-                style: TextStyle(
-                  fontSize: 17,
-                  height: 1.35,
-                  fontWeight: FontWeight.w700,
-                  color: _secondaryText,
-                ),
-              ),
-            ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildActionGrid() {
+    final pending = _toInt(_stats['pendingRequests']);
+    final today = _toInt(_stats['todayAppointments']);
+    final patients = _toInt(_stats['totalPatients']);
+    final completed = _toInt(_stats['completedRequests']);
+    final earnings = _toDouble(_stats['totalEarnings']);
+    final rating = _toDouble(_stats['averageRating']);
+
+    final cards = [
+      _DashboardAction(
+        title: 'Requests',
+        icon: Icons.medical_services_rounded,
+        badge: pending > 0 ? '$pending' : null,
+        subtitle: pending > 0 ? '$pending pending' : null,
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const RequestsListScreen(status: 'pending'),
           ),
         ),
-        const SizedBox(width: 8),
-        Column(
-          children: [
-            Icon(
-              Icons.health_and_safety_outlined,
-              color: AppColors.primary.withValues(alpha: 0.07),
-              size: 66,
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const RequestsListScreen(),
-                  ),
-                );
-              },
-              style: OutlinedButton.styleFrom(
-                fixedSize: const Size(56, 56),
-                padding: EdgeInsets.zero,
-                side: BorderSide(
-                  color: AppColors.primary.withValues(alpha: 0.18),
-                ),
-                foregroundColor: AppColors.primary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-              child: const Icon(
-                Icons.add_rounded,
-                color: AppColors.primary,
-                size: 32,
-              ),
-            ),
-          ],
+      ),
+      _DashboardAction(
+        title: 'My Schedule',
+        icon: Icons.calendar_month_rounded,
+        subtitle: '$today plans',
+        onTap: () => setState(() => _selectedIndex = 1),
+      ),
+      _DashboardAction(
+        title: 'My Patients',
+        icon: Icons.groups_2_outlined,
+        subtitle: patients > 0 ? '$patients total' : null,
+        onTap: () => setState(() => _selectedIndex = 2),
+      ),
+      _DashboardAction(
+        title: 'Reports',
+        icon: Icons.feed_outlined,
+        subtitle: completed > 0 ? '$completed ready' : null,
+        onTap: () => setState(() => _selectedIndex = 4),
+      ),
+      _DashboardAction(
+        title: 'Earnings',
+        icon: Icons.account_balance_wallet_rounded,
+        subtitle: earnings > 0 ? earnings.toStringAsFixed(0) : null,
+        onTap: () => setState(() => _selectedIndex = 3),
+      ),
+      _DashboardAction(
+        title: 'Reviews',
+        icon: Icons.star_border_rounded,
+        subtitle: rating > 0 ? rating.toStringAsFixed(1) : null,
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const DoctorRatingsScreen()),
         ),
-      ],
+      ),
+      _DashboardAction(
+        title: 'Records',
+        icon: Icons.folder_rounded,
+        subtitle: patients > 0 ? '$patients patients' : null,
+        onTap: _openRecords,
+      ),
+      _DashboardAction(
+        title: 'More',
+        icon: Icons.more_horiz_rounded,
+        onTap: () => setState(() => _selectedIndex = 5),
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final crossAxisCount = constraints.maxWidth >= 620 ? 4 : 2;
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: cards.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 14,
+            childAspectRatio: 1,
+          ),
+          itemBuilder: (context, index) => _actionCard(cards[index]),
+        );
+      },
     );
   }
 
-  Widget _buildStatsGrid() {
-    final today = _toInt(_stats['todayAppointments']);
-    final pending = _toInt(_stats['pendingRequests']);
-    final rating = _toDouble(_stats['averageRating']);
-    final responseRate = _toDouble(_stats['responseRate']);
-
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      childAspectRatio: 1.22,
-      children: [
-        _metricCard(
-          value: today.toString(),
-          label: context.dtr('doctor.dashboard.appointmentsToday'),
-          icon: Icons.medical_services_outlined,
-          color: AppColors.primary,
-          background: const Color(0xFFE7F7F2),
-        ),
-        _metricCard(
-          value: pending.toString(),
-          label: context.dtr('doctor.dashboard.upcomingRequests'),
-          icon: Icons.event_note_outlined,
-          color: AppColors.info,
-          background: const Color(0xFFEAF4FF),
-        ),
-        _metricCard(
-          value: rating.toStringAsFixed(1),
-          label: context.dtr('doctor.dashboard.averageRating'),
-          icon: Icons.favorite_border_rounded,
-          color: const Color(0xFFE91E63),
-          background: const Color(0xFFFCE7EF),
-        ),
-        _metricCard(
-          value: '${responseRate.round()}%',
-          label: context.dtr('doctor.dashboard.responseRate'),
-          icon: Icons.link_rounded,
-          color: AppColors.primary,
-          background: const Color(0xFFE7F7F2),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildReportsCard() {
+  Widget _actionCard(_DashboardAction action) {
     return Material(
       color: _cardColor,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(24),
       child: InkWell(
-        onTap: () => setState(() => _selectedIndex = 4),
-        borderRadius: BorderRadius.circular(22),
+        onTap: action.onTap,
+        borderRadius: BorderRadius.circular(24),
         child: Container(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.035),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [_softShadow(opacity: 0.045)],
           ),
-          child: Row(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 70,
-                height: 70,
-                decoration: BoxDecoration(
-                  color: _softColor(const Color(0xFFE7F7F2)),
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: const Icon(
-                  Icons.description_outlined,
-                  color: AppColors.primary,
-                  size: 36,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      context.dtr('doctor.dashboard.medicalReports'),
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w900,
-                        color: _primaryText,
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(action.icon, color: AppColors.primary, size: 42),
+                  if (action.badge != null)
+                    Positioned(
+                      top: -12,
+                      right: -14,
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 7),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF1744),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: _cardColor, width: 2),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          action.badge!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 5),
-                    Text(
-                      context.dtr('doctor.dashboard.medicalReportsSubtitle'),
-                      style: TextStyle(
-                        fontSize: 15,
-                        height: 1.35,
-                        fontWeight: FontWeight.w700,
-                        color: _secondaryText,
-                      ),
-                    ),
-                  ],
+                ],
+              ),
+              const SizedBox(height: 22),
+              Text(
+                action.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: _primaryText,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: () => setState(() => _selectedIndex = 4),
-                icon: const Icon(Icons.add_rounded, size: 22),
-                label: Text(context.dtr('doctor.dashboard.newReport')),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
+              if (action.subtitle != null) ...[
+                const SizedBox(height: 9),
+                Text(
+                  action.subtitle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _secondaryText,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.primary,
-                size: 30,
-              ),
+              ],
             ],
           ),
         ),
@@ -480,7 +538,73 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     );
   }
 
-  Widget _metricCard({
+  Widget _buildTodayOverview() {
+    final pending = _toInt(_stats['pendingRequests']);
+    final today = _toInt(_stats['todayAppointments']);
+    final completed = _toInt(_stats['completedRequests']);
+    final canceled = _requests.where((item) {
+      final status = item is Map ? (item['status'] ?? '').toString() : '';
+      return status.toLowerCase().contains('cancel');
+    }).length;
+
+    return _sectionCard(
+      title: "Today's Overview",
+      action: 'View all',
+      onAction: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const RequestsListScreen()),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 560;
+          final itemWidth = compact
+              ? (constraints.maxWidth - 12) / 2
+              : (constraints.maxWidth - 36) / 4;
+          return Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _overviewTile(
+                width: itemWidth,
+                value: '$pending',
+                label: 'New Requests',
+                icon: Icons.person_add_alt_1_outlined,
+                color: const Color(0xFF1899D6),
+                background: const Color(0xFFEFF4FF),
+              ),
+              _overviewTile(
+                width: itemWidth,
+                value: '$today',
+                label: "Today's Visits",
+                icon: Icons.biotech_outlined,
+                color: AppColors.primary,
+                background: const Color(0xFFF2F8F4),
+              ),
+              _overviewTile(
+                width: itemWidth,
+                value: '$completed',
+                label: 'Completed',
+                icon: Icons.directions_walk_rounded,
+                color: const Color(0xFFF5A400),
+                background: const Color(0xFFFFF6E8),
+              ),
+              _overviewTile(
+                width: itemWidth,
+                value: '$canceled',
+                label: 'Canceled',
+                icon: Icons.person_off_outlined,
+                color: const Color(0xFFFF375F),
+                background: const Color(0xFFFFEEF2),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _overviewTile({
+    required double width,
     required String value,
     required String label,
     required IconData icon,
@@ -488,48 +612,48 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     required Color background,
   }) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 18, 18),
+      width: width,
+      constraints: const BoxConstraints(minHeight: 126),
+      padding: const EdgeInsets.fromLTRB(10, 14, 10, 12),
       decoration: BoxDecoration(
-        color: _cardColor,
+        color: _softColor(background),
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _isDark ? 0.16 : 0.04),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 58,
-            height: 58,
+            width: 34,
+            height: 34,
             decoration: BoxDecoration(
-              color: _softColor(background),
-              borderRadius: BorderRadius.circular(18),
+              color: Colors.white.withValues(alpha: _isDark ? 0.07 : 0.62),
+              shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: color, size: 28),
+            child: Icon(icon, color: color, size: 22),
           ),
-          const Spacer(),
+          const SizedBox(height: 12),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
+              color: _primaryText,
               fontSize: 30,
               height: 1,
               fontWeight: FontWeight.w900,
-              color: _primaryText,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 9),
           Text(
             label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 17,
-              height: 1.25,
-              fontWeight: FontWeight.w800,
-              color: _primaryText,
+              color: _secondaryText,
+              fontSize: 14,
+              height: 1.15,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -537,165 +661,197 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     );
   }
 
-  Widget _buildScheduleTitle() {
+  Widget _buildNextAppointment() {
+    final appointment = _nextAppointment;
+
+    return _sectionCard(
+      title: 'Next Appointment',
+      action: 'View all',
+      onAction: () => setState(() => _selectedIndex = 1),
+      child: appointment == null
+          ? _emptyAppointment()
+          : _nextAppointmentRow(appointment),
+    );
+  }
+
+  Widget _nextAppointmentRow(Map<String, dynamic> item) {
+    final patientName = _cleanText(item['patientName']);
+    final serviceType = _cleanText(item['serviceType']);
+    final status = _cleanText(item['status']);
+    final location =
+        _cleanText(item['visitAddress']) ??
+        _cleanText(item['location']) ??
+        _cleanText(item['locationNote']);
+    final imageUrl =
+        profileImageUrlFromMap(item) ??
+        profileImageUrlFromMap(_mapOf(item['patient']));
+
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          context.dtr('doctor.dashboard.todaysSchedule'),
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w900,
-            color: _primaryText,
-          ),
-        ),
-        TextButton(
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const RequestsListScreen(),
-              ),
-            );
-          },
+        SizedBox(
+          width: 70,
           child: Text(
-            context.dtr('doctor.dashboard.viewAll'),
-            style: const TextStyle(
-              color: AppColors.primary,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
+            _formatTime(item['scheduledAt'] ?? item['requestedDate']),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _secondaryText,
+              fontSize: 17,
+              height: 1.35,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ),
+        const SizedBox(width: 14),
+        Container(
+          width: 60,
+          height: 60,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _softColor(const Color(0xFFE7F7F2)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: profileAvatarOrPlaceholder(
+            imageUrl: imageUrl,
+            size: 60,
+            placeholderColor: AppColors.primary,
+            placeholderIcon: Icons.person_rounded,
+            iconSize: 30,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                patientName ?? context.dtr('doctor.common.notSet'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _primaryText,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                serviceType ?? context.dtr('doctor.common.notSet'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _secondaryText,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.location_on_outlined,
+                    color: AppColors.primary,
+                    size: 19,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      location ?? context.dtr('doctor.common.notSet'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _secondaryText,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        _statusBadge(status ?? ''),
       ],
     );
   }
 
-  Widget _buildSchedulePanel() {
-    if (_schedule.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
-        decoration: BoxDecoration(
-          color: _cardColor,
-          borderRadius: BorderRadius.circular(22),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              Icons.calendar_today_outlined,
-              size: 42,
-              color: Colors.grey.shade400,
+  Widget _emptyAppointment() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: _softColor(const Color(0xFFE7F7F2)),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(height: 12),
-            Text(
+            child: const Icon(
+              Icons.event_available_outlined,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
               context.dtr('doctor.dashboard.noAppointmentsToday'),
               style: TextStyle(
                 color: _secondaryText,
-                fontWeight: FontWeight.w700,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
               ),
             ),
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        color: _cardColor,
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Column(
-        children: [
-          for (var i = 0; i < _schedule.length; i++) ...[
-            _scheduleRow(_schedule[i]),
-            if (i != _schedule.length - 1)
-              Divider(height: 1, color: _dividerColor),
-          ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _scheduleRow(dynamic rawItem) {
-    final item = rawItem is Map ? rawItem : <String, dynamic>{};
-    final patientName = (item['patientName'] ?? 'Unavailable').toString();
-    final serviceType = (item['serviceType'] ?? 'Consultation').toString();
-    final status = (item['status'] ?? 'pending').toString();
-    final scheduledAt = item['scheduledAt'] ?? item['requestedDate'];
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      child: Row(
+  Widget _sectionCard({
+    required String title,
+    required String action,
+    required VoidCallback onAction,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      decoration: BoxDecoration(
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [_softShadow(opacity: 0.045)],
+      ),
+      child: Column(
         children: [
-          SizedBox(
-            width: 72,
-            child: Text(
-              _formatTime(scheduledAt),
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: _primaryText,
-              ),
-            ),
-          ),
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: _softColor(const Color(0xFFE7F7F2)),
-            child: Text(
-              patientName.isNotEmpty ? patientName[0].toUpperCase() : 'P',
-              style: const TextStyle(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  patientName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
                   style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
                     color: _primaryText,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  serviceType,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: _secondaryText,
+              ),
+              TextButton(
+                onPressed: onAction,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  textStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-              ],
-            ),
+                child: Text(action),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          _statusBadge(status),
-          const SizedBox(width: 10),
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: _cardColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _dividerColor),
-            ),
-            child: const Icon(
-              Icons.videocam_rounded,
-              color: AppColors.primary,
-              size: 24,
-            ),
-          ),
+          const SizedBox(height: 10),
+          child,
         ],
       ),
     );
@@ -722,15 +878,17 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         : context.dtr('doctor.dashboard.statusConfirmed');
 
     return Container(
-      constraints: const BoxConstraints(minWidth: 84),
+      constraints: const BoxConstraints(minWidth: 70),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(8),
+        color: _softColor(background),
+        borderRadius: BorderRadius.circular(9),
       ),
       child: Text(
         label,
         textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: color,
           fontSize: 13,
@@ -808,6 +966,71 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     );
   }
 
+  Map<String, dynamic> _mapOf(dynamic value) {
+    return value is Map
+        ? Map<String, dynamic>.from(value)
+        : <String, dynamic>{};
+  }
+
+  Map<String, dynamic>? get _nextAppointment {
+    final now = DateTime.now();
+    final appointments =
+        _requests
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .where((item) {
+              final status = (item['status'] ?? '').toString().toLowerCase();
+              final date = DateTime.tryParse(
+                (item['scheduledAt'] ?? item['requestedDate'] ?? '').toString(),
+              );
+              return date != null &&
+                  date.isAfter(now) &&
+                  (status == 'pending' || status == 'confirmed');
+            })
+            .toList()
+          ..sort((a, b) {
+            final aDate = DateTime.parse(
+              (a['scheduledAt'] ?? a['requestedDate']).toString(),
+            );
+            final bDate = DateTime.parse(
+              (b['scheduledAt'] ?? b['requestedDate']).toString(),
+            );
+            return aDate.compareTo(bDate);
+          });
+
+    return appointments.isEmpty ? null : appointments.first;
+  }
+
+  void _openRecords() {
+    final appointment = _nextAppointment;
+    final patientId = appointment == null
+        ? ''
+        : (appointment['patientUserId'] ?? appointment['patientId'] ?? '')
+              .toString();
+
+    if (patientId.isEmpty) {
+      setState(() => _selectedIndex = 2);
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MedicalRecordScreen(patientId: patientId),
+      ),
+    );
+  }
+
+  String? _cleanText(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? null : text;
+  }
+
+  String _doctorDisplayName(String name) {
+    final clean = name.trim().isEmpty ? _doctorName : name.trim();
+    return clean.toLowerCase().startsWith('dr.') ? clean : 'Dr. $clean';
+  }
+
   String _greeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) return context.dtr('doctor.dashboard.goodMorning');
@@ -827,6 +1050,22 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         : date.hour;
     final minute = date.minute.toString().padLeft(2, '0');
     final suffix = date.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $suffix';
+    return '$hour:$minute\n$suffix';
   }
+}
+
+class _DashboardAction {
+  const _DashboardAction({
+    required this.title,
+    required this.icon,
+    required this.onTap,
+    this.badge,
+    this.subtitle,
+  });
+
+  final String title;
+  final IconData icon;
+  final VoidCallback onTap;
+  final String? badge;
+  final String? subtitle;
 }

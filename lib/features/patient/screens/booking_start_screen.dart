@@ -39,12 +39,15 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
     });
     try {
       final rows = await ApiService().getProviders();
-      final providers = rows
-          .whereType<Map>()
-          .map((row) => ProviderModel.fromJson(Map<String, dynamic>.from(row)))
-          .where((provider) => provider.availableSlots.isNotEmpty)
-          .toList()
-        ..sort((a, b) => b.overallRating.compareTo(a.overallRating));
+      final providers =
+          rows
+              .whereType<Map>()
+              .map(
+                (row) => ProviderModel.fromJson(Map<String, dynamic>.from(row)),
+              )
+              .where((provider) => provider.availableSlots.isNotEmpty)
+              .toList()
+            ..sort((a, b) => b.overallRating.compareTo(a.overallRating));
       if (!mounted) return;
       setState(() {
         _providers = providers;
@@ -87,7 +90,7 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
             price: provider.consultationFee ?? 0,
             paymentMethod: '',
             paymentStatus: 'unpaid',
-            bookingStatus: 'pending_payment',
+            bookingStatus: 'pending',
           ),
         ),
       ),
@@ -99,9 +102,7 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
     final p = CarelinkPalette.of(context);
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: PatientAppBar(
-        title: _isArabic ? 'ابدأ الحجز' : 'Start Booking',
-      ),
+      appBar: PatientAppBar(title: _isArabic ? 'ابدأ الحجز' : 'Start Booking'),
       body: RefreshIndicator(
         color: AppColors.primary,
         onRefresh: _loadProviders,
@@ -293,7 +294,10 @@ class _MessageCard extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: TextStyle(color: palette.inkDark, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              color: palette.inkDark,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           if (onAction != null && actionLabel != null) ...[
             const SizedBox(height: 12),

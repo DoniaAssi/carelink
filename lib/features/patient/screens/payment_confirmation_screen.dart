@@ -5,8 +5,8 @@ import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/widgets/secure_payment_notice.dart';
 import 'package:carelink/shared/services/api_service.dart';
-import 'package:carelink/features/patient/payment/payment_screen.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
+import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
 
 class PaymentConfirmationScreen extends StatefulWidget {
   final String patientUserId;
@@ -84,20 +84,19 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
       }
 
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Booking request sent to the doctor.'),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => PaymentScreen(
-            appointmentId: appointmentId,
-            patientId: widget.patientUserId,
-            providerId: widget.provider.userId,
-            providerName: widget.provider.fullName,
-            providerRole: widget.provider.role,
-            appointmentDate: widget.date,
-            appointmentTime: widget.time,
-            amount: widget.amount,
-            serviceType: widget.serviceType,
-            location: widget.visitAddress,
+          builder: (_) => PatientNavigationShell(
+            userId: widget.patientUserId,
+            initialTab: 1,
           ),
         ),
       );
@@ -122,9 +121,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
 
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: const PatientAppBar(
-        title: 'Appointment',
-      ),
+      appBar: const PatientAppBar(title: 'Appointment'),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(

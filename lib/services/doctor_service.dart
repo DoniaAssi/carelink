@@ -372,12 +372,10 @@ class DoctorService {
   // ============================================
   Future<Map<String, dynamic>> getRatings(String doctorId) async {
     try {
-      final response = await _apiService.get(
-        '/ratings/provider/$doctorId',
-      );
-      
+      final response = await _apiService.get('/api/ratings/provider/$doctorId');
+
       final items = response['items'] as List? ?? [];
-      
+
       // Calculate distribution
       final Map<int, int> distMap = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0};
       for (var item in items) {
@@ -386,11 +384,10 @@ class DoctorService {
           distMap[stars] = (distMap[stars]! + 1);
         }
       }
-      
-      final distribution = distMap.entries.map((e) => {
-        'rating': e.key,
-        'count': e.value,
-      }).toList();
+
+      final distribution = distMap.entries
+          .map((e) => {'rating': e.key, 'count': e.value})
+          .toList();
 
       return {
         'summary': {
@@ -398,13 +395,17 @@ class DoctorService {
           'totalReviews': response['ratingsCount'] ?? 0,
           'distribution': distribution,
         },
-        'reviews': items.map((item) => {
-          'rating': item['stars'] ?? 0,
-          'patientName': item['patientName'] ?? 'Anonymous',
-          'reviewText': item['comment'] ?? '',
-          'reasonForVisit': item['reasonForVisit'] ?? '',
-          'createdAt': item['createdAt'],
-        }).toList(),
+        'reviews': items
+            .map(
+              (item) => {
+                'rating': item['stars'] ?? 0,
+                'patientName': item['patientName'] ?? 'Anonymous',
+                'reviewText': item['comment'] ?? '',
+                'reasonForVisit': item['reasonForVisit'] ?? '',
+                'createdAt': item['createdAt'],
+              },
+            )
+            .toList(),
       };
     } catch (e) {
       rethrow;

@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
+import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
-import 'package:carelink/features/patient/payment/payment_screen.dart';
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/features/patient/widgets/booking_provider_summary.dart';
+import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
 
 class BookingReviewScreen extends StatefulWidget {
   final BookingRequestModel request;
@@ -43,7 +44,7 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
     });
     try {
       final request = widget.request.copyWith(
-        bookingStatus: 'pending_payment',
+        bookingStatus: 'pending',
         paymentMethod: '',
         paymentStatus: 'unpaid',
       );
@@ -75,31 +76,29 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
       }
 
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.l10n.isArabic
+                ? 'تم إرسال طلب الحجز للطبيب.'
+                : 'Booking request sent to the doctor.',
+          ),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => PaymentScreen(
-            appointmentId: appointmentId,
-            patientId: request.patientId,
-            providerId: request.providerId,
-            providerName: request.providerName,
-            providerRole: request.providerRole,
-            appointmentDate: request.appointmentDate,
-            appointmentTime: request.appointmentTime,
-            amount: request.totalAmount,
-            serviceType: request.serviceType,
-            location: request.visitAddress,
-            servicePrice: request.price,
-            discount: request.discount,
-            isRemote: request.appointmentType == 'remote',
-          ),
+          builder: (_) =>
+              PatientNavigationShell(userId: request.patientId, initialTab: 1),
         ),
       );
     } catch (e) {
       if (!mounted) return;
 
       String errorText = e.toString().replaceAll('Exception: ', '');
-      
+
       final has409 = errorText.contains('Status: 409');
       final technicalDetailsRegex = RegExp(r'\s*\(Status: \d+, URL: .*\)');
       errorText = errorText.replaceAll(technicalDetailsRegex, '').trim();
@@ -108,8 +107,8 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              context.l10n.isArabic 
-                  ? 'هذا الموعد لم يعد متاحاً، الرجاء اختيار وقت آخر.' 
+              context.l10n.isArabic
+                  ? 'هذا الموعد لم يعد متاحاً، الرجاء اختيار وقت آخر.'
                   : 'This appointment time is no longer available. Please select another time.',
             ),
             backgroundColor: Colors.red.shade800,
@@ -121,7 +120,9 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
       }
 
       setState(() {
-        _errorMessage = errorText.isNotEmpty ? errorText : context.tr('booking.review.submitFailed');
+        _errorMessage = errorText.isNotEmpty
+            ? errorText
+            : context.tr('booking.review.submitFailed');
       });
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -231,9 +232,11 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
           child: PatientPrimaryButton(
             onPressed: _isSubmitting || !_canConfirm ? null : _confirmBooking,
             isLoading: _isSubmitting,
-            icon: _errorMessage != null ? Icons.refresh_rounded : Icons.lock_outline_rounded,
-            label: _errorMessage != null 
-                ? context.tr('booking.tryAgain') 
+            icon: _errorMessage != null
+                ? Icons.refresh_rounded
+                : Icons.lock_outline_rounded,
+            label: _errorMessage != null
+                ? context.tr('booking.tryAgain')
                 : context.tr('booking.review.continuePayment'),
           ),
         ),

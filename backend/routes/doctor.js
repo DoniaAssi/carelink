@@ -654,7 +654,7 @@ router.post('/requests/:requestId/accept', async (req, res) => {
     }
 
     const request = requestRows[0];
-    if (request.status === 'confirmed' || request.status === 'pending_payment') {
+    if (request.status === 'confirmed') {
       if (request.providerUserId === doctorId) {
         return res.json({ success: true, message: 'Request already accepted by this doctor' });
       }
@@ -664,19 +664,16 @@ router.post('/requests/:requestId/accept', async (req, res) => {
       return res.status(400).json({ error: `Cannot accept request with status: ${request.status}` });
     }
 
-    // Update request status
     await db.query(
       `UPDATE servicerequest 
-       SET status = 'pending_payment', providerUserId = ?,
-           paymentMethod = 'mock_card', paymentStatus = 'pending'
+       SET status = 'confirmed', providerUserId = ?, confirmedAt = NOW()
        WHERE requestId = ?`,
       [doctorId, requestId]
     );
 
-    // Add status history
     await db.query(
       `INSERT INTO appointmentstatushistory (statusHistoryId, requestId, patientUserId, providerUserId, statusCode, sourceRole, note)
-       VALUES (?, ?, ?, ?, 'pending_payment', 'doctor', 'Request accepted; awaiting patient payment')`,
+       VALUES (?, ?, ?, ?, 'confirmed', 'doctor', 'Request accepted')`,
       [randomUUID(), requestId, request.patientUserId, doctorId]
     );
 
@@ -686,39 +683,22 @@ router.post('/requests/:requestId/accept', async (req, res) => {
         preferenceKey: 'assignmentUpdates',
         type: 'appointment',
         title: 'Request assigned',
-        body: 'You accepted a patient request. It is waiting for patient payment.',
+        body: 'You accepted a patient request.',
         relatedRequestId: requestId,
       });
       await insertNotification({
         userId: request.patientUserId,
         type: 'appointment',
-        title: 'Payment required',
-        body: 'Your doctor accepted the request. Please complete payment before the appointment is confirmed.',
+        title: 'Appointment confirmed',
+        body: 'Your doctor accepted the request. Your appointment is confirmed.',
         relatedRequestId: requestId,
       });
     } catch (_) {}
 
-    // Create payment record
-    const [providerRows] = await db.query(
-      'SELECT consultationFee FROM careprovider WHERE userId = ?',
-      [doctorId]
-    );
-
-    const amount = providerRows.length > 0 && providerRows[0].consultationFee 
-      ? providerRows[0].consultationFee 
-      : 50.00;
-
-    await db.query(
-      `INSERT INTO payment (paymentId, requestId, patientUserId, providerUserId, amount, paymentMethod, paymentStatus)
-       VALUES (?, ?, ?, ?, ?, 'mock_card', 'pending')`,
-      [randomUUID(), requestId, request.patientUserId, doctorId, amount]
-    );
-
     res.json({
       success: true,
-      status: 'pending_payment',
-      paymentRequired: true,
-      message: 'Request accepted; patient payment is required before confirmation',
+      status: 'confirmed',
+      message: 'Request accepted and appointment confirmed',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
