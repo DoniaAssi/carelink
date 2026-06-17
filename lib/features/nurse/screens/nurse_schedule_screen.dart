@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/features/nurse/screens/nurse_contact_patient_flow.dart';
 import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
+import 'package:carelink/features/nurse/services/nurse_repository.dart';
 import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/provider_profile_service.dart';
@@ -30,6 +31,7 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
   DateTime selectedDate = DateTime.now();
   List<ServiceRequest> requests = [];
   List<Map<String, dynamic>> slots = [];
+  final NurseRepository nurseRepository = const NurseRepository();
 
   @override
   void initState() {
@@ -38,7 +40,7 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
   }
 
   Future<void> _load() async {
-    final loadedRequests = await ServiceRequestService.getProviderRequests(
+    final loadedRequests = await nurseRepository.getSchedule(
       widget.user.userId,
     );
     final loadedSlots = await ProviderProfileService.getAvailability(
@@ -126,7 +128,7 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    ..._scheduleRows(),
+                    _scheduleTable(),
                   ],
                 ),
               ),
@@ -236,61 +238,78 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
     );
   }
 
-  List<Widget> _scheduleRows() {
-    final rows = <Widget>[];
-    for (final request in _visibleAppointments) {
-      rows.add(_appointmentRow(request));
-    }
-    if (rows.isEmpty) {
-      rows.add(
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            children: const [
-              Icon(
-                Icons.calendar_month_rounded,
-                color: AppColors.primaryDark,
-                size: 38,
+  Widget _scheduleTable() {
+    final appointments = _visibleAppointments;
+    if (appointments.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: _shadow,
+        ),
+        child: const Column(
+          children: [
+            Icon(
+              Icons.calendar_month_rounded,
+              color: AppColors.primaryDark,
+              size: 38,
+            ),
+            SizedBox(height: 10),
+            Text(
+              'No visits scheduled',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Your scheduled visits will appear here.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF78909C),
+                fontWeight: FontWeight.w700,
               ),
-              SizedBox(height: 10),
-              Text(
-                'No visits scheduled',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              SizedBox(height: 4),
-              Text(
-                'Your scheduled visits will appear here.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xFF78909C),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }
-    return rows;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: _shadow,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowColor: WidgetStateProperty.all(const Color(0xFFE6F7F4)),
+            dataRowMinHeight: 62,
+            dataRowMaxHeight: 72,
+            headingTextStyle: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+            columns: const [
+              DataColumn(label: Text('Patient Name')),
+              DataColumn(label: Text('Time')),
+              DataColumn(label: Text('Service Type')),
+              DataColumn(label: Text('Status')),
+            ],
+            rows: appointments.map(_scheduleDataRow).toList(),
+          ),
+        ),
+      ),
+    );
   }
 
-  Widget _appointmentRow(ServiceRequest request) {
-    return _scheduleCard(
-      request: request,
-      time: _timeOneLine(request.scheduledDate),
-      duration: _durationText(request),
-      name: _shortPatientName(request.patientName),
-      subtitle: request.serviceType.isEmpty
-          ? 'Home Nursing Care'
-          : request.serviceType,
-      location: request.location,
-      status: _statusLabel(request.status),
-      color: _statusColor(request.status),
-      onTap: () => Navigator.push(
+  DataRow _scheduleDataRow(ServiceRequest request) {
+    final statusColor = _statusColor(request.status);
+    return DataRow(
+      onSelectChanged: (_) => Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => VisitDashboardScreen(
@@ -300,102 +319,60 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _scheduleCard({
-    required ServiceRequest request,
-    required String time,
-    required String duration,
-    required String name,
-    required String subtitle,
-    required String location,
-    required String status,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: _shadow,
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: const Color(0xFFDDF2EF),
-              child: Text(
-                _initial(request.patientName),
-                style: const TextStyle(
-                  color: AppColors.primaryDark,
-                  fontWeight: FontWeight.w900,
+      cells: [
+        DataCell(
+          SizedBox(
+            width: 150,
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: const Color(0xFFDDF2EF),
+                  child: Text(
+                    _initial(request.patientName),
+                    style: const TextStyle(
+                      color: AppColors.primaryDark,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _shortPatientName(request.patientName),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: Color(0xFF607D8B),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (location.trim().isNotEmpty)
-                    Text(
-                      location,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.primaryDark,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  time,
-                  style: const TextStyle(
-                    color: Color(0xFF151823),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  duration,
-                  style: const TextStyle(
-                    color: Color(0xFF607D8B),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _chip(status, color),
               ],
             ),
-          ],
+          ),
         ),
-      ),
+        DataCell(
+          Text(
+            _timeOneLine(request.scheduledDate),
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ),
+        DataCell(
+          SizedBox(
+            width: 132,
+            child: Text(
+              request.serviceType.isEmpty
+                  ? 'Home Nursing Care'
+                  : request.serviceType,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF607D8B),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        DataCell(_chip(_statusLabel(request.status), statusColor)),
+      ],
     );
   }
 
@@ -499,6 +476,8 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
         case 1:
           return status == 'assigned' ||
               status == 'scheduled' ||
+              status == 'confirmed' ||
+              status == 'accepted' ||
               status == 'pending';
         case 2:
           return status == 'in_progress';
@@ -556,13 +535,6 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
     return '$h:$m ${date.hour >= 12 ? 'PM' : 'AM'}';
   }
 
-  String _durationText(ServiceRequest request) {
-    final minutes = request.actualDurationMinutes > 0
-        ? request.actualDurationMinutes
-        : request.expectedDurationHours * 60;
-    return '${minutes <= 0 ? 60 : minutes} min';
-  }
-
   String _shortPatientName(String name) {
     final parts = name
         .trim()
@@ -580,11 +552,17 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
   }
 
   String _statusLabel(String status) {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'pending':
+      case 'new':
+      case 'pending_payment':
+      case 'payment_pending':
+        return 'Pending';
       case 'assigned':
       case 'scheduled':
-        return 'Upcoming';
+      case 'accepted':
+      case 'confirmed':
+        return 'Confirmed';
       case 'in_progress':
         return 'In Progress';
       case 'completed':
@@ -595,11 +573,21 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
   }
 
   Color _statusColor(String status) {
-    switch (status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+      case 'new':
+      case 'pending_payment':
+      case 'payment_pending':
+        return const Color(0xFFFFEDD5);
+      case 'assigned':
+      case 'scheduled':
+      case 'accepted':
+      case 'confirmed':
+        return const Color(0xFFDCFCE7);
       case 'in_progress':
-        return const Color(0xFFFFDFA8);
+        return const Color(0xFFDBEAFE);
       case 'completed':
-        return const Color(0xFFC9F2D7);
+        return const Color(0xFFDBEAFE);
       case 'cancelled':
         return const Color(0xFFFFD8D8);
       default:
@@ -2250,6 +2238,7 @@ class CreateReportScreen extends StatefulWidget {
 
 class _CreateReportScreenState extends State<CreateReportScreen> {
   final pageController = PageController();
+  final NurseRepository nurseRepository = const NurseRepository();
   final bloodPressureController = TextEditingController();
   final heartRateController = TextEditingController();
   final temperatureController = TextEditingController();
@@ -3219,10 +3208,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       );
       if (!saved) throw Exception('Failed to submit report');
       try {
-        await ServiceRequestService.updateRequestStatus(
-          widget.request.id,
-          'completed',
-          providerUserId: widget.user.userId,
+        await nurseRepository.updateRequestStatus(
+          requestId: widget.request.id,
+          status: 'completed',
+          nurseUserId: widget.user.userId,
         );
       } catch (e) {
         final message = e.toString().toLowerCase();

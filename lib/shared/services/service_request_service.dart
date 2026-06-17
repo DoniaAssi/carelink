@@ -88,7 +88,8 @@ class ServiceRequestService {
     String? nurseNote,
   }) async {
     String apiStatus = status;
-    if (status.toLowerCase() == 'scheduled') {
+    final normalizedStatus = status.toLowerCase().trim();
+    if (normalizedStatus == 'scheduled') {
       apiStatus = 'confirmed';
     }
     try {

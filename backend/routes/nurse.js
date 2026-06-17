@@ -252,13 +252,13 @@ router.get('/dashboard/:userId', async (req, res) => {
 
     const [[pending]] = await db.query(
       `SELECT COUNT(*) AS c FROM servicerequest
-       WHERE providerUserId = ? AND status = 'pending'`,
+       WHERE providerUserId = ? AND status IN ('pending', 'pending_provider_approval')`,
       [userId],
     );
     const [[today]] = await db.query(
       `SELECT COUNT(*) AS c FROM servicerequest
        WHERE providerUserId = ?
-         AND status IN ('confirmed','in_progress','waiting_report')
+         AND status IN ('confirmed','accepted','in_progress','waiting_report')
          AND DATE(scheduledAt) = CURDATE()`,
       [userId],
     );
@@ -473,7 +473,9 @@ router.put('/requests/:requestId/status', async (req, res) => {
   let { providerUserId, status, scheduledAt } = req.body || {};
   providerUserId = providerUserId ? providerUserId.toString().trim() : '';
   let next = status ? status.toString().trim().toLowerCase() : '';
-  if (next === 'scheduled') next = 'confirmed';
+  if (next === 'scheduled' || next === 'assigned') {
+    next = 'confirmed';
+  }
   scheduledAt = scheduledAt ? scheduledAt.toString().trim() : '';
 
   if (!providerUserId || !next) {
@@ -484,6 +486,7 @@ router.put('/requests/:requestId/status', async (req, res) => {
 
   const allowed = new Set([
     'confirmed',
+    'accepted',
     'cancelled',
     'in_progress',
     'waiting_report',
@@ -492,7 +495,7 @@ router.put('/requests/:requestId/status', async (req, res) => {
   if (!allowed.has(next)) {
     return res.status(400).json({
       error:
-        'status must be one of: confirmed, cancelled, in_progress, waiting_report, completed',
+        'status must be one of: accepted, confirmed, cancelled, in_progress, waiting_report, completed',
     });
   }
 
@@ -520,28 +523,29 @@ router.put('/requests/:requestId/status', async (req, res) => {
       return res.status(409).json({ error: 'This request is already closed' });
     }
 
-    if (current === 'pending') {
-      if (next !== 'confirmed' && next !== 'cancelled') {
+    if (current === 'pending' || current === 'pending_provider_approval') {
+      if (next !== 'confirmed' && next !== 'accepted' && next !== 'cancelled') {
         return res
           .status(400)
-          .json({ error: 'From pending, only confirmed or cancelled' });
+          .json({ error: 'From pending, only accepted, confirmed or cancelled' });
       }
     } else if (current === 'pending_payment' || current === 'payment_pending') {
-      if (next !== 'confirmed' && next !== 'cancelled') {
+      if (next !== 'confirmed' && next !== 'accepted' && next !== 'cancelled') {
         return res
           .status(400)
-          .json({ error: 'From pending payment, only confirmed or cancelled' });
+          .json({ error: 'From pending payment, only accepted, confirmed or cancelled' });
       }
-    } else if (current === 'confirmed') {
+    } else if (current === 'confirmed' || current === 'accepted') {
       if (
         next !== 'confirmed' &&
+        next !== 'accepted' &&
         next !== 'in_progress' &&
         next !== 'cancelled' &&
         next !== 'completed'
       ) {
         return res
           .status(400)
-          .json({ error: 'From confirmed, only in_progress, completed or cancelled' });
+          .json({ error: 'From accepted, only in_progress, completed or cancelled' });
       }
     } else if (current === 'in_progress') {
       if (next !== 'waiting_report' && next !== 'completed') {
@@ -561,7 +565,7 @@ router.put('/requests/:requestId/status', async (req, res) => {
 
     const effectiveNext = next;
 
-    if (next === 'confirmed') {
+    if (next === 'confirmed' || next === 'accepted') {
       const sets = ['status = ?', 'confirmedAt = COALESCE(confirmedAt, NOW())'];
       const vals = [effectiveNext];
       if (scheduledAt) {
@@ -581,13 +585,14 @@ router.put('/requests/:requestId/status', async (req, res) => {
         [effectiveNext, requestId, providerUserId],
       );
     }
-    if (next === 'confirmed') {
+    if (next === 'confirmed' || next === 'accepted') {
       try {
         await ensurePaymentForRequest(requestId);
       } catch (_) {}
     }
 
     const titles = {
+      accepted: { title: 'تم قبول الموعد', en: 'Appointment accepted' },
       confirmed: { title: 'تم قبول الموعد', en: 'Appointment accepted' },
       cancelled: { title: 'تم رفض أو إلغاء الموعد', en: 'Visit cancelled' },
       completed: { title: 'تم إكمال الخدمة', en: 'Visit completed' },
@@ -602,7 +607,7 @@ router.put('/requests/:requestId/status', async (req, res) => {
         body:
           effectiveNext === 'pending_payment'
             ? 'يرجى إكمال الدفع قبل تأكيد الموعد.'
-            : next === 'confirmed'
+            : next === 'confirmed' || next === 'accepted'
             ? 'مقدّم الرعاية قبل الطلب. ستصلك إشعارات متابعة على CareLink.'
             : next === 'cancelled'
               ? 'تم إلغاء هذا الطلب. يمكنك اختيار مقدّم خدمة آخر.'
@@ -642,7 +647,7 @@ router.post('/requests/:requestId/start', async (req, res) => {
       return res.status(403).json({ error: 'Not allowed for this provider' });
     }
     const current = (row.status || '').toString().toLowerCase();
-    if (!['confirmed', 'in_progress'].includes(current)) {
+    if (!['accepted', 'confirmed', 'in_progress'].includes(current)) {
       return res.status(400).json({ error: 'Only assigned visits can be started' });
     }
     await db.execute(

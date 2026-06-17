@@ -5,8 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/features/nurse/screens/nurse_contact_patient_flow.dart';
-import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
 import 'package:carelink/features/nurse/screens/nurse_schedule_screen.dart';
+import 'package:carelink/features/nurse/services/nurse_repository.dart';
 import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/provider_profile_service.dart';
@@ -27,6 +27,8 @@ bool nurseRequestNeedsDecision(String status) {
   final value = status.toLowerCase().trim();
   return value == 'new' ||
       value == 'pending' ||
+      value == 'pending_provider_approval' ||
+      value == 'pending provider approval' ||
       value == 'pending_payment' ||
       value == 'payment_pending';
 }
@@ -37,13 +39,17 @@ bool nurseRequestRequiresDecision(ServiceRequest request) {
 
 bool nurseRequestIsAccepted(ServiceRequest request) {
   final value = request.status.toLowerCase().trim();
-  return value == 'assigned' || value == 'accepted' || value == 'confirmed';
+  return value == 'assigned' ||
+      value == 'accepted' ||
+      value == 'confirmed' ||
+      value == 'scheduled';
 }
 
 class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   List<ServiceRequest> requests = [];
   bool isLoading = true;
   int selectedTab = 0;
+  final NurseRepository nurseRepository = const NurseRepository();
 
   @override
   void initState() {
@@ -55,21 +61,21 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   Widget build(BuildContext context) {
     return NurseUi.reactive(
       (context) => Scaffold(
-        backgroundColor: NurseUi.background,
+        backgroundColor: Colors.white,
         appBar: AppBar(
           centerTitle: true,
           leading: IconButton(
-            icon: const Icon(Icons.language_rounded),
-            onPressed: () => NurseUi.isArabic.value = !NurseUi.isArabic.value,
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            onPressed: () => Navigator.pop(context),
           ),
-          title: const Text('Requests'),
-          backgroundColor: NurseUi.background,
-          foregroundColor: NurseUi.text,
+          title: const Text('All Requests'),
+          backgroundColor: Colors.white,
+          foregroundColor: const Color(0xFF111827),
           elevation: 0,
           actions: [
             IconButton(
-              icon: const Icon(Icons.filter_alt_outlined),
-              color: AppColors.primaryDark,
+              icon: const Icon(Icons.search_rounded),
+              color: const Color(0xFF0F766E),
               onPressed: () {},
             ),
           ],
@@ -117,8 +123,12 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
       case 1:
         return requests.where(nurseRequestRequiresDecision).toList();
       case 2:
-        return requests.where(nurseRequestIsAccepted).toList();
+        return requests.where(_isConfirmedRequest).toList();
       case 3:
+        return requests.where(_isInProgressRequest).toList();
+      case 4:
+        return requests.where((r) => r.status == 'completed').toList();
+      case 5:
         return requests.where((r) => r.status == 'cancelled').toList();
       default:
         return requests;
@@ -126,18 +136,20 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   }
 
   Widget _tabs() {
-    final tabs = [
-      'All (${requests.length})',
-      'New (${requests.where(nurseRequestRequiresDecision).length})',
-      'Accepted (${requests.where(nurseRequestIsAccepted).length})',
-      'Rejected (${requests.where((r) => r.status == 'cancelled').length})',
+    final tabs = const [
+      'All',
+      'Pending',
+      'Confirmed',
+      'In Progress',
+      'Completed',
+      'Cancelled',
     ];
     return SizedBox(
-      height: 42,
+      height: 38,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemBuilder: (context, index) => _tabButton(index, tabs[index]),
-        separatorBuilder: (context, index) => const SizedBox(width: 10),
+        separatorBuilder: (context, index) => const SizedBox(width: 8),
         itemCount: tabs.length,
       ),
     );
@@ -146,27 +158,24 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   Widget _tabButton(int index, String label) {
     final selected = selectedTab == index;
     return InkWell(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(9),
       onTap: () => setState(() => selectedTab = index),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 17),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: selected ? AppColors.primary : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.035),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
-            ),
-          ],
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(
+            color: selected ? const Color(0xFF0F766E) : const Color(0xFFE5E7EB),
+            width: selected ? 1.5 : 1,
+          ),
         ),
         alignment: Alignment.center,
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? Colors.white : const Color(0xFF607D8B),
+            color: selected ? const Color(0xFF0F766E) : const Color(0xFF6B7280),
             fontWeight: FontWeight.w900,
             fontSize: 12,
           ),
@@ -184,9 +193,16 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
           margin: const EdgeInsets.symmetric(horizontal: 24),
           padding: const EdgeInsets.all(28),
           decoration: BoxDecoration(
-            color: NurseUi.surface,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.035),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
           child: Column(
             children: [
@@ -194,14 +210,14 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                 width: 72,
                 height: 72,
                 decoration: BoxDecoration(
-                  color: NurseUi.softSurface,
+                  color: const Color(0xFFE8F6F3),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   selectedTab == 0
                       ? Icons.inbox_rounded
                       : Icons.medical_services_rounded,
-                  color: AppColors.primaryDark,
+                  color: const Color(0xFF0F766E),
                   size: 36,
                 ),
               ),
@@ -212,7 +228,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                     : 'No assigned services yet',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: NurseUi.text,
+                  color: const Color(0xFF111827),
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
                 ),
@@ -223,7 +239,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                     ? 'Accepted requests will move to My Assigned Services.'
                     : 'Accepted visits, active visits, and waiting reports appear here.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: NurseUi.muted, height: 1.4),
+                style: const TextStyle(color: Color(0xFF6B7280), height: 1.4),
               ),
             ],
           ),
@@ -235,13 +251,21 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   Widget _requestCard(ServiceRequest request) {
     return InkWell(
       onTap: () => _openDetails(request),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(18),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 18),
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
         decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.045),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,12 +274,12 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 CircleAvatar(
-                  radius: 25,
-                  backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                  radius: 24,
+                  backgroundColor: const Color(0xFFE0F2F1),
                   child: Text(
                     _initial(request.patientName),
                     style: const TextStyle(
-                      color: AppColors.primaryDark,
+                      color: Color(0xFF0F766E),
                       fontSize: 18,
                       fontWeight: FontWeight.w900,
                     ),
@@ -273,7 +297,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: NurseUi.text,
+                          color: const Color(0xFF111827),
                           fontWeight: FontWeight.w900,
                           fontSize: 14,
                         ),
@@ -286,7 +310,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Color(0xFF607D8B),
+                          color: Color(0xFF6B7280),
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
@@ -295,8 +319,8 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                       Row(
                         children: [
                           const Icon(
-                            Icons.location_on_rounded,
-                            color: AppColors.primaryDark,
+                            Icons.location_on_outlined,
+                            color: Color(0xFF0F766E),
                             size: 13,
                           ),
                           const SizedBox(width: 3),
@@ -306,7 +330,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: NurseUi.muted,
+                                color: const Color(0xFF6B7280),
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -317,47 +341,40 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                     ],
                   ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _statusPill(request.status, _statusColor(request.status)),
-                    const SizedBox(height: 8),
-                    Text(
-                      _relativeDay(request.scheduledDate),
-                      style: TextStyle(
-                        color: AppColors.primaryDark.withValues(alpha: 0.55),
+                _statusPill(request.status, _statusColor(request.status)),
+              ],
+            ),
+            const SizedBox(height: 7),
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 60),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.access_time_rounded,
+                    size: 13,
+                    color: Color(0xFF0F766E),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      '${_formatDate(request.scheduledDate)}, ${_formatTime(request.scheduledDate)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF374151),
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _formatTime(request.scheduledDate),
-                      style: TextStyle(
-                        color: NurseUi.text,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            if (nurseRequestRequiresDecision(request)) ...[
-              const SizedBox(height: 13),
-              Row(
-                children: [
-                  const SizedBox(width: 62),
-                  Expanded(
-                    child: _compactRejectButton(
-                      () => _confirmRejectRequest(request),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: _compactAcceptButton(() => _openDetails(request)),
                   ),
                 ],
+              ),
+            ),
+            if (_cardActions(request).isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Padding(
+                padding: const EdgeInsetsDirectional.only(start: 0),
+                child: Row(children: _cardActions(request)),
               ),
             ],
           ],
@@ -366,57 +383,172 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
     );
   }
 
+  List<Widget> _cardActions(ServiceRequest request) {
+    final status = request.status.toLowerCase().trim();
+    if (nurseRequestRequiresDecision(request)) {
+      return [
+        Expanded(
+          child: _compactActionButton(
+            label: 'Reject',
+            icon: Icons.close_rounded,
+            outlined: true,
+            onPressed: () => _confirmRejectRequest(request),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _compactActionButton(
+            label: 'Accept',
+            icon: Icons.check_rounded,
+            onPressed: () => _acceptRequestFromCard(request),
+          ),
+        ),
+      ];
+    }
+    if (_isConfirmedRequest(request) || _isInProgressRequest(request)) {
+      return [
+        Expanded(
+          child: _compactActionButton(
+            label: 'Message',
+            icon: Icons.chat_bubble_outline_rounded,
+            outlined: true,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ContactPatientScreen(
+                  request: request,
+                  currentUserId: widget.user.userId,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _compactActionButton(
+            label: 'View Location',
+            icon: Icons.location_on_outlined,
+            outlined: true,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PatientLocationScreen(request: request),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _compactActionButton(
+            label: 'Start Visit',
+            icon: Icons.play_arrow_rounded,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => VisitDashboardScreen(
+                  request: request,
+                  user: widget.user,
+                  onChanged: _loadRequests,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+    if (status == 'completed') {
+      return [
+        Expanded(
+          child: _compactActionButton(
+            label: 'View Report',
+            icon: Icons.description_outlined,
+            onPressed: () => _openDetails(request),
+          ),
+        ),
+      ];
+    }
+    return [];
+  }
+
+  bool _isConfirmedRequest(ServiceRequest request) {
+    final status = request.status.toLowerCase().trim();
+    return status == 'confirmed' ||
+        status == 'scheduled' ||
+        status == 'assigned' ||
+        status == 'accepted';
+  }
+
+  bool _isInProgressRequest(ServiceRequest request) {
+    return request.status.toLowerCase().trim() == 'in_progress';
+  }
+
   String _initial(String value) {
     final clean = value.trim();
     return clean.isEmpty ? 'P' : clean.characters.first.toUpperCase();
   }
 
-  String _relativeDay(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final d = DateTime(date.year, date.month, date.day);
-    if (d == today) return 'Today';
-    if (d == today.add(const Duration(days: 1))) return 'Tomorrow';
-    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return names[date.weekday - 1];
-  }
-
-  Widget _compactAcceptButton(VoidCallback onPressed) {
+  Widget _compactActionButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback onPressed,
+    bool outlined = false,
+  }) {
     return SizedBox(
       height: 34,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          padding: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-          elevation: 2,
-        ),
-        onPressed: onPressed,
-        child: const Text(
-          'Accept',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
-        ),
-      ),
-    );
-  }
-
-  Widget _compactRejectButton(VoidCallback onPressed) {
-    return SizedBox(
-      height: 34,
-      child: OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xFFFF4D5E),
-          side: const BorderSide(color: Color(0xFFFF7A84)),
-          padding: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        ),
-        onPressed: onPressed,
-        child: const Text(
-          'Reject',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
-        ),
-      ),
+      child: outlined
+          ? OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: label == 'Reject'
+                    ? const Color(0xFFFF4D5E)
+                    : const Color(0xFF0F766E),
+                side: BorderSide(
+                  color: label == 'Reject'
+                      ? const Color(0xFFFF7A84)
+                      : const Color(0xFF0F766E),
+                ),
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(7),
+                ),
+              ),
+              onPressed: onPressed,
+              icon: Icon(icon, size: 14),
+              label: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            )
+          : ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                elevation: 0,
+              ),
+              onPressed: onPressed,
+              icon: Icon(icon, size: 14),
+              label: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
     );
   }
 
@@ -440,9 +572,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
 
   Future<void> _loadRequests() async {
     try {
-      final data = await ServiceRequestService.getProviderRequests(
-        widget.user.userId,
-      );
+      final data = await nurseRepository.getAllRequests(widget.user.userId);
       if (!mounted) return;
       setState(() {
         requests = data;
@@ -455,25 +585,43 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
     }
   }
 
-  Future<void> _updateRequestStatus(
-    ServiceRequest request,
-    String status,
-  ) async {
+  Future<void> _acceptRequestFromCard(ServiceRequest request) async {
     try {
-      final success = await ServiceRequestService.updateRequestStatus(
-        request.id,
-        status,
-        providerUserId: widget.user.userId,
+      final success = await nurseRepository.createAppointment(
+        request: request,
+        nurseUserId: widget.user.userId,
       );
-      if (success) {
-        if (status == 'scheduled') setState(() => selectedTab = 1);
-        await _loadRequests();
-        _snack(
-          status == 'scheduled'
-              ? 'Request accepted and moved to My Assigned Services'
-              : 'Request updated',
-        );
-      }
+      if (!success) return;
+      final updated = ServiceRequest.fromJson({
+        ...request.toJson(),
+        'status': 'accepted',
+        'confirmedAt': DateTime.now().toIso8601String(),
+      });
+      if (!mounted) return;
+      setState(() {
+        requests = requests
+            .map((item) => item.id == request.id ? updated : item)
+            .toList();
+        selectedTab = 2;
+      });
+      await _loadRequests();
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AppointmentConfirmedScreen(
+            request: updated,
+            currentUser: widget.user,
+            providerUserId: widget.user.userId,
+            scheduledStart: updated.scheduledDate,
+            durationMinutes: updated.actualDurationMinutes > 0
+                ? updated.actualDurationMinutes
+                : 60,
+            nurseNote: '',
+            onChanged: _loadRequests,
+          ),
+        ),
+      );
     } catch (e) {
       _snack(e.toString().replaceFirst('Exception: ', ''));
     }
@@ -507,8 +655,17 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
     );
     controller.dispose();
     if (result == null) return;
-    await _updateRequestStatus(request, 'cancelled');
-    if (mounted) setState(() => selectedTab = 3);
+    final success = await nurseRepository.updateRequestStatus(
+      requestId: request.id,
+      status: 'cancelled',
+      nurseUserId: widget.user.userId,
+    );
+    if (!success || !mounted) return;
+    setState(() {
+      requests = requests.where((item) => item.id != request.id).toList();
+      selectedTab = 1;
+    });
+    await _loadRequests();
   }
 
   void _openDetails(ServiceRequest request) {
@@ -520,6 +677,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
           currentUser: widget.user,
           providerUserId: widget.user.userId,
           onChanged: _loadRequests,
+          showVisitActions: !nurseRequestRequiresDecision(request),
         ),
       ),
     );
@@ -533,10 +691,13 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   }
 
   Color _statusColor(String status) {
-    if (nurseRequestNeedsDecision(status)) return const Color(0xFF1570EF);
+    if (nurseRequestNeedsDecision(status)) return const Color(0xFFF59E0B);
     switch (status) {
       case 'assigned':
-        return AppColors.primaryDark;
+      case 'accepted':
+      case 'confirmed':
+      case 'scheduled':
+        return const Color(0xFF22C55E);
       case 'in_progress':
         return const Color(0xFF1570EF);
       case 'waiting_report':
@@ -551,17 +712,42 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   }
 
   String _statusLabel(String status) {
-    if (nurseRequestNeedsDecision(status)) return 'NEW';
+    if (nurseRequestNeedsDecision(status)) return 'Pending';
     switch (status) {
       case 'assigned':
-        return 'ASSIGNED';
+      case 'accepted':
+      case 'confirmed':
+      case 'scheduled':
+        return 'Confirmed';
       case 'in_progress':
-        return 'IN PROGRESS';
+        return 'In Progress';
       case 'waiting_report':
-        return 'WAITING REPORT';
+        return 'Waiting Report';
+      case 'completed':
+        return 'Completed';
+      case 'cancelled':
+        return 'Cancelled';
       default:
-        return status.toUpperCase();
+        return status;
     }
+  }
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
   String _formatTime(DateTime date) {
@@ -930,6 +1116,7 @@ class AssignTimeSlotScreen extends StatefulWidget {
 
 class _AssignTimeSlotScreenState extends State<AssignTimeSlotScreen> {
   final notesController = TextEditingController();
+  final NurseRepository nurseRepository = const NurseRepository();
   final durations = const [30, 60, 90];
   var durationMinutes = 60;
   DateTime? selectedStart;
@@ -956,7 +1143,7 @@ class _AssignTimeSlotScreenState extends State<AssignTimeSlotScreen> {
     final loadedSlots = await ProviderProfileService.getAvailability(
       widget.providerUserId,
     );
-    final loadedRequests = await ServiceRequestService.getProviderRequests(
+    final loadedRequests = await nurseRepository.getAllRequests(
       widget.providerUserId,
     );
     if (!mounted) return;
@@ -1033,10 +1220,10 @@ class _AssignTimeSlotScreenState extends State<AssignTimeSlotScreen> {
     setState(() => isSaving = true);
     try {
       try {
-        final success = await ServiceRequestService.updateRequestStatus(
-          widget.request.id,
-          'scheduled',
-          providerUserId: widget.providerUserId,
+        final success = await nurseRepository.updateRequestStatus(
+          requestId: widget.request.id,
+          status: 'accepted',
+          nurseUserId: widget.providerUserId,
           scheduledAt: start,
           durationMinutes: durationMinutes,
           nurseNote: notesController.text.trim(),
@@ -1447,6 +1634,7 @@ class AppointmentConfirmedScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final canStartVisit = nurseRequestIsAccepted(request);
     return NurseUi.reactive(
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
@@ -1483,7 +1671,7 @@ class AppointmentConfirmedScreen extends StatelessWidget {
               ),
               const SizedBox(height: 18),
               Text(
-                'Appointment Scheduled Successfully!',
+                'Appointment Confirmed!',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: NurseUi.text,
@@ -1493,7 +1681,7 @@ class AppointmentConfirmedScreen extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'The appointment has been saved to your schedule.',
+                'The appointment has been scheduled successfully.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: NurseUi.muted,
@@ -1503,23 +1691,8 @@ class AppointmentConfirmedScreen extends StatelessWidget {
               const SizedBox(height: 22),
               _summaryCard(),
               const SizedBox(height: 18),
-              _primaryButton(
-                icon: Icons.calendar_month_rounded,
-                label: 'View My Schedule',
-                onPressed: () {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          NurseDashboard(user: currentUser, initialIndex: 1),
-                    ),
-                    (route) => false,
-                  );
-                },
-              ),
-              const SizedBox(height: 10),
               _outlineButton(
-                icon: Icons.phone_rounded,
+                icon: Icons.chat_bubble_outline_rounded,
                 label: 'Contact Patient',
                 onPressed: () {
                   Navigator.push(
@@ -1535,20 +1708,35 @@ class AppointmentConfirmedScreen extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               _outlineButton(
-                icon: Icons.arrow_forward_rounded,
-                label: 'Go to Visit',
+                icon: Icons.map_outlined,
+                label: 'View Location',
                 onPressed: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => VisitDashboardScreen(
-                        request: request,
-                        user: currentUser,
-                        onChanged: onChanged,
-                      ),
+                      builder: (_) => PatientLocationScreen(request: request),
                     ),
                   );
                 },
+              ),
+              const SizedBox(height: 10),
+              _primaryButton(
+                icon: Icons.play_arrow_rounded,
+                label: 'Start Visit',
+                onPressed: canStartVisit
+                    ? () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => VisitDashboardScreen(
+                              request: request,
+                              user: currentUser,
+                              onChanged: onChanged,
+                            ),
+                          ),
+                        );
+                      }
+                    : null,
               ),
             ],
           ),
@@ -1574,9 +1762,9 @@ class AppointmentConfirmedScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _summaryLine(Icons.person_outline_rounded, 'Patient', _patientName),
+          _summaryLine(Icons.person_outline, 'Patient', _patientName),
           _summaryLine(
-            Icons.event_rounded,
+            Icons.calendar_today_outlined,
             'Date',
             _formatDate(scheduledStart),
           ),
@@ -1644,7 +1832,7 @@ class AppointmentConfirmedScreen extends StatelessWidget {
   Widget _primaryButton({
     required IconData icon,
     required String label,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
   }) {
     return SizedBox(
       width: double.infinity,
@@ -1747,6 +1935,7 @@ class RequestDetailsScreen extends StatefulWidget {
 
 class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
   late ServiceRequest request;
+  final NurseRepository nurseRepository = const NurseRepository();
   final beforeController = TextEditingController();
   final afterController = TextEditingController();
   final vitalsController = TextEditingController();
@@ -2039,16 +2228,15 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     try {
       var accepted = ServiceRequest.fromJson({
         ...request.toJson(),
-        'status': 'assigned',
+        'status': 'accepted',
         'confirmedAt': DateTime.now().toIso8601String(),
       });
 
       if (!nurseRequestIsAccepted(request)) {
         try {
-          final success = await ServiceRequestService.updateRequestStatus(
-            request.id,
-            'scheduled',
-            providerUserId: widget.providerUserId,
+          final success = await nurseRepository.createAppointment(
+            request: request,
+            nurseUserId: widget.providerUserId,
           );
           if (!success) return;
         } catch (e) {
@@ -2066,10 +2254,15 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => AcceptConfirmationScreen(
+          builder: (_) => AppointmentConfirmedScreen(
             request: accepted,
             currentUser: widget.currentUser,
             providerUserId: widget.providerUserId,
+            scheduledStart: accepted.scheduledDate,
+            durationMinutes: accepted.actualDurationMinutes > 0
+                ? accepted.actualDurationMinutes
+                : 60,
+            nurseNote: '',
             onChanged: widget.onChanged,
           ),
         ),
@@ -2085,10 +2278,10 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     final reason = await _askRejectReason();
     if (reason == null) return;
     await _runAction(() async {
-      final success = await ServiceRequestService.updateRequestStatus(
-        request.id,
-        'cancelled',
-        providerUserId: widget.providerUserId,
+      final success = await nurseRepository.updateRequestStatus(
+        requestId: request.id,
+        status: 'cancelled',
+        nurseUserId: widget.providerUserId,
       );
       if (!success || !mounted) return;
       await widget.onChanged();
@@ -2445,7 +2638,9 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     if (nurseRequestNeedsDecision(status)) return 'New';
     switch (status) {
       case 'assigned':
-        return 'Assigned';
+      case 'confirmed':
+      case 'scheduled':
+        return 'Confirmed';
       case 'in_progress':
         return 'In Progress';
       case 'waiting_report':
@@ -2461,6 +2656,8 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     if (nurseRequestNeedsDecision(status)) return const Color(0xFF1570EF);
     switch (status) {
       case 'assigned':
+      case 'confirmed':
+      case 'scheduled':
         return AppColors.primaryDark;
       case 'in_progress':
         return const Color(0xFFF79009);

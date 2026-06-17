@@ -1,23 +1,21 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/features/notifications/notifications_screen.dart';
+import 'package:carelink/features/nurse/models/nurse_dashboard_model.dart';
+import 'package:carelink/features/nurse/services/nurse_dashboard_repository.dart';
 import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
-import 'package:carelink/shared/services/chat_repository.dart';
-import 'package:carelink/shared/services/service_request_service.dart';
 
-import 'nurse_messages_screen.dart';
 import 'nurse_patients.dart';
-import 'nurse_payments.dart';
 import 'nurse_profile.dart';
 import 'nurse_schedule_screen.dart';
 import 'nurse_service_requests.dart';
-import 'nurse_settings.dart';
 import 'nurse_ui.dart';
 import 'nurse_visit_reports.dart';
 
@@ -32,21 +30,28 @@ class NurseDashboard extends StatefulWidget {
 }
 
 class _NurseDashboardState extends State<NurseDashboard> {
+  late final NurseDashboardController dashboardController;
+  Timer? dashboardSyncTimer;
   int selectedIndex = 0;
-  int pendingRequests = 0;
-  int todaysVisits = 0;
-  int waitingReports = 0;
-  int completedVisits = 0;
-  int unreadMessages = 0;
-  List<ServiceRequest> requests = [];
-  final ChatRepository chatRepository = ChatRepository();
 
   @override
   void initState() {
     super.initState();
     selectedIndex = widget.initialIndex;
+    dashboardController = NurseDashboardController(user: widget.user);
     _loadUiSettings();
-    _loadDashboard();
+    dashboardController.load();
+    dashboardSyncTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      if (!mounted || selectedIndex != 0) return;
+      dashboardController.refresh();
+    });
+  }
+
+  @override
+  void dispose() {
+    dashboardSyncTimer?.cancel();
+    dashboardController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUiSettings() async {
@@ -61,39 +66,12 @@ class _NurseDashboardState extends State<NurseDashboard> {
     } catch (_) {}
   }
 
-  Future<void> _loadDashboard() async {
-    try {
-      final statsResponse = await http.get(
-        Uri.parse(
-          '${ApiService.baseUrl}/nurse/dashboard/${widget.user.userId}',
-        ),
-      );
-      final loadedRequests = await ServiceRequestService.getProviderRequests(
-        widget.user.userId,
-      );
-      final loadedUnread = await chatRepository.getUnreadCount(
-        widget.user.userId,
-      );
-      if (!mounted) return;
-      if (statsResponse.statusCode >= 200 && statsResponse.statusCode < 300) {
-        final data = jsonDecode(statsResponse.body) as Map<String, dynamic>;
-        pendingRequests = _parseInt(data['pendingRequests']);
-        todaysVisits = _parseInt(data['todaysVisits']);
-        waitingReports = _parseInt(data['waitingReports']);
-        completedVisits = _parseInt(data['completedVisits']);
-      }
-      setState(() {
-        requests = loadedRequests;
-        unreadMessages = loadedUnread;
-      });
-    } catch (_) {}
-  }
-
   @override
   Widget build(BuildContext context) {
     return NurseUi.reactive(
       (context) => Scaffold(
-        backgroundColor: NurseUi.background,
+        backgroundColor: const Color(0xFFF4FAF9),
+        drawer: _drawer(),
         body: IndexedStack(
           index: selectedIndex,
           children: [
@@ -110,129 +88,122 @@ class _NurseDashboardState extends State<NurseDashboard> {
   }
 
   Widget _homePage() {
-    final upcoming = _upcomingVisit;
-    return SafeArea(
-      child: RefreshIndicator(
-        onRefresh: _loadDashboard,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
-          children: [
-            _topActions(showBack: false),
-            const SizedBox(height: 18),
-            Row(
+    return AnimatedBuilder(
+      animation: dashboardController,
+      builder: (context, _) {
+        final model = dashboardController.model;
+        return SafeArea(
+          child: RefreshIndicator(
+            color: const Color(0xFF0F766E),
+            onRefresh: dashboardController.refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(24, 26, 24, 112),
               children: [
-                _avatar(widget.user.fullName),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Good morning, $_firstName',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF151823),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Nurse',
-                        style: TextStyle(
-                          color: Color(0xFF607D8B),
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFBFE9D7),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: const Text(
-                          'Available',
-                          style: TextStyle(
-                            color: AppColors.primaryDark,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.notifications_none_rounded),
-                      color: AppColors.primaryDark,
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                NotificationsScreen(userId: widget.user.userId),
-                          ),
-                        );
-                      },
-                    ),
-                    if (pendingRequests > 0)
-                      Positioned(
-                        right: 8,
-                        top: 8,
-                        child: Container(
-                          width: 14,
-                          height: 14,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFFF3347),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Text(
-                              pendingRequests > 9 ? '9' : '$pendingRequests',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 8,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+                if (dashboardController.isLoading)
+                  _loadingDashboard()
+                else if (dashboardController.error != null || model == null)
+                  _errorDashboard()
+                else
+                  _dashboardContent(model),
               ],
             ),
-            const SizedBox(height: 24),
-            _quickGrid(),
-            const SizedBox(height: 18),
-            _overviewCard(),
-            const SizedBox(height: 16),
-            _upcomingCard(upcoming),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _topActions({required bool showBack}) {
+  Widget _dashboardContent(NurseDashboardModel model) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _dashboardHeader(model.notificationCount),
+        const SizedBox(height: 34),
+        _greeting(model),
+        const SizedBox(height: 30),
+        _quickGrid(),
+        const SizedBox(height: 34),
+        _upcomingVisitsSection(model),
+        const SizedBox(height: 32),
+        _motivationBanner(),
+      ],
+    );
+  }
+
+  Widget _dashboardHeader(int notificationCount) {
     return Row(
       children: [
-        if (showBack)
-          IconButton(
-            icon: const Icon(Icons.arrow_back_rounded),
-            onPressed: () => setState(() => selectedIndex = 0),
-          )
-        else
-          const Spacer(),
+        Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu_rounded, size: 34),
+            color: const Color(0xFF0F766E),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
         const Spacer(),
-        NurseModeControls(providerUserId: widget.user.userId),
+        _notificationButton(notificationCount),
+      ],
+    );
+  }
+
+  Widget _notificationButton(int count) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.notifications_none_rounded, size: 32),
+          color: const Color(0xFF0F172A),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => NotificationsScreen(userId: widget.user.userId),
+              ),
+            ).then((_) => dashboardController.refresh());
+          },
+        ),
+        if (count > 0) Positioned(right: 4, top: 3, child: _smallBadge(count)),
+      ],
+    );
+  }
+
+  Widget _greeting(NurseDashboardModel model) {
+    final name = _firstNameFrom(model.nurseName);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Hello, Nurse $name \u{1F44B}',
+          style: const TextStyle(
+            color: Color(0xFF0F172A),
+            fontSize: 34,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text.rich(
+          TextSpan(
+            children: [
+              const TextSpan(text: 'You have '),
+              TextSpan(
+                text: '${model.upcomingVisitsCount}',
+                style: const TextStyle(
+                  color: Color(0xFF0F766E),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const TextSpan(text: ' upcoming visits today.'),
+            ],
+          ),
+          style: const TextStyle(
+            color: Color(0xFF0F172A),
+            fontSize: 20,
+            height: 1.35,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
       ],
     );
   }
@@ -240,68 +211,29 @@ class _NurseDashboardState extends State<NurseDashboard> {
   Widget _quickGrid() {
     final actions = [
       (
+        Icons.calendar_month_outlined,
+        'My Schedule',
+        () => setState(() => selectedIndex = 1),
+      ),
+      (
         Icons.assignment_outlined,
-        'Requests',
+        'All Requests',
         () => Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => NurseServiceRequests(user: widget.user),
           ),
-        ),
-        0,
+        ).then((_) => dashboardController.refresh()),
       ),
       (
-        Icons.calendar_month_outlined,
-        'My Schedule',
-        () => setState(() => selectedIndex = 1),
-        0,
-      ),
-      (
-        Icons.groups_rounded,
+        Icons.people_outline_rounded,
         'Patients',
         () => setState(() => selectedIndex = 2),
-        0,
       ),
       (
-        Icons.description_outlined,
+        Icons.insert_chart_outlined,
         'Reports',
         () => setState(() => selectedIndex = 3),
-        0,
-      ),
-      (
-        Icons.folder_copy_outlined,
-        'Care Plan',
-        () => setState(() => selectedIndex = 2),
-        0,
-      ),
-      (
-        Icons.chat_bubble_outline_rounded,
-        'Messages',
-        () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => NurseMessagesScreen(user: widget.user),
-          ),
-        ).then((_) => _loadDashboard()),
-        unreadMessages,
-      ),
-      (
-        Icons.paid_outlined,
-        'Earnings',
-        () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => NursePayments(user: widget.user)),
-        ),
-        0,
-      ),
-      (
-        Icons.more_horiz_rounded,
-        'More',
-        () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => NurseSettings(user: widget.user)),
-        ),
-        0,
       ),
     ];
 
@@ -311,44 +243,51 @@ class _NurseDashboardState extends State<NurseDashboard> {
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 4,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 10,
-        childAspectRatio: 0.95,
+        mainAxisSpacing: 18,
+        crossAxisSpacing: 18,
+        childAspectRatio: 0.96,
       ),
       itemBuilder: (context, index) {
         final item = actions[index];
-        return GestureDetector(
+        return InkWell(
+          borderRadius: BorderRadius.circular(22),
           onTap: item.$3,
           child: Container(
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: _shadow,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: _modernShadow,
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Icon(item.$1, color: AppColors.primaryDark, size: 23),
-                    if (item.$4 > 0)
-                      Positioned(
-                        right: -10,
-                        top: -10,
-                        child: UnreadBadge(count: item.$4),
-                      ),
-                  ],
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE6F7F4),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Icon(
+                    item.$1,
+                    color: const Color(0xFF0F766E),
+                    size: 34,
+                  ),
                 ),
-                const SizedBox(height: 9),
-                Text(
-                  item.$2,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF607D8B),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
+                const SizedBox(height: 18),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Text(
+                    item.$2,
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      height: 1.1,
+                    ),
                   ),
                 ),
               ],
@@ -359,170 +298,409 @@ class _NurseDashboardState extends State<NurseDashboard> {
     );
   }
 
-  Widget _overviewCard() {
-    return _whiteCard(
-      child: Column(
-        children: [
-          Row(
-            children: [
-              const Text(
-                "Today's Overview",
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+  Widget _upcomingVisitsSection(NurseDashboardModel model) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            const Text(
+              'Upcoming Visits',
+              style: TextStyle(
+                color: Color(0xFF0F172A),
+                fontSize: 23,
+                fontWeight: FontWeight.w900,
               ),
-              const Spacer(),
-              TextButton(
-                onPressed: () => setState(() => selectedIndex = 1),
-                child: const Text(
-                  'View all',
-                  style: TextStyle(
-                    color: AppColors.primaryDark,
-                    fontWeight: FontWeight.w900,
+            ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => NurseServiceRequests(user: widget.user),
                   ),
+                ).then((_) => dashboardController.refresh());
+              },
+              iconAlignment: IconAlignment.end,
+              label: const Text(
+                'View All',
+                style: TextStyle(
+                  color: Color(0xFF0F766E),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _miniStat(Icons.access_time, todaysVisits, 'Total Visits'),
-              _miniStat(Icons.calendar_month, pendingRequests, 'Upcoming'),
-              _miniStat(Icons.timer, _inProgressCount, 'In Progress'),
-              _miniStat(Icons.check_circle, completedVisits, 'Completed'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _miniStat(IconData icon, int value, String label) {
-    return Expanded(
-      child: Column(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEAF8F5),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: AppColors.primaryDark, size: 18),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '$value',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-          ),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF607D8B),
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _upcomingCard(ServiceRequest? request) {
-    return _whiteCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Upcoming Visit',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
-          ),
-          const SizedBox(height: 16),
-          if (request == null)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 26),
-                child: Text(
-                  'No upcoming visits yet',
-                  style: TextStyle(
-                    color: Color(0xFF78909C),
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+              icon: const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: Color(0xFF0F766E),
+                size: 18,
               ),
-            )
-          else
-            InkWell(
-              onTap: () => _openRequest(request),
-              borderRadius: BorderRadius.circular(8),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 62,
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        Container(
+          decoration: _modernCardDecoration(radius: 24),
+          child: model.upcomingVisits.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 42),
+                  child: Center(
                     child: Text(
-                      _time(request.scheduledDate),
-                      style: const TextStyle(fontWeight: FontWeight.w900),
+                      'No upcoming visits today',
+                      style: TextStyle(
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  _avatar(request.patientName, radius: 25),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          request.patientName.isEmpty
-                              ? 'Patient'
-                              : request.patientName,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        Text(
-                          request.serviceType.isEmpty
-                              ? 'Home visit'
-                              : request.serviceType,
-                          style: const TextStyle(
-                            color: Color(0xFF607D8B),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        Text(
-                          request.location,
+                )
+              : Column(
+                  children: [
+                    for (var i = 0; i < model.upcomingVisits.length; i++) ...[
+                      _visitRow(model.upcomingVisits[i]),
+                      if (i != model.upcomingVisits.length - 1)
+                        const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                    ],
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _visitRow(VisitModel visit) {
+    final isPending = visit.status.toLowerCase() == 'pending';
+    return InkWell(
+      onTap: () => _openRequest(visit.request),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 38,
+              backgroundColor: const Color(0xFFE6F7F4),
+              child: Text(
+                visit.patientInitial,
+                style: const TextStyle(
+                  color: Color(0xFF0F766E),
+                  fontSize: 30,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(width: 24),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    visit.patientName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    visit.serviceType,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.location_on_outlined,
+                        color: Color(0xFF14B8A6),
+                        size: 19,
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          visit.location,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: AppColors.primaryDark,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0F172A),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  _statusChip(
-                    nurseRequestRequiresDecision(request) ? 'New' : 'Today',
-                    nurseRequestRequiresDecision(request)
-                        ? const Color(0xFFDCEBFF)
-                        : const Color(0xFFBFE9D7),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
+            const SizedBox(width: 14),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.access_time_rounded,
+                      color: Color(0xFF0F766E),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      visit.time,
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _visitStatusBadge(
+                  isPending ? 'Pending' : 'Confirmed',
+                  isPending ? const Color(0xFFFFEDD5) : const Color(0xFFDCFCE7),
+                  isPending ? const Color(0xFFF59E0B) : const Color(0xFF22C55E),
+                ),
+              ],
+            ),
+            const SizedBox(width: 22),
+            const Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: Color(0xFF0F766E),
+              size: 25,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _motivationBanner() {
+    return Container(
+      width: double.infinity,
+      height: 142,
+      padding: const EdgeInsets.fromLTRB(34, 24, 18, 0),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE6F7F4),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Stack(
+        children: [
+          const Positioned(
+            left: 0,
+            top: 18,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "You're doing great!",
+                  style: TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'Your care makes a big difference.',
+                  style: TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(right: 4, bottom: 0, child: _nurseIllustration()),
         ],
       ),
     );
   }
 
-  Widget _whiteCard({required Widget child}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: _shadow,
+  Widget _nurseIllustration() {
+    return SizedBox(
+      width: 150,
+      height: 132,
+      child: Stack(
+        alignment: Alignment.bottomCenter,
+        children: [
+          Positioned(
+            right: 18,
+            top: 0,
+            child: Container(
+              width: 58,
+              height: 58,
+              decoration: const BoxDecoration(
+                color: Color(0xFF0F766E),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.favorite_rounded, color: Colors.white),
+            ),
+          ),
+          Positioned(
+            bottom: 0,
+            child: Container(
+              width: 78,
+              height: 72,
+              decoration: const BoxDecoration(
+                color: Color(0xFF0F766E),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+              ),
+              child: const Icon(Icons.local_hospital, color: Colors.white),
+            ),
+          ),
+          Positioned(
+            bottom: 52,
+            child: Container(
+              width: 58,
+              height: 58,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFD7C2),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 93,
+            child: Container(
+              width: 54,
+              height: 22,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+              ),
+              child: const Center(
+                child: Icon(
+                  Icons.add_rounded,
+                  color: Color(0xFF0F766E),
+                  size: 18,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
-      child: child,
+    );
+  }
+
+  Widget _loadingDashboard() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: const [
+            _SkeletonBox(width: 42, height: 42, radius: 14),
+            Spacer(),
+            _SkeletonBox(width: 42, height: 42, radius: 14),
+          ],
+        ),
+        const SizedBox(height: 36),
+        const _SkeletonBox(width: 280, height: 38, radius: 12),
+        const SizedBox(height: 14),
+        const _SkeletonBox(width: 250, height: 24, radius: 10),
+        const SizedBox(height: 32),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 4,
+          mainAxisSpacing: 18,
+          crossAxisSpacing: 18,
+          childAspectRatio: 0.96,
+          children: const [
+            _SkeletonBox(radius: 22),
+            _SkeletonBox(radius: 22),
+            _SkeletonBox(radius: 22),
+            _SkeletonBox(radius: 22),
+          ],
+        ),
+        const SizedBox(height: 36),
+        const _SkeletonBox(width: 210, height: 28, radius: 10),
+        const SizedBox(height: 18),
+        const _SkeletonBox(height: 300, radius: 22),
+      ],
+    );
+  }
+
+  Widget _errorDashboard() {
+    return Column(
+      children: [
+        _dashboardHeader(0),
+        const SizedBox(height: 130),
+        Container(
+          padding: const EdgeInsets.all(22),
+          decoration: _modernCardDecoration(radius: 24),
+          child: Column(
+            children: [
+              const Icon(
+                Icons.error_outline_rounded,
+                color: Color(0xFFEF4444),
+                size: 44,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Failed to load dashboard data',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: dashboardController.load,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0F766E),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _drawer() {
+    return Drawer(
+      backgroundColor: Colors.white,
+      child: SafeArea(
+        child: Column(
+          children: [
+            ListTile(
+              leading: _avatar(widget.user.fullName, radius: 24),
+              title: Text(
+                widget.user.fullName,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: const Text('Nurse'),
+            ),
+            const Divider(),
+            _drawerItem(Icons.home_rounded, 'Home', 0),
+            _drawerItem(Icons.calendar_month_rounded, 'Schedule', 1),
+            _drawerItem(Icons.people_outline_rounded, 'Patients', 2),
+            _drawerItem(Icons.insert_chart_outlined, 'Reports', 3),
+            _drawerItem(Icons.person_rounded, 'Profile', 4),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerItem(IconData icon, String label, int index) {
+    return ListTile(
+      leading: Icon(icon, color: const Color(0xFF0F766E)),
+      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+      onTap: () {
+        Navigator.pop(context);
+        setState(() => selectedIndex = index);
+      },
     );
   }
 
@@ -534,25 +712,42 @@ class _NurseDashboardState extends State<NurseDashboard> {
           request: request,
           currentUser: widget.user,
           providerUserId: widget.user.userId,
-          onChanged: _loadDashboard,
+          onChanged: dashboardController.refresh,
         ),
       ),
     );
   }
 
-  Widget _statusChip(String text, Color color) {
+  Widget _visitStatusBadge(String text, Color bg, Color fg) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(999),
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
         text,
-        style: const TextStyle(
-          color: AppColors.primaryDark,
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
+        style: TextStyle(color: fg, fontSize: 15, fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+
+  Widget _smallBadge(int count) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: const BoxDecoration(
+        color: Color(0xFFEF4444),
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(
+          count > 9 ? '9+' : '$count',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
         ),
       ),
     );
@@ -633,44 +828,51 @@ class _NurseDashboardState extends State<NurseDashboard> {
     );
   }
 
-  ServiceRequest? get _upcomingVisit {
-    final upcoming =
-        requests
-            .where(
-              (r) =>
-                  nurseRequestIsAccepted(r) || nurseRequestRequiresDecision(r),
-            )
-            .toList()
-          ..sort((a, b) => a.scheduledDate.compareTo(b.scheduledDate));
-    return upcoming.isEmpty ? null : upcoming.first;
+  String _firstNameFrom(String name) {
+    final clean = name.trim();
+    if (clean.isEmpty) return 'Nurse';
+    return clean.split(RegExp(r'\s+')).first;
   }
 
-  int get _inProgressCount =>
-      requests.where((r) => r.status == 'in_progress').length;
-
-  String get _firstName {
-    final name = widget.user.fullName.trim();
-    if (name.isEmpty) return 'Nurse';
-    return name.split(RegExp(r'\s+')).first;
+  BoxDecoration _modernCardDecoration({required double radius}) {
+    return BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(radius),
+      boxShadow: _modernShadow,
+    );
   }
 
-  String _time(DateTime date) {
-    final h = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final m = date.minute.toString().padLeft(2, '0');
-    return '$h:$m\n${date.hour >= 12 ? 'PM' : 'AM'}';
-  }
-
-  int _parseInt(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  List<BoxShadow> get _shadow => [
+  List<BoxShadow> get _modernShadow => [
     BoxShadow(
       color: Colors.black.withValues(alpha: 0.045),
-      blurRadius: 18,
-      offset: const Offset(0, 8),
+      blurRadius: 24,
+      offset: const Offset(0, 12),
     ),
   ];
+}
+
+class _SkeletonBox extends StatelessWidget {
+  const _SkeletonBox({this.width, this.height, required this.radius});
+
+  final double? width;
+  final double? height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.45, end: 1),
+      duration: const Duration(milliseconds: 850),
+      curve: Curves.easeInOut,
+      builder: (context, value, child) => Opacity(opacity: value, child: child),
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: const Color(0xFFE6F7F4),
+          borderRadius: BorderRadius.circular(radius),
+        ),
+      ),
+    );
+  }
 }
