@@ -69,6 +69,74 @@ async function ensureAuxTables() {
   `);
 }
 
+async function ensureAvailabilitySlotTable() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS availabilityslot (
+      slot_id VARCHAR(64) PRIMARY KEY,
+      providerUserId VARCHAR(64) NOT NULL,
+      day VARCHAR(32) NOT NULL,
+      startTime TIME NOT NULL,
+      endTime TIME NOT NULL,
+      KEY idx_availability_provider (providerUserId),
+      KEY idx_availability_lookup (providerUserId, day, startTime)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  const additions = [
+    ['providerUserId', 'VARCHAR(64) NOT NULL DEFAULT ""'],
+    ['day', 'VARCHAR(32) NOT NULL DEFAULT ""'],
+    ['startTime', 'TIME NULL'],
+    ['endTime', 'TIME NULL'],
+  ];
+
+  for (const [column, type] of additions) {
+    if (!(await hasColumn('availabilityslot', column))) {
+      await db.query(`ALTER TABLE availabilityslot ADD COLUMN ${column} ${type}`);
+      columnCache.set(`availabilityslot.${column}`, true);
+    }
+  }
+}
+
+async function ensureCareProviderForAvailability(conn, providerId, hasSlots) {
+  const available = hasSlots ? 1 : 0;
+  const sets = ['isAvailable = ?'];
+  const values = [available];
+
+  if (await hasColumn('careprovider', 'serviceType')) {
+    sets.push("serviceType = COALESCE(NULLIF(serviceType, ''), ?)");
+    values.push('Home visit');
+  }
+  if (await hasColumn('careprovider', 'specialization')) {
+    sets.push("specialization = COALESCE(NULLIF(specialization, ''), ?)");
+    values.push('Home Nursing');
+  }
+
+  values.push(providerId);
+  const [updated] = await conn.execute(
+    `UPDATE careprovider SET ${sets.join(', ')} WHERE userId = ?`,
+    values,
+  );
+  if (updated.affectedRows > 0) return;
+
+  const columns = ['userId', 'specialization', 'overallRating', 'isAvailable'];
+  const insertValues = [providerId, 'Home Nursing', 0, available];
+
+  if (await hasColumn('careprovider', 'serviceType')) {
+    columns.push('serviceType');
+    insertValues.push('Home visit');
+  }
+  if (await hasColumn('careprovider', 'approvalStatus')) {
+    columns.push('approvalStatus');
+    insertValues.push('approved');
+  }
+
+  const placeholders = columns.map(() => '?').join(', ');
+  await conn.execute(
+    `INSERT INTO careprovider (${columns.join(', ')}) VALUES (${placeholders})`,
+    insertValues,
+  );
+}
+
 async function ensureServiceVisitWorkflowColumns() {
   const additions = [
     ['actualStartedAt', 'DATETIME NULL'],
@@ -259,6 +327,7 @@ async function listRequestsForProvider(providerUserId, statusQ) {
   const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
   const hasCreatedAt = await hasColumn('servicerequest', 'createdAt');
   const hasReasonForVisit = await hasColumn('servicerequest', 'reasonForVisit');
+  const hasLocationNote = await hasColumn('servicerequest', 'locationNote');
   const hasPatientLat = await hasColumn('patient', 'gpsLat');
   const hasPatientLng = await hasColumn('patient', 'gpsLng');
   const hasPatientAddress = await hasColumn('patient', 'addressText');
@@ -269,6 +338,7 @@ async function listRequestsForProvider(providerUserId, statusQ) {
   const visitLatSel = hasVisitLatitude ? 'sr.visitLatitude' : 'NULL AS visitLatitude';
   const visitLngSel = hasVisitLongitude ? 'sr.visitLongitude' : 'NULL AS visitLongitude';
   const reasonSel = hasReasonForVisit ? 'sr.reasonForVisit' : "'' AS reasonForVisit";
+  const locationNoteSel = hasLocationNote ? 'sr.locationNote' : "'' AS locationNote";
   const patientLatSel = hasPatientLat ? 'pat.gpsLat' : 'NULL AS gpsLat';
   const patientLngSel = hasPatientLng ? 'pat.gpsLng' : 'NULL AS gpsLng';
   const patientAddressSel = hasPatientAddress ? 'pat.addressText' : "'' AS patientAddress";
@@ -291,6 +361,7 @@ async function listRequestsForProvider(providerUserId, statusQ) {
         sr.status,
         sr.notes,
         ${reasonSel},
+        ${locationNoteSel},
         sr.location,
         sr.scheduledAt,
         sr.confirmedAt,
@@ -346,6 +417,7 @@ async function listRequestsForProvider(providerUserId, statusQ) {
       status: r.status,
       notes: r.notes,
       reasonForVisit: r.reasonForVisit || '',
+      locationNote: r.locationNote || '',
       medicalCondition: r.reasonForVisit || r.notes || '',
       scheduledAt: r.scheduledAt,
       scheduledDate: r.scheduledAt,
@@ -398,10 +470,11 @@ router.get('/requests/:providerId', async (req, res) => {
 
 router.put('/requests/:requestId/status', async (req, res) => {
   const { requestId } = req.params;
-  let { providerUserId, status } = req.body || {};
+  let { providerUserId, status, scheduledAt } = req.body || {};
   providerUserId = providerUserId ? providerUserId.toString().trim() : '';
   let next = status ? status.toString().trim().toLowerCase() : '';
   if (next === 'scheduled') next = 'confirmed';
+  scheduledAt = scheduledAt ? scheduledAt.toString().trim() : '';
 
   if (!providerUserId || !next) {
     return res
@@ -454,13 +527,18 @@ router.put('/requests/:requestId/status', async (req, res) => {
           .json({ error: 'From pending, only confirmed or cancelled' });
       }
     } else if (current === 'pending_payment' || current === 'payment_pending') {
-      if (next !== 'cancelled') {
+      if (next !== 'confirmed' && next !== 'cancelled') {
         return res
           .status(400)
-          .json({ error: 'Awaiting payment; only cancellation is allowed' });
+          .json({ error: 'From pending payment, only confirmed or cancelled' });
       }
     } else if (current === 'confirmed') {
-      if (next !== 'in_progress' && next !== 'cancelled' && next !== 'completed') {
+      if (
+        next !== 'confirmed' &&
+        next !== 'in_progress' &&
+        next !== 'cancelled' &&
+        next !== 'completed'
+      ) {
         return res
           .status(400)
           .json({ error: 'From confirmed, only in_progress, completed or cancelled' });
@@ -481,19 +559,28 @@ router.put('/requests/:requestId/status', async (req, res) => {
       return res.status(400).json({ error: 'Unexpected current status' });
     }
 
-    const paid = (row.paymentStatus || '').toString().toLowerCase() === 'paid';
-    const paymentMethod = (row.paymentMethod || '').toString().toLowerCase();
-    const payAtVisit =
-      paymentMethod === 'cash' || paymentMethod === 'cash_on_visit';
-    const effectiveNext =
-      next === 'confirmed' && !paid && !payAtVisit
-        ? 'pending_payment'
-        : next;
+    const effectiveNext = next;
 
-    await db.execute(
-      `UPDATE servicerequest SET status = ? WHERE requestId = ? AND providerUserId = ?`,
-      [effectiveNext, requestId, providerUserId],
-    );
+    if (next === 'confirmed') {
+      const sets = ['status = ?', 'confirmedAt = COALESCE(confirmedAt, NOW())'];
+      const vals = [effectiveNext];
+      if (scheduledAt) {
+        sets.push('scheduledAt = ?');
+        vals.push(scheduledAt.replace('T', ' ').replace('Z', '').slice(0, 19));
+      }
+      vals.push(requestId, providerUserId);
+      await db.execute(
+        `UPDATE servicerequest
+         SET ${sets.join(', ')}
+         WHERE requestId = ? AND providerUserId = ?`,
+        vals,
+      );
+    } else {
+      await db.execute(
+        `UPDATE servicerequest SET status = ? WHERE requestId = ? AND providerUserId = ?`,
+        [effectiveNext, requestId, providerUserId],
+      );
+    }
     if (next === 'confirmed') {
       try {
         await ensurePaymentForRequest(requestId);
@@ -1406,6 +1493,7 @@ router.post('/certifications/:providerId', async (req, res) => {
 router.get('/availability/:providerId', async (req, res) => {
   const { providerId } = req.params;
   try {
+    await ensureAvailabilitySlotTable();
     const [slots] = await db.query(
       `SELECT day, startTime, endTime FROM availabilityslot WHERE providerUserId = ? ORDER BY day, startTime`,
       [providerId],
@@ -1424,7 +1512,9 @@ router.put('/availability/:providerId', async (req, res) => {
   }
   const conn = await db.getConnection();
   try {
+    await ensureAvailabilitySlotTable();
     await conn.beginTransaction();
+    await ensureCareProviderForAvailability(conn, providerId, slots.length > 0);
     const hasSlotId = await hasColumn('availabilityslot', 'slotId');
     const hasSlotUnderscore = await hasColumn('availabilityslot', 'slot_id');
     if (hasSlotId || hasSlotUnderscore) {
@@ -1465,6 +1555,7 @@ router.put('/availability/:providerId', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     await conn.rollback();
+    console.error('[nurse availability] save failed:', err.message);
     res.status(500).json({ error: err.message });
   } finally {
     conn.release();

@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element, deprecated_member_use, use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/shared/models/user.dart';
@@ -58,109 +60,135 @@ class _NursePaymentsState extends State<NursePayments> {
 
   @override
   Widget build(BuildContext context) {
-    return NurseUi.reactive((context) => Scaffold(
-      backgroundColor: NurseUi.background,
-      appBar: AppBar(
-        title: Text(NurseUi.label('Payments', '\u0627\u0644\u062f\u0641\u0639')),
+    return NurseUi.reactive(
+      (context) => Scaffold(
         backgroundColor: NurseUi.background,
-        foregroundColor: NurseUi.text,
-        elevation: 0,
-        actions: [
-          NurseModeControls(providerUserId: widget.user.userId),
-        ],
-      ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Earnings Summary
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.primary, AppColors.primaryDark],
-                  ),
-                  borderRadius: BorderRadius.circular(28),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.24),
-                      blurRadius: 24,
-                      offset: const Offset(0, 12),
-                    ),
-                  ],
-                ),
+        appBar: AppBar(
+          title: const Text('Earnings & Payments'),
+          backgroundColor: NurseUi.background,
+          foregroundColor: NurseUi.text,
+          elevation: 0,
+          actions: [NurseModeControls(providerUserId: widget.user.userId)],
+        ),
+        body: isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Earnings Summary',
-                      style: TextStyle(
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
                         color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.045),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Total Earnings',
+                                  style: TextStyle(
+                                    color: Color(0xFF78909C),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  '${thisMonthEarnings.toStringAsFixed(0)} ILS',
+                                  style: const TextStyle(
+                                    color: AppColors.primaryDark,
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'This Month',
+                                  style: TextStyle(
+                                    color: Color(0xFF78909C),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDDF2EF),
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: const Icon(
+                              Icons.account_balance_wallet_outlined,
+                              color: AppColors.primaryDark,
+                              size: 32,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
+
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildEarningStat(
-                          'This Month',
-                          _formatCurrency(thisMonthEarnings),
+                      children: const [
+                        Text(
+                          'Recent Transactions',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
-                        _buildEarningStat(
-                          'This Week',
-                          _formatCurrency(thisWeekEarnings),
-                        ),
-                        _buildEarningStat(
-                          'Today',
-                          _formatCurrency(todayEarnings),
+                        Text(
+                          'View all',
+                          style: TextStyle(
+                            color: AppColors.primaryDark,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 12),
+                    if (paymentHistory.isEmpty)
+                      _emptyPayments()
+                    else
+                      ...paymentHistory.map(_buildPaymentHistoryCard),
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
+      ),
+    );
+  }
 
-              // Payment Methods
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Payment Methods',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  TextButton.icon(
-                    onPressed: _addPaymentMethod,
-                    icon: const Icon(Icons.add, color: AppColors.primaryDark),
-                    label: const Text(
-                      'Add New',
-                      style: TextStyle(color: AppColors.primaryDark),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ...paymentMethods.map((method) => _buildPaymentMethodCard(method)),
-              const SizedBox(height: 20),
-
-              // Payment History
-              const Text(
-                'Payment History',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              ...paymentHistory.map((payment) => _buildPaymentHistoryCard(payment)),
-            ],
+  Widget _emptyPayments() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Center(
+        child: Text(
+          'No transactions yet',
+          style: TextStyle(
+            color: Color(0xFF78909C),
+            fontWeight: FontWeight.w800,
           ),
         ),
-            ),
-    ));
+      ),
+    );
   }
 
   Widget _buildEarningStat(String label, String amount) {
@@ -177,10 +205,7 @@ class _NursePaymentsState extends State<NursePayments> {
         const SizedBox(height: 4),
         Text(
           label,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 12,
-          ),
+          style: const TextStyle(color: Colors.white70, fontSize: 12),
         ),
       ],
     );
@@ -208,7 +233,9 @@ class _NursePaymentsState extends State<NursePayments> {
           Row(
             children: [
               Icon(
-                method['type'] == 'Bank Transfer' ? Icons.account_balance : Icons.payment,
+                method['type'] == 'Bank Transfer'
+                    ? Icons.account_balance
+                    : Icons.payment,
                 color: AppColors.primaryDark,
                 size: 24,
               ),
@@ -225,10 +252,7 @@ class _NursePaymentsState extends State<NursePayments> {
                   ),
                   Text(
                     method['details'],
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
                   ),
                 ],
               ),
@@ -238,7 +262,10 @@ class _NursePaymentsState extends State<NursePayments> {
             children: [
               if (method['isDefault'])
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   margin: const EdgeInsets.only(right: 8),
                   decoration: BoxDecoration(
                     color: const Color(0xFF28a745),
@@ -250,20 +277,15 @@ class _NursePaymentsState extends State<NursePayments> {
                   ),
                 ),
               PopupMenuButton<String>(
-                onSelected: (value) => _handlePaymentMethodAction(value, method),
+                onSelected: (value) =>
+                    _handlePaymentMethodAction(value, method),
                 itemBuilder: (context) => [
                   const PopupMenuItem(
                     value: 'set_default',
                     child: Text('Set as Default'),
                   ),
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Text('Edit'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Text('Delete'),
-                  ),
+                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
                 ],
               ),
             ],
@@ -278,8 +300,8 @@ class _NursePaymentsState extends State<NursePayments> {
     final statusColor = status == 'completed' || status == 'paid'
         ? const Color(0xFF28a745)
         : status == 'pending'
-            ? const Color(0xFFffc107)
-            : const Color(0xFFdc3545);
+        ? const Color(0xFFffc107)
+        : const Color(0xFFdc3545);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -316,10 +338,7 @@ class _NursePaymentsState extends State<NursePayments> {
                     const SizedBox(height: 4),
                     Text(
                       'Patient: ${payment['patient']}',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
                     ),
                   ],
                 ),
@@ -337,7 +356,10 @@ class _NursePaymentsState extends State<NursePayments> {
                   ),
                   const SizedBox(height: 4),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: statusColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
@@ -361,14 +383,15 @@ class _NursePaymentsState extends State<NursePayments> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
+                  const Icon(
+                    Icons.calendar_today,
+                    size: 14,
+                    color: Colors.grey,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     _formatDate(payment['date']),
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
                   ),
                 ],
               ),
@@ -384,10 +407,7 @@ class _NursePaymentsState extends State<NursePayments> {
                   const SizedBox(width: 4),
                   Text(
                     payment['paymentMethod'],
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
                   ),
                 ],
               ),
@@ -428,7 +448,9 @@ class _NursePaymentsState extends State<NursePayments> {
           method['isDefault'] = true;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${method['type']} set as default payment method')),
+          SnackBar(
+            content: Text('${method['type']} set as default payment method'),
+          ),
         );
         break;
       case 'edit':
@@ -574,13 +596,13 @@ class _AddPaymentMethodFormState extends State<AddPaymentMethodForm> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
             ),
             items: ['Bank Transfer', 'PayPal'].map((type) {
-              return DropdownMenuItem<String>(
-                value: type,
-                child: Text(type),
-              );
+              return DropdownMenuItem<String>(value: type, child: Text(type));
             }).toList(),
             onChanged: (value) {
               setState(() => selectedType = value!);
@@ -735,7 +757,9 @@ class _EditPaymentMethodFormState extends State<EditPaymentMethodForm> {
           TextField(
             controller: controller,
             decoration: InputDecoration(
-              labelText: widget.method['type'] == 'Bank Transfer' ? 'Account Number' : 'PayPal Email',
+              labelText: widget.method['type'] == 'Bank Transfer'
+                  ? 'Account Number'
+                  : 'PayPal Email',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),

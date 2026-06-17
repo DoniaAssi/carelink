@@ -83,6 +83,9 @@ class ServiceRequestService {
     String requestId,
     String status, {
     String? providerUserId,
+    DateTime? scheduledAt,
+    int? durationMinutes,
+    String? nurseNote,
   }) async {
     String apiStatus = status;
     if (status.toLowerCase() == 'scheduled') {
@@ -92,6 +95,15 @@ class ServiceRequestService {
       final body = <String, dynamic>{'status': apiStatus};
       if (providerUserId != null) {
         body['providerUserId'] = providerUserId;
+      }
+      if (scheduledAt != null) {
+        body['scheduledAt'] = scheduledAt.toIso8601String();
+      }
+      if (durationMinutes != null) {
+        body['durationMinutes'] = durationMinutes;
+      }
+      if (nurseNote != null && nurseNote.trim().isNotEmpty) {
+        body['nurseNote'] = nurseNote.trim();
       }
       final response = await http.put(
         Uri.parse('$baseUrl/nurse/requests/$requestId/status'),
@@ -122,11 +134,9 @@ class ServiceRequestService {
     String requestId, {
     required String providerUserId,
   }) async {
-    return _postVisitAction(
-      '$baseUrl/nurse/requests/$requestId/start',
-      {'providerUserId': providerUserId},
-      'Failed to start visit',
-    );
+    return _postVisitAction('$baseUrl/nurse/requests/$requestId/start', {
+      'providerUserId': providerUserId,
+    }, 'Failed to start visit');
   }
 
   static Future<bool> endVisit(
@@ -134,14 +144,10 @@ class ServiceRequestService {
     required String providerUserId,
     required List<Map<String, dynamic>> nursingActivities,
   }) async {
-    return _postVisitAction(
-      '$baseUrl/nurse/requests/$requestId/end',
-      {
-        'providerUserId': providerUserId,
-        'nursingActivities': nursingActivities,
-      },
-      'Failed to end visit',
-    );
+    return _postVisitAction('$baseUrl/nurse/requests/$requestId/end', {
+      'providerUserId': providerUserId,
+      'nursingActivities': nursingActivities,
+    }, 'Failed to end visit');
   }
 
   static Future<bool> _postVisitAction(

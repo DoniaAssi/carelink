@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -47,378 +49,444 @@ class _NurseSettingsState extends State<NurseSettings> {
 
   @override
   Widget build(BuildContext context) {
-    return NurseUi.reactive((context) => Scaffold(
-      backgroundColor: NurseUi.background,
-      appBar: AppBar(
-        title: Text(NurseUi.label('Settings', '\u0627\u0644\u0625\u0639\u062f\u0627\u062f\u0627\u062a')),
+    return NurseUi.reactive(
+      (context) => Scaffold(
         backgroundColor: NurseUi.background,
-        foregroundColor: NurseUi.text,
-        elevation: 0,
-        actions: [
-          NurseModeControls(onChanged: () {
-            setState(() {
-              darkMode = NurseUi.isDarkMode.value;
-              language = NurseUi.isArabic.value ? 'Arabic' : 'English';
-            });
-            _saveSettings();
-          }),
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Account Section
-              const Text(
-                'Account',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              _buildSettingsCard(
-                'Profile',
-                'Manage your professional profile and certifications',
-                Icons.person,
-                () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => NurseProfile(user: widget.user),
+        appBar: AppBar(
+          title: Text(
+            NurseUi.label(
+              'Settings',
+              '\u0627\u0644\u0625\u0639\u062f\u0627\u062f\u0627\u062a',
+            ),
+          ),
+          backgroundColor: NurseUi.background,
+          foregroundColor: NurseUi.text,
+          elevation: 0,
+          actions: [
+            NurseModeControls(
+              onChanged: () {
+                setState(() {
+                  darkMode = NurseUi.isDarkMode.value;
+                  language = NurseUi.isArabic.value ? 'Arabic' : 'English';
+                });
+                _saveSettings();
+              },
+            ),
+          ],
+        ),
+        body: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Account Section
+                const Text(
+                  'Account',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                _buildSettingsCard(
+                  'Profile',
+                  'Manage your professional profile and certifications',
+                  Icons.person,
+                  () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => NurseProfile(user: widget.user),
+                    ),
                   ),
                 ),
-              ),
-              _buildSettingsCard(
-                'Change Password',
-                'Update your account password',
-                Icons.lock,
-                () => _showChangePasswordDialog(),
-              ),
-              _buildSettingsCard(
-                'Account Verification',
-                'Manage your account verification status',
-                Icons.verified,
-                () => _showVerificationDialog(),
-              ),
-              const SizedBox(height: 20),
+                _buildSettingsCard(
+                  'Change Password',
+                  'Update your account password',
+                  Icons.lock,
+                  () => _showChangePasswordDialog(),
+                ),
+                _buildSettingsCard(
+                  'Account Verification',
+                  'Manage your account verification status',
+                  Icons.verified,
+                  () => _showVerificationDialog(),
+                ),
+                const SizedBox(height: 20),
 
-              // Notifications Section
-              const Text(
-                'Notifications',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                decoration: BoxDecoration(
-                  color: NurseUi.surface,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: NurseUi.border.withOpacity(0.8)),
+                // Notifications Section
+                const Text(
+                  'Notifications',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                child: Column(
-                  children: [
-                    _buildNotificationToggle(
-                      'New Service Requests',
-                      'Get notified when patients request your services',
-                      newRequestsNotifications,
-                      (value) => setState(() => newRequestsNotifications = value),
-                    ),
-                    const Divider(height: 1),
-                    _buildNotificationToggle(
-                      'Schedule Reminders',
-                      'Reminders for upcoming appointments',
-                      scheduleReminders,
-                      (value) => setState(() => scheduleReminders = value),
-                    ),
-                    const Divider(height: 1),
-                    _buildNotificationToggle(
-                      'Payment Notifications',
-                      'Updates on payments and earnings',
-                      paymentNotifications,
-                      (value) => setState(() => paymentNotifications = value),
-                    ),
-                    const Divider(height: 1),
-                    _buildNotificationToggle(
-                      'Messages',
-                      'New messages from patients',
-                      messageNotifications,
-                      (value) => setState(() => messageNotifications = value),
-                    ),
-                    const Divider(height: 1),
-                    _buildNotificationToggle(
-                      'Emergency Alerts',
-                      'Critical alerts and urgent requests',
-                      emergencyAlerts,
-                      (value) => setState(() => emergencyAlerts = value),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Privacy Section
-              const Text(
-                'Privacy',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                decoration: BoxDecoration(
-                  color: NurseUi.surface,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: NurseUi.border.withOpacity(0.8)),
-                ),
-                child: Column(
-                  children: [
-                    _buildPrivacyToggle(
-                      'Profile Visibility',
-                      'Make your profile visible to patients',
-                      profileVisible,
-                      (value) => setState(() => profileVisible = value),
-                    ),
-                    const Divider(height: 1),
-                    _buildPrivacyToggle(
-                      'Show Phone Number',
-                      'Display phone number on profile',
-                      showPhoneNumber,
-                      (value) => setState(() => showPhoneNumber = value),
-                    ),
-                    const Divider(height: 1),
-                    _buildPrivacyToggle(
-                      'Show Email',
-                      'Display email address on profile',
-                      showEmail,
-                      (value) => setState(() => showEmail = value),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // App Settings Section
-              Text(
-                NurseUi.label('App Settings', '\u0625\u0639\u062f\u0627\u062f\u0627\u062a \u0627\u0644\u062a\u0637\u0628\u064a\u0642'),
-                style: TextStyle(
-                  color: NurseUi.text,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _buildSettingsCard(
-                NurseUi.label('Language', '\u0627\u0644\u0644\u063a\u0629'),
-                NurseUi.label(
-                  'Current: $language',
-                  '\u0627\u0644\u062d\u0627\u0644\u064a\u0629: $language',
-                ),
-                Icons.language,
-                () => _showLanguageDialog(),
-              ),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: NurseUi.surface,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: NurseUi.border.withOpacity(0.8)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      NurseUi.label('Dark Mode', '\u0627\u0644\u0648\u0636\u0639 \u0627\u0644\u062f\u0627\u0643\u0646'),
-                      style: TextStyle(color: NurseUi.text, fontSize: 16),
-                    ),
-                    Switch(
-                      value: darkMode,
-                      onChanged: (value) {
-                        setState(() => darkMode = value);
-                        NurseUi.isDarkMode.value = value;
-                        _saveSettings();
-                      },
-                      activeThumbColor: AppColors.primary,
-                      activeTrackColor: AppColors.primary.withOpacity(0.30),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Availability Section
-              Text(
-                NurseUi.label('Availability', '\u0627\u0644\u062a\u0648\u0641\u0631'),
-                style: TextStyle(
-                  color: NurseUi.text,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                decoration: BoxDecoration(
-                  color: NurseUi.surface,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: NurseUi.border.withOpacity(0.8)),
-                ),
-                child: Column(
-                  children: [
-                    if (_loadingAvailability)
-                      const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: CircularProgressIndicator(),
-                      )
-                    else
-                      ...availabilitySlots.map((slot) => Column(
-                        children: [
-                          ListTile(
-                            title: Text(
-                              '${slot['day']} - ${slot['startTime']} to ${slot['endTime']}',
-                              style: TextStyle(color: NurseUi.text),
-                            ),
-                            trailing: IconButton(
-                              icon: Icon(Icons.delete, color: NurseUi.text),
-                              onPressed: () {
-                                setState(() {
-                                  availabilitySlots.remove(slot);
-                                });
-                              },
-                            ),
-                          ),
-                          if (availabilitySlots.last != slot) const Divider(height: 1),
-                        ],
-                      )),
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: ElevatedButton.icon(
-                        onPressed: _addAvailabilitySlot,
-                        icon: const Icon(Icons.add),
-                        label: Text(NurseUi.label('Add Time Slot', '\u0625\u0636\u0627\u0641\u0629 \u0645\u0647\u0644\u0629 \u0632\u0645\u0646\u064a\u0629')),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
+                const SizedBox(height: 12),
+                Container(
+                  decoration: BoxDecoration(
+                    color: NurseUi.surface,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: NurseUi.border.withOpacity(0.8)),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildNotificationToggle(
+                        'New Service Requests',
+                        'Get notified when patients request your services',
+                        newRequestsNotifications,
+                        (value) =>
+                            setState(() => newRequestsNotifications = value),
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: ElevatedButton(
-                        onPressed: _saveAvailability,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size(double.infinity, 48),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(NurseUi.label('Save Availability', '\u062d\u0641\u0638 \u0627\u0644\u062a\u0648\u0641\u0631')),
+                      const Divider(height: 1),
+                      _buildNotificationToggle(
+                        'Schedule Reminders',
+                        'Reminders for upcoming appointments',
+                        scheduleReminders,
+                        (value) => setState(() => scheduleReminders = value),
                       ),
-                    ),
-                  ],
+                      const Divider(height: 1),
+                      _buildNotificationToggle(
+                        'Payment Notifications',
+                        'Updates on payments and earnings',
+                        paymentNotifications,
+                        (value) => setState(() => paymentNotifications = value),
+                      ),
+                      const Divider(height: 1),
+                      _buildNotificationToggle(
+                        'Messages',
+                        'New messages from patients',
+                        messageNotifications,
+                        (value) => setState(() => messageNotifications = value),
+                      ),
+                      const Divider(height: 1),
+                      _buildNotificationToggle(
+                        'Emergency Alerts',
+                        'Critical alerts and urgent requests',
+                        emergencyAlerts,
+                        (value) => setState(() => emergencyAlerts = value),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
+                const SizedBox(height: 20),
 
-              // Support Section
-              const Text(
-                'Support',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              _buildSettingsCard(
-                'Help & Support',
-                'Get help and contact support',
-                Icons.help,
-                () => _showHelpDialog(),
-              ),
-              _buildSettingsCard(
-                'Privacy Policy',
-                'Read our privacy policy',
-                Icons.privacy_tip,
-                () => _showPrivacyPolicy(),
-              ),
-              _buildSettingsCard(
-                'Terms of Service',
-                'Read our terms and conditions',
-                Icons.description,
-                () => _showTermsOfService(),
-              ),
-              const SizedBox(height: 20),
-
-              // Danger Zone
-              const Text(
-                'Account Actions',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.red[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.red[200]!),
+                // Privacy Section
+                const Text(
+                  'Privacy',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Deactivate Account',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.red,
+                const SizedBox(height: 12),
+                Container(
+                  decoration: BoxDecoration(
+                    color: NurseUi.surface,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: NurseUi.border.withOpacity(0.8)),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildPrivacyToggle(
+                        'Profile Visibility',
+                        'Make your profile visible to patients',
+                        profileVisible,
+                        (value) => setState(() => profileVisible = value),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Temporarily disable your account. You can reactivate it anytime.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFFc82333),
+                      const Divider(height: 1),
+                      _buildPrivacyToggle(
+                        'Show Phone Number',
+                        'Display phone number on profile',
+                        showPhoneNumber,
+                        (value) => setState(() => showPhoneNumber = value),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 40,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: _deactivateAccount,
-                        child: const Text(
-                          'Deactivate Account',
-                          style: TextStyle(color: Colors.white),
-                        ),
+                      const Divider(height: 1),
+                      _buildPrivacyToggle(
+                        'Show Email',
+                        'Display email address on profile',
+                        showEmail,
+                        (value) => setState(() => showEmail = value),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
+                const SizedBox(height: 20),
 
-              // App Version
-              Center(
-                child: Text(
-                  'Care Link v1.0.0',
+                // App Settings Section
+                Text(
+                  NurseUi.label(
+                    'App Settings',
+                    '\u0625\u0639\u062f\u0627\u062f\u0627\u062a \u0627\u0644\u062a\u0637\u0628\u064a\u0642',
+                  ),
                   style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
+                    color: NurseUi.text,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-            ],
+                const SizedBox(height: 12),
+                _buildSettingsCard(
+                  NurseUi.label('Language', '\u0627\u0644\u0644\u063a\u0629'),
+                  NurseUi.label(
+                    'Current: $language',
+                    '\u0627\u0644\u062d\u0627\u0644\u064a\u0629: $language',
+                  ),
+                  Icons.language,
+                  () => _showLanguageDialog(),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: NurseUi.surface,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: NurseUi.border.withOpacity(0.8)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        NurseUi.label(
+                          'Dark Mode',
+                          '\u0627\u0644\u0648\u0636\u0639 \u0627\u0644\u062f\u0627\u0643\u0646',
+                        ),
+                        style: TextStyle(color: NurseUi.text, fontSize: 16),
+                      ),
+                      Switch(
+                        value: darkMode,
+                        onChanged: (value) {
+                          setState(() => darkMode = value);
+                          NurseUi.isDarkMode.value = value;
+                          _saveSettings();
+                        },
+                        activeThumbColor: AppColors.primary,
+                        activeTrackColor: AppColors.primary.withOpacity(0.30),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Availability Section
+                Text(
+                  NurseUi.label(
+                    'Availability',
+                    '\u0627\u0644\u062a\u0648\u0641\u0631',
+                  ),
+                  style: TextStyle(
+                    color: NurseUi.text,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: NurseUi.surface,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.045),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      if (_loadingAvailability)
+                        const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: CircularProgressIndicator(),
+                        )
+                      else if (availabilitySlots.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: Text(
+                            'No available time slots yet',
+                            style: TextStyle(
+                              color: NurseUi.muted,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        )
+                      else
+                        ...availabilitySlots.map(
+                          (slot) => Padding(
+                            padding: const EdgeInsets.only(bottom: 14),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${slot['day']} - ${_displayTime(slot['startTime'])} to ${_displayTime(slot['endTime'])}',
+                                    style: TextStyle(
+                                      color: NurseUi.text,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete, size: 24),
+                                  color: const Color(0xFF151823),
+                                  onPressed: () {
+                                    setState(() {
+                                      availabilitySlots.remove(slot);
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      Align(
+                        alignment: Alignment.center,
+                        child: SizedBox(
+                          height: 44,
+                          child: ElevatedButton.icon(
+                            onPressed: _addAvailabilitySlot,
+                            icon: const Icon(Icons.add_rounded, size: 22),
+                            label: const Text('Add Time Slot'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 22,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        height: 50,
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _saveAvailability,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(double.infinity, 48),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'Save Availability',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Support Section
+                const Text(
+                  'Support',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                _buildSettingsCard(
+                  'Help & Support',
+                  'Get help and contact support',
+                  Icons.help,
+                  () => _showHelpDialog(),
+                ),
+                _buildSettingsCard(
+                  'Privacy Policy',
+                  'Read our privacy policy',
+                  Icons.privacy_tip,
+                  () => _showPrivacyPolicy(),
+                ),
+                _buildSettingsCard(
+                  'Terms of Service',
+                  'Read our terms and conditions',
+                  Icons.description,
+                  () => _showTermsOfService(),
+                ),
+                const SizedBox(height: 20),
+
+                // Danger Zone
+                const Text(
+                  'Account Actions',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Deactivate Account',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Temporarily disable your account. You can reactivate it anytime.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFFc82333),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 40,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: _deactivateAccount,
+                          child: const Text(
+                            'Deactivate Account',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // App Version
+                Center(
+                  child: Text(
+                    'Care Link v1.0.0',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
           ),
         ),
       ),
-    ));
+    );
   }
 
-  Widget _buildSettingsCard(String title, String subtitle, IconData icon, VoidCallback onTap) {
+  Widget _buildSettingsCard(
+    String title,
+    String subtitle,
+    IconData icon,
+    VoidCallback onTap,
+  ) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -446,10 +514,7 @@ class _NurseSettingsState extends State<NurseSettings> {
                   ),
                   Text(
                     subtitle,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: NurseUi.muted,
-                    ),
+                    style: TextStyle(fontSize: 12, color: NurseUi.muted),
                   ),
                 ],
               ),
@@ -461,7 +526,12 @@ class _NurseSettingsState extends State<NurseSettings> {
     );
   }
 
-  Widget _buildNotificationToggle(String title, String subtitle, bool value, ValueChanged<bool> onChanged) {
+  Widget _buildNotificationToggle(
+    String title,
+    String subtitle,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) {
     return SwitchListTile(
       title: Text(title),
       subtitle: Text(subtitle),
@@ -475,7 +545,12 @@ class _NurseSettingsState extends State<NurseSettings> {
     );
   }
 
-  Widget _buildPrivacyToggle(String title, String subtitle, bool value, ValueChanged<bool> onChanged) {
+  Widget _buildPrivacyToggle(
+    String title,
+    String subtitle,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) {
     return SwitchListTile(
       title: Text(title),
       subtitle: Text(subtitle),
@@ -673,10 +748,15 @@ class _NurseSettingsState extends State<NurseSettings> {
               // TODO: Implement account deactivation
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Account deactivated successfully')),
+                const SnackBar(
+                  content: Text('Account deactivated successfully'),
+                ),
               );
             },
-            child: const Text('Deactivate', style: TextStyle(color: Colors.red)),
+            child: const Text(
+              'Deactivate',
+              style: TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -735,13 +815,19 @@ class _NurseSettingsState extends State<NurseSettings> {
   Future<void> _loadAvailability() async {
     setState(() => _loadingAvailability = true);
     try {
-      final slots = await ProviderProfileService.getAvailability(widget.user.userId);
+      final slots = await ProviderProfileService.getAvailability(
+        widget.user.userId,
+      );
       setState(() {
-        availabilitySlots = slots.map((e) => {
-          'day': e['day']?.toString() ?? '',
-          'startTime': e['startTime']?.toString() ?? '',
-          'endTime': e['endTime']?.toString() ?? '',
-        }).toList();
+        availabilitySlots = slots
+            .map(
+              (e) => {
+                'day': e['day']?.toString() ?? '',
+                'startTime': e['startTime']?.toString() ?? '',
+                'endTime': e['endTime']?.toString() ?? '',
+              },
+            )
+            .toList();
       });
     } catch (_) {}
     setState(() => _loadingAvailability = false);
@@ -768,110 +854,285 @@ class _NurseSettingsState extends State<NurseSettings> {
   }
 
   void _addAvailabilitySlot() {
-    showDialog(
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) {
         String selectedDay = 'Monday';
         TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
         TimeOfDay endTime = const TimeOfDay(hour: 17, minute: 0);
+        String serviceType = 'Home visit';
+        String location = 'Birzeit, Ramallah';
+        final notesController = TextEditingController();
 
         return StatefulBuilder(
-          builder: (context, setState) => AlertDialog(
-            backgroundColor: NurseUi.surface,
-            title: Text(
-              NurseUi.label('Add Availability Slot', '\u0625\u0636\u0627\u0641\u0629 \u0645\u0647\u0644\u0629 \u062a\u0648\u0641\u0631'),
-              style: TextStyle(color: NurseUi.text),
+          builder: (context, setSheetState) => Container(
+            height: MediaQuery.of(context).size.height * 0.86,
+            decoration: BoxDecoration(
+              color: NurseUi.background,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(26),
+              ),
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<String>(
-                  initialValue: selectedDay,
-                  items: [
-                    'Monday',
-                    'Tuesday',
-                    'Wednesday',
-                    'Thursday',
-                    'Friday',
-                    'Saturday',
-                    'Sunday',
-                  ].map((day) => DropdownMenuItem(
-                    value: day,
-                    child: Text(day, style: TextStyle(color: NurseUi.text)),
-                  )).toList(),
-                  onChanged: (value) => setState(() => selectedDay = value!),
-                  decoration: InputDecoration(
-                    labelText: NurseUi.label('Day', '\u0627\u0644\u064a\u0648\u0645'),
-                    border: OutlineInputBorder(),
-                  ),
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 18,
+                  right: 18,
+                  top: 16,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 18,
                 ),
-                const SizedBox(height: 16),
-                Row(
+                child: Column(
                   children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () async {
-                          final time = await showTimePicker(
-                            context: context,
-                            initialTime: startTime,
-                          );
-                          if (time != null) setState(() => startTime = time);
-                        },
-                        child: Text(
-                          NurseUi.label('Start: ${startTime.format(context)}', '\u0627\u0644\u0628\u062f\u0627\u064a\u0629: ${startTime.format(context)}'),
-                          style: TextStyle(color: NurseUi.text),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back_rounded),
+                          onPressed: () => Navigator.pop(context),
                         ),
+                        const Expanded(
+                          child: Text(
+                            'Add Time Slot',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 48),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          _sheetLabel('Select Day'),
+                          _sheetDropdown(
+                            value: selectedDay,
+                            items: const [
+                              'Monday',
+                              'Tuesday',
+                              'Wednesday',
+                              'Thursday',
+                              'Friday',
+                              'Saturday',
+                              'Sunday',
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                setSheetState(() => selectedDay = value);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          _sheetLabel('Start Time'),
+                          _sheetTimeTile(_formatClock(startTime), () async {
+                            final time = await showTimePicker(
+                              context: context,
+                              initialTime: startTime,
+                            );
+                            if (time != null) {
+                              setSheetState(() => startTime = time);
+                            }
+                          }),
+                          const SizedBox(height: 16),
+                          _sheetLabel('End Time'),
+                          _sheetTimeTile(_formatClock(endTime), () async {
+                            final time = await showTimePicker(
+                              context: context,
+                              initialTime: endTime,
+                            );
+                            if (time != null) {
+                              setSheetState(() => endTime = time);
+                            }
+                          }),
+                          const SizedBox(height: 16),
+                          _sheetLabel('Service Type'),
+                          _sheetDropdown(
+                            value: serviceType,
+                            items: const [
+                              'Home visit',
+                              'Elderly care',
+                              'Post-surgery care',
+                              'Medication assistance',
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                setSheetState(() => serviceType = value);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          _sheetLabel('Location'),
+                          _sheetDropdown(
+                            value: location,
+                            items: const [
+                              'Birzeit, Ramallah',
+                              'Al-bireh, Ramallah',
+                              'Beitunia, Ramallah',
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                setSheetState(() => location = value);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          _sheetLabel('Notes (Optional)'),
+                          TextField(
+                            controller: notesController,
+                            maxLines: 4,
+                            maxLength: 120,
+                            decoration: _sheetDecoration('Add a note...'),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () async {
-                          final time = await showTimePicker(
-                            context: context,
-                            initialTime: endTime,
-                          );
-                          if (time != null) setState(() => endTime = time);
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            availabilitySlots.add({
+                              'day': selectedDay,
+                              'startTime': _format24(startTime),
+                              'endTime': _format24(endTime),
+                            });
+                          });
+                          Navigator.pop(context);
                         },
-                        child: Text(
-                          NurseUi.label('End: ${endTime.format(context)}', '\u0627\u0644\u0646\u0647\u0627\u064a\u0629: ${endTime.format(context)}'),
-                          style: TextStyle(color: NurseUi.text),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Save Slot',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
                         ),
                       ),
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(
-                  NurseUi.label('Cancel', '\u0625\u0644\u063a\u0627\u0621'),
-                  style: TextStyle(color: NurseUi.text),
-                ),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  this.setState(() {
-                    availabilitySlots.add({
-                      'day': selectedDay,
-                      'startTime': '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}',
-                      'endTime': '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}',
-                    });
-                  });
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                ),
-                child: Text(NurseUi.label('Add', '\u0625\u0636\u0627\u0641\u0629')),
-              ),
-            ],
           ),
         );
       },
     );
+  }
+
+  Widget _sheetLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: NurseUi.text,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _sheetDropdown({
+    required String value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      decoration: _sheetDecoration(null),
+      items: items
+          .map(
+            (item) => DropdownMenuItem(
+              value: item,
+              child: Text(
+                item,
+                style: TextStyle(
+                  color: NurseUi.text,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _sheetTimeTile(String value, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: InputDecorator(
+        decoration: _sheetDecoration(null),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                value,
+                style: TextStyle(
+                  color: NurseUi.text,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const Icon(Icons.access_time_rounded, color: AppColors.primaryDark),
+          ],
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _sheetDecoration(String? hint) {
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: NurseUi.surface,
+      counterStyle: TextStyle(color: NurseUi.muted, fontSize: 11),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: NurseUi.border.withValues(alpha: 0.8)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: NurseUi.border.withValues(alpha: 0.8)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.4),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+    );
+  }
+
+  String _displayTime(String? value) {
+    final text = (value ?? '').trim();
+    if (text.isEmpty) return '--:--';
+    final parts = text.split(':');
+    if (parts.length >= 2) return '${parts[0]}:${parts[1]}';
+    return text;
+  }
+
+  String _format24(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatClock(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final suffix = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$hour:$minute $suffix';
   }
 }

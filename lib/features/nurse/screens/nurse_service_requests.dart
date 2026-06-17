@@ -1,8 +1,15 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/features/nurse/screens/nurse_contact_patient_flow.dart';
+import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
+import 'package:carelink/features/nurse/screens/nurse_schedule_screen.dart';
 import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/models/user.dart';
+import 'package:carelink/shared/services/provider_profile_service.dart';
 import 'package:carelink/shared/services/report_service.dart';
 import 'package:carelink/shared/services/service_request_service.dart';
 import 'nurse_ui.dart';
@@ -14,6 +21,23 @@ class NurseServiceRequests extends StatefulWidget {
 
   @override
   State<NurseServiceRequests> createState() => _NurseServiceRequestsState();
+}
+
+bool nurseRequestNeedsDecision(String status) {
+  final value = status.toLowerCase().trim();
+  return value == 'new' ||
+      value == 'pending' ||
+      value == 'pending_payment' ||
+      value == 'payment_pending';
+}
+
+bool nurseRequestRequiresDecision(ServiceRequest request) {
+  return nurseRequestNeedsDecision(request.status);
+}
+
+bool nurseRequestIsAccepted(ServiceRequest request) {
+  final value = request.status.toLowerCase().trim();
+  return value == 'assigned' || value == 'accepted' || value == 'confirmed';
 }
 
 class _NurseServiceRequestsState extends State<NurseServiceRequests> {
@@ -33,18 +57,27 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: Text(
-            selectedTab == 0 ? 'Service Requests' : 'My Assigned Services',
+          centerTitle: true,
+          leading: IconButton(
+            icon: const Icon(Icons.language_rounded),
+            onPressed: () => NurseUi.isArabic.value = !NurseUi.isArabic.value,
           ),
+          title: const Text('Requests'),
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
-          actions: [NurseModeControls(providerUserId: widget.user.userId)],
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.filter_alt_outlined),
+              color: AppColors.primaryDark,
+              onPressed: () {},
+            ),
+          ],
         ),
         body: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               child: _tabs(),
             ),
             Expanded(
@@ -60,7 +93,12 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                           ? _emptyState()
                           : ListView.builder(
                               physics: const AlwaysScrollableScrollPhysics(),
-                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                8,
+                                16,
+                                110,
+                              ),
                               itemCount: _visibleRequests.length,
                               itemBuilder: (context, index) {
                                 return _requestCard(_visibleRequests[index]);
@@ -75,73 +113,62 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   }
 
   List<ServiceRequest> get _visibleRequests {
-    if (selectedTab == 0) {
-      return requests.where((r) => r.status == 'pending').toList();
+    switch (selectedTab) {
+      case 1:
+        return requests.where(nurseRequestRequiresDecision).toList();
+      case 2:
+        return requests.where(nurseRequestIsAccepted).toList();
+      case 3:
+        return requests.where((r) => r.status == 'cancelled').toList();
+      default:
+        return requests;
     }
-    return requests
-        .where(
-          (r) => {
-            'assigned',
-            'in_progress',
-            'waiting_report',
-            'completed',
-          }.contains(r.status),
-        )
-        .toList();
   }
 
   Widget _tabs() {
-    return Container(
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: NurseUi.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: NurseUi.border.withOpacity(0.8)),
-      ),
-      child: Row(
-        children: [
-          _tabButton(0, Icons.inbox_rounded, 'New Requests'),
-          _tabButton(1, Icons.medical_services_rounded, 'Assigned Services'),
-        ],
+    final tabs = [
+      'All (${requests.length})',
+      'New (${requests.where(nurseRequestRequiresDecision).length})',
+      'Accepted (${requests.where(nurseRequestIsAccepted).length})',
+      'Rejected (${requests.where((r) => r.status == 'cancelled').length})',
+    ];
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemBuilder: (context, index) => _tabButton(index, tabs[index]),
+        separatorBuilder: (context, index) => const SizedBox(width: 10),
+        itemCount: tabs.length,
       ),
     );
   }
 
-  Widget _tabButton(int index, IconData icon, String label) {
+  Widget _tabButton(int index, String label) {
     final selected = selectedTab == index;
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => setState(() => selectedTab = index),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.primary : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 18,
-                color: selected ? Colors.white : NurseUi.muted,
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: selected ? Colors.white : NurseUi.text,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ],
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => setState(() => selectedTab = index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 17),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.035),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : const Color(0xFF607D8B),
+            fontWeight: FontWeight.w900,
+            fontSize: 12,
           ),
         ),
       ),
@@ -159,7 +186,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
           decoration: BoxDecoration(
             color: NurseUi.surface,
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: NurseUi.border.withOpacity(0.8)),
+            border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
           ),
           child: Column(
             children: [
@@ -206,171 +233,189 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   }
 
   Widget _requestCard(ServiceRequest request) {
-    final color = _statusColor(request.status);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: NurseUi.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: NurseUi.border.withOpacity(0.8)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(NurseUi.isDarkMode.value ? 0.16 : 0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(14),
+    return InkWell(
+      onTap: () => _openDetails(request),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 18),
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 25,
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                  child: Text(
+                    _initial(request.patientName),
+                    style: const TextStyle(
+                      color: AppColors.primaryDark,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ),
-                child: Icon(Icons.healing_rounded, color: AppColors.primaryDark),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        request.patientName.isNotEmpty
+                            ? request.patientName
+                            : 'Patient',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: NurseUi.text,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        request.serviceType.isEmpty
+                            ? 'Home visit'
+                            : request.serviceType,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF607D8B),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on_rounded,
+                            color: AppColors.primaryDark,
+                            size: 13,
+                          ),
+                          const SizedBox(width: 3),
+                          Expanded(
+                            child: Text(
+                              request.location,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: NurseUi.muted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
+                    _statusPill(request.status, _statusColor(request.status)),
+                    const SizedBox(height: 8),
                     Text(
-                      request.patientName.isNotEmpty
-                          ? request.patientName
-                          : 'Patient',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      _relativeDay(request.scheduledDate),
                       style: TextStyle(
-                        color: NurseUi.text,
+                        color: AppColors.primaryDark.withValues(alpha: 0.55),
+                        fontSize: 11,
                         fontWeight: FontWeight.w800,
-                        fontSize: 16,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Text(
-                      request.serviceType,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: NurseUi.muted, fontSize: 13),
+                      _formatTime(request.scheduledDate),
+                      style: TextStyle(
+                        color: NurseUi.text,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ],
                 ),
-              ),
-              _statusPill(request.status, color),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _miniInfo(
-                  Icons.event_rounded,
-                  'Date',
-                  _formatDate(request.scheduledDate),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _miniInfo(
-                  Icons.schedule_rounded,
-                  'Time',
-                  _formatTime(request.scheduledDate),
-                ),
-              ),
-            ],
-          ),
-          if ((request.notes ?? '').isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: NurseUi.softSurface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: NurseUi.border.withOpacity(0.65)),
-              ),
-              child: Text(
-                request.notes!,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: NurseUi.text, fontSize: 13, height: 1.35),
-              ),
-            ),
-          ],
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              if (request.status == 'pending') ...[
-                Expanded(
-                  child: _solidButton(
-                    'Accept',
-                    Icons.check_rounded,
-                    () => _updateRequestStatus(request, 'scheduled'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _outlineButton(
-                    'Reject',
-                    Icons.close_rounded,
-                    () => _updateRequestStatus(request, 'cancelled'),
-                    color: const Color(0xFFB42318),
-                  ),
-                ),
-              ] else ...[
-                Expanded(
-                  child: _solidButton(
-                    'View Details',
-                    Icons.visibility_rounded,
-                    () => _openDetails(request),
-                  ),
-                ),
               ],
+            ),
+            if (nurseRequestRequiresDecision(request)) ...[
+              const SizedBox(height: 13),
+              Row(
+                children: [
+                  const SizedBox(width: 62),
+                  Expanded(
+                    child: _compactRejectButton(
+                      () => _confirmRejectRequest(request),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _compactAcceptButton(() => _openDetails(request)),
+                  ),
+                ],
+              ),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _miniInfo(IconData icon, String label, String value) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: NurseUi.softSurface,
-        borderRadius: BorderRadius.circular(12),
+  String _initial(String value) {
+    final clean = value.trim();
+    return clean.isEmpty ? 'P' : clean.characters.first.toUpperCase();
+  }
+
+  String _relativeDay(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final d = DateTime(date.year, date.month, date.day);
+    if (d == today) return 'Today';
+    if (d == today.add(const Duration(days: 1))) return 'Tomorrow';
+    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return names[date.weekday - 1];
+  }
+
+  Widget _compactAcceptButton(VoidCallback onPressed) {
+    return SizedBox(
+      height: 34,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          elevation: 2,
+        ),
+        onPressed: onPressed,
+        child: const Text(
+          'Accept',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+        ),
       ),
-      child: Row(
-        children: [
-          Icon(icon, color: AppColors.primaryDark, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: TextStyle(color: NurseUi.muted, fontSize: 11)),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: NurseUi.text,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+    );
+  }
+
+  Widget _compactRejectButton(VoidCallback onPressed) {
+    return SizedBox(
+      height: 34,
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFFFF4D5E),
+          side: const BorderSide(color: Color(0xFFFF7A84)),
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        ),
+        onPressed: onPressed,
+        child: const Text(
+          'Reject',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+        ),
       ),
     );
   }
@@ -379,7 +424,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -393,43 +438,11 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
     );
   }
 
-  Widget _solidButton(String label, IconData icon, VoidCallback onPressed) {
-    return ElevatedButton.icon(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 13),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      onPressed: onPressed,
-      icon: Icon(icon, size: 18),
-      label: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-    );
-  }
-
-  Widget _outlineButton(
-    String label,
-    IconData icon,
-    VoidCallback onPressed, {
-    Color? color,
-  }) {
-    final c = color ?? AppColors.primaryDark;
-    return OutlinedButton.icon(
-      style: OutlinedButton.styleFrom(
-        foregroundColor: c,
-        side: BorderSide(color: c.withOpacity(0.4)),
-        padding: const EdgeInsets.symmetric(vertical: 13),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      onPressed: onPressed,
-      icon: Icon(icon, size: 18),
-      label: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-    );
-  }
-
   Future<void> _loadRequests() async {
     try {
-      final data = await ServiceRequestService.getProviderRequests(widget.user.userId);
+      final data = await ServiceRequestService.getProviderRequests(
+        widget.user.userId,
+      );
       if (!mounted) return;
       setState(() {
         requests = data;
@@ -442,7 +455,10 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
     }
   }
 
-  Future<void> _updateRequestStatus(ServiceRequest request, String status) async {
+  Future<void> _updateRequestStatus(
+    ServiceRequest request,
+    String status,
+  ) async {
     try {
       final success = await ServiceRequestService.updateRequestStatus(
         request.id,
@@ -452,37 +468,73 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
       if (success) {
         if (status == 'scheduled') setState(() => selectedTab = 1);
         await _loadRequests();
-        _snack(status == 'scheduled'
-            ? 'Request accepted and moved to My Assigned Services'
-            : 'Request updated');
+        _snack(
+          status == 'scheduled'
+              ? 'Request accepted and moved to My Assigned Services'
+              : 'Request updated',
+        );
       }
     } catch (e) {
       _snack(e.toString().replaceFirst('Exception: ', ''));
     }
   }
 
-  void _openDetails(ServiceRequest request) {
-    showModalBottomSheet(
+  Future<void> _confirmRejectRequest(ServiceRequest request) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AssignedServiceDetails(
-        request: request,
-        providerUserId: widget.user.userId,
-        onChanged: _loadRequests,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reject request'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'Reason (optional)',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null) return;
+    await _updateRequestStatus(request, 'cancelled');
+    if (mounted) setState(() => selectedTab = 3);
+  }
+
+  void _openDetails(ServiceRequest request) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RequestDetailsScreen(
+          request: request,
+          currentUser: widget.user,
+          providerUserId: widget.user.userId,
+          onChanged: _loadRequests,
+        ),
       ),
     );
   }
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Color _statusColor(String status) {
+    if (nurseRequestNeedsDecision(status)) return const Color(0xFF1570EF);
     switch (status) {
-      case 'pending':
-        return const Color(0xFFB7791F);
       case 'assigned':
         return AppColors.primaryDark;
       case 'in_progress':
@@ -499,6 +551,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   }
 
   String _statusLabel(String status) {
+    if (nurseRequestNeedsDecision(status)) return 'NEW';
     switch (status) {
       case 'assigned':
         return 'ASSIGNED';
@@ -511,8 +564,6 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
     }
   }
 
-  String _formatDate(DateTime date) => '${date.day}/${date.month}/${date.year}';
-
   String _formatTime(DateTime date) {
     final h = date.hour % 12 == 0 ? 12 : date.hour % 12;
     final m = date.minute.toString().padLeft(2, '0');
@@ -520,22 +571,1181 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   }
 }
 
-class _AssignedServiceDetails extends StatefulWidget {
+class AcceptConfirmationScreen extends StatelessWidget {
   final ServiceRequest request;
+  final User currentUser;
   final String providerUserId;
   final Future<void> Function() onChanged;
 
-  const _AssignedServiceDetails({
+  const AcceptConfirmationScreen({
+    super.key,
     required this.request,
+    required this.currentUser,
     required this.providerUserId,
     required this.onChanged,
   });
 
   @override
-  State<_AssignedServiceDetails> createState() => _AssignedServiceDetailsState();
+  Widget build(BuildContext context) {
+    return NurseUi.reactive(
+      (context) => Scaffold(
+        backgroundColor: NurseUi.background,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: true,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back_rounded, color: NurseUi.text),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text(
+            'Accept Confirmation',
+            style: TextStyle(color: NurseUi.text, fontWeight: FontWeight.w900),
+          ),
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 26, 20, 24),
+          child: Column(
+            children: [
+              Container(
+                width: 108,
+                height: 108,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                ),
+                child: Center(
+                  child: Container(
+                    width: 82,
+                    height: 82,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.primary,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      color: Colors.white,
+                      size: 48,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 26),
+              Text(
+                'Request Accepted!',
+                style: TextStyle(
+                  color: NurseUi.text,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'You have successfully accepted this request.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: NurseUi.muted, fontSize: 14),
+              ),
+              const SizedBox(height: 28),
+              _acceptedPatientCard(),
+              const SizedBox(height: 14),
+              _summaryCard(),
+              const SizedBox(height: 28),
+              _filledAction(
+                icon: Icons.calendar_month_rounded,
+                label: 'Add to Schedule',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AssignTimeSlotScreen(
+                        request: request,
+                        currentUser: currentUser,
+                        providerUserId: providerUserId,
+                        onChanged: onChanged,
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              _outlineAction(
+                icon: Icons.phone_rounded,
+                label: 'Contact Patient',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ContactPatientScreen(
+                        request: request,
+                        currentUserId: currentUser.userId,
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              _outlineAction(
+                icon: Icons.arrow_forward_rounded,
+                label: 'Go to Visit',
+                onPressed: () {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => RequestDetailsScreen(
+                        request: request,
+                        currentUser: currentUser,
+                        providerUserId: providerUserId,
+                        onChanged: onChanged,
+                        showVisitActions: true,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _acceptedPatientCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 29,
+            backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+            child: Text(
+              _patientName.characters.first,
+              style: const TextStyle(
+                color: AppColors.primaryDark,
+                fontSize: 21,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _patientName,
+                  style: TextStyle(
+                    color: NurseUi.text,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  request.patientAge > 0
+                      ? '${request.patientAge} years'
+                      : 'Age not set',
+                  style: TextStyle(color: NurseUi.muted, fontSize: 12),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  request.location,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.primaryDark,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFFD7F5E5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              'Accepted',
+              style: TextStyle(
+                color: Color(0xFF039855),
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Column(
+        children: [
+          _summaryLine(
+            Icons.medical_services_rounded,
+            'Service Type',
+            request.serviceType.isEmpty
+                ? 'Home Nursing Care'
+                : request.serviceType,
+          ),
+          const SizedBox(height: 14),
+          _summaryLine(
+            Icons.event_rounded,
+            'Date & Time',
+            '${_formatDate(request.scheduledDate)} - ${_formatTime(request.scheduledDate)}',
+          ),
+          const SizedBox(height: 14),
+          _summaryLine(
+            Icons.location_on_rounded,
+            'Location',
+            request.location.isEmpty ? 'Not set' : request.location,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryLine(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: AppColors.primaryDark, size: 18),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: TextStyle(color: NurseUi.muted, fontSize: 12)),
+              const SizedBox(height: 3),
+              Text(
+                value,
+                style: TextStyle(
+                  color: NurseUi.text,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  BoxDecoration _cardDecoration() {
+    return BoxDecoration(
+      color: NurseUi.surface,
+      borderRadius: BorderRadius.circular(8),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(
+            alpha: NurseUi.isDarkMode.value ? 0.16 : 0.04,
+          ),
+          blurRadius: 20,
+          offset: const Offset(0, 10),
+        ),
+      ],
+    );
+  }
+
+  Widget _filledAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 15),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
+      ),
+    );
+  }
+
+  Widget _outlineAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primaryDark,
+          side: const BorderSide(color: AppColors.primary),
+          padding: const EdgeInsets.symmetric(vertical: 15),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
+      ),
+    );
+  }
+
+  String get _patientName =>
+      request.patientName.isEmpty ? 'Patient' : request.patientName;
+
+  static String _formatDate(DateTime date) =>
+      '${date.day}/${date.month}/${date.year}';
+
+  static String _formatTime(DateTime date) {
+    final h = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final m = date.minute.toString().padLeft(2, '0');
+    return '$h:$m ${date.hour >= 12 ? 'PM' : 'AM'}';
+  }
 }
 
-class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
+class AssignTimeSlotScreen extends StatefulWidget {
+  final ServiceRequest request;
+  final User currentUser;
+  final String providerUserId;
+  final Future<void> Function() onChanged;
+
+  const AssignTimeSlotScreen({
+    super.key,
+    required this.request,
+    required this.currentUser,
+    required this.providerUserId,
+    required this.onChanged,
+  });
+
+  @override
+  State<AssignTimeSlotScreen> createState() => _AssignTimeSlotScreenState();
+}
+
+class _AssignTimeSlotScreenState extends State<AssignTimeSlotScreen> {
+  final notesController = TextEditingController();
+  final durations = const [30, 60, 90];
+  var durationMinutes = 60;
+  DateTime? selectedStart;
+  List<Map<String, dynamic>> availabilitySlots = [];
+  List<_AssignableSlot> slots = [];
+  List<ServiceRequest> existingRequests = [];
+  bool isLoading = true;
+  bool isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSlots();
+  }
+
+  @override
+  void dispose() {
+    notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSlots() async {
+    setState(() => isLoading = true);
+    final loadedSlots = await ProviderProfileService.getAvailability(
+      widget.providerUserId,
+    );
+    final loadedRequests = await ServiceRequestService.getProviderRequests(
+      widget.providerUserId,
+    );
+    if (!mounted) return;
+    availabilitySlots = loadedSlots;
+    existingRequests = loadedRequests;
+    setState(() {
+      slots = _buildAssignableSlots(availabilitySlots);
+      isLoading = false;
+    });
+  }
+
+  List<_AssignableSlot> _buildAssignableSlots(List<Map<String, dynamic>> raw) {
+    final date = widget.request.scheduledDate;
+    final day = _weekdayName(date);
+    final daySlots = raw.where((slot) {
+      final slotDay = (slot['day'] ?? '').toString().toLowerCase();
+      return slotDay == day.toLowerCase();
+    }).toList();
+    final source = daySlots.isNotEmpty
+        ? daySlots
+        : [
+            {'startTime': '09:00', 'endTime': '18:00'},
+          ];
+    final result = <_AssignableSlot>[];
+    for (final slot in source) {
+      final start = _timeOnDate(date, slot['startTime']);
+      final end = _timeOnDate(date, slot['endTime']);
+      if (start == null || end == null || !end.isAfter(start)) continue;
+      var cursor = start;
+      while (!cursor.add(Duration(minutes: durationMinutes)).isAfter(end)) {
+        final slotEnd = cursor.add(Duration(minutes: durationMinutes));
+        final busy = _hasConflict(cursor, slotEnd);
+        result.add(_AssignableSlot(start: cursor, end: slotEnd, busy: busy));
+        cursor = cursor.add(const Duration(hours: 1));
+      }
+    }
+    result.sort((a, b) => a.start.compareTo(b.start));
+    return result;
+  }
+
+  bool _hasConflict(DateTime start, DateTime end) {
+    for (final item in existingRequests) {
+      if (item.id == widget.request.id) continue;
+      final status = item.status.toLowerCase();
+      if (status == 'cancelled' || status == 'completed') continue;
+      final existingStart = item.scheduledDate;
+      if (!_sameDay(existingStart, start)) continue;
+      final existingEnd = existingStart.add(
+        Duration(
+          minutes: item.actualDurationMinutes > 0
+              ? item.actualDurationMinutes
+              : 60,
+        ),
+      );
+      if (start.isBefore(existingEnd) && end.isAfter(existingStart)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _confirmAppointment() async {
+    final start = selectedStart;
+    if (start == null || isSaving) return;
+    final end = start.add(Duration(minutes: durationMinutes));
+    if (_hasConflict(start, end)) {
+      _snack(
+        'This time slot is no longer available. Please select another time.',
+      );
+      await _loadSlots();
+      setState(() => selectedStart = null);
+      return;
+    }
+    setState(() => isSaving = true);
+    try {
+      try {
+        final success = await ServiceRequestService.updateRequestStatus(
+          widget.request.id,
+          'scheduled',
+          providerUserId: widget.providerUserId,
+          scheduledAt: start,
+          durationMinutes: durationMinutes,
+          nurseNote: notesController.text.trim(),
+        );
+        if (!success) return;
+      } catch (e) {
+        final message = e.toString().toLowerCase();
+        final alreadyConfirmed =
+            message.contains('from confirmed') ||
+            message.contains('already') ||
+            message.contains('closed');
+        if (!alreadyConfirmed) rethrow;
+      }
+      await widget.onChanged();
+      if (!mounted) return;
+      final updated = ServiceRequest.fromJson({
+        ...widget.request.toJson(),
+        'scheduledDate': start.toIso8601String(),
+        'status': 'scheduled',
+        'confirmedAt': DateTime.now().toIso8601String(),
+        'actualDurationMinutes': durationMinutes,
+      });
+      await _saveLocalScheduledRequest(updated);
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AppointmentConfirmedScreen(
+            request: updated,
+            currentUser: widget.currentUser,
+            providerUserId: widget.providerUserId,
+            scheduledStart: start,
+            durationMinutes: durationMinutes,
+            nurseNote: notesController.text.trim(),
+            onChanged: widget.onChanged,
+          ),
+        ),
+      );
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => isSaving = false);
+    }
+  }
+
+  Future<void> _saveLocalScheduledRequest(ServiceRequest request) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'nurse_scheduled_requests_${widget.providerUserId}';
+    final existing = prefs.getString(key);
+    final items = <Map<String, dynamic>>[];
+    if (existing != null && existing.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(existing);
+        if (decoded is List) {
+          items.addAll(
+            decoded.whereType<Map>().map(
+              (item) => Map<String, dynamic>.from(item),
+            ),
+          );
+        }
+      } catch (_) {}
+    }
+    items.removeWhere((item) => (item['id'] ?? '').toString() == request.id);
+    items.add(request.toJson());
+    await prefs.setString(key, jsonEncode(items));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return NurseUi.reactive(
+      (context) => Scaffold(
+        backgroundColor: NurseUi.background,
+        appBar: AppBar(
+          title: const Text('Assign Time Slot'),
+          centerTitle: true,
+          backgroundColor: NurseUi.background,
+          foregroundColor: NurseUi.text,
+          elevation: 0,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.calendar_month_rounded),
+              color: AppColors.primaryDark,
+              onPressed: () {},
+            ),
+          ],
+        ),
+        body: isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 110),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _patientSummary(),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Select Available Time',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    for (final slot in slots) _timeRow(slot),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Duration',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: durations
+                          .map(
+                            (value) => Expanded(
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  right: value == durations.last ? 0 : 8,
+                                ),
+                                child: _durationChip(value),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Notes (Optional)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: notesController,
+                      maxLength: 200,
+                      minLines: 3,
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                        hintText: 'Add a note for the patient',
+                        filled: true,
+                        fillColor: Colors.white,
+                        counterText: '',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: NurseUi.border),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: NurseUi.border),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
+            child: SizedBox(
+              height: 54,
+              child: ElevatedButton(
+                onPressed: selectedStart == null || isSaving
+                    ? null
+                    : _confirmAppointment,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppColors.primary.withValues(
+                    alpha: 0.45,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: isSaving
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          valueColor: AlwaysStoppedAnimation(Colors.white),
+                        ),
+                      )
+                    : const Text(
+                        'Confirm Appointment',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _patientSummary() {
+    final name = widget.request.patientName.isEmpty
+        ? 'Patient'
+        : widget.request.patientName;
+    final initial = name.characters.first.toUpperCase();
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 28,
+          backgroundColor: NurseUi.softSurface,
+          child: Text(
+            initial,
+            style: const TextStyle(
+              color: AppColors.primaryDark,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name, style: const TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 3),
+              Text(
+                widget.request.serviceType.isEmpty
+                    ? 'Home Nursing Care'
+                    : widget.request.serviceType,
+                style: TextStyle(
+                  color: NurseUi.text,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.location_on_rounded,
+                    color: AppColors.primaryDark,
+                    size: 15,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      widget.request.location.isEmpty
+                          ? widget.request.patientAddress
+                          : widget.request.location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: NurseUi.muted, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _timeRow(_AssignableSlot slot) {
+    final selected =
+        selectedStart != null && selectedStart!.isAtSameMomentAs(slot.start);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: slot.busy
+            ? null
+            : () => setState(() => selectedStart = slot.start),
+        child: Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: slot.busy ? const Color(0xFFF3F6F6) : Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected ? AppColors.primary : NurseUi.border,
+              width: selected ? 1.8 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _formatTime(slot.start),
+                  style: TextStyle(
+                    color: slot.busy ? NurseUi.muted : NurseUi.text,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if (slot.busy)
+                Text(
+                  'Busy',
+                  style: TextStyle(
+                    color: NurseUi.muted,
+                    fontWeight: FontWeight.w800,
+                  ),
+                )
+              else
+                Icon(
+                  selected
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: selected ? AppColors.primary : const Color(0xFFB0BEC5),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _durationChip(int value) {
+    final selected = durationMinutes == value;
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: () {
+        setState(() {
+          durationMinutes = value;
+          selectedStart = null;
+          slots = _buildAssignableSlots(availabilitySlots);
+        });
+      },
+      child: Container(
+        height: 38,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? AppColors.primary : NurseUi.border,
+          ),
+        ),
+        child: Text(
+          '$value min',
+          style: TextStyle(
+            color: selected ? Colors.white : NurseUi.text,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  DateTime? _timeOnDate(DateTime date, dynamic value) {
+    final text = (value ?? '').toString();
+    final parts = text.split(':');
+    if (parts.length < 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    return DateTime(date.year, date.month, date.day, hour, minute);
+  }
+
+  String _formatTime(DateTime date) {
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${date.hour >= 12 ? 'PM' : 'AM'}';
+  }
+
+  String _weekdayName(DateTime date) {
+    return const [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ][date.weekday - 1];
+  }
+
+  bool _sameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+}
+
+class AppointmentConfirmedScreen extends StatelessWidget {
+  final ServiceRequest request;
+  final User currentUser;
+  final String providerUserId;
+  final DateTime scheduledStart;
+  final int durationMinutes;
+  final String nurseNote;
+  final Future<void> Function() onChanged;
+
+  const AppointmentConfirmedScreen({
+    super.key,
+    required this.request,
+    required this.currentUser,
+    required this.providerUserId,
+    required this.scheduledStart,
+    required this.durationMinutes,
+    required this.nurseNote,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return NurseUi.reactive(
+      (context) => Scaffold(
+        backgroundColor: NurseUi.background,
+        appBar: AppBar(
+          title: const Text('Appointment Confirmed'),
+          centerTitle: true,
+          backgroundColor: NurseUi.background,
+          foregroundColor: NurseUi.text,
+          elevation: 0,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.language_rounded),
+              color: AppColors.primaryDark,
+              onPressed: () {},
+            ),
+          ],
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(22, 18, 22, 110),
+          child: Column(
+            children: [
+              Container(
+                width: 104,
+                height: 104,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle_rounded,
+                  color: AppColors.primary,
+                  size: 72,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Appointment Scheduled Successfully!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: NurseUi.text,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 20,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'The appointment has been saved to your schedule.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: NurseUi.muted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 22),
+              _summaryCard(),
+              const SizedBox(height: 18),
+              _primaryButton(
+                icon: Icons.calendar_month_rounded,
+                label: 'View My Schedule',
+                onPressed: () {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          NurseDashboard(user: currentUser, initialIndex: 1),
+                    ),
+                    (route) => false,
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              _outlineButton(
+                icon: Icons.phone_rounded,
+                label: 'Contact Patient',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ContactPatientScreen(
+                        request: request,
+                        currentUserId: currentUser.userId,
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              _outlineButton(
+                icon: Icons.arrow_forward_rounded,
+                label: 'Go to Visit',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => VisitDashboardScreen(
+                        request: request,
+                        user: currentUser,
+                        onChanged: onChanged,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _summaryCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.045),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          _summaryLine(Icons.person_outline_rounded, 'Patient', _patientName),
+          _summaryLine(
+            Icons.event_rounded,
+            'Date',
+            _formatDate(scheduledStart),
+          ),
+          _summaryLine(
+            Icons.access_time_rounded,
+            'Time',
+            _formatTime(scheduledStart),
+          ),
+          _summaryLine(
+            Icons.timer_outlined,
+            'Duration',
+            '$durationMinutes minutes',
+          ),
+          _summaryLine(
+            Icons.location_on_outlined,
+            'Location',
+            request.location.isEmpty
+                ? request.patientAddress
+                : request.location,
+            isLast: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryLine(
+    IconData icon,
+    String label,
+    String value, {
+    bool isLast = false,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 13),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppColors.primaryDark, size: 18),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 70,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: NurseUi.muted,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: NurseUi.text,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _primaryButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          textStyle: const TextStyle(fontWeight: FontWeight.w900),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      ),
+    );
+  }
+
+  Widget _outlineButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primaryDark,
+          side: const BorderSide(color: AppColors.primary),
+          textStyle: const TextStyle(fontWeight: FontWeight.w900),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      ),
+    );
+  }
+
+  String get _patientName =>
+      request.patientName.isEmpty ? 'Patient' : request.patientName;
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
+  }
+
+  String _formatTime(DateTime date) {
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${date.hour >= 12 ? 'PM' : 'AM'}';
+  }
+}
+
+class _AssignableSlot {
+  final DateTime start;
+  final DateTime end;
+  final bool busy;
+
+  const _AssignableSlot({
+    required this.start,
+    required this.end,
+    required this.busy,
+  });
+}
+
+class RequestDetailsScreen extends StatefulWidget {
+  final ServiceRequest request;
+  final User currentUser;
+  final String providerUserId;
+  final Future<void> Function() onChanged;
+  final bool showVisitActions;
+
+  const RequestDetailsScreen({
+    super.key,
+    required this.request,
+    required this.currentUser,
+    required this.providerUserId,
+    required this.onChanged,
+    this.showVisitActions = false,
+  });
+
+  @override
+  State<RequestDetailsScreen> createState() => _RequestDetailsScreenState();
+}
+
+class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
   late ServiceRequest request;
   final beforeController = TextEditingController();
   final afterController = TextEditingController();
@@ -585,89 +1795,89 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
 
   @override
   Widget build(BuildContext context) {
+    final showStartVisit =
+        widget.showVisitActions && nurseRequestIsAccepted(request);
+    final hasBottomActions = !widget.showVisitActions || showStartVisit;
+
     return NurseUi.reactive(
-      (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.92,
-        decoration: BoxDecoration(
-          color: NurseUi.background,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
-        ),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
-              child: Row(
-                children: [
-                  Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: const Icon(
-                      Icons.medical_services_rounded,
-                      color: AppColors.primaryDark,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Service Details',
-                          style: TextStyle(
-                            color: NurseUi.text,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 20,
-                          ),
-                        ),
-                        Text(
-                          _statusLabel(request.status),
-                          style: TextStyle(color: NurseUi.muted, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close, color: NurseUi.text),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
+      (context) => Scaffold(
+        backgroundColor: NurseUi.background,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: true,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back_rounded, color: NurseUi.text),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text(
+            'Request Details',
+            style: TextStyle(color: NurseUi.text, fontWeight: FontWeight.w900),
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.language_rounded),
+              color: AppColors.primaryDark,
+              onPressed: () => NurseUi.isArabic.value = !NurseUi.isArabic.value,
             ),
+          ],
+        ),
+        body: Column(
+          children: [
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  8,
+                  16,
+                  hasBottomActions ? 96 : 20,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _sectionTitle('Patient Information'),
-                    _infoGrid([
-                      _InfoItem('Patient Name', _patientName, Icons.person_rounded),
-                      _InfoItem('Age', request.patientAge > 0 ? '${request.patientAge}' : 'Not set', Icons.cake_rounded),
-                      _InfoItem('Phone Number', request.patientPhone.isNotEmpty ? request.patientPhone : 'Not set', Icons.call_rounded),
-                      _InfoItem('Address', request.location.isNotEmpty ? request.location : request.patientAddress, Icons.location_on_rounded),
-                      _InfoItem('GPS Location', _gpsText, Icons.map_rounded),
-                      _InfoItem('Medical Condition', _condition, Icons.health_and_safety_rounded),
-                    ]),
-                    const SizedBox(height: 16),
-                    _sectionTitle('Required Service'),
-                    _infoGrid([
-                      _InfoItem('Service Type', request.serviceType, Icons.healing_rounded),
-                      _InfoItem('Visit Time', '${_formatDate(request.scheduledDate)}  ${_formatTime(request.scheduledDate)}', Icons.event_rounded),
-                      _InfoItem('Expected Duration', '${request.expectedDurationHours} hours', Icons.timer_rounded),
-                      _InfoItem('Price', request.price > 0 ? '\$${request.price.toStringAsFixed(0)}' : 'Not set', Icons.payments_rounded),
-                    ]),
-                    if ((request.notes ?? '').isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _noteBox('Notes', request.notes!),
-                    ],
+                    _patientHeaderCard(),
                     const SizedBox(height: 18),
-                    _timeline(),
+                    _sectionTitle('Service Details'),
+                    _serviceDetailsCard([
+                      RequestInfoItem(
+                        'Service Type',
+                        _serviceText,
+                        Icons.healing_rounded,
+                      ),
+                      RequestInfoItem(
+                        'Visit Time',
+                        '${_formatDate(request.scheduledDate)}  ${_formatTime(request.scheduledDate)}',
+                        Icons.event_rounded,
+                      ),
+                      RequestInfoItem(
+                        'Location',
+                        request.location.isNotEmpty
+                            ? request.location
+                            : request.patientAddress,
+                        Icons.location_on_rounded,
+                      ),
+                      RequestInfoItem(
+                        'Notes',
+                        _reasonText,
+                        Icons.notes_rounded,
+                      ),
+                      RequestInfoItem(
+                        'Location Note',
+                        _locationNoteText,
+                        Icons.apartment_rounded,
+                      ),
+                      RequestInfoItem(
+                        'Estimated Fee',
+                        request.price > 0
+                            ? '${request.price.toStringAsFixed(0)} ILS'
+                            : 'Not set',
+                        Icons.payments_rounded,
+                      ),
+                    ]),
                     const SizedBox(height: 18),
-                    if (request.status == 'assigned') _startVisitButton(),
+                    _sectionTitle('Medical Information'),
+                    _serviceDetailsCard(_medicalInformationItems),
+                    const SizedBox(height: 18),
                     if (request.status == 'in_progress') ...[
                       _activitiesCard(),
                       const SizedBox(height: 14),
@@ -681,6 +1891,27 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
             ),
           ],
         ),
+        bottomNavigationBar: !widget.showVisitActions
+            ? SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+                  child: RequestActionButtons(
+                    isSaving: isSaving,
+                    onReject: _rejectRequest,
+                    onAccept: _acceptRequest,
+                  ),
+                ),
+              )
+            : showStartVisit
+            ? SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+                  child: _startVisitButton(),
+                ),
+              )
+            : null,
       ),
     );
   }
@@ -688,14 +1919,215 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
   String get _patientName =>
       request.patientName.isNotEmpty ? request.patientName : request.patientId;
 
-  String get _condition =>
-      request.medicalCondition.isNotEmpty
-          ? request.medicalCondition
-          : ((request.notes ?? '').isNotEmpty ? request.notes! : 'Not recorded');
+  Map<String, String> get _parsedNoteFields {
+    final raw = request.notes ?? '';
+    final fields = <String, String>{};
+    for (final part in raw.split('|')) {
+      final index = part.indexOf(':');
+      if (index <= 0) continue;
+      final key = part.substring(0, index).trim().toLowerCase();
+      final value = part.substring(index + 1).trim();
+      if (value.isNotEmpty) fields[key] = value;
+    }
+    return fields;
+  }
+
+  String get _serviceText {
+    final parsed = _parsedNoteFields['service'] ?? '';
+    if (parsed.isNotEmpty) return parsed;
+    return request.serviceType.isEmpty
+        ? 'Home Nursing Care'
+        : request.serviceType;
+  }
+
+  String get _appointmentTypeText {
+    final parsed = _parsedNoteFields['appointmenttype'] ?? '';
+    if (parsed.isEmpty) return 'Home';
+    return parsed[0].toUpperCase() + parsed.substring(1);
+  }
+
+  String get _addressText {
+    final parsed = _parsedNoteFields['address'] ?? '';
+    if (parsed.isNotEmpty) return parsed;
+    if (request.location.isNotEmpty) return request.location;
+    return request.patientAddress.isEmpty ? 'Not set' : request.patientAddress;
+  }
+
+  String get _visitGpsText {
+    final parsed = _parsedNoteFields['visitgps'] ?? '';
+    if (parsed.isNotEmpty) return parsed;
+    return _gpsText;
+  }
+
+  List<RequestInfoItem> get _medicalInformationItems {
+    return [
+      RequestInfoItem('Service', _serviceText, Icons.medical_services_rounded),
+      RequestInfoItem(
+        'Appointment Type',
+        _appointmentTypeText,
+        Icons.home_work_rounded,
+      ),
+      RequestInfoItem('Address', _addressText, Icons.location_on_rounded),
+      RequestInfoItem('Current Case', _reasonText, Icons.assignment_rounded),
+      RequestInfoItem('Reason', _reasonText, Icons.notes_rounded),
+      RequestInfoItem('GPS Location', _visitGpsText, Icons.map_rounded),
+    ];
+  }
+
+  String get _reasonText {
+    final reason = request.reasonForVisit.trim();
+    if (reason.isNotEmpty) return reason;
+    final notes = _cleanComposedNotes(request.notes ?? '');
+    return notes.isEmpty ? 'No notes added' : notes;
+  }
+
+  String get _locationNoteText {
+    final direct = request.locationNote.trim();
+    if (direct.isNotEmpty) return direct;
+    final match = RegExp(
+      r'LocationNote:\s*([^|]+)',
+      caseSensitive: false,
+    ).firstMatch(request.notes ?? '');
+    final parsed = match?.group(1)?.trim() ?? '';
+    return parsed.isEmpty ? 'No location note' : parsed;
+  }
+
+  String _cleanComposedNotes(String raw) {
+    var value = raw;
+    for (final pattern in [
+      r'Service:\s*[^|]+',
+      r'AppointmentType:\s*[^|]+',
+      r'Address:\s*[^|]+',
+      r'VisitGPS:\s*[^|]+',
+      r'LocationNote:\s*[^|]+',
+    ]) {
+      value = value.replaceAll(RegExp(pattern, caseSensitive: false), '');
+    }
+    return value
+        .split('|')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .join(' ')
+        .trim();
+  }
 
   String get _gpsText {
     if (request.gpsLat == null || request.gpsLng == null) return 'Not set';
     return '${request.gpsLat!.toStringAsFixed(5)}, ${request.gpsLng!.toStringAsFixed(5)}';
+  }
+
+  Widget _patientHeaderCard() {
+    return PatientInfoCard(
+      name: _patientName,
+      ageText: request.patientAge > 0
+          ? '${request.patientAge} years'
+          : 'Age not set',
+      location: request.location.isNotEmpty
+          ? request.location
+          : request.patientAddress,
+      statusLabel: _statusLabel(request.status),
+      statusColor: _statusColor(request.status),
+    );
+  }
+
+  Widget _serviceDetailsCard(List<RequestInfoItem> items) {
+    return ServiceDetailsCard(items: items);
+  }
+
+  Future<void> _acceptRequest() async {
+    setState(() => isSaving = true);
+    try {
+      var accepted = ServiceRequest.fromJson({
+        ...request.toJson(),
+        'status': 'assigned',
+        'confirmedAt': DateTime.now().toIso8601String(),
+      });
+
+      if (!nurseRequestIsAccepted(request)) {
+        try {
+          final success = await ServiceRequestService.updateRequestStatus(
+            request.id,
+            'scheduled',
+            providerUserId: widget.providerUserId,
+          );
+          if (!success) return;
+        } catch (e) {
+          final message = e.toString().toLowerCase();
+          final alreadyAccepted =
+              message.contains('from confirmed') ||
+              message.contains('already') ||
+              message.contains('closed');
+          if (!alreadyAccepted) rethrow;
+        }
+      }
+
+      await widget.onChanged();
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AcceptConfirmationScreen(
+            request: accepted,
+            currentUser: widget.currentUser,
+            providerUserId: widget.providerUserId,
+            onChanged: widget.onChanged,
+          ),
+        ),
+      );
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => isSaving = false);
+    }
+  }
+
+  Future<void> _rejectRequest() async {
+    final reason = await _askRejectReason();
+    if (reason == null) return;
+    await _runAction(() async {
+      final success = await ServiceRequestService.updateRequestStatus(
+        request.id,
+        'cancelled',
+        providerUserId: widget.providerUserId,
+      );
+      if (!success || !mounted) return;
+      await widget.onChanged();
+      if (!mounted) return;
+      Navigator.pop(context);
+    }, 'Request rejected');
+  }
+
+  Future<String?> _askRejectReason() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Reject request'),
+          content: TextField(
+            controller: controller,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Reason (optional)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('Reject'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    return result;
   }
 
   Widget _sectionTitle(String title) {
@@ -712,62 +2144,6 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
     );
   }
 
-  Widget _infoGrid(List<_InfoItem> items) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final twoColumns = constraints.maxWidth > 560;
-        return Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: items.map((item) {
-            return SizedBox(
-              width: twoColumns
-                  ? (constraints.maxWidth - 10) / 2
-                  : constraints.maxWidth,
-              child: _infoTile(item),
-            );
-          }).toList(),
-        );
-      },
-    );
-  }
-
-  Widget _infoTile(_InfoItem item) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: NurseUi.surface,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: NurseUi.border.withOpacity(0.75)),
-      ),
-      child: Row(
-        children: [
-          Icon(item.icon, color: AppColors.primaryDark, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(item.label, style: TextStyle(color: NurseUi.muted, fontSize: 11)),
-                const SizedBox(height: 3),
-                Text(
-                  item.value.isNotEmpty ? item.value : 'Not set',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: NurseUi.text,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _noteBox(String title, String body) {
     return Container(
       width: double.infinity,
@@ -775,7 +2151,7 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
       decoration: BoxDecoration(
         color: NurseUi.softSurface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: NurseUi.border.withOpacity(0.7)),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.7)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -788,71 +2164,19 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
     );
   }
 
-  Widget _timeline() {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: NurseUi.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: NurseUi.border.withOpacity(0.8)),
-      ),
-      child: Column(
-        children: [
-          _timeRow('Actual Start Time', request.actualStartedAt),
-          const Divider(height: 18),
-          _timeRow('Actual End Time', request.actualEndedAt),
-          if (request.actualDurationMinutes > 0) ...[
-            const Divider(height: 18),
-            Row(
-              children: [
-                Icon(Icons.timelapse_rounded, color: AppColors.primaryDark, size: 20),
-                const SizedBox(width: 10),
-                Text('Total Duration', style: TextStyle(color: NurseUi.muted)),
-                const Spacer(),
-                Text(
-                  _durationText(request.actualDurationMinutes),
-                  style: TextStyle(color: NurseUi.text, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _timeRow(String label, DateTime? value) {
-    return Row(
-      children: [
-        Icon(Icons.access_time_rounded, color: AppColors.primaryDark, size: 20),
-        const SizedBox(width: 10),
-        Text(label, style: TextStyle(color: NurseUi.muted)),
-        const Spacer(),
-        Text(
-          value == null ? 'Not recorded' : _formatTime(value),
-          style: TextStyle(color: NurseUi.text, fontWeight: FontWeight.bold),
-        ),
-      ],
-    );
-  }
-
   Widget _startVisitButton() {
-    return _primaryAction(
-      'Start Visit',
-      Icons.play_arrow_rounded,
-      _startVisit,
-    );
+    return _primaryAction('Start Visit', Icons.play_arrow_rounded, _startVisit);
   }
 
   Widget _endVisitButton() {
-    return _primaryAction(
-      'End Visit',
-      Icons.stop_rounded,
-      _endVisit,
-    );
+    return _primaryAction('End Visit', Icons.stop_rounded, _endVisit);
   }
 
-  Widget _primaryAction(String label, IconData icon, Future<void> Function() action) {
+  Widget _primaryAction(
+    String label,
+    IconData icon,
+    Future<void> Function() action,
+  ) {
     return SizedBox(
       width: double.infinity,
       height: 54,
@@ -860,7 +2184,9 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
         onPressed: isSaving ? null : action,
         icon: Icon(icon),
@@ -875,7 +2201,7 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
       decoration: BoxDecoration(
         color: NurseUi.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NurseUi.border.withOpacity(0.8)),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -900,7 +2226,10 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    subtitle: Text(activity.arLabel, style: TextStyle(color: NurseUi.muted)),
+                    subtitle: Text(
+                      activity.arLabel,
+                      style: TextStyle(color: NurseUi.muted),
+                    ),
                   ),
                   TextField(
                     controller: activity.notesController,
@@ -932,14 +2261,18 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
       decoration: BoxDecoration(
         color: NurseUi.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NurseUi.border.withOpacity(0.8)),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionTitle('Submit Visit Report'),
           _reportField('Patient Condition Before Visit', beforeController),
-          _reportField('Services Provided', notesController, initial: serviceSummary),
+          _reportField(
+            'Services Provided',
+            notesController,
+            initial: serviceSummary,
+          ),
           _reportField('Vital Signs', vitalsController),
           _reportField('Patient Condition After Visit', afterController),
           _reportField('Recommendations', recommendationsController),
@@ -950,7 +2283,10 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
             contentPadding: EdgeInsets.zero,
             title: Text(
               'Need Doctor Follow-up?',
-              style: TextStyle(color: NurseUi.text, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: NurseUi.text,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -1083,7 +2419,10 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
     }, 'Report submitted. Visit completed');
   }
 
-  Future<void> _runAction(Future<void> Function() action, String success) async {
+  Future<void> _runAction(
+    Future<void> Function() action,
+    String success,
+  ) async {
     setState(() => isSaving = true);
     try {
       await action();
@@ -1097,10 +2436,13 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _statusLabel(String status) {
+    if (nurseRequestNeedsDecision(status)) return 'New';
     switch (status) {
       case 'assigned':
         return 'Assigned';
@@ -1115,11 +2457,22 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
     }
   }
 
-  String _durationText(int minutes) {
-    final h = minutes ~/ 60;
-    final m = minutes % 60;
-    if (h == 0) return '$m minutes';
-    return '$h hours ${m > 0 ? 'and $m minutes' : ''}';
+  Color _statusColor(String status) {
+    if (nurseRequestNeedsDecision(status)) return const Color(0xFF1570EF);
+    switch (status) {
+      case 'assigned':
+        return AppColors.primaryDark;
+      case 'in_progress':
+        return const Color(0xFFF79009);
+      case 'waiting_report':
+        return const Color(0xFFB54708);
+      case 'completed':
+        return const Color(0xFF039855);
+      case 'cancelled':
+        return const Color(0xFFB42318);
+      default:
+        return NurseUi.muted;
+    }
   }
 
   String _formatDate(DateTime date) => '${date.day}/${date.month}/${date.year}';
@@ -1131,12 +2484,246 @@ class _AssignedServiceDetailsState extends State<_AssignedServiceDetails> {
   }
 }
 
-class _InfoItem {
+class RequestInfoItem {
   final String label;
   final String value;
   final IconData icon;
 
-  _InfoItem(this.label, this.value, this.icon);
+  RequestInfoItem(this.label, this.value, this.icon);
+}
+
+class PatientInfoCard extends StatelessWidget {
+  final String name;
+  final String ageText;
+  final String location;
+  final String statusLabel;
+  final Color statusColor;
+
+  const PatientInfoCard({
+    super.key,
+    required this.name,
+    required this.ageText,
+    required this.location,
+    required this.statusLabel,
+    required this.statusColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = name.trim().isEmpty ? 'P' : name.characters.first;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: NurseUi.surface,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: NurseUi.isDarkMode.value ? 0.14 : 0.035,
+            ),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 31,
+            backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+            child: Text(
+              initial,
+              style: const TextStyle(
+                color: AppColors.primaryDark,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: NurseUi.text,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  ageText,
+                  style: TextStyle(color: NurseUi.muted, fontSize: 13),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_rounded,
+                      color: AppColors.primaryDark,
+                      size: 15,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        location,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: NurseUi.muted, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              statusLabel,
+              style: TextStyle(
+                color: statusColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ServiceDetailsCard extends StatelessWidget {
+  final List<RequestInfoItem> items;
+
+  const ServiceDetailsCard({super.key, required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: NurseUi.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            _DetailLine(item: items[i]),
+            if (i != items.length - 1) const SizedBox(height: 16),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailLine extends StatelessWidget {
+  final RequestInfoItem item;
+
+  const _DetailLine({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(item.icon, color: AppColors.primaryDark, size: 19),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.label,
+                style: TextStyle(color: NurseUi.muted, fontSize: 12),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                item.value.isEmpty ? 'Not set' : item.value,
+                style: TextStyle(
+                  color: NurseUi.text,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  height: 1.25,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class RequestActionButtons extends StatelessWidget {
+  final bool isSaving;
+  final VoidCallback onReject;
+  final VoidCallback onAccept;
+
+  const RequestActionButtons({
+    super.key,
+    required this.isSaving,
+    required this.onReject,
+    required this.onAccept,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFFB42318),
+              side: const BorderSide(color: Color(0xFFFF6B6B)),
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            onPressed: isSaving ? null : onReject,
+            child: const Text(
+              'Reject',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            onPressed: isSaving ? null : onAccept,
+            child: const Text(
+              'Accept Request',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _NursingActivity {

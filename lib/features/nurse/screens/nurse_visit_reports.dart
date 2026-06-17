@@ -5,6 +5,7 @@ import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/models/visit_report.dart';
 import 'package:carelink/shared/services/report_service.dart';
 import 'package:carelink/shared/services/service_request_service.dart';
+import 'nurse_medical_report_form.dart';
 import 'nurse_ui.dart';
 
 class NurseVisitReports extends StatefulWidget {
@@ -29,108 +30,290 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
 
   @override
   Widget build(BuildContext context) {
-    return NurseUi.reactive((context) => Scaffold(
-      backgroundColor: NurseUi.background,
-      appBar: AppBar(
-        title: Text(NurseUi.label('Visit Reports', '\u062a\u0642\u0627\u0631\u064a\u0631 \u0627\u0644\u0632\u064a\u0627\u0631\u0627\u062a')),
+    return NurseUi.reactive(
+      (context) => Scaffold(
         backgroundColor: NurseUi.background,
-        foregroundColor: NurseUi.text,
-        elevation: 0,
-        actions: [
-          NurseModeControls(providerUserId: widget.user.userId),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () => _showNewReportDialog(),
+        appBar: AppBar(
+          title: Text(
+            NurseUi.label(
+              'Visit Reports',
+              '\u062a\u0642\u0627\u0631\u064a\u0631 \u0627\u0644\u0632\u064a\u0627\u0631\u0627\u062a',
+            ),
+          ),
+          backgroundColor: NurseUi.background,
+          foregroundColor: NurseUi.text,
+          elevation: 0,
+          actions: [
+            NurseModeControls(providerUserId: widget.user.userId),
+            IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: () => _showNewReportDialog(),
+            ),
+          ],
+        ),
+        body: isLoading
+            ? const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation(AppColors.primary),
+                ),
+              )
+            : RefreshIndicator(
+                onRefresh: _loadData,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _buildHeroCard(),
+                    const SizedBox(height: 20),
+                    _sectionTitle('Completed Visits Ready For Reports'),
+                    const SizedBox(height: 10),
+                    if (completedRequests.isEmpty)
+                      _buildEmptyState(
+                        title: 'No completed visits yet',
+                        message:
+                            'Reports can be created after a visit is completed.',
+                        buttonLabel: 'Refresh',
+                        onPressed: _loadData,
+                      )
+                    else
+                      for (final request in completedRequests)
+                        _buildCompletedRequestTile(request),
+                    const SizedBox(height: 22),
+                    _sectionTitle('Submitted Reports'),
+                    const SizedBox(height: 10),
+                    if (visitReports.isEmpty)
+                      _buildEmptyState(
+                        title: 'No submitted reports yet',
+                        message:
+                            'Submitted nursing medical reports will appear here.',
+                        buttonLabel: 'Create Report',
+                        onPressed: _showNewReportDialog,
+                      )
+                    else
+                      for (final report in visitReports)
+                        _buildReportCard(report),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildHeroCard() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: NurseUi.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: NurseUi.isDarkMode.value ? 0.18 : 0.05,
+            ),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      body: isLoading
-          ? const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation(AppColors.primary),
-              ),
-            )
-          : visitReports.isEmpty
-              ? Center(
-                  child: Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.all(24),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 34),
-                    decoration: BoxDecoration(
-                      color: NurseUi.surface,
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: NurseUi.border.withOpacity(0.8)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(
-                            NurseUi.isDarkMode.value ? 0.18 : 0.05,
-                          ),
-                          blurRadius: 18,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 76,
-                          height: 76,
-                          decoration: BoxDecoration(
-                            color: NurseUi.softSurface,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.assignment_turned_in_rounded,
-                            size: 42,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No completed visit reports yet',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                            color: NurseUi.text,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Completed reports from the database will appear here.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 13, color: NurseUi.muted),
-                        ),
-                        const SizedBox(height: 22),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: () => _showNewReportDialog(),
-                          icon: const Icon(Icons.add),
-                          label: const Text(
-                            'Submit First Report',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
-                    ),
+      child: Row(
+        children: [
+          Container(
+            width: 68,
+            height: 68,
+            decoration: BoxDecoration(
+              color: NurseUi.softSurface,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Icon(
+              Icons.description_outlined,
+              color: AppColors.primary,
+              size: 34,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Create and manage reports',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                    color: NurseUi.text,
                   ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: visitReports.length,
-                  itemBuilder: (context, index) {
-                    return _buildReportCard(visitReports[index]);
-                  },
                 ),
-    ));
+                const SizedBox(height: 5),
+                Text(
+                  'Send nursing medical summaries after completed visits',
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.35,
+                    fontWeight: FontWeight.w700,
+                    color: NurseUi.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 20,
+        fontWeight: FontWeight.w900,
+        color: NurseUi.text,
+      ),
+    );
+  }
+
+  Widget _buildEmptyState({
+    required String title,
+    required String message,
+    required String buttonLabel,
+    required VoidCallback onPressed,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 34),
+      decoration: BoxDecoration(
+        color: NurseUi.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 76,
+            height: 76,
+            decoration: BoxDecoration(
+              color: NurseUi.softSurface,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.assignment_turned_in_rounded,
+              size: 42,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+              color: NurseUi.text,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: NurseUi.muted),
+          ),
+          const SizedBox(height: 22),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: onPressed,
+            icon: const Icon(Icons.add),
+            label: Text(
+              buttonLabel,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompletedRequestTile(ServiceRequest request) {
+    final patientName = request.patientName.isEmpty
+        ? 'Patient ${request.patientId}'
+        : request.patientName;
+    final serviceType = request.serviceType.isEmpty
+        ? 'Nursing visit'
+        : request.serviceType;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: NurseUi.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: NurseUi.softSurface,
+            child: Text(
+              patientName.isNotEmpty ? patientName[0].toUpperCase() : 'P',
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  patientName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: NurseUi.text,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  serviceType,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: NurseUi.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          OutlinedButton.icon(
+            onPressed: () => _openReportForm(request),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Report'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: const BorderSide(color: AppColors.primary),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildReportCard(VisitReport report) {
@@ -142,10 +325,12 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
       decoration: BoxDecoration(
         color: NurseUi.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NurseUi.border.withOpacity(0.8)),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(NurseUi.isDarkMode.value ? 0.18 : 0.05),
+            color: Colors.black.withValues(
+              alpha: NurseUi.isDarkMode.value ? 0.18 : 0.05,
+            ),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),
@@ -164,7 +349,9 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        report.serviceType.isNotEmpty ? report.serviceType : 'Visit Report',
+                        report.serviceType.isNotEmpty
+                            ? report.serviceType
+                            : 'Visit Report',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -174,14 +361,23 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Icon(Icons.location_on, size: 14, color: NurseUi.muted),
+                          Icon(
+                            Icons.location_on,
+                            size: 14,
+                            color: NurseUi.muted,
+                          ),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
-                              report.location.isNotEmpty ? report.location : 'Location unavailable',
+                              report.location.isNotEmpty
+                                  ? report.location
+                                  : 'Location unavailable',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 12, color: NurseUi.muted),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: NurseUi.muted,
+                              ),
                             ),
                           ),
                         ],
@@ -190,9 +386,12 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.14),
+                    color: AppColors.primary.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -239,13 +438,19 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
               decoration: BoxDecoration(
                 color: NurseUi.softSurface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: NurseUi.border.withOpacity(0.7)),
+                border: Border.all(
+                  color: NurseUi.border.withValues(alpha: 0.7),
+                ),
               ),
               child: Text(
                 summary,
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, color: NurseUi.text, height: 1.4),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: NurseUi.text,
+                  height: 1.4,
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -277,13 +482,18 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      side: BorderSide(color: NurseUi.border.withOpacity(0.8)),
+                      side: BorderSide(
+                        color: NurseUi.border.withValues(alpha: 0.8),
+                      ),
                     ),
                     onPressed: () => _editReport(report),
                     icon: const Icon(Icons.edit, size: 16),
                     label: Text(
                       'Edit Report',
-                      style: TextStyle(color: AppColors.primaryDark, fontSize: 12),
+                      style: TextStyle(
+                        color: AppColors.primaryDark,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),
@@ -302,7 +512,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
           width: 34,
           height: 34,
           decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.10),
+            color: AppColors.primary.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(icon, size: 17, color: AppColors.primaryDark),
@@ -356,18 +566,27 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
   }
 
   void _showNewReportDialog() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    if (completedRequests.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No completed visits ready for a report')),
+      );
+      return;
+    }
+    _openReportForm(completedRequests.first);
+  }
+
+  void _openReportForm(ServiceRequest request) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => NurseMedicalReportFormScreen(
+          providerUserId: widget.user.userId,
+          request: request,
+        ),
       ),
-      isScrollControlled: true,
-      builder: (context) => NewReportForm(
-        providerUserId: widget.user.userId,
-        completedRequests: completedRequests,
-        onSaved: _loadData,
-      ),
-    );
+    ).then((value) {
+      if (value == true) _loadData();
+    });
   }
 
   void _viewFullReport(VisitReport report) {
@@ -388,10 +607,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       isScrollControlled: true,
-      builder: (context) => EditReportForm(
-        report: report,
-        onSaved: _loadData,
-      ),
+      builder: (context) => EditReportForm(report: report, onSaved: _loadData),
     );
   }
 
@@ -461,20 +677,24 @@ class _NewReportFormState extends State<NewReportForm> {
   }
 
   List<String> get patients => widget.completedRequests
-      .map((request) => request.patientName.isEmpty ? request.patientId : request.patientName)
+      .map(
+        (request) => request.patientName.isEmpty
+            ? request.patientId
+            : request.patientName,
+      )
       .toSet()
       .toList();
 
   List<String> get services => {
-        ...widget.completedRequests
-            .map((request) => request.serviceType)
-            .where((service) => service.trim().isNotEmpty),
-        'Home Nursing Care',
-        'Medication Administration',
-        'Vital Signs Monitoring',
-        'Wound Care',
-        'Patient Education',
-      }.toList();
+    ...widget.completedRequests
+        .map((request) => request.serviceType)
+        .where((service) => service.trim().isNotEmpty),
+    'Home Nursing Care',
+    'Medication Administration',
+    'Vital Signs Monitoring',
+    'Wound Care',
+    'Patient Education',
+  }.toList();
 
   @override
   Widget build(BuildContext context) {
@@ -525,14 +745,19 @@ class _NewReportFormState extends State<NewReportForm> {
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      initialValue: selectedPatient.isEmpty ? null : selectedPatient,
+                      initialValue: selectedPatient.isEmpty
+                          ? null
+                          : selectedPatient,
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: NurseUi.surface,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                       ),
                       hint: const Text('Select patient'),
                       items: patients.map((patient) {
@@ -550,8 +775,10 @@ class _NewReportFormState extends State<NewReportForm> {
                                 request.patientId == value,
                             orElse: () => widget.completedRequests.first,
                           );
-                          selectedService = selectedRequest?.serviceType ?? selectedService;
-                          visitDate = selectedRequest?.scheduledDate ?? visitDate;
+                          selectedService =
+                              selectedRequest?.serviceType ?? selectedService;
+                          visitDate =
+                              selectedRequest?.scheduledDate ?? visitDate;
                         });
                       },
                     ),
@@ -572,14 +799,19 @@ class _NewReportFormState extends State<NewReportForm> {
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      initialValue: selectedService.isEmpty ? null : selectedService,
+                      initialValue: selectedService.isEmpty
+                          ? null
+                          : selectedService,
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: NurseUi.surface,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                       ),
                       hint: const Text('Select service type'),
                       items: services.map((service) {
@@ -593,7 +825,8 @@ class _NewReportFormState extends State<NewReportForm> {
                       },
                     ),
                   ],
-                  if (widget.completedRequests.isEmpty) _manualField('Location', locationController),
+                  if (widget.completedRequests.isEmpty)
+                    _manualField('Location', locationController),
                   const SizedBox(height: 16),
 
                   // Visit Date and Duration
@@ -615,7 +848,10 @@ class _NewReportFormState extends State<NewReportForm> {
                             InkWell(
                               onTap: _selectDate,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
                                 decoration: BoxDecoration(
                                   color: NurseUi.surface,
                                   border: Border.all(color: NurseUi.border),
@@ -631,7 +867,10 @@ class _NewReportFormState extends State<NewReportForm> {
                                     const SizedBox(width: 8),
                                     Text(
                                       '${visitDate.day}/${visitDate.month}/${visitDate.year}',
-                                      style: TextStyle(fontSize: 14, color: NurseUi.text),
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: NurseUi.text,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -662,10 +901,16 @@ class _NewReportFormState extends State<NewReportForm> {
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
                               ),
                               onChanged: (value) {
-                                setState(() => visitDuration = int.tryParse(value) ?? 1);
+                                setState(
+                                  () =>
+                                      visitDuration = int.tryParse(value) ?? 1,
+                                );
                               },
                             ),
                           ],
@@ -853,9 +1098,7 @@ class _NewReportFormState extends State<NewReportForm> {
           labelText: label,
           filled: true,
           fillColor: NurseUi.surface,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           contentPadding: const EdgeInsets.all(16),
         ),
       ),
@@ -868,13 +1111,13 @@ class _NewReportFormState extends State<NewReportForm> {
     final patientName = selectedRequest?.patientName.isNotEmpty == true
         ? selectedRequest!.patientName
         : (patientNameController.text.trim().isNotEmpty
-            ? patientNameController.text.trim()
-            : patientId);
+              ? patientNameController.text.trim()
+              : patientId);
     final serviceType = selectedRequest?.serviceType.isNotEmpty == true
         ? selectedRequest!.serviceType
         : (selectedService.isNotEmpty
-            ? selectedService
-            : serviceTypeController.text.trim());
+              ? selectedService
+              : serviceTypeController.text.trim());
     final location = selectedRequest?.location.isNotEmpty == true
         ? selectedRequest!.location
         : locationController.text.trim();
@@ -883,7 +1126,9 @@ class _NewReportFormState extends State<NewReportForm> {
         serviceType.isEmpty ||
         visitSummaryController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill patient, service, and summary')),
+        const SnackBar(
+          content: Text('Please fill patient, service, and summary'),
+        ),
       );
       return;
     }
@@ -904,6 +1149,7 @@ class _NewReportFormState extends State<NewReportForm> {
       recommendations: recommendationsController.text.trim(),
     );
     if (success) await widget.onSaved();
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -922,7 +1168,9 @@ class FullReportView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final patient = report.patientName.isNotEmpty ? report.patientName : report.patientId;
+    final patient = report.patientName.isNotEmpty
+        ? report.patientName
+        : report.patientId;
     return Container(
       height: MediaQuery.of(context).size.height * 0.86,
       decoration: BoxDecoration(
@@ -940,7 +1188,7 @@ class FullReportView extends StatelessWidget {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.12),
+                    color: AppColors.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: const Icon(
@@ -1029,7 +1277,10 @@ class FullReportView extends StatelessWidget {
                   _buildReportSection('Vital Signs', report.vitalSigns),
                   _buildReportSection('Medications', report.medications),
                   _buildReportSection('Observations', report.observations),
-                  _buildReportSection('Recommendations', report.recommendations),
+                  _buildReportSection(
+                    'Recommendations',
+                    report.recommendations,
+                  ),
                 ],
               ),
             ),
@@ -1045,7 +1296,7 @@ class FullReportView extends StatelessWidget {
       decoration: BoxDecoration(
         color: NurseUi.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: NurseUi.border.withOpacity(0.8)),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1077,7 +1328,7 @@ class FullReportView extends StatelessWidget {
       decoration: BoxDecoration(
         color: NurseUi.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: NurseUi.border.withOpacity(0.8)),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1106,9 +1357,15 @@ class FullReportView extends StatelessWidget {
 
   String _smartSummary(VisitReport report) {
     final parts = <String>[];
-    final patient = report.patientName.isNotEmpty ? report.patientName : 'The patient';
-    final service = report.serviceType.isNotEmpty ? report.serviceType : 'nursing care';
-    parts.add('$patient received $service on ${_formatDate(report.scheduledDate)}.');
+    final patient = report.patientName.isNotEmpty
+        ? report.patientName
+        : 'The patient';
+    final service = report.serviceType.isNotEmpty
+        ? report.serviceType
+        : 'nursing care';
+    parts.add(
+      '$patient received $service on ${_formatDate(report.scheduledDate)}.',
+    );
     if (report.visitSummary.trim().isNotEmpty) {
       parts.add('Visit focus: ${report.visitSummary.trim()}');
     }
@@ -1160,19 +1417,33 @@ class _EditReportFormState extends State<EditReportForm> {
   void initState() {
     super.initState();
     visitDate = widget.report.scheduledDate;
-    patientNameController = TextEditingController(text: widget.report.patientName);
-    serviceTypeController = TextEditingController(text: widget.report.serviceType);
+    patientNameController = TextEditingController(
+      text: widget.report.patientName,
+    );
+    serviceTypeController = TextEditingController(
+      text: widget.report.serviceType,
+    );
     locationController = TextEditingController(text: widget.report.location);
     durationController = TextEditingController(
       text: widget.report.durationHours > 0
           ? widget.report.durationHours.toString()
           : '',
     );
-    visitSummaryController = TextEditingController(text: widget.report.visitSummary);
-    vitalSignsController = TextEditingController(text: widget.report.vitalSigns);
-    medicationsController = TextEditingController(text: widget.report.medications);
-    observationsController = TextEditingController(text: widget.report.observations);
-    recommendationsController = TextEditingController(text: widget.report.recommendations);
+    visitSummaryController = TextEditingController(
+      text: widget.report.visitSummary,
+    );
+    vitalSignsController = TextEditingController(
+      text: widget.report.vitalSigns,
+    );
+    medicationsController = TextEditingController(
+      text: widget.report.medications,
+    );
+    observationsController = TextEditingController(
+      text: widget.report.observations,
+    );
+    recommendationsController = TextEditingController(
+      text: widget.report.recommendations,
+    );
   }
 
   @override
@@ -1233,16 +1504,8 @@ class _EditReportFormState extends State<EditReportForm> {
                     durationController,
                     keyboardType: TextInputType.number,
                   ),
-                  _field(
-                    'Visit Summary',
-                    visitSummaryController,
-                    maxLines: 3,
-                  ),
-                  _field(
-                    'Vital Signs',
-                    vitalSignsController,
-                    maxLines: 3,
-                  ),
+                  _field('Visit Summary', visitSummaryController, maxLines: 3),
+                  _field('Vital Signs', vitalSignsController, maxLines: 3),
                   _field(
                     'Medications Administered',
                     medicationsController,
@@ -1410,6 +1673,7 @@ class _EditReportFormState extends State<EditReportForm> {
           const SnackBar(content: Text('Report updated successfully')),
         );
         await widget.onSaved();
+        if (!mounted) return;
         Navigator.pop(context);
       }
     } else {

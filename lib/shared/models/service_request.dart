@@ -8,10 +8,13 @@ class ServiceRequest {
   final String serviceType;
   final String location;
   final String patientAddress;
+  final String locationNote;
   final double? gpsLat;
   final double? gpsLng;
   final DateTime scheduledDate;
-  final String status; // pending, assigned, in_progress, waiting_report, completed, cancelled
+  final String
+  status; // pending, assigned, in_progress, waiting_report, completed, cancelled
+  final DateTime? confirmedAt;
   final String? notes;
   final String reasonForVisit;
   final String medicalCondition;
@@ -33,10 +36,12 @@ class ServiceRequest {
     required this.serviceType,
     required this.location,
     this.patientAddress = '',
+    this.locationNote = '',
     this.gpsLat,
     this.gpsLng,
     required this.scheduledDate,
     required this.status,
+    this.confirmedAt,
     this.notes,
     this.reasonForVisit = '',
     this.medicalCondition = '',
@@ -53,19 +58,22 @@ class ServiceRequest {
     return ServiceRequest(
       id: (json['id'] ?? json['requestId'] ?? '').toString(),
       patientId: (json['patientId'] ?? json['patientUserId'] ?? '').toString(),
-      providerId: (json['providerId'] ?? json['providerUserId'] ?? '').toString(),
+      providerId: (json['providerId'] ?? json['providerUserId'] ?? '')
+          .toString(),
       patientName: (json['patientName'] ?? '').toString(),
       patientPhone: (json['patientPhone'] ?? json['phone'] ?? '').toString(),
       patientAge: _parseInt(json['patientAge'] ?? json['age']),
       serviceType: json['serviceType'] ?? '',
       location: json['location'] ?? '',
       patientAddress: (json['patientAddress'] ?? '').toString(),
+      locationNote: (json['locationNote'] ?? '').toString(),
       gpsLat: _parseDoubleOrNull(json['gpsLat']),
       gpsLng: _parseDoubleOrNull(json['gpsLng']),
       scheduledDate: _parseDateTime(
         json['scheduledDate'] ?? json['scheduledAt'],
       ),
       status: _normalizeStatus(json['status']),
+      confirmedAt: _parseNullableDateTime(json['confirmedAt']),
       notes: json['notes']?.toString(),
       reasonForVisit: (json['reasonForVisit'] ?? '').toString(),
       medicalCondition: (json['medicalCondition'] ?? '').toString(),
@@ -92,10 +100,12 @@ class ServiceRequest {
       'serviceType': serviceType,
       'location': location,
       'patientAddress': patientAddress,
+      'locationNote': locationNote,
       'gpsLat': gpsLat,
       'gpsLng': gpsLng,
       'scheduledDate': scheduledDate.toIso8601String(),
       'status': status,
+      'confirmedAt': confirmedAt?.toIso8601String(),
       'notes': notes,
       'reasonForVisit': reasonForVisit,
       'medicalCondition': medicalCondition,

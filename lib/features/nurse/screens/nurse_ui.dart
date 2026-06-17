@@ -12,17 +12,16 @@ class NurseUi {
   static final ValueNotifier<bool> isArabic = ValueNotifier(false);
 
   static Color get background =>
-      isDarkMode.value ? const Color(0xFF0F172A) : AppColors.background;
+      isDarkMode.value ? const Color(0xFF0F172A) : const Color(0xFFEAF8F5);
   static Color get surface =>
       isDarkMode.value ? const Color(0xFF111827) : Colors.white;
-  static Color get text =>
-      isDarkMode.value ? Colors.white : AppColors.textDark;
+  static Color get text => isDarkMode.value ? Colors.white : AppColors.textDark;
   static Color get muted =>
       isDarkMode.value ? const Color(0xFFCBD5E1) : AppColors.textLight;
   static Color get border =>
-      isDarkMode.value ? const Color(0xFF334155) : AppColors.border;
+      isDarkMode.value ? const Color(0xFF334155) : const Color(0xFFE7F0EE);
   static Color get softSurface =>
-      isDarkMode.value ? const Color(0xFF1E293B) : Colors.grey.shade50;
+      isDarkMode.value ? const Color(0xFF1E293B) : const Color(0xFFF4FBF9);
 
   static TextDirection get direction =>
       isArabic.value ? TextDirection.rtl : TextDirection.ltr;
@@ -56,11 +55,12 @@ class NurseUi {
                   foregroundColor: text,
                   elevation: 0,
                 ),
-                bottomNavigationBarTheme: baseTheme.bottomNavigationBarTheme.copyWith(
-                  backgroundColor: surface,
-                  selectedItemColor: AppColors.primaryDark,
-                  unselectedItemColor: muted,
-                ),
+                bottomNavigationBarTheme: baseTheme.bottomNavigationBarTheme
+                    .copyWith(
+                      backgroundColor: surface,
+                      selectedItemColor: AppColors.primaryDark,
+                      unselectedItemColor: muted,
+                    ),
                 inputDecorationTheme: baseTheme.inputDecorationTheme.copyWith(
                   labelStyle: TextStyle(color: muted),
                   hintStyle: TextStyle(color: muted),
@@ -154,7 +154,9 @@ class NurseModeControls extends StatelessWidget {
                       visualDensity: VisualDensity.compact,
                       icon: Icon(
                         Icons.language_rounded,
-                        color: isArabic ? AppColors.primaryDark : Colors.lightBlue,
+                        color: isArabic
+                            ? AppColors.primaryDark
+                            : Colors.lightBlue,
                       ),
                       onPressed: () {
                         NurseUi.isArabic.value = !isArabic;

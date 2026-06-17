@@ -227,11 +227,7 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
                       'startTime': _formatTime(start),
                       'endTime': _formatTime(end),
                     };
-                    final updatedSlots = [...slots, newSlot];
-
-                    final saved = await _persistAvailability(updatedSlots);
-                    if (!context.mounted || !saved) return;
-                    setState(() => slots = updatedSlots);
+                    setState(() => slots = [...slots, newSlot]);
                     Navigator.pop(context);
                   },
                   child: const Text('Add Time'),
@@ -254,6 +250,14 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
     List<Map<String, dynamic>> nextSlots,
   ) async {
     if (isSaving) return false;
+    if (widget.user.userId.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nurse session is missing. Please sign in again.'),
+        ),
+      );
+      return false;
+    }
     setState(() => isSaving = true);
     final success = await ProviderProfileService.saveAvailability(
       widget.user.userId,
@@ -266,7 +270,7 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
         content: Text(
           success
               ? 'Availability saved successfully'
-              : 'Failed to save availability',
+              : 'Failed to save availability: ${ProviderProfileService.lastError ?? 'Unknown error'}',
         ),
       ),
     );

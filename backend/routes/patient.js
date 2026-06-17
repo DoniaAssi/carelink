@@ -177,6 +177,11 @@ async function ensureChatSchema() {
 
   chatSchemaPromise = (async () => {
     const columns = [
+      ['conversationId', 'CHAR(36) NULL'],
+      ['clientMessageId', 'VARCHAR(96) NULL'],
+      ['senderRole', "VARCHAR(32) NULL"],
+      ['receiverRole', "VARCHAR(32) NULL"],
+      ['status', "VARCHAR(32) NOT NULL DEFAULT 'sent'"],
       ['messageType', "VARCHAR(32) NOT NULL DEFAULT 'text'"],
       ['attachmentUrl', 'TEXT NULL'],
       ['attachmentName', 'VARCHAR(255) NULL'],
@@ -208,6 +213,22 @@ async function ensureChatSchema() {
         PRIMARY KEY (userId)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     );
+    await db.query(
+      `CREATE TABLE IF NOT EXISTS chatconversation (
+        conversationId CHAR(36) NOT NULL PRIMARY KEY,
+        patientId VARCHAR(64) NOT NULL,
+        nurseId VARCHAR(64) NOT NULL,
+        requestId VARCHAR(64) NOT NULL DEFAULT '',
+        appointmentId VARCHAR(64) NOT NULL DEFAULT '',
+        visitId VARCHAR(64) NOT NULL DEFAULT '',
+        createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        lastMessage TEXT NULL,
+        lastMessageAt DATETIME NULL,
+        lastSenderId VARCHAR(64) NULL,
+        UNIQUE KEY uniq_chatconversation_relation (nurseId, patientId, requestId)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    );
   })().catch((error) => {
     chatSchemaPromise = null;
     throw error;
@@ -227,10 +248,38 @@ async function touchChatPresence(userId) {
 }
 
 function chatMessageSelect() {
-  return `messageId, senderId, receiverId, message, messageType,
+  return `messageId, conversationId, senderId, senderRole, receiverId, receiverRole,
+    message, messageType, clientMessageId, status,
     attachmentUrl, attachmentName, attachmentSize, attachmentMimeType,
     medicalRecordId, voiceDurationSeconds, createdAt, sentAt, deliveredAt,
     readAt, isRead`;
+}
+
+function normalizeChatId(value) {
+  return (value || '').toString().trim();
+}
+
+async function getConversationForUser(conversationId, userId) {
+  const [rows] = await db.query(
+    `SELECT * FROM chatconversation
+     WHERE conversationId = ? AND (patientId = ? OR nurseId = ?)
+     LIMIT 1`,
+    [conversationId, userId, userId]
+  );
+  return rows[0] || null;
+}
+
+async function getConversationMeta(conversation) {
+  const patientId = conversation.patientId;
+  const nurseId = conversation.nurseId;
+  const [users] = await db.query(
+    `SELECT userId, fullName, role
+     FROM user WHERE userId IN (?, ?)`,
+    [patientId, nurseId]
+  );
+  const patient = users.find((u) => u.userId === patientId) || {};
+  const nurse = users.find((u) => u.userId === nurseId) || {};
+  return { patient, nurse };
 }
 
 function normalizeDiseasePayload(input) {
@@ -2070,22 +2119,294 @@ router.get('/payments/:patientUserId', async (req, res) => {
   }
 });
 
+router.post('/chat/conversations/get-or-create', async (req, res) => {
+  const patientId = normalizeChatId(req.body.patientId);
+  const nurseId = normalizeChatId(req.body.nurseId || req.body.providerId);
+  const requestId = normalizeChatId(req.body.requestId);
+  const appointmentId = normalizeChatId(req.body.appointmentId || requestId);
+  const visitId = normalizeChatId(req.body.visitId || requestId);
+
+  if (!patientId || !nurseId || !requestId) {
+    return res.status(400).json({
+      error: 'patientId, nurseId and requestId are required',
+    });
+  }
+
+  try {
+    await ensureChatSchema();
+    const [existing] = await db.query(
+      `SELECT * FROM chatconversation
+       WHERE nurseId = ? AND patientId = ? AND requestId = ?
+       LIMIT 1`,
+      [nurseId, patientId, requestId]
+    );
+
+    let conversation = existing[0];
+    if (!conversation) {
+      const conversationId = randomUUID();
+      await db.query(
+        `INSERT INTO chatconversation
+         (conversationId, patientId, nurseId, requestId, appointmentId, visitId,
+          createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [conversationId, patientId, nurseId, requestId, appointmentId, visitId]
+      );
+      conversation = {
+        conversationId,
+        patientId,
+        nurseId,
+        requestId,
+        appointmentId,
+        visitId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastMessage: null,
+        lastMessageAt: null,
+        lastSenderId: null,
+      };
+    }
+
+    const meta = await getConversationMeta(conversation);
+    res.json({ ...conversation, patient: meta.patient, nurse: meta.nurse });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/chat/conversations', async (req, res) => {
+  const userId = normalizeChatId(req.query.userId);
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+
+  try {
+    await ensureChatSchema();
+    const [rows] = await db.query(
+      `SELECT
+         c.*,
+         patient.fullName AS patientName,
+         nurse.fullName AS nurseName,
+         (
+           SELECT COUNT(*)
+           FROM message m
+           WHERE m.conversationId = c.conversationId
+             AND m.receiverId = ?
+             AND m.readAt IS NULL
+         ) AS unreadCount
+       FROM chatconversation c
+       LEFT JOIN user patient ON patient.userId = c.patientId
+       LEFT JOIN user nurse ON nurse.userId = c.nurseId
+       WHERE c.patientId = ? OR c.nurseId = ?
+       ORDER BY COALESCE(c.lastMessageAt, c.updatedAt) DESC`,
+      [userId, userId, userId]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/chat/unread-count/:userId', async (req, res) => {
+  const userId = normalizeChatId(req.params.userId);
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+
+  try {
+    await ensureChatSchema();
+    const [rows] = await db.query(
+      `SELECT COUNT(*) AS unreadCount
+       FROM message
+       WHERE receiverId = ? AND readAt IS NULL`,
+      [userId]
+    );
+    res.json({ unreadCount: Number(rows[0]?.unreadCount || 0) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/chat/conversations/:conversationId/messages', async (req, res) => {
+  const { conversationId } = req.params;
+  const viewerId = normalizeChatId(req.query.viewerId);
+  const limit = Math.min(Math.max(Number(req.query.limit || 30), 1), 50);
+  const before = normalizeChatId(req.query.before);
+
+  if (!viewerId) return res.status(400).json({ error: 'viewerId is required' });
+
+  try {
+    await ensureChatSchema();
+    const conversation = await getConversationForUser(conversationId, viewerId);
+    if (!conversation) return res.status(403).json({ error: 'Forbidden' });
+
+    await touchChatPresence(viewerId);
+    await db.query(
+      `UPDATE message
+       SET deliveredAt = COALESCE(deliveredAt, NOW())
+       WHERE conversationId = ? AND receiverId = ? AND deliveredAt IS NULL`,
+      [conversationId, viewerId]
+    );
+
+    const params = [conversationId];
+    let beforeSql = '';
+    if (before) {
+      beforeSql = 'AND createdAt < ?';
+      params.push(before);
+    }
+    params.push(limit);
+
+    const [rows] = await db.query(
+      `SELECT * FROM (
+         SELECT ${chatMessageSelect()}
+         FROM message
+         WHERE conversationId = ? ${beforeSql}
+         ORDER BY createdAt DESC
+         LIMIT ?
+       ) latest
+       ORDER BY createdAt ASC`,
+      params
+    );
+
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/chat/conversations/:conversationId/messages', async (req, res) => {
+  const { conversationId } = req.params;
+  const senderId = normalizeChatId(req.body.senderId);
+  const receiverId = normalizeChatId(req.body.receiverId);
+  const senderRole = normalizeChatId(req.body.senderRole || 'nurse');
+  const receiverRole = normalizeChatId(req.body.receiverRole || 'patient');
+  const messageType = normalizeChatId(req.body.messageType || 'text');
+  const text = (req.body.text ?? req.body.message ?? '').toString().trim();
+  const clientMessageId = normalizeChatId(req.body.clientMessageId);
+
+  if (!senderId || !receiverId || messageType !== 'text') {
+    return res.status(400).json({
+      error: 'senderId, receiverId and text messageType are required',
+    });
+  }
+  if (!text) return res.status(400).json({ error: 'Message text is required' });
+
+  try {
+    await ensureChatSchema();
+    const conversation = await getConversationForUser(conversationId, senderId);
+    if (!conversation) return res.status(403).json({ error: 'Forbidden' });
+    if (![conversation.patientId, conversation.nurseId].includes(receiverId)) {
+      return res.status(403).json({ error: 'Receiver is not in conversation' });
+    }
+
+    if (clientMessageId) {
+      const [dupes] = await db.query(
+        `SELECT ${chatMessageSelect()}
+         FROM message
+         WHERE conversationId = ? AND clientMessageId = ?
+         LIMIT 1`,
+        [conversationId, clientMessageId]
+      );
+      if (dupes[0]) return res.status(200).json(dupes[0]);
+    }
+
+    await touchChatPresence(senderId);
+    const messageId = randomUUID();
+    await db.execute(
+      `INSERT INTO message (
+         messageId, conversationId, clientMessageId,
+         senderId, senderRole, receiverId, receiverRole,
+         message, messageType, status, createdAt, sentAt, isRead
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', NOW(), NOW(), 0)`,
+      [
+        messageId,
+        conversationId,
+        clientMessageId || null,
+        senderId,
+        senderRole,
+        receiverId,
+        receiverRole,
+        text,
+        messageType,
+      ]
+    );
+    await db.query(
+      `UPDATE chatconversation
+       SET lastMessage = ?, lastMessageAt = NOW(), lastSenderId = ?,
+           updatedAt = NOW()
+       WHERE conversationId = ?`,
+      [text, senderId, conversationId]
+    );
+
+    try {
+      await insertNotification({
+        userId: receiverId,
+        type: 'chat_message',
+        title: 'New message',
+        body: text.length > 80 ? `${text.slice(0, 77)}...` : text,
+        relatedRequestId: conversation.requestId,
+      });
+    } catch (_) {}
+
+    const [rows] = await db.query(
+      `SELECT ${chatMessageSelect()} FROM message WHERE messageId = ? LIMIT 1`,
+      [messageId]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/chat/conversations/:conversationId/read', async (req, res) => {
+  const { conversationId } = req.params;
+  const readerId = normalizeChatId(req.body.readerId);
+  if (!readerId) return res.status(400).json({ error: 'readerId is required' });
+
+  try {
+    await ensureChatSchema();
+    const conversation = await getConversationForUser(conversationId, readerId);
+    if (!conversation) return res.status(403).json({ error: 'Forbidden' });
+    const [result] = await db.query(
+      `UPDATE message
+       SET deliveredAt = COALESCE(deliveredAt, NOW()),
+           readAt = COALESCE(readAt, NOW()),
+           isRead = 1,
+           status = 'read'
+       WHERE conversationId = ? AND receiverId = ? AND readAt IS NULL`,
+      [conversationId, readerId]
+    );
+    res.json({ updated: result.affectedRows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/messages/:userId', async (req, res) => {
   const { userId } = req.params;
 
   try {
+    await ensureChatSchema();
     const [rows] = await db.query(
       `SELECT
-          u.userId AS doctorId,
-          u.fullName AS doctorName,
-          c.specialization,
-          'No messages yet' AS lastMessage,
-          '' AS sentAt
-       FROM user u
-       JOIN careprovider c ON u.userId = c.userId
-       WHERE u.role = 'doctor'
-       ORDER BY u.fullName ASC`,
-      [userId]
+          c.conversationId,
+          CASE WHEN c.patientId = ? THEN c.nurseId ELSE c.patientId END AS doctorId,
+          CASE WHEN c.patientId = ? THEN c.nurseId ELSE c.patientId END AS providerId,
+          CASE WHEN c.patientId = ? THEN nurse.fullName ELSE patient.fullName END AS doctorName,
+          CASE WHEN c.patientId = ? THEN nurse.fullName ELSE patient.fullName END AS name,
+          cp.specialization,
+          COALESCE(c.lastMessage, '') AS lastMessage,
+          COALESCE(c.lastMessageAt, c.updatedAt) AS sentAt,
+          (
+            SELECT COUNT(*)
+            FROM message m
+            WHERE m.conversationId = c.conversationId
+              AND m.receiverId = ?
+              AND m.readAt IS NULL
+          ) AS unreadCount
+       FROM chatconversation c
+       LEFT JOIN user patient ON patient.userId = c.patientId
+       LEFT JOIN user nurse ON nurse.userId = c.nurseId
+       LEFT JOIN careprovider cp
+         ON cp.userId = CASE WHEN c.patientId = ? THEN c.nurseId ELSE c.patientId END
+       WHERE c.patientId = ? OR c.nurseId = ?
+       ORDER BY COALESCE(c.lastMessageAt, c.updatedAt) DESC`,
+      [userId, userId, userId, userId, userId, userId, userId, userId]
     );
 
     res.json(rows);
@@ -2153,6 +2474,24 @@ router.post('/chat/send', async (req, res) => {
     await ensureChatSchema();
     await touchChatPresence(senderId);
     const messageId = randomUUID();
+    let conversationId = null;
+    let senderRole = null;
+    let receiverRole = null;
+    const [conversationRows] = await db.query(
+      `SELECT conversationId, patientId, nurseId
+       FROM chatconversation
+       WHERE (patientId = ? AND nurseId = ?) OR (patientId = ? AND nurseId = ?)
+       ORDER BY updatedAt DESC
+       LIMIT 1`,
+      [senderId, receiverId, receiverId, senderId]
+    );
+    if (conversationRows[0]) {
+      conversationId = conversationRows[0].conversationId;
+      senderRole =
+        conversationRows[0].patientId === senderId ? 'patient' : 'nurse';
+      receiverRole =
+        conversationRows[0].patientId === receiverId ? 'patient' : 'nurse';
+    }
     let attachmentUrl = null;
     let attachmentName = null;
     let attachmentSize = null;
@@ -2187,14 +2526,18 @@ router.post('/chat/send', async (req, res) => {
 
     await db.execute(
       `INSERT INTO message (
-         messageId, senderId, receiverId, message, messageType,
+         messageId, conversationId, senderId, senderRole, receiverId, receiverRole,
+         message, messageType, status,
          attachmentUrl, attachmentName, attachmentSize, attachmentMimeType,
          medicalRecordId, voiceDurationSeconds, createdAt, sentAt, isRead
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'sent', ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)`,
       [
         messageId,
+        conversationId,
         senderId,
+        senderRole,
         receiverId,
+        receiverRole,
         message.toString().trim(),
         messageType,
         attachmentUrl,
@@ -2205,6 +2548,15 @@ router.post('/chat/send', async (req, res) => {
         voiceDurationSeconds || null,
       ]
     );
+    if (conversationId) {
+      await db.query(
+        `UPDATE chatconversation
+         SET lastMessage = ?, lastMessageAt = NOW(), lastSenderId = ?,
+             updatedAt = NOW()
+         WHERE conversationId = ?`,
+        [message.toString().trim(), senderId, conversationId]
+      );
+    }
 
     res.status(201).json({
       message: 'Message sent successfully',
