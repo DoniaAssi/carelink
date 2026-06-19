@@ -804,6 +804,14 @@ router.get('/recommendations/:nurseUserId', async (req, res) => {
 router.post('/recommendations/:nurseUserId/:recommendationId/accept', async (req, res) => {
   const { nurseUserId, recommendationId } = req.params;
   try {
+    try {
+      await assertProviderCanWork(nurseUserId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
     const [rows] = await db.query(
       `SELECT requestId, patientUserId, providerUserId, status
        FROM servicerequest WHERE requestId = ?`,
@@ -1885,6 +1893,14 @@ router.post('/earnings/:providerId/payout', async (req, res) => {
   const { providerId } = req.params;
   try {
     if (!(await assertNurseUser(providerId, res))) return;
+    try {
+      await assertProviderCanWork(providerId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
     const synced = await syncNurseEarnings(providerId);
     const requestedAmount = Number(req.body?.amount || synced.pendingAmount);
     const amount = Math.round(requestedAmount * 100) / 100;

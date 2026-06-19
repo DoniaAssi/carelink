@@ -171,8 +171,6 @@ class _NurseDashboardState extends State<NurseDashboard> {
         const SizedBox(height: 30),
         if (!model.canWork) ...[
           _rateGateCard(model),
-          const SizedBox(height: 22),
-          _lockedQuickActions(),
         ] else ...[
           _quickGrid(),
           const SizedBox(height: 34),
@@ -270,50 +268,6 @@ class _NurseDashboardState extends State<NurseDashboard> {
             ),
           ],
         ],
-      ),
-    );
-  }
-
-  Widget _lockedQuickActions() {
-    return Row(
-      children: [
-        Expanded(
-          child: _lockedActionTile(
-            Icons.account_balance_wallet_outlined,
-            'Earnings',
-            () => setState(() => selectedIndex = 3),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _lockedActionTile(
-            Icons.person_outline_rounded,
-            'Profile',
-            () => setState(() => selectedIndex = 5),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _lockedActionTile(IconData icon, String label, VoidCallback onTap) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Container(
-        height: 112,
-        decoration: _modernCardDecoration(radius: 18),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: const Color(0xFF0F766E), size: 30),
-            const SizedBox(height: 10),
-            Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w900),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -885,8 +839,29 @@ class _NurseDashboardState extends State<NurseDashboard> {
       title: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
       onTap: () {
         Navigator.pop(context);
+        if (!_canOpenTab(index)) {
+          _showRateLockedMessage();
+          setState(() => selectedIndex = 0);
+          return;
+        }
         setState(() => selectedIndex = index);
       },
+    );
+  }
+
+  bool _canOpenTab(int index) {
+    final canWork = dashboardController.model?.canWork == true;
+    if (canWork) return true;
+    return index == 0 || index == 4;
+  }
+
+  void _showRateLockedMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Accept your admin-set hourly rate before using nurse services.',
+        ),
+      ),
     );
   }
 
@@ -984,16 +959,8 @@ class _NurseDashboardState extends State<NurseDashboard> {
               Expanded(
                 child: InkWell(
                   onTap: () {
-                    final canWork = dashboardController.model?.canWork == true;
-                    final workTab = i == 1 || i == 2;
-                    if (workTab && !canWork) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Accept your admin-set hourly rate before starting work.',
-                          ),
-                        ),
-                      );
+                    if (!_canOpenTab(i)) {
+                      _showRateLockedMessage();
                       setState(() => selectedIndex = 0);
                       return;
                     }
