@@ -125,6 +125,43 @@ function toStatus(value, allowed, fallback) {
 }
 
 async function resolveServerAmount(requestId, providerUserId) {
+  const hasProviderRates = await hasTable('provider_rates');
+  const hasAdminCommission = await hasTable('admin_commission');
+  if (hasProviderRates) {
+    const commissionJoin = hasAdminCommission
+      ? `LEFT JOIN admin_commission ac
+           ON ac.specialization = pr.specialization COLLATE utf8mb4_unicode_ci
+          AND ac.serviceType = CASE WHEN u.role = 'doctor' THEN 'doctor' ELSE 'nurse' END`
+      : '';
+    const commissionExpr = hasAdminCommission
+      ? 'COALESCE(ac.commission_amount, 0)'
+      : '0';
+    const [rateRows] = await db.query(
+      `SELECT
+         pr.provider_hour_rate AS providerRate,
+         ${commissionExpr} AS adminCommission,
+         (pr.provider_hour_rate + ${commissionExpr}) AS patientPrice
+       FROM servicerequest sr
+       LEFT JOIN user u ON BINARY u.userId = BINARY sr.providerUserId
+       LEFT JOIN careprovider c ON BINARY c.userId = BINARY sr.providerUserId
+       JOIN provider_rates pr
+         ON BINARY pr.providerId = BINARY sr.providerUserId
+       ${commissionJoin}
+       WHERE BINARY sr.requestId = BINARY ?
+         AND BINARY sr.providerUserId = BINARY ?
+         AND pr.rateAcceptanceStatus = 'accepted'
+       ORDER BY
+         (pr.specialization = COALESCE(c.specialization, sr.serviceType, pr.specialization) COLLATE utf8mb4_unicode_ci) DESC,
+         pr.id DESC
+       LIMIT 1`,
+      [requestId, providerUserId],
+    );
+    const patientPrice = Number(rateRows[0]?.patientPrice || 0);
+    if (Number.isFinite(patientPrice) && patientPrice > 0) {
+      return Math.round(patientPrice * 100) / 100;
+    }
+  }
+
   const hasHourly = await hasColumn('careprovider', 'hourlyRate');
   const hasFee = await hasColumn('careprovider', 'consultationFee');
   const rateExpr = hasHourly && hasFee

@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/models/user.dart';
@@ -21,12 +23,14 @@ class ActivityScreen extends StatefulWidget {
     required this.user,
     this.initialTab = ActivityTab.messages,
     this.onBottomNavigationTap,
+    this.onRateAccepted,
     this.showBottomNavigation = true,
   });
 
   final User user;
   final ActivityTab initialTab;
   final ValueChanged<int>? onBottomNavigationTap;
+  final VoidCallback? onRateAccepted;
   final bool showBottomNavigation;
 
   @override
@@ -544,6 +548,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final meta = alert.meta;
     return _activityCard(
       onTap: () {
+        if (alert.isRateDecisionAlert) {
+          _showRateDecisionDialog(alert);
+          return;
+        }
         if (alert.relatedRequestId.isEmpty) return;
         Navigator.push(
           context,
@@ -601,6 +609,17 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+                if (alert.isRateDecisionAlert) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Tap to accept or reject this hourly rate.',
+                    style: TextStyle(
+                      color: _primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -617,6 +636,108 @@ class _ActivityScreenState extends State<ActivityScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _showRateDecisionDialog(_ActivityAlert alert) async {
+    final decision = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Hourly rate approval',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        content: Text(
+          alert.description.isEmpty
+              ? 'Admin set your hourly rate. Please accept it before starting work.'
+              : alert.description,
+          style: const TextStyle(height: 1.45, fontWeight: FontWeight.w700),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(context, 'rejected'),
+                  icon: const Icon(Icons.close_rounded),
+                  label: const Text('Reject Rate'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFEF4444),
+                    side: const BorderSide(color: Color(0xFFEF4444)),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => Navigator.pop(context, 'accepted'),
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('Accept Rate'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    if (decision == null) return;
+    await _submitRateDecision(decision);
+  }
+
+  Future<void> _submitRateDecision(String decision) async {
+    try {
+      final response = await http.post(
+        Uri.parse(
+          '${ApiService.baseUrl}/nurse/rate-status/${widget.user.userId}/decision',
+        ),
+        headers: const {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({'decision': decision}),
+      );
+      final body = response.body.trim().isEmpty
+          ? const <String, dynamic>{}
+          : jsonDecode(response.body);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final message = body is Map<String, dynamic>
+            ? body['error']?.toString()
+            : null;
+        throw Exception(message ?? 'Failed to update hourly rate decision');
+      }
+      await _load(silent: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            decision == 'accepted'
+                ? 'Hourly rate accepted. You can add slots and accept patients now.'
+                : 'Hourly rate rejected. Availability and patient requests stay locked.',
+          ),
+        ),
+      );
+      if (decision == 'accepted') {
+        widget.onRateAccepted?.call();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
   }
 
   Widget _activityCard({required Widget child, VoidCallback? onTap}) {
@@ -933,8 +1054,23 @@ class _ActivityAlert {
     );
   }
 
+  bool get isRateDecisionAlert {
+    final value = '$type $title $description'.toLowerCase();
+    return value.contains('hourly rate') ||
+        value.contains('rate set') ||
+        value.contains('accept it before starting work');
+  }
+
   _AlertMeta get meta {
     final value = '$type $title $description'.toLowerCase();
+    if (isRateDecisionAlert) {
+      return const _AlertMeta(
+        Icons.payments_outlined,
+        Color(0xFF0F766E),
+        'Hourly rate set',
+        'Please accept the admin hourly rate before starting work.',
+      );
+    }
     if (value.contains('arrival') || value.contains('arrived')) {
       return const _AlertMeta(
         Icons.location_on_outlined,

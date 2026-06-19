@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -701,6 +702,12 @@ class NurseSetAvailabilityScreen extends StatefulWidget {
 class _NurseSetAvailabilityScreenState
     extends State<NurseSetAvailabilityScreen> {
   bool available = true;
+  bool eligibilityLoading = true;
+  bool canManageAvailability = false;
+  String eligibilityMessage =
+      'Accept your admin-set hourly rate before setting availability.';
+  String approvedSpecialization = 'Nursing';
+  double approvedHourlyRate = 0;
   final workingDays = <String>{
     'Monday',
     'Tuesday',
@@ -716,6 +723,40 @@ class _NurseSetAvailabilityScreenState
     slots = widget.initialSlots
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
+    _loadEligibility();
+  }
+
+  Future<void> _loadEligibility() async {
+    try {
+      final response = await http.get(
+        Uri.parse(
+          '${ProviderProfileService.baseUrl}/nurse/rate-status/${widget.user.userId}',
+        ),
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (!mounted) return;
+        setState(() {
+          canManageAvailability = data['canWork'] == true;
+          eligibilityMessage =
+              (data['reason'] ??
+                      'Accept your admin-set hourly rate before setting availability.')
+                  .toString();
+          approvedSpecialization =
+              (data['specialization'] ?? 'Nursing').toString();
+          approvedHourlyRate = _double(data['providerRate']);
+          eligibilityLoading = false;
+        });
+        return;
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      canManageAvailability = false;
+      eligibilityMessage =
+          'Could not verify your rate approval status. Please try again.';
+      eligibilityLoading = false;
+    });
   }
 
   @override
@@ -733,6 +774,15 @@ class _NurseSetAvailabilityScreenState
         body: ListView(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
           children: [
+            if (eligibilityLoading)
+              const LinearProgressIndicator(minHeight: 3)
+            else if (!canManageAvailability) ...[
+              _lockedCard(),
+              const SizedBox(height: 14),
+            ] else ...[
+              _approvedRateCard(),
+              const SizedBox(height: 14),
+            ],
             _card(
               child: SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -803,7 +853,7 @@ class _NurseSetAvailabilityScreenState
                   const SizedBox(height: 14),
                   for (final slot in slots) _slotEditRow(slot),
                   TextButton.icon(
-                    onPressed: _openAddTimeSlot,
+                    onPressed: canManageAvailability ? _openAddTimeSlot : null,
                     icon: const Icon(Icons.add_rounded),
                     label: const Text('Add Time Slot'),
                     style: TextButton.styleFrom(
@@ -818,7 +868,7 @@ class _NurseSetAvailabilityScreenState
             SizedBox(
               height: 52,
               child: ElevatedButton(
-                onPressed: _save,
+                onPressed: canManageAvailability ? _save : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -853,6 +903,65 @@ class _NurseSetAvailabilityScreenState
         ],
       ),
       child: child,
+    );
+  }
+
+  Widget _lockedCard() {
+    return _card(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.lock_clock_rounded, color: Color(0xFFF59E0B)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              eligibilityMessage,
+              style: const TextStyle(
+                color: Color(0xFF111827),
+                fontWeight: FontWeight.w900,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _approvedRateCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _readOnlyRow('Specialization', approvedSpecialization),
+          const Divider(height: 22),
+          _readOnlyRow('Approved Hourly Rate', _money(approvedHourlyRate)),
+        ],
+      ),
+    );
+  }
+
+  Widget _readOnlyRow(String label, String value) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF78909C),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ),
+      ],
     );
   }
 
@@ -916,7 +1025,12 @@ class _NurseSetAvailabilityScreenState
   Future<void> _openAddTimeSlot() async {
     final slot = await Navigator.push<Map<String, dynamic>>(
       context,
-      MaterialPageRoute(builder: (_) => const NurseAddTimeSlotScreen()),
+      MaterialPageRoute(
+        builder: (_) => NurseAddTimeSlotScreen(
+          specialization: approvedSpecialization,
+          approvedHourlyRate: approvedHourlyRate,
+        ),
+      ),
     );
     if (slot == null) return;
     setState(() => slots.add(slot));
@@ -971,10 +1085,29 @@ class _NurseSetAvailabilityScreenState
     if (parts.length >= 2) return '${parts[0]}:${parts[1]}';
     return text.isEmpty ? '--:--' : text;
   }
+
+  double _double(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _money(num value) {
+    final fixed = value % 1 == 0
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(2);
+    return '$fixed ILS/hour';
+  }
 }
 
 class NurseAddTimeSlotScreen extends StatefulWidget {
-  const NurseAddTimeSlotScreen({super.key});
+  const NurseAddTimeSlotScreen({
+    super.key,
+    required this.specialization,
+    required this.approvedHourlyRate,
+  });
+
+  final String specialization;
+  final double approvedHourlyRate;
 
   @override
   State<NurseAddTimeSlotScreen> createState() => _NurseAddTimeSlotScreenState();
@@ -984,12 +1117,12 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
   String day = 'Wednesday';
   TimeOfDay start = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay end = const TimeOfDay(hour: 13, minute: 0);
-  String serviceType = 'Home visit';
-  String location = 'Birzeit, Ramallah';
+  final locationController = TextEditingController(text: 'Birzeit, Ramallah');
   final notesController = TextEditingController();
 
   @override
   void dispose() {
+    locationController.dispose();
     notesController.dispose();
     super.dispose();
   }
@@ -1038,20 +1171,17 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
               if (picked != null) setState(() => end = picked);
             }),
             const SizedBox(height: 16),
-            _label('Service Type'),
-            _dropdown(serviceType, const [
-              'Home visit',
-              'Elderly care',
-              'Post-surgery care',
-              'Medication assistance',
-            ], (v) => setState(() => serviceType = v!)),
+            _label('Specialization'),
+            _readOnlyField(widget.specialization),
+            const SizedBox(height: 16),
+            _label('Approved Hourly Rate'),
+            _readOnlyField(_money(widget.approvedHourlyRate)),
             const SizedBox(height: 16),
             _label('Location'),
-            _dropdown(location, const [
-              'Birzeit, Ramallah',
-              'Al-bireh, Ramallah',
-              'Beitunia, Ramallah',
-            ], (v) => setState(() => location = v!)),
+            TextField(
+              controller: locationController,
+              decoration: _decoration('Visit location'),
+            ),
             const SizedBox(height: 16),
             _label('Notes (Optional)'),
             TextField(
@@ -1069,8 +1199,10 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
                     'day': day,
                     'startTime': _format24(start),
                     'endTime': _format24(end),
-                    'serviceType': serviceType,
-                    'location': location,
+                    'serviceType': widget.specialization,
+                    'specialization': widget.specialization,
+                    'approvedHourlyRate': widget.approvedHourlyRate,
+                    'location': locationController.text.trim(),
                     'notes': notesController.text.trim(),
                   });
                 },
@@ -1121,6 +1253,22 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
     );
   }
 
+  Widget _readOnlyField(String value) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE0ECEA)),
+      ),
+      child: Text(
+        value.trim().isEmpty ? 'Not set' : value,
+        style: const TextStyle(fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+
   Widget _timeTile(String value, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
@@ -1156,6 +1304,13 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
 
   String _format24(TimeOfDay time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _money(num value) {
+    final fixed = value % 1 == 0
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(2);
+    return '$fixed ILS/hour';
   }
 
   String _formatClock(TimeOfDay time) {

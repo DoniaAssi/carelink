@@ -523,6 +523,17 @@ router.put('/requests/:requestId/status', async (req, res) => {
       return res.status(409).json({ error: 'This request is already closed' });
     }
 
+    if (next === 'confirmed' || next === 'accepted' || next === 'in_progress') {
+      try {
+        await assertProviderCanWork(providerUserId);
+      } catch (e) {
+        return res.status(e.status || 403).json({
+          error: e.message,
+          eligibility: e.eligibility || null,
+        });
+      }
+    }
+
     if (current === 'pending' || current === 'pending_provider_approval') {
       if (next !== 'confirmed' && next !== 'accepted' && next !== 'cancelled') {
         return res
@@ -649,6 +660,14 @@ router.post('/requests/:requestId/start', async (req, res) => {
     const current = (row.status || '').toString().toLowerCase();
     if (!['accepted', 'confirmed', 'in_progress'].includes(current)) {
       return res.status(400).json({ error: 'Only assigned visits can be started' });
+    }
+    try {
+      await assertProviderCanWork(providerUserId);
+    } catch (e) {
+      return res.status(e.status || 403).json({
+        error: e.message,
+        eligibility: e.eligibility || null,
+      });
     }
     await db.execute(
       `UPDATE servicerequest
@@ -890,6 +909,154 @@ async function ensureVisitReportUiColumns() {
       columnCache.set('visit_reports.attachment_urls', true);
     } catch (_) {}
   }
+}
+
+async function ensureProviderRateAcceptanceColumns() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS provider_rates (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      providerId CHAR(36) NOT NULL,
+      specialization VARCHAR(100) NOT NULL,
+      provider_hour_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      rateAcceptanceStatus ENUM('pending','accepted','rejected') NOT NULL DEFAULT 'pending',
+      rateSetAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      rateAcceptedAt DATETIME NULL,
+      rateRejectedAt DATETIME NULL,
+      UNIQUE KEY uq_provider_rate (providerId, specialization)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  const additions = [
+    [
+      'rateAcceptanceStatus',
+      "ALTER TABLE provider_rates ADD COLUMN rateAcceptanceStatus ENUM('pending','accepted','rejected') NOT NULL DEFAULT 'pending'",
+    ],
+    ['rateSetAt', 'ALTER TABLE provider_rates ADD COLUMN rateSetAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP'],
+    ['rateAcceptedAt', 'ALTER TABLE provider_rates ADD COLUMN rateAcceptedAt DATETIME NULL'],
+    ['rateRejectedAt', 'ALTER TABLE provider_rates ADD COLUMN rateRejectedAt DATETIME NULL'],
+  ];
+  for (const [column, sql] of additions) {
+    if (await hasColumn('provider_rates', column)) continue;
+    try {
+      await db.query(sql);
+      columnCache.set(`provider_rates.${column}`, true);
+    } catch (_) {}
+  }
+}
+
+async function ensureProviderWorkColumns() {
+  if (!(await hasColumn('user', 'isActive'))) {
+    await db.query('ALTER TABLE user ADD COLUMN isActive TINYINT(1) NOT NULL DEFAULT 1');
+    columnCache.set('user.isActive', true);
+  }
+  if (!(await hasColumn('careprovider', 'approvalStatus'))) {
+    await db.query(
+      "ALTER TABLE careprovider ADD COLUMN approvalStatus VARCHAR(24) NOT NULL DEFAULT 'pending'",
+    );
+    columnCache.set('careprovider.approvalStatus', true);
+  }
+  const careProviderColumns = [
+    ['is_rate_approved', 'TINYINT(1) NOT NULL DEFAULT 0'],
+    ['hourly_rate', 'DECIMAL(10,2) NOT NULL DEFAULT 0'],
+    ['status', "VARCHAR(24) NOT NULL DEFAULT 'pending'"],
+    ['experience_level', "VARCHAR(24) NOT NULL DEFAULT 'junior'"],
+  ];
+  for (const [column, definition] of careProviderColumns) {
+    if (!(await hasColumn('careprovider', column))) {
+      await db.query(`ALTER TABLE careprovider ADD COLUMN ${column} ${definition}`);
+      columnCache.set(`careprovider.${column}`, true);
+    }
+  }
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS provider_rate_approval (
+      provider_id CHAR(36) NOT NULL,
+      specialization VARCHAR(100) NOT NULL,
+      admin_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (provider_id, specialization)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+async function getProviderWorkEligibility(providerId) {
+  await ensureProviderWorkColumns();
+  await ensureProviderRateAcceptanceColumns();
+  const [[row]] = await db.query(
+    `SELECT
+       u.userId,
+       u.role,
+       COALESCE(u.isActive, 1) AS isActive,
+       COALESCE(cp.approvalStatus, 'pending') AS approvalStatus,
+       COALESCE(cp.specialization, 'Home Nursing Care') AS specialization
+     FROM user u
+     LEFT JOIN careprovider cp ON BINARY cp.userId = BINARY u.userId
+     WHERE BINARY u.userId = BINARY ?
+     LIMIT 1`,
+    [providerId],
+  );
+  if (!row) {
+    return {
+      canWork: false,
+      reason: 'Provider account not found',
+      approvalStatus: 'missing',
+      rateAcceptanceStatus: 'missing',
+      providerRate: 0,
+    };
+  }
+  const [rateRows] = await db.query(
+    `SELECT specialization, provider_hour_rate AS providerRate,
+            COALESCE(rateAcceptanceStatus, 'pending') AS rateAcceptanceStatus,
+            rateSetAt, rateAcceptedAt, rateRejectedAt
+     FROM provider_rates
+     WHERE BINARY providerId = BINARY ?
+     ORDER BY id DESC
+     LIMIT 1`,
+    [providerId],
+  );
+  const rate = rateRows[0] || {};
+  const approvalStatus = (row.approvalStatus || 'pending').toString().toLowerCase();
+  const rateAcceptanceStatus = (rate.rateAcceptanceStatus || 'pending').toString().toLowerCase();
+  const providerRate = Number(rate.providerRate || 0);
+  const isActive = row.isActive === 1 || row.isActive === true || row.isActive === '1';
+  const canWork =
+    isActive &&
+    approvalStatus === 'approved' &&
+    providerRate > 0 &&
+    rateAcceptanceStatus === 'accepted';
+  let reason = '';
+  if (approvalStatus !== 'approved') {
+    reason = 'Admin approval is required before accepting requests';
+  } else if (providerRate <= 0) {
+    reason = 'Admin must set your hourly rate before you can start working';
+  } else if (rateAcceptanceStatus !== 'accepted') {
+    reason = 'Please accept your admin-set hourly rate before starting work';
+  } else if (!isActive) {
+    reason = 'Your account is inactive. Please contact admin.';
+  }
+  return {
+    canWork,
+    reason,
+    approvalStatus,
+    rateAcceptanceStatus,
+    providerRate,
+    specialization: rate.specialization || row.specialization,
+    rateSetAt: rate.rateSetAt,
+    rateAcceptedAt: rate.rateAcceptedAt,
+    rateRejectedAt: rate.rateRejectedAt,
+    isActive: canWork,
+  };
+}
+
+async function assertProviderCanWork(providerId) {
+  const eligibility = await getProviderWorkEligibility(providerId);
+  if (!eligibility.canWork) {
+    const e = new Error(eligibility.reason || 'Provider is not eligible to work yet');
+    e.status = 403;
+    e.eligibility = eligibility;
+    throw e;
+  }
+  return eligibility;
 }
 
 async function ensurePaymentTable() {
@@ -1401,6 +1568,360 @@ router.post('/reports/:providerId', async (req, res) => {
   }
 });
 
+async function ensureEarningsTables() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS provider_wallet (
+      providerId CHAR(36) NOT NULL PRIMARY KEY,
+      total_earned DECIMAL(10,2) NOT NULL DEFAULT 0,
+      pending_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+      paid_amount DECIMAL(10,2) NOT NULL DEFAULT 0
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS payout_requests (
+      payoutId CHAR(36) NOT NULL PRIMARY KEY,
+      providerId CHAR(36) NULL,
+      amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+      status ENUM('requested','approved','rejected','paid') NOT NULL DEFAULT 'requested',
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS transaction_log (
+      transactionId CHAR(36) NOT NULL PRIMARY KEY,
+      providerId CHAR(36) NULL,
+      patientId CHAR(36) NULL,
+      total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+      admin_share DECIMAL(10,2) NOT NULL DEFAULT 0,
+      provider_share DECIMAL(10,2) NOT NULL DEFAULT 0,
+      type ENUM('payment','payout') NOT NULL,
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS provider_rates (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      providerId CHAR(36) NOT NULL,
+      specialization VARCHAR(100) NOT NULL,
+      provider_hour_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      rateAcceptanceStatus ENUM('pending','accepted','rejected') NOT NULL DEFAULT 'pending',
+      rateSetAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      rateAcceptedAt DATETIME NULL,
+      rateRejectedAt DATETIME NULL,
+      UNIQUE KEY uq_provider_rate (providerId, specialization)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await ensureProviderRateAcceptanceColumns();
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS admin_commission (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      specialization VARCHAR(100) NOT NULL,
+      serviceType ENUM('doctor','nurse') NOT NULL,
+      commission_amount DECIMAL(10,2) NOT NULL DEFAULT 0
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+async function syncNurseEarnings(providerId) {
+  await ensureEarningsTables();
+  const [sessions] = await db.query(
+    `SELECT
+       sr.requestId,
+       sr.patientUserId,
+       sr.providerUserId,
+       COALESCE(sr.serviceType, cp.specialization, 'Nursing Service') AS specialization,
+       sr.status,
+       sr.scheduledAt,
+       sr.completedAt,
+       sr.actualDurationMinutes,
+       COALESCE(p.provider_amount, 0) AS providerAmount,
+       COALESCE(p.amount, 0) AS paidAmount,
+       COALESCE(pr.provider_hour_rate, 0) AS configuredRate,
+       COALESCE(ac.commission_amount, 0) AS commissionAmount
+     FROM servicerequest sr
+     LEFT JOIN careprovider cp ON BINARY cp.userId = BINARY sr.providerUserId
+     LEFT JOIN payment p ON BINARY p.requestId = BINARY sr.requestId
+     LEFT JOIN provider_rates pr
+       ON BINARY pr.providerId = BINARY sr.providerUserId
+      AND pr.specialization = COALESCE(sr.serviceType, cp.specialization, 'Nursing Service') COLLATE utf8mb4_unicode_ci
+     LEFT JOIN admin_commission ac
+       ON ac.specialization = COALESCE(sr.serviceType, cp.specialization, 'Nursing Service') COLLATE utf8mb4_unicode_ci
+      AND ac.serviceType = 'nurse'
+     WHERE BINARY sr.providerUserId = BINARY ?
+       AND LOWER(CAST(sr.status AS CHAR)) IN ('completed','done','waiting_report')
+     ORDER BY COALESCE(sr.completedAt, sr.scheduledAt) DESC`,
+    [providerId],
+  );
+
+  let totalEarned = 0;
+  const normalizedSessions = sessions.map((row) => {
+    const configured = Number(row.configuredRate || 0);
+    const providerAmount = Number(row.providerAmount || 0);
+    const paidAmount = Number(row.paidAmount || 0);
+    const commission = Number(row.commissionAmount || 0);
+    let rate = providerAmount > 0 ? providerAmount : configured;
+    if (rate <= 0 && paidAmount > 0) rate = Math.max(0, paidAmount - commission);
+    rate = Math.round(rate * 100) / 100;
+    totalEarned += rate;
+    return {
+      sessionId: row.requestId,
+      patientId: row.patientUserId,
+      specialization: row.specialization || 'Nursing Service',
+      status: row.status,
+      scheduledAt: row.scheduledAt,
+      completedAt: row.completedAt,
+      durationMinutes: Number(row.actualDurationMinutes || 60) || 60,
+      ratePerSession: rate,
+      points: 1,
+    };
+  });
+
+  const [[paidRow]] = await db.query(
+    `SELECT COALESCE(SUM(total_amount), 0) AS paid
+     FROM transaction_log
+     WHERE BINARY providerId = BINARY ?
+       AND type = 'payout'`,
+    [providerId],
+  );
+  const paidAmount = Math.max(0, Number(paidRow?.paid || 0));
+  const pendingAmount = Math.max(0, totalEarned - paidAmount);
+  await db.query(
+    `INSERT INTO provider_wallet (providerId, total_earned, pending_amount, paid_amount)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       total_earned = VALUES(total_earned),
+       pending_amount = VALUES(pending_amount),
+       paid_amount = VALUES(paid_amount)`,
+    [providerId, totalEarned, pendingAmount, paidAmount],
+  );
+  return { sessions: normalizedSessions, totalEarned, paidAmount, pendingAmount };
+}
+
+function payoutLabel(status) {
+  const value = (status || '').toString().toLowerCase();
+  if (value === 'requested') return 'Pending';
+  if (value === 'paid') return 'Paid';
+  if (value === 'approved') return 'Approved';
+  if (value === 'rejected') return 'Rejected';
+  return value || 'Pending';
+}
+
+router.get('/rate-status/:providerId', async (req, res) => {
+  const providerId = (req.params.providerId || '').toString().trim();
+  try {
+    if (!(await assertNurseUser(providerId, res))) return;
+    res.json(await getProviderWorkEligibility(providerId));
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.post('/rate-status/:providerId/decision', async (req, res) => {
+  const providerId = (req.params.providerId || '').toString().trim();
+  const decision = (req.body?.decision || '').toString().trim().toLowerCase();
+  if (!['accepted', 'rejected'].includes(decision)) {
+    return res.status(400).json({ error: 'decision must be accepted or rejected' });
+  }
+  try {
+    if (!(await assertNurseUser(providerId, res))) return;
+    await ensureProviderWorkColumns();
+    await ensureProviderRateAcceptanceColumns();
+    const [[provider]] = await db.query(
+      `SELECT COALESCE(specialization, 'Home Nursing Care') AS specialization
+       FROM careprovider
+       WHERE BINARY userId = BINARY ?
+       LIMIT 1`,
+      [providerId],
+    );
+    const [rates] = await db.query(
+      `SELECT id, specialization, provider_hour_rate
+       FROM provider_rates
+       WHERE BINARY providerId = BINARY ?
+       ORDER BY id DESC
+       LIMIT 1`,
+      [providerId],
+    );
+    if (!rates.length) {
+      return res.status(404).json({ error: 'Admin has not set your hourly rate yet' });
+    }
+    await db.query(
+      `UPDATE provider_rates
+       SET rateAcceptanceStatus = ?,
+           rateAcceptedAt = CASE WHEN ? = 'accepted' THEN NOW() ELSE NULL END,
+           rateRejectedAt = CASE WHEN ? = 'rejected' THEN NOW() ELSE NULL END
+       WHERE id = ?`,
+      [decision, decision, decision, rates[0].id],
+    );
+    const approved = decision === 'accepted';
+    const specialization = rates[0].specialization || provider?.specialization || 'Home Nursing Care';
+    const adminRate = Number(rates[0].provider_hour_rate || 0);
+    await db.query(
+      `INSERT INTO provider_rate_approval (provider_id, specialization, admin_rate, status)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         admin_rate = VALUES(admin_rate),
+         status = VALUES(status),
+         updated_at = NOW()`,
+      [providerId, specialization, adminRate, approved ? 'approved' : 'rejected'],
+    );
+    await db.query(
+      `UPDATE careprovider
+       SET is_rate_approved = ?,
+           hourly_rate = ?,
+           status = ?
+       WHERE BINARY userId = BINARY ?`,
+      [approved ? 1 : 0, adminRate, approved ? 'active' : 'inactive', providerId],
+    );
+    await db.query(
+      `UPDATE user SET isActive = ? WHERE BINARY userId = BINARY ?`,
+      [approved ? 1 : 0, providerId],
+    );
+    res.json({ success: true, ...(await getProviderWorkEligibility(providerId)) });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.get('/earnings/:providerId', async (req, res) => {
+  const { providerId } = req.params;
+  try {
+    if (!(await assertNurseUser(providerId, res))) return;
+    const synced = await syncNurseEarnings(providerId);
+    const eligibility = await getProviderWorkEligibility(providerId);
+    await ensureAuxTables();
+    const [[provider]] = await db.query(
+      `SELECT u.userId, u.fullName, u.role, cp.specialization,
+              COALESCE(cp.overallRating, 0) AS rating,
+              COALESCE(cp.ratingsCount, 0) AS reviews
+       FROM user u
+       LEFT JOIN careprovider cp ON BINARY cp.userId = BINARY u.userId
+       WHERE BINARY u.userId = BINARY ?
+       LIMIT 1`,
+      [providerId],
+    );
+    const [methods] = await db.query(
+      `SELECT type, details, isDefault
+       FROM provider_payment_method
+       WHERE BINARY providerUserId = BINARY ?
+       ORDER BY isDefault DESC, createdAt DESC
+       LIMIT 1`,
+      [providerId],
+    );
+    const [payouts] = await db.query(
+      `SELECT payoutId, amount, status, createdAt
+       FROM payout_requests
+       WHERE BINARY providerId = BINARY ?
+       ORDER BY createdAt DESC
+       LIMIT 50`,
+      [providerId],
+    );
+    const [transactions] = await db.query(
+      `SELECT transactionId, total_amount AS amount, type, createdAt
+       FROM transaction_log
+       WHERE BINARY providerId = BINARY ?
+       ORDER BY createdAt DESC
+       LIMIT 50`,
+      [providerId],
+    );
+
+    const byService = new Map();
+    for (const session of synced.sessions) {
+      const item = byService.get(session.specialization) || {
+        specialization: session.specialization,
+        totalSessions: 0,
+        totalPoints: 0,
+        ratePerSession: session.ratePerSession,
+        totalEarnings: 0,
+      };
+      item.totalSessions += 1;
+      item.totalPoints += session.points;
+      item.ratePerSession = session.ratePerSession || item.ratePerSession;
+      item.totalEarnings += session.ratePerSession;
+      byService.set(session.specialization, item);
+    }
+
+    res.json({
+      provider: {
+        id: provider?.userId || providerId,
+        name: provider?.fullName || 'Provider',
+        role: provider?.role || 'nurse',
+        specialty: provider?.specialization || 'Nursing',
+        rating: Number(provider?.rating || 0),
+        reviews: Number(provider?.reviews || 0),
+      },
+      wallet: {
+        availableBalance: Math.round(synced.pendingAmount * 100) / 100,
+        totalEarnings: Math.round(synced.totalEarned * 100) / 100,
+        alreadyPaid: Math.round(synced.paidAmount * 100) / 100,
+      },
+      summary: {
+        totalSessions: synced.sessions.length,
+        totalPoints: synced.sessions.reduce((sum, item) => sum + item.points, 0),
+        totalEarnings: Math.round(synced.totalEarned * 100) / 100,
+      },
+      eligibility,
+      sessions: synced.sessions,
+      serviceSummary: Array.from(byService.values()).map((item) => ({
+        ...item,
+        totalEarnings: Math.round(item.totalEarnings * 100) / 100,
+      })),
+      paymentMethod: methods[0] || {
+        type: 'Bank Transfer',
+        details: '**** 1234',
+        isDefault: true,
+      },
+      payoutRequests: payouts.map((row) => ({
+        ...row,
+        statusLabel: payoutLabel(row.status),
+      })),
+      transactions,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/earnings/:providerId/payout', async (req, res) => {
+  const { providerId } = req.params;
+  try {
+    if (!(await assertNurseUser(providerId, res))) return;
+    const synced = await syncNurseEarnings(providerId);
+    const requestedAmount = Number(req.body?.amount || synced.pendingAmount);
+    const amount = Math.round(requestedAmount * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'No available balance to request' });
+    }
+    if (amount > synced.pendingAmount + 0.001) {
+      return res.status(409).json({ error: 'Requested amount exceeds available balance' });
+    }
+    const [[open]] = await db.query(
+      `SELECT payoutId FROM payout_requests
+       WHERE BINARY providerId = BINARY ?
+         AND status IN ('requested','approved')
+       LIMIT 1`,
+      [providerId],
+    );
+    if (open) {
+      return res.status(409).json({ error: 'You already have a pending payout request' });
+    }
+    const payoutId = randomUUID();
+    await db.query(
+      `INSERT INTO payout_requests (payoutId, providerId, amount, status, createdAt)
+       VALUES (?, ?, ?, 'requested', NOW())`,
+      [payoutId, providerId, amount],
+    );
+    res.status(201).json({
+      success: true,
+      payoutId,
+      amount,
+      status: 'requested',
+      statusLabel: 'Pending',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** --- Profile, certs, availability --- */
 router.get('/profile/:providerId', async (req, res) => {
   const { providerId } = req.params;
@@ -1474,7 +1995,6 @@ router.put('/profile/:providerId', async (req, res) => {
     const specialization = (b.specialization || '').toString().trim();
     const bio = (b.bio || '').toString().trim();
     const experienceYears = Number(b.experienceYears || 0);
-    const hourlyRate = Number(b.hourlyRate || 0);
     const isAvailable =
       b.isAvailable === true || b.isAvailable === 1 || b.isAvailable === '1';
 
@@ -1497,21 +2017,20 @@ router.put('/profile/:providerId', async (req, res) => {
       ]);
     }
 
-    const hasHourly = await hasColumn('careprovider', 'hourlyRate');
-    const hasFee = await hasColumn('careprovider', 'consultationFee');
     const hasExp = await hasColumn('careprovider', 'experienceYears');
-    const sets = ['specialization = ?', 'isAvailable = ?', 'serviceType = ?'];
-    const vals = [specialization, isAvailable ? 1 : 0, bio || specialization];
+    const sets = ['isAvailable = ?'];
+    const vals = [isAvailable ? 1 : 0];
+    if (specialization) {
+      sets.push('specialization = ?');
+      vals.push(specialization);
+    }
+    if (bio || specialization) {
+      sets.push('serviceType = ?');
+      vals.push(bio || specialization);
+    }
     if (hasExp) {
       sets.push('experienceYears = ?');
       vals.push(Number.isFinite(experienceYears) ? experienceYears : 0);
-    }
-    if (hasHourly) {
-      sets.push('hourlyRate = ?');
-      vals.push(hourlyRate);
-    } else if (hasFee) {
-      sets.push('consultationFee = ?');
-      vals.push(hourlyRate);
     }
     vals.push(providerId);
     await db.execute(
@@ -1564,6 +2083,7 @@ router.put('/availability/:providerId', async (req, res) => {
   }
   const conn = await db.getConnection();
   try {
+    await assertProviderCanWork(providerId);
     await ensureAvailabilitySlotTable();
     await conn.beginTransaction();
     await ensureCareProviderForAvailability(conn, providerId, slots.length > 0);
@@ -1608,7 +2128,10 @@ router.put('/availability/:providerId', async (req, res) => {
   } catch (err) {
     await conn.rollback();
     console.error('[nurse availability] save failed:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({
+      error: err.message,
+      eligibility: err.eligibility || null,
+    });
   } finally {
     conn.release();
   }

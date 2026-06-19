@@ -29,24 +29,33 @@ class NurseDashboardRepository {
     );
     final requestsFuture = nurseRepository.getAllRequests(user.userId);
     final todayVisitsFuture = nurseRepository.syncDashboard(user.userId);
+    final eligibilityFuture = httpClient.get(
+      Uri.parse('${ApiService.baseUrl}/nurse/rate-status/${user.userId}'),
+    );
 
     final responses = await Future.wait([
       statsFuture,
       notificationsFuture,
       requestsFuture,
       todayVisitsFuture,
+      eligibilityFuture,
     ]);
 
     final statsResponse = responses[0] as http.Response;
     final notificationCount = responses[1] as int;
     final requests = responses[2] as List<ServiceRequest>;
     final todayVisits = responses[3] as List<ServiceRequest>;
+    final eligibilityResponse = responses[4] as http.Response;
 
     if (statsResponse.statusCode < 200 || statsResponse.statusCode >= 300) {
       throw Exception('Failed to load dashboard data');
     }
 
     final stats = jsonDecode(statsResponse.body) as Map<String, dynamic>;
+    final eligibility = eligibilityResponse.statusCode >= 200 &&
+            eligibilityResponse.statusCode < 300
+        ? jsonDecode(eligibilityResponse.body) as Map<String, dynamic>
+        : const <String, dynamic>{};
     final visits = todayVisits.map(_visitFromRequest).toList();
 
     return NurseDashboardModel(
@@ -60,6 +69,16 @@ class NurseDashboardRepository {
           .where((request) => request.status.toLowerCase() == 'in_progress')
           .length,
       pendingRequestsCount: _parseInt(stats['pendingRequests']),
+      canWork: eligibility['canWork'] == true,
+      rateApprovalStatus:
+          (eligibility['rateAcceptanceStatus'] ?? 'pending').toString(),
+      approvedHourlyRate: _parseDouble(eligibility['providerRate']),
+      specialization:
+          (eligibility['specialization'] ?? 'Nursing').toString(),
+      rateGateMessage:
+          (eligibility['reason'] ??
+                  'Accept your admin-set hourly rate before starting work.')
+              .toString(),
     );
   }
 
@@ -107,6 +126,11 @@ class NurseDashboardRepository {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  double _parseDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 }
 
