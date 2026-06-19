@@ -5,13 +5,13 @@ import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/profile_avatar.dart'
     show profileAvatarOrPlaceholder;
-import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
-import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
+import 'package:carelink/features/patient/screens/booking_screen.dart';
+import 'package:carelink/features/patient/utils/booking_service_helper.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
-import 'select_service_screen.dart';
+import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 
 class BookingStartScreen extends StatefulWidget {
   const BookingStartScreen({super.key, required this.patientUserId});
@@ -24,6 +24,7 @@ class BookingStartScreen extends StatefulWidget {
 
 class _BookingStartScreenState extends State<BookingStartScreen> {
   bool _loading = true;
+  bool _isNewPatient = false;
   String? _error;
   List<ProviderModel> _allProviders = const [];
   List<ProviderModel> _filteredProviders = const [];
@@ -79,7 +80,9 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
       _error = null;
     });
     try {
-      final rows = await ApiService().getProviders(realAvailability: true);
+      final rows = await ApiService().getProviders(realAvailability: true, patientId: widget.patientUserId);
+      final profile = await ApiService().getPatientProfile(widget.patientUserId);
+      final isNew = profile['isNewPatient'] == true;
       final providers =
           rows
               .whereType<Map>()
@@ -91,6 +94,7 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
             ..sort((a, b) => b.overallRating.compareTo(a.overallRating));
       if (!mounted) return;
       setState(() {
+        _isNewPatient = isNew;
         _allProviders = providers;
         _filteredProviders = providers;
         _loading = false;
@@ -107,34 +111,15 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
   }
 
   Future<void> _selectProvider(ProviderModel provider) async {
+    final request = BookingServiceHelper.createRequestForProvider(
+      provider: provider,
+      patientId: widget.patientUserId,
+    );
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => SelectServiceScreen(
-          request: BookingRequestModel(
-            patientId: widget.patientUserId,
-            providerId: provider.userId,
-            providerName: provider.fullName,
-            providerRole: provider.role,
-            providerImageUrl: provider.profileImageUrl ?? '',
-            specialization: provider.specialization,
-            serviceType: provider.serviceType,
-            appointmentDate: '',
-            appointmentTime: '',
-            visitLatitude: provider.gpsLat ?? 0,
-            visitLongitude: provider.gpsLng ?? 0,
-            visitAddress: '',
-            locationNote: '',
-            patientReason: '',
-            symptoms: '',
-            isUrgent: false,
-            additionalNotes: '',
-            price: provider.consultationFee ?? 0,
-            paymentMethod: '',
-            paymentStatus: 'unpaid',
-            bookingStatus: 'pending',
-          ),
-          returnWhenUnavailable: true,
+        builder: (_) => BookingScreen(
+          request: request,
         ),
       ),
     );
@@ -213,11 +198,34 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            if (_isNewPatient)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: AppColors.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _isArabic
+                          ? 'لموعدك الأول، يرجى البدء مع طبيب للتقييم الأولي.'
+                          : 'For your first appointment, please start with a doctor for initial assessment.',
+                        style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             _ProviderRoleFilter(
               palette: p,
               isArabic: _isArabic,
               selected: _roleFilter,
+              isNewPatient: _isNewPatient,
               onChanged: _setRoleFilter,
             ),
             const SizedBox(height: 18),
@@ -267,12 +275,14 @@ class _ProviderRoleFilter extends StatelessWidget {
     required this.isArabic,
     required this.selected,
     required this.onChanged,
+    this.isNewPatient = false,
   });
 
   final CarelinkPalette palette;
   final bool isArabic;
   final String selected;
   final ValueChanged<String> onChanged;
+  final bool isNewPatient;
 
   @override
   Widget build(BuildContext context) {
@@ -304,7 +314,19 @@ class _ProviderRoleFilter extends StatelessWidget {
             icon: Icons.local_hospital_outlined,
             label: isArabic ? 'ممرض' : 'Nurse',
             selected: selected == 'nurse',
-            onTap: () => onChanged('nurse'),
+            disabled: isNewPatient,
+            onTap: () {
+              if (isNewPatient) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(isArabic ? 'متابعة التمريض تصبح متاحة بعد موعدك الأول مع الطبيب.' : 'Nurse follow-up becomes available after your first doctor appointment.'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              } else {
+                onChanged('nurse');
+              }
+            },
           ),
         ),
       ],
@@ -319,6 +341,7 @@ class _ProviderRoleChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.disabled = false,
   });
 
   final CarelinkPalette palette;
@@ -326,6 +349,7 @@ class _ProviderRoleChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final bool disabled;
 
   @override
   Widget build(BuildContext context) {
@@ -337,12 +361,12 @@ class _ProviderRoleChip extends StatelessWidget {
         height: 38,
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          color: selected ? AppColors.primary : palette.surface,
+          color: selected ? AppColors.primary : (disabled ? palette.surface.withValues(alpha: 0.5) : palette.surface),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: selected
                 ? AppColors.primary
-                : AppColors.primary.withValues(alpha: 0.22),
+                : (disabled ? palette.stroke.withValues(alpha: 0.5) : AppColors.primary.withValues(alpha: 0.22)),
           ),
           boxShadow: selected
               ? [
@@ -361,7 +385,7 @@ class _ProviderRoleChip extends StatelessWidget {
             Icon(
               icon,
               size: 16,
-              color: selected ? Colors.white : AppColors.primary,
+              color: selected ? Colors.white : (disabled ? palette.inkMuted.withValues(alpha: 0.5) : AppColors.primary),
             ),
             const SizedBox(width: 6),
             Flexible(
@@ -370,7 +394,7 @@ class _ProviderRoleChip extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: selected ? Colors.white : palette.inkDark,
+                  color: selected ? Colors.white : (disabled ? palette.inkMuted.withValues(alpha: 0.5) : palette.inkDark),
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
                 ),

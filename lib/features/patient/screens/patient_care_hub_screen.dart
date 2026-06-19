@@ -13,6 +13,7 @@ import 'package:carelink/features/patient/screens/messages_screen.dart';
 import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/features/ai/provider_smart_match.dart';
+import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/shared/services/location_service.dart';
 import 'booking_details_screen.dart';
 import 'provider_details_screen.dart';
@@ -102,9 +103,10 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
           'No active or pending bookings found. Fetching recommended provider.',
         );
         try {
-          final rawProviders = await _api.getProviders();
+          final rawProviders = await _api.getProviders(realAvailability: true);
           final allProviders = rawProviders
               .map((e) => ProviderModel.fromJson(e as Map<String, dynamic>))
+              .where(ProviderBookingEligibility.canBook)
               .toList();
           final locationService = LocationService();
           if (allProviders.isNotEmpty) {

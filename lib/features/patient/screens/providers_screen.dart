@@ -11,6 +11,7 @@ import 'package:carelink/shared/services/location_service.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
 import 'package:carelink/features/patient/services/patient_care_summary.dart';
 import 'package:carelink/features/ai/provider_smart_match.dart';
+import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/shared/services/patient_favorites_service.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'provider_details_screen.dart';
@@ -136,7 +137,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       try {
         final patientId = widget.userId?.trim() ?? '';
         if (patientId.isEmpty) {
-          data = await ApiService().getProviders();
+          data = await ApiService().getProviders(realAvailability: true);
         } else {
           final ranked = await ApiService().getProviderRecommendations(
             patientId,
@@ -154,17 +155,16 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
               if (id.isNotEmpty) backendRecommendations[id] = map;
             }
           }
-          data = ranked
-              .whereType<Map>()
-              .map((item) => item['provider'])
-              .whereType<Map>()
-              .map((item) => Map<String, dynamic>.from(item))
-              .toList();
+          data = await ApiService().getProviders(realAvailability: true, patientId: patientId);
         }
       } catch (_) {
-        data = await ApiService().getProviders();
+        final patientId = widget.userId?.trim() ?? '';
+        data = await ApiService().getProviders(realAvailability: true, patientId: patientId);
       }
-      final fetched = data.map((e) => ProviderModel.fromJson(e)).toList();
+      final fetched = data
+          .map((e) => ProviderModel.fromJson(e))
+          .where(ProviderBookingEligibility.canBook)
+          .toList();
       if (!mounted) return;
 
       _providers = fetched;
@@ -243,7 +243,8 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
           (provider.serviceType.isNotEmpty &&
               provider.serviceType.toLowerCase() ==
                   _selectedServiceType.toLowerCase());
-      final availabilityMatches = !_availableNowOnly || provider.isAvailable;
+      final availabilityMatches =
+          !_availableNowOnly || ProviderBookingEligibility.canBook(provider);
       final ratingMatches = provider.overallRating >= _minRating;
       final distanceMatches =
           _maxDistanceKm == null ||
@@ -294,10 +295,12 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
           case ProviderSortOption.ratingHighToLow:
             return b.overallRating.compareTo(a.overallRating);
           case ProviderSortOption.availableNow:
-            if (a.isAvailable == b.isAvailable) {
+            final aBookable = ProviderBookingEligibility.canBook(a);
+            final bBookable = ProviderBookingEligibility.canBook(b);
+            if (aBookable == bBookable) {
               return b.overallRating.compareTo(a.overallRating);
             }
-            return a.isAvailable ? -1 : 1;
+            return aBookable ? -1 : 1;
           case ProviderSortOption.priceLowToHigh:
             final aFee = a.consultationFee ?? 999999;
             final bFee = b.consultationFee ?? 999999;
@@ -851,7 +854,10 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     }
 
     if (_visibleProviders.isEmpty) {
-      return _errorCard(p, context.tr('providers.noMatch'));
+      return _errorCard(
+        p,
+        'No providers available right now. Try another date or service.',
+      );
     }
 
     final bestRated = _visibleProviders.reduce(
@@ -860,7 +866,9 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     final nearest = _visibleProviders.reduce(
       (a, b) => _distanceFor(a) <= _distanceFor(b) ? a : b,
     );
-    final availableNow = _visibleProviders.where((p) => p.isAvailable).length;
+    final availableNow = _visibleProviders
+        .where(ProviderBookingEligibility.canBook)
+        .length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1089,7 +1097,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                     ),
                     child: Text(
                       context.tr(
-                        provider.isAvailable
+                        ProviderBookingEligibility.canBook(provider)
                             ? 'providers.available'
                             : 'providers.busy',
                       ),

@@ -1,7 +1,15 @@
 const express = require('express');
+const { randomUUID } = require('crypto');
 const db = require('../db');
 const { insertNotification } = require('../notifications');
-const { recommendProviders } = require('../services/aiRecommendation/engine');
+const { recommendProviders, inferKeyword } = require('../services/aiRecommendation/engine');
+const {
+  BLOCKING_BOOKING_STATUSES,
+  NON_BLOCKING_BOOKING_STATUSES,
+  blockingStatusPlaceholders,
+  nonBlockingStatusPlaceholders,
+  isNewPatient,
+} = require('../utils/bookingAvailability');
 
 const router = express.Router();
 
@@ -42,6 +50,23 @@ async function hasColumn(tableName, columnName) {
   } catch (_) {
     columnCache.set(key, false);
     return false;
+  }
+}
+
+async function ensureRescheduleColumns() {
+  const columns = [
+    ['subStatus', 'VARCHAR(64) NULL'],
+    ['requestedRescheduleAt', 'DATETIME NULL'],
+    ['rescheduleRequestedAt', 'DATETIME NULL'],
+    ['rescheduleRejectedAt', 'DATETIME NULL'],
+    ['rescheduleRejectionReason', 'TEXT NULL'],
+  ];
+
+  for (const [name, definition] of columns) {
+    if (!(await hasColumn('servicerequest', name))) {
+      await db.query(`ALTER TABLE servicerequest ADD COLUMN ${name} ${definition}`);
+      columnCache.set(`servicerequest.${name}`, true);
+    }
   }
 }
 
@@ -189,13 +214,224 @@ function providerCanBeBooked(provider) {
   );
 }
 
-const ACTIVE_BOOKING_STATUSES = [
-  'confirmed',
-  'accepted',
-  'scheduled',
-  'approved',
-  'in_progress',
-];
+function detectSupportedRecommendationIntent(rawQuery, specialty = '') {
+  const explicit = specialty.toString().trim().toLowerCase();
+  if (explicit) return explicit;
+
+  const q = (rawQuery || '').toString().trim().toLowerCase();
+  if (!q || q.length < 3) return '';
+
+  const meaningless = /^(.)\1+$/.test(q.replace(/\s+/g, ''));
+  if (meaningless) return '';
+
+  const unsupported = [
+    'pizza',
+    'teacher',
+    'school',
+    'lesson',
+    'restaurant',
+    'food',
+    'hello',
+    'hi',
+  ];
+  if (unsupported.some((word) => {
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\b${escaped}\\b`).test(q);
+  })) {
+    return '';
+  }
+
+  const intents = [
+    ['neurosurgery', ['brain surgeon', 'neurosurgeon', 'neurosurgery']],
+    ['home nursing', ['home nursing', 'home nurse', 'nursing care', 'nurse at home']],
+    ['elderly', ['elderly', 'senior care', 'old mother', 'old father', 'aged care']],
+    ['post-surgery', ['post surgery', 'post-surgery', 'after surgery', 'surgery recovery', 'wound care']],
+    ['physio', ['physio', 'physiotherapy', 'physical therapy', 'rehab', 'rehabilitation']],
+    ['mental', ['mental health', 'psych', 'anxiety', 'depression', 'therapy']],
+    ['cardiology', ['cardiology', 'cardio', 'heart', 'chest pain']],
+    ['lung', ['lung', 'pulmonary', 'pulmonology', 'breathing', 'respiratory']],
+    ['dental', ['dentist', 'dental', 'tooth', 'teeth']],
+    ['general', ['general doctor', 'family doctor', 'general care']],
+  ];
+
+  for (const [keyword, needles] of intents) {
+    if (needles.some((needle) => q.includes(needle))) return keyword;
+  }
+
+  return '';
+}
+
+async function recommendationIdentityColumn() {
+  if (await hasColumn('patientproviderrecommendation', 'recommendationId')) {
+    return 'recommendationId';
+  }
+  if (await hasColumn('patientproviderrecommendation', 'id')) {
+    return 'id';
+  }
+  return null;
+}
+
+let recommendationHistoryConstraintChecked = false;
+
+async function ensureRecommendationHistoryAllowsSessions() {
+  if (recommendationHistoryConstraintChecked) return;
+  recommendationHistoryConstraintChecked = true;
+
+  try {
+    const [indexes] = await db.query(
+      `SELECT INDEX_NAME
+       FROM INFORMATION_SCHEMA.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'patientproviderrecommendation'
+         AND NON_UNIQUE = 0
+         AND INDEX_NAME <> 'PRIMARY'
+       GROUP BY INDEX_NAME
+       HAVING SUM(COLUMN_NAME = 'patientUserId') > 0
+          AND SUM(COLUMN_NAME = 'providerUserId') > 0`,
+    );
+
+    for (const row of indexes) {
+      const indexName = row.INDEX_NAME;
+      const safeIndexName = indexName.replace(/`/g, '``');
+      await db.query(
+        `ALTER TABLE patientproviderrecommendation DROP INDEX \`${safeIndexName}\``,
+      );
+      console.warn(
+        `[AIRecommendations] dropped unique index ${indexName} so recommendation history can store repeated search sessions.`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      '[AIRecommendations] failed to verify recommendation history indexes:',
+      err.message,
+    );
+  }
+}
+
+async function insertRecommendationHistoryRows({
+  patientUserId,
+  queryText,
+  aiAnalysis,
+  isUrgent,
+  ranked,
+}) {
+  await ensureRecommendationHistoryAllowsSessions();
+  const idColumn = await recommendationIdentityColumn();
+  const results = new Map();
+  const searchSessionId = randomUUID();
+  const hasSearchSessionId = await hasColumn(
+    'patientproviderrecommendation',
+    'searchSessionId',
+  );
+
+  for (const item of ranked) {
+    const providerUserId =
+      item.providerId || item.provider?.userId || item.provider?.id || '';
+    if (!providerUserId) continue;
+
+    const score = item.scoreBreakdown || {};
+    const reasons = item.recommendationReasons || [];
+    const generatedId = idColumn === 'recommendationId' ? randomUUID() : null;
+    const columns = [];
+    const placeholders = [];
+    const values = [];
+
+    function add(column, value) {
+      columns.push(column);
+      placeholders.push('?');
+      values.push(value);
+    }
+
+    if (generatedId) {
+      add(idColumn, generatedId);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'patientUserId')) {
+      add('patientUserId', patientUserId);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'providerUserId')) {
+      add('providerUserId', providerUserId);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'queryText')) {
+      add('queryText', queryText);
+    }
+    if (hasSearchSessionId) {
+      add('searchSessionId', searchSessionId);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'detectedService')) {
+      add('detectedService', aiAnalysis?.service || null);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'detectedNeed')) {
+      add('detectedNeed', aiAnalysis?.need || null);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'urgencyLevel')) {
+      add('urgencyLevel', isUrgent ? 'urgent' : 'routine');
+    }
+    if (await hasColumn('patientproviderrecommendation', 'recommendationReasons')) {
+      add('recommendationReasons', JSON.stringify(reasons));
+    }
+    if (await hasColumn('patientproviderrecommendation', 'recommendationReason')) {
+      add('recommendationReason', reasons[0] || item.aiMatchReason || null);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'locationScore')) {
+      add('locationScore', score.location ?? null);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'specializationScore')) {
+      add('specializationScore', score.specialization ?? null);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'availabilityScore')) {
+      add('availabilityScore', score.availability ?? null);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'ratingScore')) {
+      add('ratingScore', score.rating ?? null);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'experienceScore')) {
+      add('experienceScore', score.experience ?? null);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'medicalCompatibilityScore')) {
+      add('medicalCompatibilityScore', score.medicalCompatibility ?? null);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'weightedScore')) {
+      add('weightedScore', item.finalScore ?? null);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'wasSelected')) {
+      add('wasSelected', 0);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'bookingCreated')) {
+      add('bookingCreated', 0);
+    }
+    if (await hasColumn('patientproviderrecommendation', 'createdAt')) {
+      columns.push('createdAt');
+      placeholders.push('NOW()');
+    }
+
+    if (columns.length === 0) continue;
+
+    try {
+      const [result] = await db.execute(
+        `INSERT INTO patientproviderrecommendation (${columns.join(', ')})
+         VALUES (${placeholders.join(', ')})`,
+        values,
+      );
+      results.set(
+        providerUserId,
+        generatedId || result.insertId?.toString() || '',
+      );
+    } catch (err) {
+      console.warn(
+        '[AIRecommendations] failed to insert tracking row:',
+        err.message,
+      );
+    }
+  }
+
+  return results;
+}
+
+function wantsRealAvailability(value) {
+  return ['1', 'true', 'yes'].includes(
+    (value || '').toString().trim().toLowerCase(),
+  );
+}
 
 function dateKey(date) {
   const year = date.getFullYear();
@@ -217,7 +453,15 @@ async function attachRealAvailableSlots(providers, horizonDays = 28) {
 
   const providerIds = providers.map((provider) => provider.userId);
   const placeholders = providerIds.map(() => '?').join(',');
-  const statusPlaceholders = ACTIVE_BOOKING_STATUSES.map(() => '?').join(',');
+  const statusPlaceholders = blockingStatusPlaceholders();
+  const nonBlockingPlaceholders = nonBlockingStatusPlaceholders();
+  const hasPaymentStatus = await hasColumn('servicerequest', 'paymentStatus');
+  const paymentStatusConflictSql = hasPaymentStatus
+    ? ` OR (
+          LOWER(TRIM(CAST(status AS CHAR(64)))) NOT IN (${nonBlockingPlaceholders})
+          AND LOWER(TRIM(CAST(paymentStatus AS CHAR(64)))) = 'paid'
+        )`
+    : '';
 
   const [scheduleRows, bookingRows] = await Promise.all([
     db.query(
@@ -234,8 +478,15 @@ async function attachRealAvailableSlots(providers, horizonDays = 28) {
        FROM servicerequest
        WHERE providerUserId IN (${placeholders})
          AND scheduledAt >= NOW()
-         AND LOWER(TRIM(CAST(status AS CHAR(64)))) IN (${statusPlaceholders})`,
-      [...providerIds, ...ACTIVE_BOOKING_STATUSES],
+         AND (
+           LOWER(TRIM(CAST(status AS CHAR(64)))) IN (${statusPlaceholders})
+           ${paymentStatusConflictSql}
+         )`,
+      [
+        ...providerIds,
+        ...BLOCKING_BOOKING_STATUSES,
+        ...(hasPaymentStatus ? NON_BLOCKING_BOOKING_STATUSES : []),
+      ],
     ),
   ]);
 
@@ -287,6 +538,7 @@ async function attachRealAvailableSlots(providers, horizonDays = 28) {
           date: dateKey(date),
           startTime: start,
           endTime: end,
+          scheduledAt: `${dateKey(date)} ${start}:00`,
         });
       }
     }
@@ -407,25 +659,98 @@ async function loadRecommendationProviders() {
 router.get('/recommendations/:patientId', async (req, res) => {
   try {
     const patient = await loadRecommendationPatient(req.params.patientId);
-    const providers = (await loadRecommendationProviders()).filter(
+    let providers = (await loadRecommendationProviders()).filter(
       providerCanBeBooked,
     );
+
+    const isNew = await isNewPatient(req.params.patientId, db);
+    if (isNew) {
+      providers = providers.filter((p) => (p.role || '').toString().toLowerCase() === 'doctor');
+    }
+
+    const rawQuery = req.query.q?.toString() || '';
+    const requestedIntent = detectSupportedRecommendationIntent(
+      rawQuery,
+      req.query.specialty?.toString() || '',
+    );
+    if (rawQuery.trim().length > 0 && !requestedIntent) {
+      return res.json({
+        aiAnalysis: null,
+        recommendations: [],
+      });
+    }
+
+    let recommendationProviders = providers;
+    if (requestedIntent === 'neurosurgery') {
+      recommendationProviders = providers.filter((provider) => {
+        const blob = `${provider.specialization || ''} ${provider.serviceType || ''}`.toLowerCase();
+        return blob.includes('neuro') || blob.includes('brain');
+      });
+      if (recommendationProviders.length === 0) {
+        return res.json({
+          aiAnalysis: null,
+          recommendations: [],
+        });
+      }
+    }
+
+    const isUrgentParams = req.query.urgent === '1' || req.query.urgent === 'true';
+    const isComplexParams = req.query.complex === '1' || req.query.complex === 'true';
+
+    const lowerQ = rawQuery.toLowerCase();
+    const isUrgent = isUrgentParams || ['urgent', 'emergency', 'severe', 'pain', 'immediate', 'bleeding'].some(w => lowerQ.includes(w));
+    const isComplexCase = isComplexParams || ['chronic', 'complex', 'post surgery', 'post-surgery', 'multiple', 'cancer'].some(w => lowerQ.includes(w));
+
     const request = {
-      rawQuery: req.query.q?.toString() || '',
-      requestedServiceKeyword: req.query.specialty?.toString() || '',
+      rawQuery: rawQuery,
+      requestedServiceKeyword: requestedIntent,
       requestedDateTime: null,
-      isUrgent: req.query.urgent === '1' || req.query.urgent === 'true',
-      isComplexCase: req.query.complex === '1' || req.query.complex === 'true',
+      isUrgent,
+      isComplexCase,
     };
-    const ranked = recommendProviders(patient, request, providers, Number(req.query.top) || 50);
+    const ranked = recommendProviders(patient, request, recommendationProviders, Number(req.query.top) || 50);
     const medicalTags = [...new Set(patient.analysisTags || [])].map(titleTag);
     const medicalReasons = medicalReasonsFromTags(patient.analysisTags || []);
-    res.json(
-      ranked.map((r) => ({
+
+    const inferredService = (request.requestedServiceKeyword || inferKeyword(request, recommendationProviders)).trim();
+    const serviceName = inferredService.length > 0 ? inferredService.charAt(0).toUpperCase() + inferredService.slice(1) : null;
+
+    let aiAnalysis = null;
+    if (rawQuery.trim().length > 0 && serviceName) {
+      aiAnalysis = {
+        service: serviceName,
+        need: isComplexCase ? 'Complex Care' : null,
+        priority: isUrgent ? 'Urgent / Emergency' : null
+      };
+      if (isNew) {
+        aiAnalysis.note = 'Since this is your first appointment, we recommend a doctor first. Nursing follow-up can be booked after assessment.';
+      }
+    }
+    const recommendationIds = await insertRecommendationHistoryRows({
+      patientUserId: req.params.patientId,
+      queryText: rawQuery,
+      aiAnalysis,
+      isUrgent,
+      ranked,
+    });
+
+    res.json({
+      aiAnalysis,
+      recommendations: ranked.map((r) => ({
+        recommendationId:
+          recommendationIds.get(
+            r.providerId || r.provider?.userId || r.provider?.id || '',
+          ) || null,
         provider: r.provider,
         providerId: r.providerId || r.provider?.userId || r.provider?.id || '',
         finalScore: r.finalScore,
         matchPercentage: r.matchPercentage,
+        matchedSpecialization: requestedIntent || r.provider?.specialization || null,
+        specializationScore: r.scoreBreakdown?.specialization ?? null,
+        distanceScore: r.scoreBreakdown?.location ?? null,
+        ratingScore: r.scoreBreakdown?.rating ?? null,
+        availabilityScore: r.scoreBreakdown?.availability ?? null,
+        locationScore: r.scoreBreakdown?.location ?? null,
         medicalMatchScore: r.scoreBreakdown?.medicalCompatibility ?? null,
         scoreBreakdown: r.scoreBreakdown,
         weights: r.weights,
@@ -438,13 +763,94 @@ router.get('/recommendations/:patientId', async (req, res) => {
         recommendationReasons: r.recommendationReasons,
         aiMatchReason: r.aiMatchReason || null,
       }))
-    );
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // جميع مقدمي الخدمة: دكاترة + ممرضين
+router.post('/recommendations/:recommendationId/select', async (req, res) => {
+  try {
+    const idColumn = await recommendationIdentityColumn();
+    if (!idColumn) {
+      return res.status(500).json({
+        error: 'Recommendation tracking id column is not available',
+      });
+    }
+
+    const updates = [];
+    if (await hasColumn('patientproviderrecommendation', 'wasSelected')) {
+      updates.push('wasSelected = 1');
+    }
+    if (await hasColumn('patientproviderrecommendation', 'selectedAt')) {
+      updates.push('selectedAt = NOW()');
+    }
+    if (updates.length === 0) {
+      return res.json({ success: true, updated: false });
+    }
+
+    const [result] = await db.execute(
+      `UPDATE patientproviderrecommendation
+       SET ${updates.join(', ')}
+       WHERE ${idColumn} = ?`,
+      [req.params.recommendationId],
+    );
+
+    res.json({ success: true, updated: result.affectedRows > 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post(
+  '/recommendations/:recommendationId/booking-created',
+  async (req, res) => {
+    try {
+      const relatedBookingId = (req.body?.relatedBookingId || '')
+        .toString()
+        .trim();
+      if (!relatedBookingId) {
+        return res.status(400).json({ error: 'relatedBookingId is required' });
+      }
+
+      const idColumn = await recommendationIdentityColumn();
+      if (!idColumn) {
+        return res.status(500).json({
+          error: 'Recommendation tracking id column is not available',
+        });
+      }
+
+      const updates = [];
+      const values = [];
+      if (await hasColumn('patientproviderrecommendation', 'bookingCreated')) {
+        updates.push('bookingCreated = 1');
+      }
+      if (await hasColumn('patientproviderrecommendation', 'relatedBookingId')) {
+        updates.push('relatedBookingId = ?');
+        values.push(relatedBookingId);
+      }
+      if (await hasColumn('patientproviderrecommendation', 'bookingCreatedAt')) {
+        updates.push('bookingCreatedAt = NOW()');
+      }
+      if (updates.length === 0) {
+        return res.json({ success: true, updated: false });
+      }
+
+      values.push(req.params.recommendationId);
+      const [result] = await db.execute(
+        `UPDATE patientproviderrecommendation
+         SET ${updates.join(', ')}
+         WHERE ${idColumn} = ?`,
+        values,
+      );
+      res.json({ success: true, updated: result.affectedRows > 0 });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+);
+
 router.get('/', async (req, res) => {
   try {
     const gpsProjection = await getGpsProjection();
@@ -478,11 +884,19 @@ router.get('/', async (req, res) => {
     `);
 
     let providersWithSlots;
-    if (req.query.realAvailability === '1') {
-      providersWithSlots = await attachRealAvailableSlots(rows);
+
+    const patientId = req.query.patientId?.toString().trim();
+    const isNew = patientId ? await isNewPatient(patientId, db) : false;
+
+    const filteredRows = isNew ? rows.filter(r => (r.role || '').toString().toLowerCase() === 'doctor') : rows;
+
+    if (wantsRealAvailability(req.query.realAvailability)) {
+      providersWithSlots = (await attachRealAvailableSlots(filteredRows)).filter(
+        providerCanBeBooked,
+      );
     } else {
       providersWithSlots = await Promise.all(
-        rows.map(async (provider) => {
+        filteredRows.map(async (provider) => {
           const [slots] = await db.query(
             `SELECT day, startTime, endTime
              FROM availabilityslot
@@ -579,8 +993,13 @@ router.get('/provider/:userId', async (req, res) => {
       return res.status(404).json({ error: 'Provider not found' });
     }
 
-    if (req.query.realAvailability === '1') {
+    if (wantsRealAvailability(req.query.realAvailability)) {
       const [provider] = await attachRealAvailableSlots(rows);
+      if (!providerCanBeBooked(provider)) {
+        return res.status(409).json({
+          error: 'This provider has no available appointments right now.',
+        });
+      }
       return res.json(provider);
     }
 
@@ -681,6 +1100,9 @@ router.get('/appointments', async (req, res) => {
     const hasProviderLat = await hasColumn('servicerequest', 'providerCurrentLat');
     const hasProviderLng = await hasColumn('servicerequest', 'providerCurrentLng');
     const hasProviderAt = await hasColumn('servicerequest', 'providerLocationUpdatedAt');
+    const hasSubStatus = await hasColumn('servicerequest', 'subStatus');
+    const hasRequestedRescheduleAt = await hasColumn('servicerequest', 'requestedRescheduleAt');
+    const hasRescheduleRequestedAt = await hasColumn('servicerequest', 'rescheduleRequestedAt');
 
     const [rows] = await db.query(
       `SELECT
@@ -692,6 +1114,9 @@ router.get('/appointments', async (req, res) => {
           sr.notes,
           sr.location,
           sr.scheduledAt,
+          ${hasSubStatus ? 'sr.subStatus' : "'' AS subStatus"},
+          ${hasRequestedRescheduleAt ? 'sr.requestedRescheduleAt' : 'NULL AS requestedRescheduleAt'},
+          ${hasRescheduleRequestedAt ? 'sr.rescheduleRequestedAt' : 'NULL AS rescheduleRequestedAt'},
           ${hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress"},
           ${hasProviderLat ? 'sr.providerCurrentLat' : 'NULL AS providerCurrentLat'},
           ${hasProviderLng ? 'sr.providerCurrentLng' : 'NULL AS providerCurrentLng'},
@@ -829,6 +1254,149 @@ router.put('/appointments/:requestId/status', async (req, res) => {
   }
 });
 
+router.put('/appointments/:requestId/reschedule-request', async (req, res) => {
+  const { requestId } = req.params;
+  const { providerUserId, action, reason } = req.body || {};
+
+  const pid = providerUserId ? providerUserId.toString().trim() : '';
+  const decision = action ? action.toString().trim().toLowerCase() : '';
+
+  if (!pid || !decision) {
+    return res
+      .status(400)
+      .json({ error: 'providerUserId and action are required' });
+  }
+  if (!['approve', 'reject'].includes(decision)) {
+    return res.status(400).json({ error: 'action must be approve or reject' });
+  }
+
+  try {
+    await ensureRescheduleColumns();
+    const [rows] = await db.query(
+      `SELECT requestId, patientUserId, providerUserId, status, subStatus,
+              scheduledAt, requestedRescheduleAt
+       FROM servicerequest
+       WHERE requestId = ?`,
+      [requestId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    const row = rows[0];
+    if (row.providerUserId !== pid) {
+      return res.status(403).json({ error: 'Not allowed for this provider' });
+    }
+    if (
+      (row.status || '').toString().toLowerCase().trim() !== 'confirmed' ||
+      (row.subStatus || '').toString().toLowerCase().trim() !==
+        'reschedule_requested' ||
+      !row.requestedRescheduleAt
+    ) {
+      return res
+        .status(409)
+        .json({ error: 'No pending reschedule request for this appointment' });
+    }
+
+    if (decision === 'approve') {
+      const statusPlaceholders = blockingStatusPlaceholders();
+      const nonBlockingPlaceholders = nonBlockingStatusPlaceholders();
+      const hasPaymentStatus = await hasColumn('servicerequest', 'paymentStatus');
+      const paymentStatusConflictSql = hasPaymentStatus
+        ? ` OR (
+              LOWER(TRIM(CAST(sr.status AS CHAR(64)))) NOT IN (${nonBlockingPlaceholders})
+              AND LOWER(TRIM(CAST(sr.paymentStatus AS CHAR(64)))) = 'paid'
+            )`
+        : '';
+      const [conflicts] = await db.query(
+        `SELECT requestId
+         FROM servicerequest sr
+         WHERE sr.requestId <> ?
+           AND sr.providerUserId = ?
+           AND sr.scheduledAt = ?
+           AND (
+             LOWER(TRIM(CAST(sr.status AS CHAR(64)))) IN (${statusPlaceholders})
+             ${paymentStatusConflictSql}
+           )
+         LIMIT 1`,
+        [
+          requestId,
+          pid,
+          row.requestedRescheduleAt,
+          ...BLOCKING_BOOKING_STATUSES,
+          ...(hasPaymentStatus ? NON_BLOCKING_BOOKING_STATUSES : []),
+        ]
+      );
+      if (conflicts.length > 0) {
+        return res.status(409).json({
+          error: 'This appointment time was already booked.'
+        });
+      }
+
+      await db.execute(
+        `UPDATE servicerequest
+         SET scheduledAt = requestedRescheduleAt,
+             status = 'confirmed',
+             subStatus = NULL,
+             requestedRescheduleAt = NULL,
+             rescheduleRequestedAt = NULL,
+             rescheduleRejectedAt = NULL,
+             rescheduleRejectionReason = NULL
+         WHERE requestId = ? AND providerUserId = ?`,
+        [requestId, pid]
+      );
+
+      try {
+        await insertNotification({
+          userId: row.patientUserId,
+          type: 'appointment',
+          title: 'Reschedule approved',
+          body: 'Your provider approved the new appointment time.',
+          relatedRequestId: requestId
+        });
+      } catch (_) {}
+
+      return res.json({
+        success: true,
+        status: 'confirmed',
+        scheduledAt: row.requestedRescheduleAt,
+        message: 'Reschedule request approved'
+      });
+    }
+
+    const rejectionReason = (reason || '').toString().trim();
+    await db.execute(
+      `UPDATE servicerequest
+       SET subStatus = NULL,
+           requestedRescheduleAt = NULL,
+           rescheduleRequestedAt = NULL,
+           rescheduleRejectedAt = NOW(),
+           rescheduleRejectionReason = ?
+       WHERE requestId = ? AND providerUserId = ?`,
+      [rejectionReason || null, requestId, pid]
+    );
+
+    try {
+      await insertNotification({
+        userId: row.patientUserId,
+        type: 'appointment',
+        title: 'Reschedule rejected',
+        body: 'تم رفض طلب تغيير الموعد، وبقي موعدك الأصلي كما هو.',
+        relatedRequestId: requestId
+      });
+    } catch (_) {}
+
+    res.json({
+      success: true,
+      status: 'confirmed',
+      message: 'Reschedule request rejected; original appointment kept'
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.put('/appointments/:requestId/location', async (req, res) => {
   const { requestId } = req.params;
   const { providerUserId, lat, lng } = req.body || {};
@@ -909,14 +1477,29 @@ router.put('/appointments/:requestId/location', async (req, res) => {
 
 router.get('/provider/:userId/blocked-slots', async (req, res) => {
   try {
+    const statusPlaceholders = blockingStatusPlaceholders();
+    const nonBlockingPlaceholders = nonBlockingStatusPlaceholders();
+    const hasPaymentStatus = await hasColumn('servicerequest', 'paymentStatus');
+    const paymentStatusConflictSql = hasPaymentStatus
+      ? ` OR (
+            LOWER(TRIM(CAST(status AS CHAR(64)))) NOT IN (${nonBlockingPlaceholders})
+            AND LOWER(TRIM(CAST(paymentStatus AS CHAR(64)))) = 'paid'
+          )`
+      : '';
     const [rows] = await db.query(
       `SELECT scheduledAt
        FROM servicerequest
          WHERE providerUserId = ?
-         AND LOWER(TRIM(CAST(status AS CHAR(64)))) IN
-           ('confirmed', 'accepted', 'approved', 'scheduled', 'in_progress')
-         AND scheduledAt >= CURDATE()`,
-      [req.params.userId]
+         AND (
+           LOWER(TRIM(CAST(status AS CHAR(64)))) IN (${statusPlaceholders})
+           ${paymentStatusConflictSql}
+         )
+         AND scheduledAt >= NOW()`,
+      [
+        req.params.userId,
+        ...BLOCKING_BOOKING_STATUSES,
+        ...(hasPaymentStatus ? NON_BLOCKING_BOOKING_STATUSES : []),
+      ]
     );
     res.json(rows.map((r) => r.scheduledAt));
   } catch (err) {

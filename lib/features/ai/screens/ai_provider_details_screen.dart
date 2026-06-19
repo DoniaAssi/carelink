@@ -10,10 +10,10 @@ import 'package:carelink/core/theme_controller.dart';
 import '../ai_slot_utils.dart';
 import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
+import 'package:carelink/features/patient/screens/booking_screen.dart';
 import 'package:carelink/features/ai/widgets/ai_score_breakdown.dart';
-import 'package:carelink/features/patient/screens/select_service_screen.dart';
+import 'package:carelink/features/patient/utils/booking_service_helper.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
-import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
@@ -131,34 +131,20 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
       }
 
       if (!mounted) return;
+      final request = BookingServiceHelper.createRequestForProvider(
+        provider: freshProvider,
+        patientId: id,
+      ).copyWith(
+        patientReason: reason,
+        symptoms: reason,
+        bookingStatus: 'pending_payment',
+      );
+
       final becameUnavailable = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
-          builder: (_) => SelectServiceScreen(
-            returnWhenUnavailable: true,
-            request: BookingRequestModel(
-              patientId: id,
-              providerId: freshProvider.userId,
-              providerName: freshProvider.fullName,
-              providerRole: freshProvider.role,
-              providerImageUrl: freshProvider.profileImageUrl ?? '',
-              specialization: freshProvider.specialization,
-              serviceType: freshProvider.serviceType,
-              appointmentDate: '',
-              appointmentTime: '',
-              visitLatitude: freshProvider.gpsLat ?? 0,
-              visitLongitude: freshProvider.gpsLng ?? 0,
-              visitAddress: '',
-              locationNote: '',
-              patientReason: reason,
-              symptoms: reason,
-              isUrgent: false,
-              additionalNotes: '',
-              price: freshProvider.consultationFee ?? 0,
-              paymentMethod: '',
-              paymentStatus: 'unpaid',
-              bookingStatus: 'pending_payment',
-            ),
+          builder: (_) => BookingScreen(
+            request: request,
           ),
         ),
       );

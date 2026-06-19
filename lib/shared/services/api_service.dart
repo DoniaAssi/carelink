@@ -667,8 +667,9 @@ class ApiService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-        if (decoded['url'] != null) {
-          return decoded['url'] as String;
+        final url = decoded['url']?.toString().trim() ?? '';
+        if (url.isNotEmpty) {
+          return url;
         }
         throw Exception('Upload succeeded but no URL was returned');
       }
@@ -1013,42 +1014,52 @@ class ApiService {
     String? paymentStatus,
     String? urgencyLevel,
     String? status,
+    String? recommendationId,
   }) async {
     final urgency = (urgencyLevel ?? (isUrgent == true ? 'urgent' : 'routine'))
         .toString()
         .trim()
         .toLowerCase();
+    final payload = {
+      'patientUserId': patientId,
+      'providerUserId': providerId,
+      'serviceType': serviceType ?? 'appointment',
+      'appointmentType': appointmentType?.trim().isEmpty == false
+          ? appointmentType!.trim()
+          : 'home',
+      'date': date,
+      'time': time,
+      'notes': notes?.trim() ?? '',
+      'reasonForVisit': notes?.trim() ?? '',
+      'visitLatitude': visitLatitude,
+      'visitLongitude': visitLongitude,
+      'visitAddress': visitAddress?.trim() ?? '',
+      'location': visitAddress?.trim() ?? '',
+      'locationNote': locationNote?.trim() ?? '',
+      'symptoms': symptoms?.trim() ?? '',
+      'isUrgent': isUrgent == true,
+      'urgencyLevel': urgency.isEmpty ? 'routine' : urgency,
+      'additionalNotes': additionalNotes?.trim() ?? '',
+      'paymentMethod': paymentMethod?.trim() ?? '',
+      'paymentStatus': paymentStatus?.trim() ?? '',
+      'status': status?.trim() ?? 'pending',
+    };
+    if (recommendationId != null && recommendationId.trim().isNotEmpty) {
+      payload['recommendationId'] = recommendationId.trim();
+    }
+    debugPrint('[BookingDebug] createBooking payload: $payload');
     final response = await _sendRequest(
       http.post(
         _endpoint('/patient/appointments'),
         headers: _jsonHeaders,
-        body: jsonEncode({
-          'patientUserId': patientId,
-          'providerUserId': providerId,
-          'serviceType': serviceType ?? 'appointment',
-          'appointmentType': appointmentType?.trim().isEmpty == false
-              ? appointmentType!.trim()
-              : 'home',
-          'date': date,
-          'time': time,
-          'notes': notes?.trim() ?? '',
-          'visitLatitude': visitLatitude,
-          'visitLongitude': visitLongitude,
-          'visitAddress': visitAddress?.trim() ?? '',
-          'locationNote': locationNote?.trim() ?? '',
-          'symptoms': symptoms?.trim() ?? '',
-          'isUrgent': isUrgent == true,
-          'urgencyLevel': urgency.isEmpty ? 'routine' : urgency,
-          'additionalNotes': additionalNotes?.trim() ?? '',
-          'paymentMethod': paymentMethod?.trim() ?? '',
-          'paymentStatus': paymentStatus?.trim() ?? '',
-          'status': status?.trim() ?? 'pending',
-        }),
+        body: jsonEncode(payload),
       ),
     );
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      debugPrint('[BookingDebug] createBooking response: $data');
+      return data;
     }
 
     throw Exception(_extractErrorMessage(response, 'Failed to create booking'));
@@ -1068,10 +1079,10 @@ class ApiService {
       'date': date,
       'time': time,
     };
-    final uri = _endpoint('/patient/appointments/check-duplicate').replace(queryParameters: queryParams);
-    final response = await _sendRequest(
-      http.get(uri, headers: _jsonHeaders),
-    );
+    final uri = _endpoint(
+      '/patient/appointments/check-duplicate',
+    ).replace(queryParameters: queryParams);
+    final response = await _sendRequest(http.get(uri, headers: _jsonHeaders));
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final data = jsonDecode(response.body);
@@ -1391,8 +1402,11 @@ class ApiService {
     throw Exception(_extractErrorMessage(response, 'Failed to load payments'));
   }
 
-  Future<List<dynamic>> getProviders({bool realAvailability = false}) async {
-    final suffix = realAvailability ? '?realAvailability=1' : '';
+  Future<List<dynamic>> getProviders({bool realAvailability = false, String? patientId}) async {
+    String suffix = realAvailability ? '?realAvailability=true' : '';
+    if (patientId != null && patientId.isNotEmpty) {
+      suffix += (suffix.isEmpty ? '?' : '&') + 'patientId=$patientId';
+    }
     final response = await _sendRequest(
       http.get(_endpoint('/providers$suffix'), headers: _jsonHeaders),
     );
@@ -1433,7 +1447,12 @@ class ApiService {
     );
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return jsonDecode(response.body) as List<dynamic>;
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic> &&
+          decoded.containsKey('recommendations')) {
+        return decoded['recommendations'] as List<dynamic>;
+      }
+      return decoded as List<dynamic>;
     }
 
     throw Exception(
@@ -1441,11 +1460,98 @@ class ApiService {
     );
   }
 
+  Future<Map<String, dynamic>> getProviderRecommendationsWithAnalysis(
+    String patientId, {
+    String? query,
+    String? specialty,
+  }) async {
+    final params = <String, String>{};
+    if (query != null && query.trim().isNotEmpty) {
+      params['q'] = query.trim();
+    }
+    if (specialty != null &&
+        specialty.trim().isNotEmpty &&
+        specialty != 'All') {
+      params['specialty'] = specialty.trim();
+    }
+    final qs = params.entries
+        .map(
+          (e) =>
+              '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}',
+        )
+        .join('&');
+    final suffix = qs.isEmpty ? '' : '?$qs';
+    final response = await _sendRequest(
+      http.get(
+        _endpoint('/providers/recommendations/$patientId$suffix'),
+        headers: _jsonHeaders,
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return {'recommendations': decoded as List<dynamic>, 'aiAnalysis': null};
+    }
+
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to load recommendations'),
+    );
+  }
+
+  Future<void> selectProviderRecommendation(String recommendationId) async {
+    final id = recommendationId.trim();
+    if (id.isEmpty) return;
+
+    final response = await _sendRequest(
+      http.post(
+        _endpoint('/providers/recommendations/$id/select'),
+        headers: _jsonHeaders,
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return;
+    }
+
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to mark recommendation selected'),
+    );
+  }
+
+  Future<void> markRecommendationBookingCreated({
+    required String recommendationId,
+    required String relatedBookingId,
+  }) async {
+    final id = recommendationId.trim();
+    final bookingId = relatedBookingId.trim();
+    if (id.isEmpty || bookingId.isEmpty) return;
+
+    final response = await _sendRequest(
+      http.post(
+        _endpoint('/providers/recommendations/$id/booking-created'),
+        headers: _jsonHeaders,
+        body: jsonEncode({'relatedBookingId': bookingId}),
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return;
+    }
+
+    throw Exception(
+      _extractErrorMessage(
+        response,
+        'Failed to mark recommendation booking created',
+      ),
+    );
+  }
+
   Future<Map<String, dynamic>> getProviderById(
     String userId, {
     bool realAvailability = false,
   }) async {
-    final suffix = realAvailability ? '?realAvailability=1' : '';
+    final suffix = realAvailability ? '?realAvailability=true' : '';
     final response = await _sendRequest(
       http.get(
         _endpoint('/providers/provider/$userId$suffix'),

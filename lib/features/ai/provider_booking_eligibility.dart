@@ -9,12 +9,6 @@ class ProviderBookingEligibility {
         const {'doctor', 'nurse'}.contains(role) &&
         provider.isActive &&
         provider.isProfileComplete &&
-        _hasUsefulValue(provider.fullName) &&
-        _hasUsefulValue(provider.specialization) &&
-        _hasUsefulValue(provider.serviceType) &&
-        provider.consultationFee != null &&
-        provider.consultationFee!.isFinite &&
-        provider.consultationFee! > 0 &&
         provider.isAvailable &&
         provider.availableSlots.any(_isValidSlot);
   }
@@ -22,7 +16,8 @@ class ProviderBookingEligibility {
   static bool _isValidSlot(AvailabilitySlot slot) {
     final start = _clockMinutes(slot.startTime);
     final end = _clockMinutes(slot.endTime);
-    return _hasUsefulValue(slot.day) &&
+    final hasValidDate = _hasUsefulValue(slot.day) || _hasUsefulValue(slot.date);
+    return hasValidDate &&
         start != null &&
         end != null &&
         end > start;

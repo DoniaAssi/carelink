@@ -35,6 +35,14 @@ const chatUpload = multer({
 const chatTyping = new Map();
 let chatSchemaPromise;
 
+const {
+  BLOCKING_BOOKING_STATUSES,
+  NON_BLOCKING_BOOKING_STATUSES,
+  blockingStatusPlaceholders,
+  nonBlockingStatusPlaceholders,
+  isNewPatient,
+} = require('../utils/bookingAvailability');
+
 const BOOKING_STATUSES = [
   'pending_provider_approval',
   'pending',

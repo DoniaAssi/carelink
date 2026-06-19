@@ -17,7 +17,6 @@ import 'package:carelink/core/profile_avatar.dart'
     show profileAvatarOrPlaceholder, profileImageUrlFromMap;
 import 'package:carelink/core/theme_controller.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
-import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/notification_center.dart';
@@ -39,8 +38,8 @@ import 'package:carelink/features/notifications/notifications_screen.dart';
 import 'edit_profile_screen.dart';
 import 'provider_details_screen.dart';
 import 'providers_screen.dart';
-import 'select_service_screen.dart';
-
+import 'package:carelink/features/patient/screens/booking_screen.dart';
+import 'package:carelink/features/patient/utils/booking_service_helper.dart';
 class PatientHomeScreen extends StatefulWidget {
   final String? userId;
   final String? displayName;
@@ -1527,32 +1526,16 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     }
 
     final provider = sorted.first;
+    final request = BookingServiceHelper.createRequestForProvider(
+      provider: provider,
+      patientId: widget.userId ?? '',
+    );
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => SelectServiceScreen(
-          request: BookingRequestModel(
-            patientId: widget.userId ?? '',
-            providerId: provider.userId,
-            providerName: provider.fullName,
-            providerRole: provider.role,
-            specialization: provider.specialization,
-            serviceType: service.serviceType,
-            appointmentDate: '',
-            appointmentTime: '',
-            visitLatitude: 0,
-            visitLongitude: 0,
-            visitAddress: '',
-            locationNote: '',
-            patientReason: '',
-            symptoms: '',
-            isUrgent: false,
-            additionalNotes: '',
-            price: provider.consultationFee ?? 0,
-            paymentMethod: 'cash',
-            paymentStatus: 'pending',
-            bookingStatus: 'pending',
-          ),
+        builder: (_) => BookingScreen(
+          request: request,
         ),
       ),
     );

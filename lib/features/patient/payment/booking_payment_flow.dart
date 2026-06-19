@@ -41,7 +41,11 @@ class BookingPaymentFlow {
         context: context,
         builder: (ctx) => AlertDialog(
           title: Text(ctx.tr('booking.duplicate.title')),
-          content: Text(ctx.l10n.isArabic ? 'لديك طلب حجز موجود بالفعل لهذا الموعد.' : 'You already have a booking request for this appointment.'),
+          content: Text(
+            ctx.l10n.isArabic
+                ? 'لديك طلب حجز موجود بالفعل لهذا الموعد.'
+                : 'You already have a booking request for this appointment.',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -72,18 +76,31 @@ class BookingPaymentFlow {
     if (!context.mounted) return;
 
     // 3. Navigate to Payment Screen passing the full request
+    debugPrint(
+      '[BookingDebug] opening payment screen request: '
+      '{patientId: ${request.patientId}, providerId: ${request.providerId}, '
+      'serviceType: ${request.serviceType}, date: ${request.appointmentDate}, '
+      'time: ${request.appointmentTime}, visitAddress: ${request.visitAddress}, '
+      'reason: ${request.patientReason}, paymentStatus: ${request.paymentStatus}, '
+      'status: ${request.bookingStatus}}',
+    );
     final paymentSuccessData = await Navigator.push<Map<String, dynamic>?>(
       context,
-      MaterialPageRoute(
-        builder: (_) => PaymentScreen(
-          request: request,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => PaymentScreen(request: request)),
     );
 
     // 4. Handle Payment result
+    debugPrint('[BookingDebug] payment success result: $paymentSuccessData');
     if (paymentSuccessData != null && paymentSuccessData['success'] == true) {
-      final appointmentId = paymentSuccessData['appointmentId'] as String;
+      final appointmentId =
+          (paymentSuccessData['appointmentId'] ??
+                  paymentSuccessData['requestId'] ??
+                  '')
+              .toString()
+              .trim();
+      if (appointmentId.isEmpty) {
+        throw Exception('Payment succeeded but booking id was not returned.');
+      }
       if (!context.mounted) return;
       Navigator.pushAndRemoveUntil(
         context,

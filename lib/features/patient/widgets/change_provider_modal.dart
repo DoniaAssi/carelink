@@ -3,8 +3,10 @@ import 'package:intl/intl.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/locale_controller.dart';
+import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
+import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
 class ChangeProviderModal extends StatefulWidget {
@@ -63,7 +65,7 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
 
   Future<void> _loadProviders() async {
     try {
-      final data = await _api.getProviders();
+      final data = await _api.getProviders(realAvailability: true);
       // Filter logic:
       // - Exclude current provider
       // - Match serviceType (if appointment has one, and if provider has one)
@@ -73,6 +75,10 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
 
       final filtered = data.where((p) {
         if (p['userId'] == widget.appointment.providerUserId) return false;
+        final provider = ProviderModel.fromJson(
+          Map<String, dynamic>.from(p as Map),
+        );
+        if (!ProviderBookingEligibility.canBook(provider)) return false;
 
         final provService = (p['serviceType'] ?? '').toString().toLowerCase();
         final provSpec = (p['specialization'] ?? '').toString().toLowerCase();

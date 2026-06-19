@@ -34,13 +34,9 @@ router.get('/patient/:patientId', async (req, res) => {
     const top = Math.min(50, Math.max(1, parseInt(req.query.top, 10) || 12));
     const searchText = (req.query.search || '').toString().trim();
 
-    const result = await getRecommendationsForPatient(patientId, { searchText, top });
-
-    if (result.error) {
-      return res.status(404).json({ error: result.error });
-    }
-
-    res.json({ success: true, ...result });
+    return res.status(400).json({
+      error: 'Deprecated endpoint. Please use GET /providers/recommendations/:patientId which incorporates real availability slots.'
+    });
   } catch (err) {
     console.error('[Recommendations] Error:', err.message);
     res.status(500).json({ error: err.message });

@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 
@@ -6,8 +8,12 @@ import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
+import 'package:carelink/shared/models/booking_request_model.dart';
+import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/payment_service.dart';
+import 'package:carelink/features/patient/utils/appointment_action_helper.dart';
+import 'package:carelink/features/patient/utils/rebook_flow_helper.dart';
 import 'package:carelink/features/patient/screens/messages_screen.dart';
 
 import 'booking_details_screen.dart';
@@ -111,13 +117,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   _BookingState _stateOf(Map<String, dynamic> row) {
-    final status = (row['status'] ?? row['bookingStatus'] ?? '')
-        .toString()
-        .toLowerCase();
-    final payment = (row['paymentStatus'] ?? '')
-        .toString()
-        .trim()
-        .toLowerCase();
+    final status = _normalizedStatus(row);
+    final payment = _normalizedPaymentStatus(row);
     final method = (row['paymentMethod'] ?? '').toString().trim().toLowerCase();
     final isPaid = payment == 'paid';
     final cashOnVisit = method == 'cash' || method == 'cash_on_visit';
@@ -150,11 +151,29 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     return _BookingState.waitingProvider;
   }
 
+  bool _hasProviderId(Map<String, dynamic> row) {
+    return (row['providerUserId'] ?? row['doctorUserId'] ?? '')
+        .toString()
+        .trim()
+        .isNotEmpty;
+  }
+
+  String _normalizedStatus(Map<String, dynamic> row) {
+    return (row['status'] ?? row['bookingStatus'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+  }
+
+  String _normalizedPaymentStatus(Map<String, dynamic> row) {
+    return (row['paymentStatus'] ?? '').toString().trim().toLowerCase();
+  }
+
   List<Map<String, dynamic>> get _visibleAppointments {
     return _appointments.where((row) {
       final state = _stateOf(row);
       final matchesFilter = switch (_filter) {
-        _BookingFilter.all => true,
+        _BookingFilter.all => state != _BookingState.cancelled,
         _BookingFilter.waiting =>
           state == _BookingState.waitingProvider ||
               state == _BookingState.waitingPayment,
@@ -249,6 +268,120 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   void _bookCare() => PatientNavigationShell.switchTab(context, 0);
+
+  Future<void> _showRebookChoices(Map<String, dynamic> row) async {
+    final providerId = (row['providerUserId'] ?? row['doctorUserId'] ?? '')
+        .toString()
+        .trim();
+    if (providerId.isEmpty) {
+      _showSnack(
+        _t(
+          'This provider is currently unavailable.',
+          'مقدم الرعاية غير متاح حالياً.',
+        ),
+      );
+      return;
+    }
+
+    await RebookFlowHelper.startFromRow(
+      context: context,
+      row: row,
+      patientUserId: widget.patientUserId,
+    );
+  }
+
+  BookingRequestModel _rebookRequestFrom(
+    Map<String, dynamic> row,
+    ProviderModel provider,
+  ) {
+    final serviceType = (row['serviceType'] ?? provider.serviceType)
+        .toString()
+        .trim();
+    final notes = (row['notes'] ?? '').toString();
+    final parsedType = _noteValue(notes, 'AppointmentType');
+    final reason =
+        _noteValue(notes, 'Reason') ??
+        _noteValue(notes, 'CurrentCase') ??
+        (row['reasonForVisit'] ?? '').toString();
+    return BookingRequestModel(
+      patientId: widget.patientUserId,
+      providerId: provider.userId,
+      providerName: provider.fullName.isNotEmpty
+          ? provider.fullName
+          : _providerDisplayName(row),
+      providerRole: provider.role,
+      providerImageUrl: provider.profileImageUrl ?? '',
+      specialization: provider.specialization,
+      serviceType: serviceType.isEmpty
+          ? _t('Care Service', 'خدمة رعاية')
+          : serviceType,
+      appointmentType: (parsedType == null || parsedType.isEmpty)
+          ? 'home'
+          : parsedType,
+      appointmentDate: '',
+      appointmentTime: '',
+      visitLatitude: _doubleFrom(row['visitLatitude']) ?? provider.gpsLat ?? 0,
+      visitLongitude:
+          _doubleFrom(row['visitLongitude']) ?? provider.gpsLng ?? 0,
+      visitAddress: (row['visitAddress'] ?? row['location'] ?? '').toString(),
+      locationNote: (row['locationNote'] ?? '').toString(),
+      patientReason: reason.trim(),
+      symptoms: (row['symptoms'] ?? '').toString(),
+      isUrgent:
+          row['isUrgent'] == true ||
+          row['isUrgent'] == 1 ||
+          (row['isUrgent'] ?? '').toString() == '1',
+      additionalNotes: (row['additionalNotes'] ?? '').toString(),
+      price: provider.consultationFee ?? 0,
+      paymentMethod: '',
+      paymentStatus: 'unpaid',
+      bookingStatus: 'pending_provider_approval',
+    );
+  }
+
+  Future<ProviderModel?> _loadRebookProvider(Map<String, dynamic> row) async {
+    final providerId = (row['providerUserId'] ?? row['doctorUserId'] ?? '')
+        .toString()
+        .trim();
+    if (providerId.isEmpty) {
+      _showSnack(
+        _t(
+          'This provider is currently unavailable.',
+          'مقدم الرعاية غير متاح حالياً.',
+        ),
+      );
+      return null;
+    }
+    try {
+      final provider = ProviderModel.fromJson(
+        await _api.getProviderById(providerId, realAvailability: true),
+      );
+      return provider;
+    } catch (error) {
+      if (mounted) _showSnack(error.toString().replaceFirst('Exception: ', ''));
+      return null;
+    }
+  }
+
+  String? _noteValue(String notes, String key) {
+    final pattern = RegExp(
+      '(^|\\|)\\s*${RegExp.escape(key)}\\s*:\\s*([^|]+)',
+      caseSensitive: false,
+    );
+    return pattern.firstMatch(notes)?.group(2)?.trim();
+  }
+
+  double? _doubleFrom(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '');
+  }
+
+  void _showSnack(String message) {
+    if (!mounted || message.trim().isEmpty) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -542,12 +675,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Widget _appointmentRow(Map<String, dynamic> row, CarelinkPalette palette) {
     final date = _dateOf(row);
     final state = _stateOf(row);
-    final name = (row['providerName'] ?? row['doctorName'] ?? '')
-        .toString()
-        .trim();
-    final service = (row['specialization'] ?? row['serviceType'] ?? '')
-        .toString()
-        .trim();
+    final name = _providerDisplayName(row);
+    final service = _serviceDisplayName(row);
     final image = _absoluteImage(
       (row['profileImageUrl'] ?? row['profilePictureUrl'])?.toString(),
     );
@@ -580,7 +709,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               height: 54,
               margin: const EdgeInsets.symmetric(horizontal: 8),
               decoration: BoxDecoration(
-                color: _statusColor(state),
+                color: _statusColor(row, state),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -602,7 +731,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    name.isEmpty ? _t('Care Provider', 'مقدم الرعاية') : name,
+                    name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -625,7 +754,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     spacing: 5,
                     runSpacing: 4,
                     children: [
-                      _badge(_statusLabel(state), _statusColor(state), palette),
+                      _badge(
+                        _statusLabel(row, state),
+                        _statusColor(row, state),
+                        palette,
+                      ),
                       _badge(_paymentLabel(row), _paymentColor(row), palette),
                       if (state == _BookingState.completed && !_hasRating(row))
                         _badge(
@@ -673,30 +806,60 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             : Text(_t('Pay Now', 'ادفع الآن')),
       );
     }
-    if (state == _BookingState.completed && !_hasRating(row)) {
-      return OutlinedButton(
-        onPressed: () => _openDetails(row),
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(64, 34),
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          foregroundColor: AppColors.primary,
-          side: const BorderSide(color: AppColors.primary),
-          textStyle: const TextStyle(
-            fontSize: 10.5,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        child: Text(_t('Rate', 'قيّم')),
-      );
-    }
+    final status = _normalizedStatus(row);
+    final paymentStatus = _normalizedPaymentStatus(row);
+
     if (state == _BookingState.cancelled) {
+      return _bookAgainButton(row, palette);
+    }
+
+    // Convert requestedRescheduleAt if present
+    DateTime? requestedRescheduleAt;
+    final rawReschedule = row['requestedRescheduleAt']?.toString();
+    if (rawReschedule != null && rawReschedule.trim().isNotEmpty) {
+      requestedRescheduleAt = DateTime.tryParse(
+        rawReschedule.replaceFirst(' ', 'T'),
+      )?.toLocal();
+    }
+
+    final actionState = AppointmentActionHelper.getActionState(
+      status: status,
+      paymentStatus: paymentStatus,
+      requestedRescheduleAt: requestedRescheduleAt,
+    );
+
+    if (actionState.type == AppointmentActionType.bookAgain) {
+      if (!_hasProviderId(row) || !actionState.isEnabled) {
+        return Tooltip(
+          message: _t(
+            'You cannot rebook this appointment right now',
+            'لا يمكن إعادة الحجز لهذا الموعد حالياً',
+          ),
+          child: OutlinedButton(
+            onPressed: null,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(68, 34),
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+              disabledForegroundColor: palette.inkMuted.withValues(alpha: 0.72),
+              disabledBackgroundColor: palette.surfaceSoft,
+              side: BorderSide(color: palette.stroke),
+              textStyle: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            child: Text(_t('Book Again', 'احجز مجدداً')),
+          ),
+        );
+      }
+
       return OutlinedButton(
-        onPressed: _bookCare,
+        onPressed: () => _showRebookChoices(row),
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(68, 34),
           padding: const EdgeInsets.symmetric(horizontal: 9),
           foregroundColor: AppColors.primary,
-          side: BorderSide(color: palette.stroke),
+          side: const BorderSide(color: AppColors.primary),
           textStyle: const TextStyle(
             fontSize: 10.5,
             fontWeight: FontWeight.w700,
@@ -718,6 +881,49 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
+  Widget _bookAgainButton(
+    Map<String, dynamic> row,
+    CarelinkPalette palette, {
+    bool enabled = true,
+  }) {
+    final canRebook = enabled && _hasProviderId(row);
+    if (!canRebook) {
+      return Tooltip(
+        message: _t(
+          'You cannot rebook this appointment right now',
+          'لا يمكن إعادة الحجز لهذا الموعد حالياً',
+        ),
+        child: OutlinedButton(
+          onPressed: null,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(68, 34),
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            disabledForegroundColor: palette.inkMuted.withValues(alpha: 0.72),
+            disabledBackgroundColor: palette.surfaceSoft,
+            side: BorderSide(color: palette.stroke),
+            textStyle: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          child: Text(_t('Book Again', 'احجز مجدداً')),
+        ),
+      );
+    }
+
+    return OutlinedButton(
+      onPressed: () => _showRebookChoices(row),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(68, 34),
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        foregroundColor: AppColors.primary,
+        side: const BorderSide(color: AppColors.primary),
+        textStyle: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+      ),
+      child: Text(_t('Book Again', 'احجز مجدداً')),
+    );
+  }
+
   Widget _badge(String label, Color color, CarelinkPalette palette) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -736,26 +942,39 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  String _statusLabel(_BookingState state) => switch (state) {
-    _BookingState.waitingProvider => _t(
-      'Waiting Provider',
-      'بانتظار مقدم الرعاية',
-    ),
-    _BookingState.waitingPayment => _t('Waiting Payment', 'بانتظار الدفع'),
-    _BookingState.confirmed => _t('Confirmed', 'مؤكد'),
-    _BookingState.inProgress => _t('In Progress', 'قيد التنفيذ'),
-    _BookingState.completed => _t('Completed', 'مكتمل'),
-    _BookingState.cancelled => _t('Cancelled', 'ملغي'),
-  };
+  String _statusLabel(Map<String, dynamic> row, _BookingState state) {
+    final subStatus = (row['subStatus'] ?? '').toString().trim().toLowerCase();
+    if (subStatus == 'reschedule_requested') {
+      return _t(
+        'Reschedule request pending approval',
+        'طلب تغيير الموعد بانتظار الموافقة',
+      );
+    }
+    return switch (state) {
+      _BookingState.waitingProvider => _t(
+        'Waiting Provider',
+        'بانتظار مقدم الرعاية',
+      ),
+      _BookingState.waitingPayment => _t('Waiting Payment', 'بانتظار الدفع'),
+      _BookingState.confirmed => _t('Confirmed', 'مؤكد'),
+      _BookingState.inProgress => _t('In Progress', 'قيد التنفيذ'),
+      _BookingState.completed => _t('Completed', 'مكتمل'),
+      _BookingState.cancelled => _t('Cancelled', 'ملغي'),
+    };
+  }
 
-  Color _statusColor(_BookingState state) => switch (state) {
-    _BookingState.waitingProvider => const Color(0xFFD58A14),
-    _BookingState.waitingPayment => const Color(0xFFE56B16),
-    _BookingState.confirmed => AppColors.primary,
-    _BookingState.inProgress => const Color(0xFF2583C5),
-    _BookingState.completed => const Color(0xFF4D7FA7),
-    _BookingState.cancelled => const Color(0xFFC95353),
-  };
+  Color _statusColor(Map<String, dynamic> row, _BookingState state) {
+    final subStatus = (row['subStatus'] ?? '').toString().trim().toLowerCase();
+    if (subStatus == 'reschedule_requested') return AppColors.warning;
+    return switch (state) {
+      _BookingState.waitingProvider => const Color(0xFFD58A14),
+      _BookingState.waitingPayment => const Color(0xFFE56B16),
+      _BookingState.confirmed => AppColors.primary,
+      _BookingState.inProgress => const Color(0xFF2583C5),
+      _BookingState.completed => const Color(0xFF4D7FA7),
+      _BookingState.cancelled => const Color(0xFFC95353),
+    };
+  }
 
   String _paymentLabel(Map<String, dynamic> row) {
     final status = (row['paymentStatus'] ?? '').toString().trim().toLowerCase();
@@ -782,6 +1001,44 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final value = row['patientRatingStars'];
     return (value is num && value > 0) ||
         (int.tryParse(value?.toString() ?? '') ?? 0) > 0;
+  }
+
+  String _providerDisplayName(Map<String, dynamic> row) {
+    final raw = (row['providerName'] ?? row['doctorName'] ?? '')
+        .toString()
+        .trim();
+    if (raw.isEmpty || _looksLikeTechnicalId(raw)) {
+      return _t('Provider', 'مقدم رعاية');
+    }
+    return raw;
+  }
+
+  String _serviceDisplayName(Map<String, dynamic> row) {
+    final raw = (row['specialization'] ?? row['serviceType'] ?? '')
+        .toString()
+        .trim();
+    if (raw.isEmpty) {
+      return _t('Care Service', 'خدمة رعاية');
+    }
+    return raw;
+  }
+
+  bool _looksLikeTechnicalId(String value) {
+    final normalized = value.trim();
+    if (normalized.isEmpty) return true;
+    if (RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f-]{27,}$',
+      caseSensitive: false,
+    ).hasMatch(normalized)) {
+      return true;
+    }
+    if (RegExp(
+      r'^(carid|careid|user_|usr_|provider_)[a-z0-9_-]*$',
+      caseSensitive: false,
+    ).hasMatch(normalized)) {
+      return true;
+    }
+    return false;
   }
 
   String? _absoluteImage(String? raw) {

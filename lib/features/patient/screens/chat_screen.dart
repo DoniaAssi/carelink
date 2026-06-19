@@ -15,10 +15,11 @@ import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/chat_message_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
+import 'package:carelink/features/patient/screens/booking_screen.dart';
+import 'package:carelink/features/patient/utils/booking_service_helper.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
 
-import 'select_service_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
@@ -584,16 +585,19 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _bookAppointment() {
     final provider = _provider;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SelectServiceScreen(
-          request: BookingRequestModel(
+    final request = provider != null
+        ? BookingServiceHelper.createRequestForProvider(
+            provider: provider,
+            patientId: widget.userId,
+          )
+        : BookingRequestModel(
             patientId: widget.userId,
             providerId: widget.doctorId,
-            providerName: provider?.fullName ?? widget.name,
-            providerRole: provider?.role ?? 'doctor',
-            specialization: provider?.specialization ?? '',
-            serviceType: '',
+            providerName: widget.name,
+            providerRole: 'doctor',
+            specialization: '',
+            serviceType: 'General Doctor',
+            appointmentType: 'home',
             appointmentDate: '',
             appointmentTime: '',
             visitLatitude: 0,
@@ -604,11 +608,16 @@ class _ChatScreenState extends State<ChatScreen> {
             symptoms: '',
             isUrgent: false,
             additionalNotes: '',
-            price: provider?.consultationFee ?? 0,
+            price: 80,
             paymentMethod: '',
             paymentStatus: 'unpaid',
             bookingStatus: 'pending',
-          ),
+          );
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BookingScreen(
+          request: request,
         ),
       ),
     );

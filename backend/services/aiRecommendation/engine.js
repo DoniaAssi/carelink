@@ -59,11 +59,12 @@ function calculateDistance(patient, provider) {
  * @param {string} providerSpecialty
  * @param {string} patientBlob lowercased clinical text
  */
-function calculateSpecializationScore(requestedService, providerSpecialty, patientBlob) {
+function calculateSpecializationScore(requestedService, providerSpecialty, patientBlob, hasRawQuery = false) {
   const req = (requestedService || '').trim().toLowerCase();
   const spec = (providerSpecialty || '').trim().toLowerCase();
-  if (!req) return spec ? 0.55 : 0.35;
-  if (!spec) return 0.25;
+  if (!req && !hasRawQuery) return spec ? 0.55 : 0.35;
+  if (!req && hasRawQuery) return 0;
+  if (!spec) return 0;
   if (spec === req || spec.includes(req) || req.includes(spec)) return 1;
   if (relatedSpecialtyMatch(req, spec, patientBlob)) return 0.7;
   if (weakSpecialtyMatch(req, spec)) return 0.3;
@@ -435,30 +436,30 @@ function recommendProviders(patient, request, providers, top = 12) {
   const plng = patient.locationLongitude ?? 35.9106;
   const patientPoint = { lat: plat, lng: plng };
 
+  const rawQueryStr = (request.rawQuery || '').trim();
+  const hasRawQuery = rawQueryStr.length > 0;
   const blob = patientCareBlob(patient);
-  const keyword = (request.requestedServiceKeyword || inferKeyword(request)).trim();
+  const keyword = (request.requestedServiceKeyword || inferKeyword(request, providers)).trim();
 
   /** @type {import('./types').AIRecommendationResult[]} */
   const out = [];
 
   for (const provider of providers) {
-    const price = Number(provider.consultationFee);
-    if (
-      provider.isActive !== true ||
-      provider.isProfileComplete !== true ||
-      !provider.serviceType?.trim() ||
-      !Number.isFinite(price) ||
-      price <= 0 ||
-      !provider.isAvailable ||
-      !provider.availableSlots?.length
-    ) {
-      continue;
-    }
+    // Note: Availability and booking eligibility (isActive, price, slots, etc.)
+    // MUST be strictly enforced by the caller (e.g., using providerCanBeBooked).
+    // The engine solely ranks the provided list and does not invent availability rules.
     const pLat = provider.locationLatitude ?? plat;
     const pLng = provider.locationLongitude ?? plng;
     const dist = calculateDistance(patientPoint, { lat: pLat, lng: pLng });
     const ls = calculateLocationScore(dist);
-    const ss = calculateSpecializationScore(keyword, provider.specialization, blob);
+
+    const combinedSpecialty = `${provider.specialization || ''} ${provider.serviceType || ''} ${provider.role || ''}`.trim();
+    const ss = calculateSpecializationScore(keyword, combinedSpecialty, blob, hasRawQuery);
+
+    // STRICT REJECTION: Do not return generic providers for unsupported/random queries
+    if (hasRawQuery && ss === 0) {
+      continue;
+    }
     const as = calculateAvailabilityScore(request.requestedDateTime ?? null, provider.availableSlots || []);
     const rs = calculateRatingScore(provider.rating);
     const es = calculateExperienceScore(provider.experienceYears);
@@ -541,24 +542,44 @@ function patientCareBlob(patient) {
   return parts.join(' ').toLowerCase();
 }
 
-function inferKeyword(request) {
+function inferKeyword(request, providers = []) {
   const q = (request.rawQuery || '').toLowerCase();
-  const keys = [
-    'cardiology',
-    'cardio',
-    'dentist',
-    'dental',
-    'psych',
-    'lung',
-    'covid',
-    'surgeon',
-    'surgery',
-    'general',
-  ];
-  for (const k of keys) {
-    if (q.includes(k)) return k === 'cardio' ? 'cardiology' : k;
+  if (!q.trim()) return '';
+
+  const map = {
+    'cardiology': 'cardiology',
+    'cardio': 'cardiology',
+    'dentist': 'dental',
+    'dental': 'dental',
+    'psych': 'psych',
+    'lung': 'lung',
+    'covid': 'covid',
+    'surgeon': 'surgery',
+    'surgery': 'surgery',
+    'general': 'general',
+    'home nursing': 'home nursing',
+    'home nurse': 'home nursing',
+    'elderly': 'elderly',
+    'post-surgery': 'post-surgery',
+    'post surgery': 'post-surgery',
+    'physio': 'physio',
+    'mental': 'mental',
+    'nurse': 'nurse',
+    'wound': 'wound',
+    'doctor': 'doctor'
+  };
+
+  for (const [k, v] of Object.entries(map)) {
+    if (q.includes(k)) return v;
   }
-  return '';
+
+  for (const p of providers) {
+    if (p.specialization && q.includes(p.specialization.toLowerCase())) return p.specialization.toLowerCase();
+    if (p.serviceType && q.includes(p.serviceType.toLowerCase())) return p.serviceType.toLowerCase();
+    if (p.role && q.includes(p.role.toLowerCase())) return p.role.toLowerCase();
+  }
+
+  return q.trim();
 }
 
 module.exports = {
@@ -572,6 +593,7 @@ module.exports = {
   calculateHistoryScore,
   getDynamicWeights,
   recommendProviders,
+  inferKeyword,
   normalizeWeights,
   COLD_START_WEIGHTS,
   TAG_LABELS,

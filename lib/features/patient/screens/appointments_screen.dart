@@ -110,7 +110,11 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     return '${date.day} ${month[date.month - 1]} ${date.year} - $hour:$minute $suffix';
   }
 
-  Color _statusColor(String status) {
+  Color _statusColor(AppointmentModel appointment) {
+    if (appointment.subStatus.toLowerCase().trim() == 'reschedule_requested') {
+      return AppColors.warning;
+    }
+    final status = appointment.status;
     switch (status.toLowerCase()) {
       case 'pending_provider_approval':
       case 'pending':
@@ -126,8 +130,13 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     }
   }
 
-  String _translateStatus(String status) {
-    final lower = status.toLowerCase();
+  String _translateStatus(AppointmentModel appointment) {
+    if (appointment.subStatus.toLowerCase().trim() == 'reschedule_requested') {
+      return context.l10n.isArabic
+          ? 'طلب تغيير الموعد بانتظار الموافقة'
+          : 'Reschedule request pending approval';
+    }
+    final lower = appointment.status.toLowerCase();
     final isAr = context.l10n.isArabic;
     switch (lower) {
       case 'pending_provider_approval':
@@ -147,7 +156,9 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       case 'in_progress':
         return isAr ? 'قيد التنفيذ' : 'In Progress';
       default:
-        return status.toUpperCase();
+        return appointment.status.isNotEmpty
+            ? appointment.status.toUpperCase()
+            : (isAr ? 'غير معروف' : 'Unknown');
     }
   }
 
@@ -230,7 +241,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                                 children: [
                                   Text(
                                     item.providerName.isEmpty
-                                        ? 'Provider'
+                                        ? (context.l10n.isArabic ? 'مقدم رعاية' : 'Provider')
                                         : item.providerName,
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
@@ -285,14 +296,14 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                               ),
                               decoration: BoxDecoration(
                                 color: _statusColor(
-                                  item.status,
+                                  item,
                                 ).withValues(alpha: p.isDark ? 0.18 : 0.12),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
-                                _translateStatus(item.status),
+                                _translateStatus(item),
                                 style: TextStyle(
-                                  color: _statusColor(item.status),
+                                  color: _statusColor(item),
                                   fontWeight: FontWeight.w700,
                                   fontSize: 12,
                                 ),
