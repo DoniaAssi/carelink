@@ -505,6 +505,14 @@ class ApiService {
     int? experienceYears,
     String? licenseNumber,
     String? serviceType,
+    String? serviceAreas,
+    String? biography,
+    String? previousWorkplaces,
+    String? cvFile,
+    String? medicalCertificate,
+    String? nursingLicense,
+    String? idCard,
+    bool? homeCareAvailability,
     String? chronicDiseases,
     String? allergies,
     String? currentMedications,
@@ -573,6 +581,30 @@ class ApiService {
       }
       if (serviceType != null && serviceType.trim().isNotEmpty) {
         body['serviceType'] = serviceType.trim();
+      }
+      if (serviceAreas != null && serviceAreas.trim().isNotEmpty) {
+        body['serviceAreas'] = serviceAreas.trim();
+      }
+      if (biography != null && biography.trim().isNotEmpty) {
+        body['biography'] = biography.trim();
+      }
+      if (previousWorkplaces != null && previousWorkplaces.trim().isNotEmpty) {
+        body['previousWorkplaces'] = previousWorkplaces.trim();
+      }
+      if (cvFile != null && cvFile.trim().isNotEmpty) {
+        body['cvFile'] = cvFile.trim();
+      }
+      if (medicalCertificate != null && medicalCertificate.trim().isNotEmpty) {
+        body['medicalCertificate'] = medicalCertificate.trim();
+      }
+      if (nursingLicense != null && nursingLicense.trim().isNotEmpty) {
+        body['nursingLicense'] = nursingLicense.trim();
+      }
+      if (idCard != null && idCard.trim().isNotEmpty) {
+        body['idCard'] = idCard.trim();
+      }
+      if (homeCareAvailability != null) {
+        body['homeCareAvailability'] = homeCareAvailability;
       }
     }
 
@@ -1402,10 +1434,13 @@ class ApiService {
     throw Exception(_extractErrorMessage(response, 'Failed to load payments'));
   }
 
-  Future<List<dynamic>> getProviders({bool realAvailability = false, String? patientId}) async {
+  Future<List<dynamic>> getProviders({
+    bool realAvailability = false,
+    String? patientId,
+  }) async {
     String suffix = realAvailability ? '?realAvailability=true' : '';
     if (patientId != null && patientId.isNotEmpty) {
-      suffix += (suffix.isEmpty ? '?' : '&') + 'patientId=$patientId';
+      suffix += '${suffix.isEmpty ? '?' : '&'}patientId=$patientId';
     }
     final response = await _sendRequest(
       http.get(_endpoint('/providers$suffix'), headers: _jsonHeaders),

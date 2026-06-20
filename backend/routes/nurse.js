@@ -67,6 +67,36 @@ async function ensureAuxTables() {
       KEY idx_provider_cert (providerUserId)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS provider_documents (
+      documentId CHAR(36) NOT NULL PRIMARY KEY,
+      providerUserId CHAR(36) NOT NULL,
+      medical_certificate VARCHAR(1024) NULL,
+      nursing_license VARCHAR(1024) NULL,
+      id_card VARCHAR(1024) NULL,
+      cv_file VARCHAR(1024) NULL,
+      workplace_history TEXT NULL,
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_provider_documents_provider (providerUserId)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  const documentColumns = [
+    ['medical_certificate', 'VARCHAR(1024) NULL'],
+    ['nursing_license', 'VARCHAR(1024) NULL'],
+    ['id_card', 'VARCHAR(1024) NULL'],
+    ['cv_file', 'VARCHAR(1024) NULL'],
+    ['workplace_history', 'TEXT NULL'],
+    ['createdAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP'],
+    ['updatedAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'],
+  ];
+  for (const [column, definition] of documentColumns) {
+    if (await hasColumn('provider_documents', column)) continue;
+    try {
+      await db.query(`ALTER TABLE provider_documents ADD COLUMN ${column} ${definition}`);
+      columnCache.set(`provider_documents.${column}`, true);
+    } catch (_) {}
+  }
 }
 
 async function ensureAvailabilitySlotTable() {
@@ -985,6 +1015,16 @@ async function ensureProviderWorkColumns() {
       PRIMARY KEY (provider_id, specialization)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS rate_approvals (
+      provider_id CHAR(36) NOT NULL,
+      admin_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (provider_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
 }
 
 async function getProviderWorkEligibility(providerId) {
@@ -1773,6 +1813,15 @@ router.post('/rate-status/:providerId/decision', async (req, res) => {
       [providerId, specialization, adminRate, approved ? 'approved' : 'rejected'],
     );
     await db.query(
+      `INSERT INTO rate_approvals (provider_id, admin_rate, status)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         admin_rate = VALUES(admin_rate),
+         status = VALUES(status),
+         updated_at = NOW()`,
+      [providerId, adminRate, approved ? 'approved' : 'rejected'],
+    );
+    await db.query(
       `UPDATE careprovider
        SET is_rate_approved = ?,
            hourly_rate = ?,
@@ -1942,10 +1991,45 @@ router.post('/earnings/:providerId/payout', async (req, res) => {
 router.get('/profile/:providerId', async (req, res) => {
   const { providerId } = req.params;
   try {
+    await ensureProviderWorkColumns();
+    await ensureProviderRateAcceptanceColumns();
+    await ensureAuxTables();
     const hasExp = await hasColumn('careprovider', 'experienceYears');
+    const hasYearsSnake = await hasColumn('careprovider', 'years_experience');
+    const hasExperienceTier = await hasColumn('careprovider', 'experience_tier');
+    const hasExperienceLevel = await hasColumn('careprovider', 'experience_level');
+    const hasServiceAreas = await hasColumn('careprovider', 'serviceAreas');
+    const hasBiography = await hasColumn('careprovider', 'biography');
+    const hasServiceType = await hasColumn('careprovider', 'serviceType');
     const hasHourly = await hasColumn('careprovider', 'hourlyRate');
     const hasFee = await hasColumn('careprovider', 'consultationFee');
-    const expSel = hasExp ? 'c.experienceYears' : '0 AS experienceYears';
+    const expSel =
+      hasExp && hasYearsSnake
+        ? 'COALESCE(c.experienceYears, c.years_experience, 0) AS experienceYears'
+        : hasExp
+          ? 'COALESCE(c.experienceYears, 0) AS experienceYears'
+          : hasYearsSnake
+            ? 'COALESCE(c.years_experience, 0) AS experienceYears'
+            : '0 AS experienceYears';
+    const tierSel =
+      hasExperienceTier && hasExperienceLevel
+        ? "COALESCE(NULLIF(c.experience_tier, ''), NULLIF(c.experience_level, ''), 'junior') AS experienceTier"
+        : hasExperienceTier
+          ? "COALESCE(NULLIF(c.experience_tier, ''), 'junior') AS experienceTier"
+          : hasExperienceLevel
+            ? "COALESCE(NULLIF(c.experience_level, ''), 'junior') AS experienceTier"
+            : "'junior' AS experienceTier";
+    const serviceAreasSel = hasServiceAreas
+      ? "COALESCE(c.serviceAreas, '') AS serviceAreas"
+      : "'' AS serviceAreas";
+    const bioSel =
+      hasBiography && hasServiceType
+        ? "COALESCE(NULLIF(c.biography, ''), NULLIF(c.serviceType, ''), '') AS bio"
+        : hasBiography
+          ? "COALESCE(c.biography, '') AS bio"
+          : hasServiceType
+            ? "COALESCE(c.serviceType, '') AS bio"
+            : "'' AS bio";
     const rateSel =
       hasHourly && hasFee
         ? 'COALESCE(c.hourlyRate, c.consultationFee, 0) AS hourlyRate'
@@ -1957,18 +2041,22 @@ router.get('/profile/:providerId', async (req, res) => {
 
     const [rows] = await db.query(
       `SELECT u.userId AS providerId, u.fullName, u.email, u.phone,
-              c.specialization, c.isAvailable, c.serviceType,
-              ${expSel}, ${rateSel}
+              c.specialization, c.isAvailable, c.overallRating,
+              COALESCE(c.approvalStatus, 'pending') AS approvalStatus,
+              ${serviceAreasSel}, ${bioSel}, ${tierSel}, ${expSel}, ${rateSel},
+              pd.medical_certificate, pd.nursing_license, pd.id_card, pd.cv_file
        FROM user u
        JOIN careprovider c ON c.userId = u.userId
-       WHERE u.userId = ?`,
+       LEFT JOIN provider_documents pd ON BINARY pd.providerUserId = BINARY u.userId
+       WHERE BINARY u.userId = BINARY ?
+       ORDER BY pd.updatedAt DESC, pd.createdAt DESC
+       LIMIT 1`,
       [providerId],
     );
     if (!rows.length) {
       return res.status(404).json({ error: 'Provider not found' });
     }
     const r = rows[0];
-    await ensureAuxTables();
     const [certs] = await db.query(
       `SELECT name FROM provider_certification WHERE providerUserId = ? ORDER BY createdAt DESC`,
       [providerId],
@@ -1982,17 +2070,29 @@ router.get('/profile/:providerId', async (req, res) => {
     for (const s of slots) {
       availabilitySchedule[s.day] = `${s.startTime}-${s.endTime}`;
     }
+    const eligibility = await getProviderWorkEligibility(providerId);
 
     res.json({
       providerId: r.providerId,
       fullName: r.fullName || '',
       email: r.email || '',
       phone: r.phone || '',
-      bio: (r.serviceType || '').toString(),
+      bio: (r.bio || '').toString(),
       specialization: r.specialization || '',
+      serviceAreas: r.serviceAreas || '',
+      experienceTier: r.experienceTier || 'junior',
+      approvalStatus: eligibility.approvalStatus || r.approvalStatus || 'pending',
+      rateAcceptanceStatus: eligibility.rateAcceptanceStatus || 'pending',
       experienceYears: Number(r.experienceYears || 0),
       hourlyRate: Number(r.hourlyRate || 0),
+      rating: Number(r.overallRating || 0),
       isAvailable: r.isAvailable === 1 || r.isAvailable === true,
+      canWork: Boolean(eligibility.canWork),
+      workGateMessage: eligibility.reason || '',
+      nursingLicenseUrl: r.nursing_license || '',
+      medicalCertificateUrl: r.medical_certificate || '',
+      idCardUrl: r.id_card || '',
+      cvFileUrl: r.cv_file || '',
       certifications: certs.map((x) => x.name),
       availabilitySchedule,
     });
@@ -2080,6 +2180,14 @@ router.post('/certifications/:providerId', async (req, res) => {
 router.get('/availability/:providerId', async (req, res) => {
   const { providerId } = req.params;
   try {
+    try {
+      await assertProviderCanWork(providerId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
     await ensureAvailabilitySlotTable();
     const [slots] = await db.query(
       `SELECT day, startTime, endTime FROM availabilityslot WHERE providerUserId = ? ORDER BY day, startTime`,

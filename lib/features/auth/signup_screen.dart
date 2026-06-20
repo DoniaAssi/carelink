@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pinput/pinput.dart';
 
@@ -223,6 +225,18 @@ class _SignupScreenState extends State<SignupScreen> {
   final TextEditingController clinicNameController = TextEditingController();
   final TextEditingController serviceAreasController = TextEditingController();
   final TextEditingController bioController = TextEditingController();
+  final TextEditingController cvFileController = TextEditingController();
+  final TextEditingController medicalCertificateController =
+      TextEditingController();
+  final TextEditingController nursingLicenseFileController =
+      TextEditingController();
+  final TextEditingController idCardController = TextEditingController();
+  final TextEditingController workplaceHistoryController =
+      TextEditingController();
+  String? _cvFileName;
+  String? _medicalCertificateFileName;
+  String? _nursingLicenseFileName;
+  String? _idCardFileName;
 
   String _selectedGender = 'male';
   String _consultationType = 'both'; // home, online, both
@@ -618,6 +632,11 @@ class _SignupScreenState extends State<SignupScreen> {
     clinicNameController.dispose();
     serviceAreasController.dispose();
     bioController.dispose();
+    cvFileController.dispose();
+    medicalCertificateController.dispose();
+    nursingLicenseFileController.dispose();
+    idCardController.dispose();
+    workplaceHistoryController.dispose();
     _otpController.dispose();
     _countdownTimer?.cancel();
     _resendCooldownTimer?.cancel();
@@ -749,6 +768,18 @@ class _SignupScreenState extends State<SignupScreen> {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
+  bool get _hasRequiredNurseDocuments =>
+      medicalCertificateController.text.trim().isNotEmpty &&
+      nursingLicenseFileController.text.trim().isNotEmpty &&
+      idCardController.text.trim().isNotEmpty;
+
+  void _showMissingNurseDocumentsMessage() {
+    _showMessage(
+      'Please upload Medical Certificate, Nursing License, and ID Card.',
+      color: Colors.red.shade700,
+    );
+  }
+
   Future<void> _pickDateOfBirth() async {
     final picked = await showCarelinkDateOfBirthPicker(
       context,
@@ -787,6 +818,45 @@ class _SignupScreenState extends State<SignupScreen> {
     }
   }
 
+  Future<void> _pickProviderDocument({
+    required TextEditingController controller,
+    required ValueChanged<String?> setFileName,
+  }) async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'png', 'jpg', 'jpeg'],
+      withData: true,
+    );
+    final file = result?.files.single;
+    if (file == null) return;
+
+    final bytes = file.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      _showMessage(
+        'Could not read this file. Please choose another PDF or image.',
+        color: Colors.red.shade700,
+      );
+      return;
+    }
+    if (bytes.length > 6 * 1024 * 1024) {
+      _showMessage(
+        'File is too large. Please choose a file under 6 MB.',
+        color: Colors.red.shade700,
+      );
+      return;
+    }
+
+    final ext = (file.extension ?? '').toLowerCase();
+    final mime = switch (ext) {
+      'pdf' => 'application/pdf',
+      'png' => 'image/png',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      _ => 'application/octet-stream',
+    };
+    controller.text = 'data:$mime;base64,${base64Encode(bytes)}';
+    setState(() => setFileName(file.name));
+  }
+
   bool _isStrongPassword(String input) {
     final regex = RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$');
     return regex.hasMatch(input);
@@ -817,7 +887,6 @@ class _SignupScreenState extends State<SignupScreen> {
       );
       return;
     }
-
     final requestedEmail = _normalizeEmail(emailController.text);
     if (_resendSecondsRemaining > 0 &&
         _lastVerificationRequestEmail == requestedEmail) {
@@ -846,8 +915,8 @@ class _SignupScreenState extends State<SignupScreen> {
       }
 
       final successMsg = isAr
-          ? 'تم إرسال رمز التحقق إلى بريدك الإلكتروني.'
-          : 'A verification code has been sent to your email.';
+          ? 'تم إرسال رمز التحقق إلى $requestedEmail.'
+          : 'A verification code has been sent to $requestedEmail.';
 
       _startTimer();
       _startResendCooldown(60);
@@ -895,6 +964,11 @@ class _SignupScreenState extends State<SignupScreen> {
     final otp = _otpController.text.trim();
     if (otp.length != 6) {
       _showMessage(context.tr('auth.invalidOtp'), color: Colors.red.shade700);
+      return;
+    }
+    if (_selectedRole == 'nurse' && !_hasRequiredNurseDocuments) {
+      setState(() => _stepIndex = 1);
+      _showMissingNurseDocumentsMessage();
       return;
     }
 
@@ -963,6 +1037,30 @@ class _SignupScreenState extends State<SignupScreen> {
             : (_selectedRole == 'doctor'
                   ? _consultationType
                   : (_homeCareAvailability ? 'home care' : 'online')),
+        serviceAreas: _selectedRole == 'patient'
+            ? null
+            : serviceAreasController.text.trim(),
+        biography: _selectedRole == 'patient'
+            ? null
+            : bioController.text.trim(),
+        previousWorkplaces: _selectedRole == 'patient'
+            ? null
+            : workplaceHistoryController.text.trim(),
+        cvFile: _selectedRole == 'patient'
+            ? null
+            : cvFileController.text.trim(),
+        medicalCertificate: _selectedRole == 'patient'
+            ? null
+            : medicalCertificateController.text.trim(),
+        nursingLicense: _selectedRole == 'patient'
+            ? null
+            : nursingLicenseFileController.text.trim(),
+        idCard: _selectedRole == 'patient'
+            ? null
+            : idCardController.text.trim(),
+        homeCareAvailability: _selectedRole == 'nurse'
+            ? _homeCareAvailability
+            : null,
         phoneVerificationToken: _phoneVerificationToken,
         emailVerificationToken: _emailVerificationToken,
       );
@@ -1480,6 +1578,141 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
+  Widget _buildUploadTile(
+    CarelinkPalette p, {
+    required String title,
+    required TextEditingController controller,
+    required String? fileName,
+    required VoidCallback onTap,
+    bool required = false,
+  }) {
+    final hasFile = controller.text.trim().isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: p.isDark
+                ? const Color(0xFF123640).withValues(alpha: 0.55)
+                : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: hasFile ? AppColors.primary : p.stroke,
+              width: hasFile ? 1.4 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                hasFile
+                    ? Icons.check_circle_rounded
+                    : Icons.upload_file_rounded,
+                color: hasFile ? AppColors.primary : p.inkMuted,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$title${required ? ' *' : ''}',
+                      style: GoogleFonts.inter(
+                        color: p.inkDark,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      hasFile ? (fileName ?? 'Selected file') : 'PDF / Image',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        color: p.inkMuted,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: p.inkMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProviderDocumentsUpload(CarelinkPalette p) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Documents Upload',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: p.inkDark,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildUploadTile(
+            p,
+            title: 'Medical Certificate',
+            required: _selectedRole == 'nurse',
+            controller: medicalCertificateController,
+            fileName: _medicalCertificateFileName,
+            onTap: () => _pickProviderDocument(
+              controller: medicalCertificateController,
+              setFileName: (name) => _medicalCertificateFileName = name,
+            ),
+          ),
+          _buildUploadTile(
+            p,
+            title: _selectedRole == 'nurse'
+                ? 'Nursing License'
+                : 'Professional License',
+            required: _selectedRole == 'nurse',
+            controller: nursingLicenseFileController,
+            fileName: _nursingLicenseFileName,
+            onTap: () => _pickProviderDocument(
+              controller: nursingLicenseFileController,
+              setFileName: (name) => _nursingLicenseFileName = name,
+            ),
+          ),
+          _buildUploadTile(
+            p,
+            title: 'ID Card',
+            required: _selectedRole == 'nurse',
+            controller: idCardController,
+            fileName: _idCardFileName,
+            onTap: () => _pickProviderDocument(
+              controller: idCardController,
+              setFileName: (name) => _idCardFileName = name,
+            ),
+          ),
+          _buildUploadTile(
+            p,
+            title: 'CV File',
+            controller: cvFileController,
+            fileName: _cvFileName,
+            onTap: () => _pickProviderDocument(
+              controller: cvFileController,
+              setFileName: (name) => _cvFileName = name,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStep2RoleDetails(CarelinkPalette p) {
     final isAr = CarelinkL10n.of(context).isArabic;
     final roles = [
@@ -1837,6 +2070,14 @@ class _SignupScreenState extends State<SignupScreen> {
               icon: Icons.description_outlined,
               controller: bioController,
             ),
+            _buildTextField(
+              p,
+              label: 'Previous workplaces',
+              hint: 'Hospitals, clinics, home care agencies',
+              icon: Icons.business_center_outlined,
+              controller: workplaceHistoryController,
+            ),
+            _buildProviderDocumentsUpload(p),
           ],
 
           // Role specific Nurse fields
@@ -1922,6 +2163,14 @@ class _SignupScreenState extends State<SignupScreen> {
               icon: Icons.description_outlined,
               controller: bioController,
             ),
+            _buildTextField(
+              p,
+              label: 'Previous workplaces',
+              hint: 'Hospitals, clinics, home care agencies',
+              icon: Icons.business_center_outlined,
+              controller: workplaceHistoryController,
+            ),
+            _buildProviderDocumentsUpload(p),
           ],
 
           const SizedBox(height: 24),
