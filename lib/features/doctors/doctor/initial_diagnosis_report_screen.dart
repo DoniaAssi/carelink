@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/app_colors.dart';
 import '../../../services/doctor_service.dart';
+import 'doctor_ui_constants.dart';
 
 class InitialDiagnosisReportScreen extends StatefulWidget {
   const InitialDiagnosisReportScreen({
@@ -22,22 +23,20 @@ class InitialDiagnosisReportScreen extends StatefulWidget {
 class _InitialDiagnosisReportScreenState
     extends State<InitialDiagnosisReportScreen> {
   final _doctorService = DoctorService();
-  final _stepOneKey = GlobalKey<FormState>();
-  final _stepTwoKey = GlobalKey<FormState>();
-  final _stepThreeKey = GlobalKey<FormState>();
-  final _pageController = PageController();
+  final _formKey = GlobalKey<FormState>();
   final _chiefComplaintController = TextEditingController();
-  final _symptomsController = TextEditingController();
-  final _medicalHistoryController = TextEditingController();
+  final _otherSymptomsController = TextEditingController();
   final _diagnosisController = TextEditingController();
   final _treatmentPlanController = TextEditingController();
-  final _customVisitsController = TextEditingController();
+  final _nursingInstructionsController = TextEditingController();
 
-  String _requiredVisits = 'not_determined';
-  int _currentStep = 0;
-  bool _isSubmitting = false;
+  final Set<String> _symptoms = {};
+  Map<String, dynamic> _medicalRecord = {};
+  bool _isLoadingRecord = true;
+  bool _isSaving = false;
+  int _requiredVisits = 5;
 
-  static const _pageColor = Color(0xFFF5F5F5);
+  static const _pageColor = DoctorUiConstants.doctorBackground;
   static const _primary = Color(0xFF0F8B8D);
   static const _ink = Color(0xFF101828);
   static const _muted = Color(0xFF667085);
@@ -47,126 +46,92 @@ class _InitialDiagnosisReportScreenState
     super.initState();
     final reason = _text(widget.requestData?['reasonForVisit']);
     if (reason != null) _chiefComplaintController.text = reason;
+    _loadMedicalRecord();
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
     _chiefComplaintController.dispose();
-    _symptomsController.dispose();
-    _medicalHistoryController.dispose();
+    _otherSymptomsController.dispose();
     _diagnosisController.dispose();
     _treatmentPlanController.dispose();
-    _customVisitsController.dispose();
+    _nursingInstructionsController.dispose();
     super.dispose();
   }
 
-  Future<void> _saveDraft() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      'doctor_initial_diagnosis_draft_${widget.requestId}',
-      [
-        _chiefComplaintController.text,
-        _symptomsController.text,
-        _medicalHistoryController.text,
-        _diagnosisController.text,
-        _treatmentPlanController.text,
-        _requiredVisits,
-        _customVisitsController.text,
-      ].join('\n---\n'),
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Draft saved'),
-        backgroundColor: AppColors.primary,
-      ),
-    );
-  }
+  Future<void> _loadMedicalRecord() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final doctorId =
+          prefs.getString('doctor_userId') ??
+          _text(widget.requestData?['providerUserId']) ??
+          '';
+      final patientId = _text(widget.requestData?['patientUserId']) ?? '';
 
-  bool _validateStep(int step) {
-    switch (step) {
-      case 0:
-        return _stepOneKey.currentState?.validate() ?? false;
-      case 1:
-        return _stepTwoKey.currentState?.validate() ?? true;
-      case 2:
-        return _stepThreeKey.currentState?.validate() ?? false;
-      default:
-        return true;
+      if (doctorId.isEmpty || patientId.isEmpty) {
+        setState(() => _isLoadingRecord = false);
+        return;
+      }
+
+      final record = await _doctorService.getPatientMedicalRecord(
+        patientId,
+        doctorId: doctorId,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _medicalRecord = record;
+        _isLoadingRecord = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingRecord = false);
     }
   }
 
-  int? _firstInvalidStep() {
-    if (_chiefComplaintController.text.trim().isEmpty ||
-        _symptomsController.text.trim().isEmpty) {
-      return 0;
-    }
-    if (_diagnosisController.text.trim().isEmpty ||
-        _treatmentPlanController.text.trim().isEmpty ||
-        (_requiredVisits == 'custom' &&
-            _customVisitsController.text.trim().isEmpty)) {
-      return 2;
-    }
-    return null;
-  }
+  Future<void> _save() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
 
-  void _goToStep(int step) {
-    final nextStep = step.clamp(0, 3).toInt();
-    setState(() => _currentStep = nextStep);
-    _pageController.animateToPage(
-      nextStep,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
-  }
+    final symptomText = [
+      ..._symptoms,
+      if (_otherSymptomsController.text.trim().isNotEmpty)
+        _otherSymptomsController.text.trim(),
+    ].join(', ');
 
-  void _nextStep() {
-    if (!_validateStep(_currentStep)) return;
-    _goToStep(_currentStep + 1);
-  }
-
-  void _previousStep() => _goToStep(_currentStep - 1);
-
-  Future<void> _submit() async {
-    final invalidStep = _firstInvalidStep();
-    if (invalidStep != null) {
-      _goToStep(invalidStep);
+    if (symptomText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select or enter symptoms')),
+      );
       return;
     }
 
-    final requiredVisits = _requiredVisits == 'custom'
-        ? _customVisitsController.text.trim()
-        : _requiredVisits;
-
-    setState(() => _isSubmitting = true);
+    setState(() => _isSaving = true);
     try {
       final prefs = await SharedPreferences.getInstance();
-      final doctorId = prefs.getString('doctor_userId') ?? '';
+      final doctorId =
+          prefs.getString('doctor_userId') ??
+          _text(widget.requestData?['providerUserId']) ??
+          '';
       if (doctorId.isEmpty) throw Exception('Doctor ID not found');
 
-      final response = await _doctorService.submitMedicalReport(
-        widget.requestId,
-        doctorId,
-        isInitialDiagnosis: true,
+      final response = await _doctorService.createInitialDiagnosisReport(
+        serviceRequestId: widget.requestId,
+        doctorUserId: doctorId,
         chiefComplaint: _chiefComplaintController.text.trim(),
-        symptoms: _symptomsController.text.trim(),
-        medicalHistory: _medicalHistoryController.text.trim(),
+        symptoms: symptomText,
         diagnosis: _diagnosisController.text.trim(),
         treatmentPlan: _treatmentPlanController.text.trim(),
-        notes: _treatmentPlanController.text.trim(),
-        requiredVisits: requiredVisits,
+        nursingInstructions: _nursingInstructionsController.text.trim(),
+        requiredVisits: _requiredVisits,
       );
 
       if (response['success'] != true) {
-        throw Exception(response['error'] ?? 'Failed to submit report');
+        throw Exception(response['error'] ?? 'Failed to save report');
       }
 
-      await prefs.remove('doctor_initial_diagnosis_draft_${widget.requestId}');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Initial diagnosis report submitted'),
+          content: Text('Initial diagnosis saved successfully.'),
           backgroundColor: AppColors.success,
         ),
       );
@@ -177,7 +142,7 @@ class _InitialDiagnosisReportScreenState
         SnackBar(content: Text('$e'), backgroundColor: Colors.red),
       );
     } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -188,30 +153,46 @@ class _InitialDiagnosisReportScreenState
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 980),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 20, 18, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 26),
                 children: [
-                  _header(),
-                  const SizedBox(height: 28),
-                  _steps(),
-                  const SizedBox(height: 24),
-                  Expanded(
-                    child: PageView(
-                      controller: _pageController,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: [
-                        _patientInfoStep(),
-                        _medicalHistoryStep(),
-                        _diagnosisPlanStep(),
-                        _reviewStep(),
-                      ],
-                    ),
+                  _appBar(),
+                  const SizedBox(height: 18),
+                  _patientHeader(),
+                  const SizedBox(height: 12),
+                  _medicalProfileCard(),
+                  const SizedBox(height: 12),
+                  _textAreaCard(
+                    icon: Icons.assignment_outlined,
+                    title: 'Chief Complaint',
+                    controller: _chiefComplaintController,
+                    hint: 'Enter chief complaint...',
                   ),
-                  const SizedBox(height: 20),
-                  _wizardActions(),
+                  _symptomsCard(),
+                  _textAreaCard(
+                    icon: Icons.medical_services_outlined,
+                    title: 'Diagnosis',
+                    controller: _diagnosisController,
+                    hint: 'Enter diagnosis...',
+                  ),
+                  _textAreaCard(
+                    icon: Icons.medication_outlined,
+                    title: 'Treatment Plan',
+                    controller: _treatmentPlanController,
+                    hint: 'Enter treatment plan...',
+                  ),
+                  _textAreaCard(
+                    icon: Icons.warning_amber_rounded,
+                    title: 'Nursing Instructions',
+                    controller: _nursingInstructionsController,
+                    hint: 'Enter nursing instructions...',
+                  ),
+                  _visitsCard(),
+                  const SizedBox(height: 18),
+                  _saveButton(),
                 ],
               ),
             ),
@@ -221,801 +202,91 @@ class _InitialDiagnosisReportScreenState
     );
   }
 
-  Widget _stepScroll(List<Widget> children) {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: children,
-      ),
-    );
-  }
-
-  Widget _patientInfoStep() {
-    return Form(
-      key: _stepOneKey,
-      child: _stepScroll([
-        _patientInfoCard(),
-        const SizedBox(height: 10),
-        _section(
-          icon: Icons.feed_outlined,
-          title: 'Chief Complaint',
-          subtitle: "What is the main reason for the patient's visit?",
-          child: _textArea(
-            _chiefComplaintController,
-            'Enter chief complaint...',
-            maxLength: 500,
-            required: true,
-          ),
-        ),
-        _section(
-          icon: Icons.monitor_heart_outlined,
-          title: 'Symptoms',
-          subtitle: "List and describe the patient's current symptoms.",
-          child: _textArea(
-            _symptomsController,
-            'Enter symptoms...',
-            maxLength: 1000,
-            required: true,
-          ),
-        ),
-      ]),
-    );
-  }
-
-  Widget _medicalHistoryStep() {
-    return Form(
-      key: _stepTwoKey,
-      child: _stepScroll([
-        _section(
-          icon: Icons.medical_information_outlined,
-          title: 'Medical History',
-          subtitle: 'Relevant past medical history.',
-          child: _textArea(
-            _medicalHistoryController,
-            'Enter medical history...',
-            maxLength: 1000,
-          ),
-        ),
-      ]),
-    );
-  }
-
-  Widget _diagnosisPlanStep() {
-    return Form(
-      key: _stepThreeKey,
-      child: _stepScroll([
-        _section(
-          icon: Icons.assignment_outlined,
-          title: 'Diagnosis',
-          subtitle: 'Enter the diagnosis for the patient.',
-          child: _textArea(
-            _diagnosisController,
-            'Enter diagnosis...',
-            maxLength: 500,
-            required: true,
-          ),
-        ),
-        _section(
-          icon: Icons.event_note_outlined,
-          title: 'Treatment Plan',
-          subtitle: 'Outline the treatment plan and recommended interventions.',
-          child: _textArea(
-            _treatmentPlanController,
-            'Enter treatment plan...',
-            maxLength: 1000,
-            required: true,
-          ),
-        ),
-        _visitsCard(),
-      ]),
-    );
-  }
-
-  Widget _reviewStep() {
-    final data = widget.requestData ?? {};
-    final patientName = _text(data['patientName']) ?? 'Patient';
-    final email = _text(data['patientEmail']) ?? '';
-    final serviceType = _text(data['serviceType']) ?? 'Medical Visit';
-    final scheduledAt = _text(data['scheduledAt']);
-
-    return _stepScroll([
-      _section(
-        icon: Icons.fact_check_outlined,
-        title: 'Review & Submit',
-        subtitle: 'Confirm the initial diagnosis details before submitting.',
-        child: Column(
-          children: [
-            _summaryRow('Patient Name', patientName),
-            _summaryRow('Email', email),
-            _summaryRow('Request ID', '#${widget.requestId}'),
-            _summaryRow('Visit Date', _formatDate(scheduledAt)),
-            _summaryRow('Visit Time', _formatTime(scheduledAt)),
-            _summaryRow('Service Type', serviceType),
-            const Divider(height: 28),
-            _summaryBlock(
-              'Chief Complaint',
-              _chiefComplaintController.text.trim(),
-            ),
-            _summaryBlock('Symptoms', _symptomsController.text.trim()),
-            _summaryBlock(
-              'Medical History',
-              _medicalHistoryController.text.trim().isEmpty
-                  ? 'Not provided'
-                  : _medicalHistoryController.text.trim(),
-            ),
-            _summaryBlock('Diagnosis', _diagnosisController.text.trim()),
-            _summaryBlock(
-              'Treatment Plan',
-              _treatmentPlanController.text.trim(),
-            ),
-            _summaryRow('Required Visits', _requiredVisitsLabel()),
-          ],
-        ),
-      ),
-    ]);
-  }
-
-  Widget _header() {
+  Widget _appBar() {
     return Row(
       children: [
         _iconButton(Icons.arrow_back_rounded, () => Navigator.pop(context)),
-        const SizedBox(width: 12),
         const Expanded(
-          child: Column(
-            children: [
-              Text(
-                'Initial Diagnosis Report',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _ink,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Create the initial diagnosis and treatment plan for the patient.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _muted,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-        OutlinedButton.icon(
-          onPressed: _isSubmitting ? null : _saveDraft,
-          icon: const Icon(Icons.save_outlined, size: 18),
-          label: const Text('Save Draft'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: _primary,
-            backgroundColor: Colors.white,
-            side: const BorderSide(color: Color(0xFFDDE7E5)),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _steps() {
-    final steps = [
-      'Patient Info',
-      'Medical History',
-      'Diagnosis & Plan',
-      'Review & Submit',
-    ];
-    return Row(
-      children: [
-        for (var i = 0; i < steps.length; i++) ...[
-          Expanded(
-            child: Column(
-              children: [
-                CircleAvatar(
-                  radius: 17,
-                  backgroundColor: i <= _currentStep
-                      ? _primary
-                      : const Color(0xFFF0F4F3),
-                  child: Text(
-                    '${i + 1}',
-                    style: TextStyle(
-                      color: i <= _currentStep ? Colors.white : _ink,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  steps[i],
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: i == _currentStep ? _primary : _ink,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (i != steps.length - 1)
-            Expanded(
-              child: Container(
-                height: 1,
-                margin: const EdgeInsets.only(bottom: 30),
-                color: i < _currentStep ? _primary : const Color(0xFFDDE7E5),
-              ),
-            ),
-        ],
-      ],
-    );
-  }
-
-  Widget _patientInfoCard() {
-    final data = widget.requestData ?? {};
-    final patientName = _text(data['patientName']) ?? 'Patient';
-    final email = _text(data['patientEmail']) ?? '';
-    final serviceType = _text(data['serviceType']) ?? 'Medical Visit';
-    final status = _text(data['status']) ?? 'completed';
-    final scheduledAt = _text(data['scheduledAt']);
-
-    return _section(
-      icon: Icons.person_rounded,
-      title: 'Patient & Visit Information',
-      child: Column(
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 35,
-                backgroundColor: const Color(0xFFE7F7F2),
-                child: Text(
-                  patientName.characters.first.toUpperCase(),
-                  style: const TextStyle(
-                    color: _primary,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      patientName,
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      email,
-                      style: const TextStyle(
-                        color: _muted,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '#${widget.requestId}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _primary,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              _statusBadge(status),
-            ],
-          ),
-          const SizedBox(height: 18),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 720;
-              final boxes = [
-                _infoBox(
-                  Icons.calendar_today_outlined,
-                  'Visit Date',
-                  _formatDate(scheduledAt),
-                ),
-                _infoBox(
-                  Icons.access_time_rounded,
-                  'Visit Time',
-                  _formatTime(scheduledAt),
-                ),
-                _infoBox(Icons.home_work_outlined, 'Service Type', serviceType),
-              ];
-              return compact
-                  ? Column(
-                      children: [
-                        for (final box in boxes) ...[
-                          box,
-                          if (box != boxes.last) const SizedBox(height: 10),
-                        ],
-                      ],
-                    )
-                  : Row(
-                      children: [
-                        for (final box in boxes) ...[
-                          Expanded(child: box),
-                          if (box != boxes.last) const SizedBox(width: 14),
-                        ],
-                      ],
-                    );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _section({
-    required IconData icon,
-    required String title,
-    String? subtitle,
-    required Widget child,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFDDE7E5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE7F7F2),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: Icon(icon, color: _primary, size: 19),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 5),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          color: _muted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          child,
-        ],
-      ),
-    );
-  }
-
-  Widget _textArea(
-    TextEditingController controller,
-    String hint, {
-    int maxLength = 500,
-    bool required = false,
-  }) {
-    return TextFormField(
-      controller: controller,
-      maxLength: maxLength,
-      minLines: 3,
-      maxLines: 5,
-      validator: required
-          ? (value) => value == null || value.trim().isEmpty ? 'Required' : null
-          : null,
-      decoration: InputDecoration(
-        hintText: hint,
-        filled: true,
-        fillColor: Colors.white,
-        counterStyle: const TextStyle(color: _muted, fontSize: 11),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFDDE7E5)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFDDE7E5)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: _primary, width: 1.4),
-        ),
-      ),
-    );
-  }
-
-  Widget _visitsCard() {
-    return _section(
-      icon: Icons.event_available_outlined,
-      title: 'Estimated Follow-up Visits',
-      subtitle: 'Estimated number of follow-up visits or duration of care.',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 760;
-              final options = [
-                _visitOption(
-                  'not_determined',
-                  'Not determined yet',
-                  'Will be decided later',
-                ),
-                _visitOption('3', '3 Visits', 'Estimated'),
-                _visitOption('5', '5 Visits', 'Estimated'),
-                _visitOption('10_plus', '10+ Visits', 'Estimated'),
-                _customVisitOption(),
-              ];
-              return compact
-                  ? Column(
-                      children: [
-                        for (final option in options) ...[
-                          option,
-                          if (option != options.last)
-                            const SizedBox(height: 10),
-                        ],
-                      ],
-                    )
-                  : Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (final option in options) ...[
-                          Expanded(child: option),
-                          if (option != options.last) const SizedBox(width: 10),
-                        ],
-                      ],
-                    );
-            },
-          ),
-          const SizedBox(height: 14),
-          const Row(
-            children: [
-              Icon(Icons.info_outline_rounded, color: _primary, size: 18),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'You can update the number of visits as the treatment progresses.',
-                  style: TextStyle(
-                    color: _muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _visitOption(String value, String title, String subtitle) {
-    final selected = _requiredVisits == value;
-    return InkWell(
-      onTap: () => setState(() => _requiredVisits = value),
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 74),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected ? _primary : const Color(0xFFDDE7E5),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: selected ? _primary : _muted,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: _ink,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: _muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _customVisitOption() {
-    final selected = _requiredVisits == 'custom';
-    return InkWell(
-      onTap: () => setState(() => _requiredVisits = 'custom'),
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 74),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected ? _primary : const Color(0xFFDDE7E5),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Custom',
-              style: TextStyle(color: _ink, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Enter number',
-              style: TextStyle(
-                color: _muted,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _customVisitsController,
-                    keyboardType: TextInputType.number,
-                    enabled: selected,
-                    validator: _requiredVisits == 'custom'
-                        ? (value) => value == null || value.trim().isEmpty
-                              ? 'Required'
-                              : null
-                        : null,
-                    decoration: InputDecoration(
-                      hintText: 'e.g. 8',
-                      isDense: true,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'visits',
-                  style: TextStyle(
-                    color: _ink,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _wizardActions() {
-    final isLastStep = _currentStep == 3;
-    final primaryLabel = isLastStep ? 'Submit' : 'Next';
-    final primaryIcon = isLastStep
-        ? Icons.check_rounded
-        : Icons.arrow_forward_rounded;
-
-    return Row(
-      children: [
-        if (_currentStep > 0) ...[
-          Expanded(
-            child: OutlinedButton(
-              onPressed: _isSubmitting ? null : _previousStep,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _ink,
-                backgroundColor: Colors.white,
-                side: const BorderSide(color: Color(0xFFDDE7E5)),
-                padding: const EdgeInsets.symmetric(vertical: 17),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: const Text('Back'),
-            ),
-          ),
-          const SizedBox(width: 18),
-        ],
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: _isSubmitting
-                ? null
-                : (isLastStep ? _submit : _nextStep),
-            icon: _isSubmitting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2,
-                    ),
-                  )
-                : Icon(primaryIcon),
-            label: Text(primaryLabel),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 17),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _requiredVisitsLabel() {
-    switch (_requiredVisits) {
-      case '3':
-        return '3 Visits';
-      case '5':
-        return '5 Visits';
-      case '10_plus':
-        return '10+ Visits';
-      case 'custom':
-        final value = _customVisitsController.text.trim();
-        return value.isEmpty ? 'Custom number' : '$value visits';
-      default:
-        return 'Not determined yet';
-    }
-  }
-
-  Widget _summaryRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 150,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: _muted,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value.trim().isEmpty ? 'Not provided' : value.trim(),
-              style: const TextStyle(color: _ink, fontWeight: FontWeight.w800),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _summaryBlock(String label, String value) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FBFA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFDDE7E5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: _primary,
-              fontSize: 12,
+          child: Text(
+            'Initial Diagnosis Report',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _ink,
+              fontSize: 22,
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            value.trim().isEmpty ? 'Not provided' : value.trim(),
-            style: const TextStyle(
-              color: _ink,
-              height: 1.45,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
+        ),
+        _iconButton(Icons.save_outlined, _isSaving ? null : _save),
+      ],
     );
   }
 
-  Widget _infoBox(IconData icon, String label, String value) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFDDE7E5)),
-        borderRadius: BorderRadius.circular(10),
-      ),
+  Widget _patientHeader() {
+    final data = widget.requestData ?? {};
+    final name = _text(data['patientName']) ?? 'Patient';
+    final age = _ageLabel(_text(_medicalRecord['dateOfBirth']));
+    final gender = _text(_medicalRecord['gender']) ?? 'Not set';
+    final address =
+        _text(data['visitAddress']) ??
+        _text(data['location']) ??
+        _text(_medicalRecord['addressText']) ??
+        'Not set';
+    final phone = _text(data['patientPhone']) ?? 'Not set';
+    final serviceType = _text(data['serviceType']) ?? 'Medical Visit';
+    final image = _text(data['profileImageUrl']) ?? _text(data['patientImage']);
+
+    return _card(
       child: Row(
         children: [
-          Icon(icon, color: _primary, size: 20),
-          const SizedBox(width: 10),
+          CircleAvatar(
+            radius: 44,
+            backgroundColor: const Color(0xFFE7F7F2),
+            backgroundImage: image == null ? null : NetworkImage(image),
+            child: image == null
+                ? Text(
+                    name.characters.first.toUpperCase(),
+                    style: const TextStyle(
+                      color: _primary,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 18),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  label,
-                  style: const TextStyle(
-                    color: _muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  name,
                   style: const TextStyle(
                     color: _ink,
+                    fontSize: 21,
                     fontWeight: FontWeight.w900,
                   ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '$age, $gender',
+                  style: const TextStyle(
+                    color: _muted,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _inlineInfo(Icons.location_on_outlined, address),
+                const SizedBox(height: 8),
+                _inlineInfo(Icons.phone_rounded, phone),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _inlineInfo(Icons.local_hospital, serviceType),
+                    ),
+                    _statusBadge('Active'),
+                  ],
                 ),
               ],
             ),
@@ -1025,17 +296,425 @@ class _InitialDiagnosisReportScreenState
     );
   }
 
-  Widget _statusBadge(String status) {
+  Widget _medicalProfileCard() {
+    return _card(
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _iconTile(Icons.water_drop_outlined),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Medical Profile',
+                  style: TextStyle(
+                    color: _primary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              _readOnlyBadge(),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_isLoadingRecord)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            )
+          else ...[
+            _profileRow(
+              Icons.water_drop,
+              'Blood Type',
+              _text(_medicalRecord['bloodType']) ?? 'Not set',
+            ),
+            _profileRow(
+              Icons.monitor_heart,
+              'Chronic Diseases',
+              _medicalListValue(
+                _medicalRecord['diseases'],
+                ['diseaseName', 'name', 'title'],
+                fallback:
+                    _text(_medicalRecord['chronicConditions']) ??
+                    _text(_medicalRecord['previousConditions']),
+              ),
+            ),
+            _profileRow(
+              Icons.warning_amber_rounded,
+              'Allergies',
+              _medicalListValue(
+                _medicalRecord['allergies'],
+                ['allergyName', 'name', 'title'],
+                fallback: _text(_medicalRecord['allergiesText']),
+              ),
+            ),
+            _profileRow(
+              Icons.medication_outlined,
+              'Current Medications',
+              _text(_medicalRecord['currentMedications']) ?? 'Not set',
+            ),
+            _profileRow(
+              Icons.edit_outlined,
+              'Previous Surgeries',
+              _text(_medicalRecord['pastSurgeries']) ?? 'Not set',
+              showDivider: false,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _symptomsCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _fieldTitle(Icons.medical_services_outlined, 'Symptoms'),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 22,
+            runSpacing: 10,
+            children: [
+              for (final symptom in const [
+                'Fever',
+                'Headache',
+                'Dizziness',
+                'Nausea',
+                'Other',
+              ])
+                SizedBox(
+                  width: symptom == 'Other' ? 110 : 140,
+                  child: CheckboxListTile(
+                    value: _symptoms.contains(symptom),
+                    onChanged: (value) {
+                      setState(() {
+                        if (value == true) {
+                          _symptoms.add(symptom);
+                        } else {
+                          _symptoms.remove(symptom);
+                        }
+                      });
+                    },
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(
+                      symptom,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              SizedBox(
+                width: 280,
+                child: TextField(
+                  controller: _otherSymptomsController,
+                  decoration: InputDecoration(
+                    hintText: 'Specify other symptoms...',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _textAreaCard({
+    required IconData icon,
+    required String title,
+    required TextEditingController controller,
+    required String hint,
+  }) {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _fieldTitle(icon, title),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: controller,
+            minLines: 3,
+            maxLines: 5,
+            maxLength: 500,
+            validator: (value) =>
+                value == null || value.trim().isEmpty ? 'Required' : null,
+            decoration: InputDecoration(
+              hintText: hint,
+              counterStyle: const TextStyle(color: _muted, fontSize: 11),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFFDDE7E5)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFFDDE7E5)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: _primary),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _visitsCard() {
+    return _card(
+      child: Column(
+        children: [
+          _fieldTitle(
+            Icons.calendar_month_outlined,
+            'Required Number of Visits',
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _counterButton(Icons.remove_rounded, () {
+                if (_requiredVisits > 1) {
+                  setState(() => _requiredVisits--);
+                }
+              }),
+              SizedBox(
+                width: 90,
+                child: Text(
+                  '$_requiredVisits',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              _counterButton(
+                Icons.add_rounded,
+                () => setState(() => _requiredVisits++),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text.rich(
+            TextSpan(
+              children: [
+                const TextSpan(text: 'Progress: '),
+                TextSpan(
+                  text: '0 / $_requiredVisits',
+                  style: const TextStyle(
+                    color: _primary,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const TextSpan(text: ' Visits Completed'),
+              ],
+            ),
+            style: const TextStyle(
+              color: _muted,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _saveButton() {
+    return ElevatedButton.icon(
+      onPressed: _isSaving ? null : _save,
+      icon: _isSaving
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2,
+              ),
+            )
+          : const Icon(Icons.save_outlined),
+      label: const Text('Save Initial Diagnosis'),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: _primary,
+        foregroundColor: Colors.white,
+        minimumSize: const Size.fromHeight(58),
+        textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    );
+  }
+
+  Widget _card({required Widget child}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _fieldTitle(IconData icon, String title) {
+    return Row(
+      children: [
+        _iconTile(icon),
+        const SizedBox(width: 12),
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(text: title),
+              const TextSpan(
+                text: ' *',
+                style: TextStyle(color: Colors.red),
+              ),
+            ],
+          ),
+          style: const TextStyle(
+            color: _primary,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _profileRow(
+    IconData icon,
+    String label,
+    String value, {
+    bool showDivider = true,
+  }) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: _primary, size: 22),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: _ink,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            Flexible(
+              child: Text(
+                value,
+                textAlign: TextAlign.end,
+                style: const TextStyle(
+                  color: _ink,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (showDivider)
+          const Padding(
+            padding: EdgeInsets.only(left: 38, top: 12, bottom: 12),
+            child: Divider(height: 1),
+          ),
+      ],
+    );
+  }
+
+  Widget _inlineInfo(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, color: _primary, size: 19),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: _ink, fontWeight: FontWeight.w800),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _iconTile(IconData icon) {
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE7F7F2),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Icon(icon, color: _primary, size: 20),
+    );
+  }
+
+  Widget _counterButton(IconData icon, VoidCallback onTap) {
+    return Material(
+      color: const Color(0xFFE7F7F2),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: 46,
+          height: 46,
+          child: Icon(icon, color: _primary),
+        ),
+      ),
+    );
+  }
+
+  Widget _readOnlyBadge() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF4FF),
-        borderRadius: BorderRadius.circular(8),
+        color: const Color(0xFFF2F4F7),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.lock_outline_rounded, size: 15, color: _muted),
+          SizedBox(width: 6),
+          Text(
+            'Read Only',
+            style: TextStyle(color: _muted, fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE7F7F2),
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        status,
+        label,
         style: const TextStyle(
-          color: Color(0xFF175CD3),
+          color: _primary,
           fontWeight: FontWeight.w900,
           fontSize: 12,
         ),
@@ -1043,52 +722,54 @@ class _InitialDiagnosisReportScreenState
     );
   }
 
-  Widget _iconButton(IconData icon, VoidCallback onTap) {
+  Widget _iconButton(IconData icon, VoidCallback? onTap) {
     return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(10),
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: SizedBox(width: 42, height: 42, child: Icon(icon, color: _ink)),
+        borderRadius: BorderRadius.circular(999),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(icon, color: _primary),
+        ),
       ),
     );
   }
 
-  String _formatDate(String? value) {
-    final date = DateTime.tryParse(value ?? '');
-    if (date == null) return 'Not scheduled';
-    return '${_monthName(date.month)} ${date.day}, ${date.year}';
+  String _medicalListValue(
+    dynamic value,
+    List<String> keys, {
+    String? fallback,
+  }) {
+    if (value is List && value.isNotEmpty) {
+      final items = value
+          .map((item) {
+            if (item is Map) {
+              for (final key in keys) {
+                final text = _text(item[key]);
+                if (text != null) return text;
+              }
+            }
+            return _text(item);
+          })
+          .whereType<String>()
+          .toList();
+      if (items.isNotEmpty) return items.join(', ');
+    }
+    return fallback ?? 'Not set';
   }
 
-  String _formatTime(String? value) {
-    final date = DateTime.tryParse(value ?? '');
-    if (date == null) return '--:--';
-    final hour = date.hour == 0
-        ? 12
-        : date.hour > 12
-        ? date.hour - 12
-        : date.hour;
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '$hour:$minute ${date.hour >= 12 ? 'PM' : 'AM'}';
-  }
-
-  String _monthName(int month) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return months[month - 1];
+  String _ageLabel(String? dateOfBirth) {
+    final date = DateTime.tryParse(dateOfBirth ?? '');
+    if (date == null) return 'Not set';
+    final now = DateTime.now();
+    var age = now.year - date.year;
+    if (now.month < date.month ||
+        (now.month == date.month && now.day < date.day)) {
+      age--;
+    }
+    return '$age years';
   }
 
   String? _text(dynamic value) {

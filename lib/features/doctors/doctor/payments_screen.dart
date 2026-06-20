@@ -4,6 +4,7 @@ import '../../../services/doctor_service.dart';
 import '../../../core/app_colors.dart';
 import '../../../core/app_localizations.dart';
 import '../../../core/locale_controller.dart';
+import 'doctor_ui_constants.dart';
 
 class DoctorPaymentsScreen extends StatefulWidget {
   const DoctorPaymentsScreen({super.key});
@@ -59,6 +60,7 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
       listenable: localeController,
       builder: (context, _) {
         return Scaffold(
+          backgroundColor: DoctorUiConstants.doctorBackground,
           appBar: AppBar(
             title: Text(context.dtr('doctor.payments.history')),
             backgroundColor: AppColors.primary,

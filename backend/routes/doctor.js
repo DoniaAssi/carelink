@@ -5,6 +5,7 @@ const db = require('../db');
 const { insertNotification } = require('../notifications');
 const visitRatingService = require('../services/visitRatingService');
 const medicalRecordService = require('../services/medicalRecordService');
+const initialDiagnosisReportService = require('../services/initialDiagnosisReportService');
 
 const router = express.Router();
 const columnCache = new Map();
@@ -69,67 +70,18 @@ async function ensureMedicalAccessLogTable() {
   `);
 }
 
-async function ensureInitialDiagnosisReportColumns() {
-  if (!(await hasTable('visit_reports'))) return false;
-
-  const additions = [
-    ['report_kind', "VARCHAR(64) NOT NULL DEFAULT 'visit_report'"],
-    ['chief_complaint', 'TEXT NULL'],
-    ['symptoms', 'TEXT NULL'],
-    ['medical_history', 'TEXT NULL'],
-    ['required_visits', 'VARCHAR(64) NULL'],
-  ];
-
-  for (const [column, definition] of additions) {
-    if (!(await hasColumn('visit_reports', column))) {
-      await db.execute(`ALTER TABLE visit_reports ADD COLUMN ${column} ${definition}`);
-      columnCache.set(`visit_reports.${column}`, true);
-    }
-  }
-
-  return true;
-}
-
 async function initialDiagnosisExistsForCase(patientId, doctorId) {
-  const checks = [];
-  const params = [];
-
-  if (
-    (await hasTable('visit_reports')) &&
-    (await hasColumn('visit_reports', 'report_kind'))
-  ) {
-    checks.push(`EXISTS (
-      SELECT 1
-      FROM visit_reports vr
-      WHERE BINARY vr.patient_id = BINARY ?
-        AND BINARY vr.provider_id = BINARY ?
-        AND vr.report_kind = 'initial_diagnosis'
-      LIMIT 1
-    )`);
-    params.push(patientId, doctorId);
-  }
-
-  if ((await hasTable('visitreport')) && (await hasTable('visit'))) {
-    checks.push(`EXISTS (
-      SELECT 1
-      FROM visitreport legacyReport
-      JOIN visit legacyVisit
-        ON BINARY legacyVisit.visitId = BINARY legacyReport.visitId
-      JOIN servicerequest legacyRequest
-        ON BINARY legacyRequest.requestId = BINARY legacyVisit.requestId
-      WHERE BINARY legacyRequest.patientUserId = BINARY ?
-        AND BINARY legacyRequest.providerUserId = BINARY ?
-        AND legacyReport.notes LIKE 'Chief Complaint:%'
-      LIMIT 1
-    )`);
-    params.push(patientId, doctorId);
-  }
-
-  if (checks.length === 0) return false;
-
   const [rows] = await db.query(
-    `SELECT (${checks.join(' OR ')}) AS hasInitialDiagnosisReport`,
-    params
+    `SELECT EXISTS (
+       SELECT 1
+       FROM initial_diagnosis_report idr
+       JOIN servicerequest sr
+         ON BINARY sr.requestId = BINARY idr.serviceRequestId
+       WHERE BINARY sr.patientUserId = BINARY ?
+         AND BINARY idr.doctorUserId = BINARY ?
+       LIMIT 1
+     ) AS hasInitialDiagnosisReport`,
+    [patientId, doctorId]
   );
 
   const exists = dbBool(rows[0]?.hasInitialDiagnosisReport);
@@ -143,40 +95,80 @@ async function initialDiagnosisExistsForCase(patientId, doctorId) {
 }
 
 async function initialDiagnosisSelectSql() {
-  const hasStructuredInitial =
-    (await hasTable('visit_reports')) &&
-    (await hasColumn('visit_reports', 'report_kind'));
-  const hasLegacyInitial =
-    (await hasTable('visitreport')) && (await hasTable('visit'));
+  return `EXISTS (
+    SELECT 1
+    FROM initial_diagnosis_report idr
+    WHERE BINARY idr.serviceRequestId = BINARY sr.requestId
+      AND BINARY idr.doctorUserId = BINARY sr.providerUserId
+    LIMIT 1
+  )`;
+}
 
+async function reportExistsForRequest(requestId) {
   const checks = [];
-  if (hasStructuredInitial) {
-    checks.push(`EXISTS (
-      SELECT 1
-      FROM visit_reports vr
-      WHERE BINARY vr.patient_id = BINARY sr.patientUserId
-        AND BINARY vr.provider_id = BINARY sr.providerUserId
-        AND vr.report_kind = 'initial_diagnosis'
-      LIMIT 1
-    )`);
+
+  if (await hasTable('initial_diagnosis_report')) {
+    checks.push(
+      db
+        .query(
+          `SELECT 1
+           FROM initial_diagnosis_report
+           WHERE BINARY serviceRequestId = BINARY ?
+           LIMIT 1`,
+          [requestId]
+        )
+        .then(([rows]) => rows.length > 0)
+    );
   }
 
-  if (hasLegacyInitial) {
-    checks.push(`EXISTS (
-      SELECT 1
-      FROM visitreport legacyReport
-      JOIN visit legacyVisit
-        ON BINARY legacyVisit.visitId = BINARY legacyReport.visitId
-      JOIN servicerequest legacyRequest
-        ON BINARY legacyRequest.requestId = BINARY legacyVisit.requestId
-      WHERE BINARY legacyRequest.patientUserId = BINARY sr.patientUserId
-        AND BINARY legacyRequest.providerUserId = BINARY sr.providerUserId
-        AND legacyReport.notes LIKE 'Chief Complaint:%'
-      LIMIT 1
-    )`);
+  if ((await hasTable('visit')) && (await hasTable('visitreport'))) {
+    checks.push(
+      db
+        .query(
+          `SELECT 1
+           FROM visit v
+           JOIN visitreport r ON BINARY r.visitId = BINARY v.visitId
+           WHERE BINARY v.requestId = BINARY ?
+           LIMIT 1`,
+          [requestId]
+        )
+        .then(([rows]) => rows.length > 0)
+    );
   }
 
-  return checks.length ? `(${checks.join(' OR ')})` : '0';
+  if (
+    (await hasTable('visit_reports')) &&
+    (await hasColumn('visit_reports', 'appointment_id'))
+  ) {
+    const hasReportKind = await hasColumn('visit_reports', 'report_kind');
+    checks.push(
+      db
+        .query(
+          `SELECT 1
+           FROM visit_reports
+           WHERE BINARY appointment_id = BINARY ?
+             ${hasReportKind ? "AND COALESCE(report_kind, 'visit_report') = 'visit_report'" : ''}
+           LIMIT 1`,
+          [requestId]
+        )
+        .then(([rows]) => rows.length > 0)
+    );
+  }
+
+  if (checks.length === 0) return false;
+  const results = await Promise.all(checks);
+  return results.some(Boolean);
+}
+
+async function ensureDoctorRoleRow(userId) {
+  await db.execute(
+    `INSERT IGNORE INTO doctor (userId)
+     SELECT userId
+     FROM user
+     WHERE BINARY userId = BINARY ?
+       AND role = 'doctor'`,
+    [userId]
+  );
 }
 
 async function ensureDoctorNotificationPreferenceTable() {
@@ -722,10 +714,24 @@ router.get('/requests', async (req, res) => {
     query += ' ORDER BY sr.scheduledAt DESC';
 
     const [rows] = await db.query(query, params);
-    const normalizedRows = rows.map((row) => ({
-      ...row,
-      hasInitialDiagnosisReport: dbBool(row.hasInitialDiagnosisReport),
-    }));
+    const normalizedRows = await Promise.all(
+      rows.map(async (row) => {
+        const hasReportForVisit = await reportExistsForRequest(row.requestId);
+        const hasInitialDiagnosisReportForCase =
+          await initialDiagnosisExistsForCase(
+            row.patientUserId,
+            row.providerUserId
+          );
+        const statusText = (row.status || '').toString().trim().toLowerCase();
+        return {
+          ...row,
+          hasInitialDiagnosisReport: dbBool(row.hasInitialDiagnosisReport),
+          hasInitialDiagnosisReportForCase,
+          hasReportForVisit,
+          canCreateReport: statusText === 'completed' && !hasReportForVisit,
+        };
+      })
+    );
 
     console.log('[doctor:requests:list]', {
       doctorId,
@@ -737,6 +743,10 @@ router.get('/requests', async (req, res) => {
         providerUserId: row.providerUserId,
         patientUserId: row.patientUserId,
         hasInitialDiagnosisReport: row.hasInitialDiagnosisReport,
+        hasInitialDiagnosisReportForCase:
+          row.hasInitialDiagnosisReportForCase,
+        hasReportForVisit: row.hasReportForVisit,
+        canCreateReport: row.canCreateReport,
       })),
     });
 
@@ -785,9 +795,20 @@ router.get('/requests/:requestId', async (req, res) => {
       return res.status(404).json({ error: 'Request not found' });
     }
 
+    const hasReportForVisit = await reportExistsForRequest(rows[0].requestId);
+    const hasInitialDiagnosisReportForCase =
+      await initialDiagnosisExistsForCase(
+        rows[0].patientUserId,
+        rows[0].providerUserId
+      );
+    const statusText = (rows[0].status || '').toString().trim().toLowerCase();
+
     const normalizedRow = {
       ...rows[0],
       hasInitialDiagnosisReport: dbBool(rows[0].hasInitialDiagnosisReport),
+      hasInitialDiagnosisReportForCase,
+      hasReportForVisit,
+      canCreateReport: statusText === 'completed' && !hasReportForVisit,
     };
 
     console.log('[doctor:requests:detail]', {
@@ -796,9 +817,140 @@ router.get('/requests/:requestId', async (req, res) => {
       providerUserId: normalizedRow.providerUserId,
       patientUserId: normalizedRow.patientUserId,
       hasInitialDiagnosisReport: normalizedRow.hasInitialDiagnosisReport,
+      hasInitialDiagnosisReportForCase:
+        normalizedRow.hasInitialDiagnosisReportForCase,
+      hasReportForVisit: normalizedRow.hasReportForVisit,
+      canCreateReport: normalizedRow.canCreateReport,
     });
 
     res.json(normalizedRow);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// GET INITIAL DIAGNOSIS REPORT
+// ============================================
+router.get('/initial-diagnosis/:serviceRequestId', async (req, res) => {
+  const { serviceRequestId } = req.params;
+  const doctorUserId = (req.query.doctorUserId || req.query.doctorId || '')
+    .toString()
+    .trim();
+
+  try {
+    const report = await initialDiagnosisReportService.findByServiceRequestId(
+      serviceRequestId,
+      doctorUserId || undefined
+    );
+
+    if (!report) {
+      return res.json({
+        hasInitialDiagnosisReport: false,
+        report: null,
+      });
+    }
+
+    res.json({
+      hasInitialDiagnosisReport: true,
+      report: report.toJSON(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// CREATE INITIAL DIAGNOSIS REPORT
+// ============================================
+router.post('/initial-diagnosis', async (req, res) => {
+  const {
+    serviceRequestId,
+    doctorUserId,
+    chiefComplaint,
+    symptoms,
+    diagnosis,
+    treatmentPlan,
+    nursingInstructions,
+    requiredVisits,
+  } = req.body;
+
+  if (!serviceRequestId || !doctorUserId) {
+    return res.status(400).json({
+      error: 'serviceRequestId and doctorUserId are required',
+    });
+  }
+
+  try {
+    const [requestRows] = await db.query(
+      `SELECT requestId, patientUserId, providerUserId, status
+       FROM servicerequest
+       WHERE BINARY requestId = BINARY ?
+       LIMIT 1`,
+      [serviceRequestId]
+    );
+
+    if (requestRows.length === 0) {
+      return res.status(404).json({ error: 'Service request not found' });
+    }
+
+    const request = requestRows[0];
+    if (request.providerUserId !== doctorUserId) {
+      return res.status(403).json({
+        error: 'Doctor is not assigned to this service request',
+      });
+    }
+
+    if ((request.status || '').toString().toLowerCase() !== 'completed') {
+      return res.status(400).json({
+        error: 'Initial diagnosis can only be saved for completed visits',
+      });
+    }
+
+    if (await reportExistsForRequest(serviceRequestId)) {
+      return res.status(409).json({
+        error: 'A report already exists for this completed visit',
+        hasReportForVisit: true,
+      });
+    }
+
+    await ensureDoctorRoleRow(doctorUserId);
+
+    if (await initialDiagnosisExistsForCase(request.patientUserId, doctorUserId)) {
+      return res.status(409).json({
+        error: 'Initial diagnosis report already exists for this patient case',
+        hasInitialDiagnosisReportForCase: true,
+      });
+    }
+
+    const existing = await initialDiagnosisReportService.findByServiceRequestId(
+      serviceRequestId,
+      doctorUserId
+    );
+
+    if (existing) {
+      return res.status(409).json({
+        error: 'Initial diagnosis report already exists for this visit',
+        report: existing.toJSON(),
+      });
+    }
+
+    const report = await initialDiagnosisReportService.create({
+      serviceRequestId,
+      doctorUserId,
+      chiefComplaint,
+      symptoms,
+      diagnosis,
+      treatmentPlan,
+      nursingInstructions,
+      requiredVisits,
+    });
+
+    res.status(201).json({
+      success: true,
+      hasInitialDiagnosisReport: true,
+      report: report.toJSON(),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1110,6 +1262,12 @@ router.get('/patients/:patientId/medical-record', async (req, res) => {
     );
 
     if (accessRows.length === 0) {
+      console.log('[doctor:medical-record] denied', {
+        patientId,
+        doctorId,
+        initialDiagnosisReportsLength: 0,
+        visitReportsLength: 0,
+      });
       return res.status(403).json({
         error: 'Medical record access is allowed only after accepting this patient request',
       });
@@ -1121,8 +1279,23 @@ router.get('/patients/:patientId/medical-record', async (req, res) => {
     );
 
     if (rows.length === 0) {
+      const initialDiagnosisReports =
+        await initialDiagnosisReportService.listByPatientAndDoctor(
+          patientId,
+          doctorId
+        );
       const visitReports = await getDoctorVisibleVisitReports(patientId, doctorId);
-      return res.json(visitReports.length > 0 ? { visitReports } : {});
+      console.log('[doctor:medical-record] response without medicalrecord', {
+        patientId,
+        doctorId,
+        initialDiagnosisReportsLength: initialDiagnosisReports.length,
+        visitReportsLength: visitReports.length,
+      });
+      return res.json(
+        initialDiagnosisReports.length > 0 || visitReports.length > 0
+          ? { initialDiagnosisReports, visitReports }
+          : {}
+      );
     }
 
     const record = rows[0];
@@ -1161,7 +1334,18 @@ router.get('/patients/:patientId/medical-record', async (req, res) => {
       [record.recordId]
     );
 
+    const initialDiagnosisReports =
+      await initialDiagnosisReportService.listByPatientAndDoctor(
+        patientId,
+        doctorId
+      );
     const visitReports = await getDoctorVisibleVisitReports(patientId, doctorId);
+    console.log('[doctor:medical-record] response', {
+      patientId,
+      doctorId,
+      initialDiagnosisReportsLength: initialDiagnosisReports.length,
+      visitReportsLength: visitReports.length,
+    });
 
     try {
       await ensureMedicalAccessLogTable();
@@ -1179,6 +1363,7 @@ router.get('/patients/:patientId/medical-record', async (req, res) => {
       diseases: diseaseRows,
       labResults: labRows,
       clinicalNotes: noteRows,
+      initialDiagnosisReports,
       visitReports
     });
   } catch (err) {
@@ -1286,17 +1471,9 @@ router.post('/requests/:requestId/report', async (req, res) => {
     });
 
     if (submitInitialDiagnosis) {
-      await ensureInitialDiagnosisReportColumns();
-      const initialExists = await initialDiagnosisExistsForCase(
-        request.patientUserId,
-        doctorId
-      );
-
-      if (initialExists) {
-        return res.status(409).json({
-          error: 'Initial diagnosis report already exists for this patient case',
-        });
-      }
+      return res.status(400).json({
+        error: 'Use /doctor/initial-diagnosis to create initial diagnosis reports',
+      });
     }
 
     // Create visit record
@@ -1312,6 +1489,20 @@ router.post('/requests/:requestId/report', async (req, res) => {
         'INSERT INTO visit (visitId, requestId) VALUES (?, ?)',
         [visitId, requestId]
       );
+    }
+
+    const existingReportForVisit = await reportExistsForRequest(requestId);
+    if (existingReportForVisit) {
+      console.log('[doctor:reports:submit:duplicate-blocked]', {
+        requestId,
+        patientId: request.patientUserId,
+        doctorId,
+        visitId,
+      });
+      return res.status(409).json({
+        error: 'A report already exists for this completed visit',
+        hasReportForVisit: true,
+      });
     }
 
     const finalDiagnosis = (diagnosis || '').toString();
@@ -1339,18 +1530,15 @@ router.post('/requests/:requestId/report', async (req, res) => {
 
     try {
       if (await medicalRecordService.tableExists('visit_reports')) {
-        if (submitInitialDiagnosis) await ensureInitialDiagnosisReportColumns();
         const structuredReport = await medicalRecordService.insertVisitReport({
           patient_id: request.patientUserId,
           provider_id: doctorId,
           appointment_id: requestId,
-          report_kind: submitInitialDiagnosis
-            ? 'initial_diagnosis'
-            : 'visit_report',
-          chief_complaint: chiefComplaint || '',
-          symptoms: symptoms || '',
-          medical_history: medicalHistory || '',
-          required_visits: requiredVisits || '',
+          report_kind: 'visit_report',
+          chief_complaint: '',
+          symptoms: '',
+          medical_history: '',
+          required_visits: '',
           diagnosis: finalDiagnosis,
           treatment_plan: finalTreatmentPlan,
           recommendations: prescription || '',
@@ -1361,9 +1549,7 @@ router.post('/requests/:requestId/report', async (req, res) => {
           requestId,
           patientId: request.patientUserId,
           doctorId,
-          reportKind: submitInitialDiagnosis
-            ? 'initial_diagnosis'
-            : 'visit_report',
+          reportKind: 'visit_report',
           structuredReportId: structuredReport?.id,
           structuredReportKind:
             structuredReport?.report_kind ?? structuredReport?.record_type,

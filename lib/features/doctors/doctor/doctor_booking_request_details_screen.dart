@@ -8,6 +8,7 @@ import 'package:carelink/features/patient/screens/chat_screen.dart';
 import 'package:carelink/features/patient/screens/profile_screen.dart'
     as patient_profile;
 import 'package:carelink/services/doctor_service.dart';
+import 'doctor_ui_constants.dart';
 
 class DoctorBookingRequestDetailsScreen extends StatefulWidget {
   const DoctorBookingRequestDetailsScreen({super.key, required this.requestId});
@@ -166,7 +167,7 @@ class _DoctorBookingRequestDetailsScreenState
   Widget build(BuildContext context) {
     final palette = CarelinkPalette.of(context);
     return Scaffold(
-      backgroundColor: palette.pageBg,
+      backgroundColor: DoctorUiConstants.doctorBackground,
       appBar: AppBar(
         title: const Text('Booking Request'),
         backgroundColor: AppColors.primary,

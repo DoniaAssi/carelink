@@ -9,6 +9,7 @@ import '../../../core/app_localizations.dart';
 import '../../../core/locale_controller.dart';
 import '../../../core/theme_controller.dart';
 import '../../../services/doctor_service.dart';
+import 'doctor_ui_constants.dart';
 import 'medical_record_screen.dart';
 import 'patients_screen.dart';
 import 'payments_screen.dart';
@@ -128,7 +129,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
   Color get _pageColor =>
-      _isDark ? const Color(0xFF101716) : const Color(0xFFF5F5F5);
+      _isDark ? const Color(0xFF101716) : DoctorUiConstants.doctorBackground;
 
   Color get _cardColor => _isDark ? const Color(0xFF182321) : Colors.white;
 

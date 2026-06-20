@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/app_colors.dart';
 import '../../../services/doctor_service.dart';
+import 'doctor_ui_constants.dart';
 
 class DoctorRatingsScreen extends StatefulWidget {
   const DoctorRatingsScreen({super.key});
@@ -115,7 +116,7 @@ class _DoctorRatingsScreenState extends State<DoctorRatingsScreen> {
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
   Color get _pageColor =>
-      _isDark ? const Color(0xFF101716) : const Color(0xFFF5F5F5);
+      _isDark ? const Color(0xFF101716) : DoctorUiConstants.doctorBackground;
 
   Color get _cardColor => _isDark ? const Color(0xFF182321) : Colors.white;
 

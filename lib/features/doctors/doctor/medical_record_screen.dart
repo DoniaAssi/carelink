@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/doctor_service.dart';
 import '../../../core/app_colors.dart';
+import 'doctor_ui_constants.dart';
 
 class MedicalRecordScreen extends StatefulWidget {
   final String patientId;
@@ -20,7 +21,10 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
 
   bool get _hasRecordData =>
       _record.isNotEmpty &&
-      (_record.keys.any((key) => key != 'visitReports') ||
+      (_record.keys.any(
+            (key) => key != 'visitReports' && key != 'initialDiagnosisReports',
+          ) ||
+          _listOf('initialDiagnosisReports').isNotEmpty ||
           _listOf('visitReports').isNotEmpty);
 
   @override
@@ -38,6 +42,13 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
       final record = await _doctorService.getPatientMedicalRecord(
         widget.patientId,
         doctorId: doctorId,
+      );
+      debugPrint(
+        '[doctor:medical-record-screen] patientId=${widget.patientId} '
+        'doctorId=$doctorId '
+        'keys=${record.keys.toList()} '
+        'initialDiagnosisReports=${record['initialDiagnosisReports'] is List ? (record['initialDiagnosisReports'] as List).length : 0} '
+        'visitReports=${record['visitReports'] is List ? (record['visitReports'] as List).length : 0}',
       );
       setState(() {
         _record = record;
@@ -63,10 +74,12 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: DoctorUiConstants.doctorBackground,
       appBar: AppBar(
         title: const Text('Medical Record'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
+        backgroundColor: DoctorUiConstants.doctorBackground,
+        foregroundColor: AppColors.primary,
+        elevation: 0,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -80,7 +93,11 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     // Basic Info Card
-                    if (_record.keys.any((key) => key != 'visitReports')) ...[
+                    if (_record.keys.any(
+                      (key) =>
+                          key != 'visitReports' &&
+                          key != 'initialDiagnosisReports',
+                    )) ...[
                       _buildSectionCard('Basic Information', [
                         _buildInfoRow(
                           'Date of Birth',
@@ -141,6 +158,15 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
                           _record['pastSurgeries'] ?? 'No surgeries recorded',
                         ),
                       ]),
+                      const SizedBox(height: 16),
+                    ],
+                    if (_listOf('initialDiagnosisReports').isNotEmpty) ...[
+                      _buildSectionCard(
+                        'Initial Diagnosis',
+                        _listOf(
+                          'initialDiagnosisReports',
+                        ).map((r) => _buildInitialDiagnosisRow(r)).toList(),
+                      ),
                       const SizedBox(height: 16),
                     ],
                     if (_listOf('visitReports').isNotEmpty) ...[
@@ -410,6 +436,71 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
           if (diagnosis.isNotEmpty) _reportText('Diagnosis', diagnosis),
           if (notes.isNotEmpty) _reportText('Treatment / Notes', notes),
           if (medications.isNotEmpty) _reportText('Medication', medications),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInitialDiagnosisRow(dynamic report) {
+    final item = report is Map ? report : <String, dynamic>{};
+    final date = _formatAnyDate(
+      item['reportDate'] ?? item['createdAt'] ?? item['updatedAt'],
+    );
+    final doctorName = (item['doctorName'] ?? 'Doctor').toString();
+    final diagnosis = (item['diagnosis'] ?? '').toString();
+    final treatmentPlan = (item['treatmentPlan'] ?? '').toString();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF7F5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFBFE3DD)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.assignment_turned_in_outlined,
+                color: AppColors.primary,
+                size: 24,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Report Type: Initial Diagnosis',
+                      style: TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      [
+                        if (date.isNotEmpty) date,
+                        if (doctorName.isNotEmpty) doctorName,
+                      ].join(' - '),
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (diagnosis.isNotEmpty) _reportText('Diagnosis', diagnosis),
+          if (treatmentPlan.isNotEmpty)
+            _reportText('Treatment Plan', treatmentPlan),
         ],
       ),
     );

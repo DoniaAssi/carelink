@@ -118,6 +118,21 @@ async function hasColumn(tableName, columnName) {
   }
 }
 
+async function hasTable(tableName) {
+  const key = `table.${tableName}`;
+  if (columnCache.has(key)) return columnCache.get(key);
+
+  try {
+    const [rows] = await db.query('SHOW TABLES LIKE ?', [tableName]);
+    const exists = rows.length > 0;
+    columnCache.set(key, exists);
+    return exists;
+  } catch (_) {
+    columnCache.set(key, false);
+    return false;
+  }
+}
+
 function syntheticEmail(provider, providerId) {
   return `${provider}_${providerId}@carelink.social.local`;
 }
@@ -250,6 +265,10 @@ router.post('/register', async (req, res) => {
     currentMedications,
     phoneVerificationToken,
     emailVerificationToken,
+    cvFileName,
+    cvFileData,
+    cvMimeType,
+    cvFileSize,
   } = req.body;
 
   const normalizedFullName = (fullName || '').toString().trim();
@@ -265,6 +284,14 @@ router.post('/register', async (req, res) => {
   const normalizedLicense = (licenseNumber || '').toString().trim();
   const normalizedServiceType = (serviceType || '').toString().trim();
   const normalizedProfileImageUrl = (profileImageUrl || '').toString().trim();
+  const normalizedCvFileName = (cvFileName || '').toString().trim();
+  const normalizedCvFileData = (cvFileData || '').toString().trim();
+  const normalizedCvMimeType = (cvMimeType || 'application/pdf')
+    .toString()
+    .trim();
+  const parsedCvFileSize = Number.isFinite(Number(cvFileSize))
+    ? Number(cvFileSize)
+    : null;
   const normalizedPassword = (password || '').toString();
   const normalizedConfirmPassword = (confirmPassword || '').toString();
   const parsedExperience = Number.isFinite(Number(experienceYears))
@@ -358,6 +385,20 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({
         error: 'experienceYears must be between 0 and 80'
       });
+    }
+    if (normalizedRole === 'doctor') {
+      if (!normalizedCvFileName || !normalizedCvFileData) {
+        return res.status(400).json({ error: 'Doctor CV PDF is required' });
+      }
+      if (!normalizedCvFileName.toLowerCase().endsWith('.pdf')) {
+        return res.status(400).json({ error: 'Doctor CV must be a PDF file' });
+      }
+      if (normalizedCvMimeType !== 'application/pdf') {
+        return res.status(400).json({ error: 'Doctor CV must be a PDF file' });
+      }
+      if (parsedCvFileSize != null && parsedCvFileSize > 10 * 1024 * 1024) {
+        return res.status(400).json({ error: 'Doctor CV maximum size is 10 MB' });
+      }
     }
   }
 
@@ -482,6 +523,7 @@ router.post('/register', async (req, res) => {
       const hasLicenseNumber = await hasColumn('careprovider', 'licenseNumber');
       const hasServiceType = await hasColumn('careprovider', 'serviceType');
       const hasProviderAddress = await hasColumn('careprovider', 'providerAddress');
+      const hasApprovalStatus = await hasColumn('careprovider', 'approvalStatus');
 
       const providerColumns = [
         'userId',
@@ -516,12 +558,66 @@ router.post('/register', async (req, res) => {
         providerColumns.push('providerAddress');
         providerValues.push(normalizedAddress || null);
       }
+      if (hasApprovalStatus) {
+        providerColumns.push('approvalStatus');
+        providerValues.push('pending');
+      }
 
       await connection.query(
         `INSERT INTO careprovider (${providerColumns.join(', ')})
          VALUES (${providerColumns.map(() => '?').join(', ')})`,
         providerValues
       );
+
+      if (normalizedRole === 'doctor' && normalizedCvFileData) {
+        try {
+          const fs = require('fs');
+          const path = require('path');
+          const safeOriginalName =
+            normalizedCvFileName.replace(/[^a-zA-Z0-9._-]/g, '_') ||
+            'doctor_cv.pdf';
+          const buffer = Buffer.from(normalizedCvFileData, 'base64');
+          if (buffer.length > 10 * 1024 * 1024) {
+            throw new Error('Doctor CV maximum size is 10 MB');
+          }
+          const uploadsDir = path.join(__dirname, '..', 'uploads', 'provider_cv');
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+          }
+          const filename = `cv_${userId}_${Date.now()}.pdf`;
+          const filePath = path.join(uploadsDir, filename);
+          await fs.promises.writeFile(filePath, buffer);
+          const fileUrl = `/uploads/provider_cv/${filename}`;
+
+          if (await hasTable('provider_certification')) {
+            const certColumns = ['certId', 'providerUserId', 'name'];
+            const certValues = [randomUUID(), userId, 'Upload CV'];
+            if (await hasColumn('provider_certification', 'fileUrl')) {
+              certColumns.push('fileUrl');
+              certValues.push(fileUrl);
+            }
+            if (await hasColumn('provider_certification', 'originalName')) {
+              certColumns.push('originalName');
+              certValues.push(safeOriginalName);
+            }
+            if (await hasColumn('provider_certification', 'mimeType')) {
+              certColumns.push('mimeType');
+              certValues.push('application/pdf');
+            }
+            if (await hasColumn('provider_certification', 'fileSize')) {
+              certColumns.push('fileSize');
+              certValues.push(buffer.length);
+            }
+            await connection.query(
+              `INSERT INTO provider_certification (${certColumns.join(', ')})
+               VALUES (${certColumns.map(() => '?').join(', ')})`,
+              certValues
+            );
+          }
+        } catch (cvErr) {
+          throw cvErr;
+        }
+      }
 
       if (normalizedRole === 'doctor') {
         await connection.query(

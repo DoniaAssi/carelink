@@ -7,6 +7,7 @@ import '../../../core/app_colors.dart';
 import '../../../core/app_localizations.dart';
 import '../../../core/locale_controller.dart';
 import '../../../services/doctor_service.dart';
+import 'doctor_ui_constants.dart';
 import 'request_details_screen.dart';
 
 class DoctorScheduleScreen extends StatefulWidget {
@@ -28,7 +29,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
   DateTime _selectedDate = DateTime.now();
   String _appointmentFilter = 'all';
 
-  static const _pageColor = Color(0xFFF5F5F5);
+  static const _pageColor = DoctorUiConstants.doctorBackground;
   static const _primary = Color(0xFF0F8B8D);
   static const _ink = Color(0xFF101828);
   static const _muted = Color(0xFF667085);

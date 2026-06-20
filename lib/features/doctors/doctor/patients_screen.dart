@@ -5,8 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/app_localizations.dart';
 import '../../../core/locale_controller.dart';
 import '../../../services/doctor_service.dart';
+import 'doctor_ui_constants.dart';
 import 'medical_record_screen.dart';
-import 'requests_list_screen.dart';
+import 'patient_appointments_screen.dart';
 
 class DoctorPatientsScreen extends StatefulWidget {
   const DoctorPatientsScreen({super.key});
@@ -23,7 +24,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
   List<dynamic> _patients = [];
   String _query = '';
 
-  static const _pageColor = Color(0xFFF5F5F5);
+  static const _pageColor = DoctorUiConstants.doctorBackground;
   static const _primary = Color(0xFF0F8B8D);
   static const _textDark = Color(0xFF101828);
   static const _textMuted = Color(0xFF667085);
@@ -439,7 +440,7 @@ class _DoctorPatientDetailsScreenState
 
   Map<String, dynamic> _record = {};
 
-  static const _pageColor = Color(0xFFF5F5F5);
+  static const _pageColor = DoctorUiConstants.doctorBackground;
   static const _primary = Color(0xFF0F8B8D);
   static const _textDark = Color(0xFF101828);
   static const _textMuted = Color(0xFF667085);
@@ -823,10 +824,15 @@ class _DoctorPatientDetailsScreenState
   }
 
   void _openAppointments() {
+    if (_patientId.isEmpty) return;
+    final patientName = _text(widget.patient['patientName']) ?? 'Patient';
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const RequestsListScreen(status: 'confirmed'),
+        builder: (_) => DoctorPatientAppointmentsScreen(
+          patientId: _patientId,
+          patientName: patientName,
+        ),
       ),
     );
   }
@@ -1326,7 +1332,7 @@ class _DoctorDetailScaffold extends StatelessWidget {
   final Widget action;
   final Widget child;
 
-  static const _pageColor = Color(0xFFF5F5F5);
+  static const _pageColor = DoctorUiConstants.doctorBackground;
   static const _primary = Color(0xFF0F8B8D);
   static const _textDark = Color(0xFF101828);
 

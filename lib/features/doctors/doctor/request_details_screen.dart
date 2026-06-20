@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/doctor_service.dart';
 import '../../../core/app_colors.dart';
+import 'doctor_ui_constants.dart';
 import 'initial_diagnosis_report_screen.dart';
 import 'medical_record_screen.dart';
 import 'medical_report_form.dart';
@@ -175,6 +176,58 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     }
   }
 
+  Future<void> _openReportForRequest() async {
+    final requestData = Map<String, dynamic>.from(_request);
+    if (_asBool(requestData['hasReportForVisit'])) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('A report already exists for this completed visit.'),
+        ),
+      );
+      _loadRequestDetails();
+      return;
+    }
+
+    var hasInitial = _asBool(
+      requestData['hasInitialDiagnosisReportForCase'] ??
+          requestData['hasInitialDiagnosisReport'],
+    );
+
+    try {
+      if (!hasInitial) {
+        final response = await _doctorService.getInitialDiagnosisReport(
+          widget.requestId,
+          doctorUserId: _doctorId,
+        );
+        hasInitial = _asBool(response['hasInitialDiagnosisReport']);
+      }
+      requestData['hasInitialDiagnosisReport'] = hasInitial;
+      requestData['hasInitialDiagnosisReportForCase'] = hasInitial;
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error checking initial diagnosis: $e')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => hasInitial
+            ? MedicalReportFormScreen(
+                requestId: widget.requestId,
+                requestData: requestData,
+              )
+            : InitialDiagnosisReportScreen(
+                requestId: widget.requestId,
+                requestData: requestData,
+              ),
+      ),
+    ).then((_) => _loadRequestDetails());
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = _request['status'] ?? 'pending';
@@ -185,8 +238,14 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     final location = _request['location'] ?? '';
     final reasonForVisit = _request['reasonForVisit'] ?? '';
     final notes = _request['notes'] ?? '';
+    final normalizedStatus = status.toString().toLowerCase();
+    final canCreateReport =
+        normalizedStatus == 'completed' &&
+        !_asBool(_request['hasReportForVisit']) &&
+        (_request['requestId'] ?? widget.requestId).toString().isNotEmpty;
 
     return Scaffold(
+      backgroundColor: DoctorUiConstants.doctorBackground,
       appBar: AppBar(
         title: const Text('Request Details'),
         backgroundColor: AppColors.primary,
@@ -335,7 +394,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                       ),
                     ),
                   ],
-                  if (status == 'completed') ...[
+                  if (normalizedStatus == 'completed') ...[
                     ElevatedButton.icon(
                       onPressed: () {
                         Navigator.push(
@@ -355,48 +414,19 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) {
-                              final requestData = Map<String, dynamic>.from(
-                                _request,
-                              );
-                              final hasInitial = _asBool(
-                                requestData['hasInitialDiagnosisReport'],
-                              );
-                              debugPrint(
-                                '[doctor:request-details:report:navigate] '
-                                'requestId=${widget.requestId} '
-                                'patientId=${requestData['patientUserId']} '
-                                'doctorId=${requestData['providerUserId']} '
-                                'hasInitialDiagnosisReport=${requestData['hasInitialDiagnosisReport']} '
-                                'parsed=$hasInitial',
-                              );
-                              return hasInitial
-                                  ? MedicalReportFormScreen(
-                                      requestId: widget.requestId,
-                                      requestData: requestData,
-                                    )
-                                  : InitialDiagnosisReportScreen(
-                                      requestId: widget.requestId,
-                                      requestData: requestData,
-                                    );
-                            },
-                          ),
-                        ).then((_) => _loadRequestDetails());
-                      },
-                      icon: const Icon(Icons.description),
-                      label: const Text('Submit Medical Report'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.info,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                    if (canCreateReport) ...[
+                      const SizedBox(height: 12),
+                      ElevatedButton.icon(
+                        onPressed: _openReportForRequest,
+                        icon: const Icon(Icons.description),
+                        label: const Text('Submit Medical Report'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.info,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ],
               ),

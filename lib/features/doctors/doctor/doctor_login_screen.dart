@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/doctor_service.dart';
 import '../../../core/app_colors.dart';
+import 'doctor_ui_constants.dart';
 import 'pending_approval_screen.dart';
 import 'dashboard_screen.dart';
 
@@ -91,6 +92,7 @@ class _DoctorLoginScreenState extends State<DoctorLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: DoctorUiConstants.doctorBackground,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),

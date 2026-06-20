@@ -5,6 +5,7 @@ import '../../../core/app_colors.dart';
 import '../../../core/app_localizations.dart';
 import '../../../core/locale_controller.dart';
 import '../../../services/doctor_service.dart';
+import 'doctor_ui_constants.dart';
 import 'initial_diagnosis_report_screen.dart';
 import 'medical_report_form.dart';
 
@@ -50,7 +51,11 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
             .where((item) {
               if (item is! Map) return false;
               final status = (item['status'] ?? '').toString().toLowerCase();
-              return status == 'completed';
+              final hasReportForVisit = _asBool(item['hasReportForVisit']);
+              final canCreateReport = item.containsKey('canCreateReport')
+                  ? _asBool(item['canCreateReport'])
+                  : status == 'completed' && !hasReportForVisit;
+              return status == 'completed' && canCreateReport;
             })
             .take(12)
             .toList();
@@ -84,35 +89,63 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
     _openReportForm(request);
   }
 
-  void _openReportForm(dynamic rawRequest) {
+  Future<void> _openReportForm(dynamic rawRequest) async {
     if (rawRequest is! Map) return;
     final requestId = (rawRequest['requestId'] ?? rawRequest['id'] ?? '')
         .toString();
     if (requestId.isEmpty) return;
 
+    final requestData = Map<String, dynamic>.from(rawRequest);
+    if (_asBool(requestData['hasReportForVisit'])) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('A report already exists for this completed visit.'),
+        ),
+      );
+      _loadRequests();
+      return;
+    }
+
+    var hasInitial = _asBool(
+      requestData['hasInitialDiagnosisReportForCase'] ??
+          requestData['hasInitialDiagnosisReport'],
+    );
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final doctorId =
+          prefs.getString('doctor_userId') ??
+          (requestData['providerUserId'] ?? '').toString();
+      if (!hasInitial) {
+        final response = await _doctorService.getInitialDiagnosisReport(
+          requestId,
+          doctorUserId: doctorId,
+        );
+        hasInitial = _asBool(response['hasInitialDiagnosisReport']);
+      }
+      requestData['hasInitialDiagnosisReport'] = hasInitial;
+      requestData['hasInitialDiagnosisReportForCase'] = hasInitial;
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error checking initial diagnosis: $e')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) {
-          final requestData = Map<String, dynamic>.from(rawRequest);
-          final hasInitial = _asBool(requestData['hasInitialDiagnosisReport']);
-          debugPrint(
-            '[doctor:reports:navigate] requestId=$requestId '
-            'patientId=${requestData['patientUserId']} '
-            'doctorId=${requestData['providerUserId']} '
-            'hasInitialDiagnosisReport=${requestData['hasInitialDiagnosisReport']} '
-            'parsed=$hasInitial',
-          );
-          return hasInitial
-              ? MedicalReportFormScreen(
-                  requestId: requestId,
-                  requestData: requestData,
-                )
-              : InitialDiagnosisReportScreen(
-                  requestId: requestId,
-                  requestData: requestData,
-                );
-        },
+        builder: (context) => hasInitial
+            ? MedicalReportFormScreen(
+                requestId: requestId,
+                requestData: requestData,
+              )
+            : InitialDiagnosisReportScreen(
+                requestId: requestId,
+                requestData: requestData,
+              ),
       ),
     ).then((_) => _loadRequests());
   }
@@ -123,7 +156,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
       listenable: localeController,
       builder: (context, _) {
         return Scaffold(
-          backgroundColor: const Color(0xFFF4FAF8),
+          backgroundColor: DoctorUiConstants.doctorBackground,
           body: SafeArea(
             child: Center(
               child: ConstrainedBox(
@@ -179,7 +212,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
         ),
         const Spacer(),
         ElevatedButton.icon(
-          onPressed: _openFirstReport,
+          onPressed: _requests.isEmpty ? null : _openFirstReport,
           icon: const Icon(Icons.add_rounded, size: 22),
           label: Text(context.dtr('doctor.dashboard.newReport')),
           style: ElevatedButton.styleFrom(
@@ -272,7 +305,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            'No completed visits yet',
+            'No completed visits available for reporting.',
             style: TextStyle(
               color: Colors.grey.shade700,
               fontSize: 17,
@@ -281,7 +314,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Reports can be created after a visit is completed.',
+            'A new report can be created only after a completed visit without an existing report.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.grey.shade500,

@@ -510,6 +510,10 @@ class ApiService {
     String? currentMedications,
     String? phoneVerificationToken,
     String? emailVerificationToken,
+    String? cvFileName,
+    String? cvFileData,
+    String? cvMimeType,
+    int? cvFileSize,
   }) async {
     final Map<String, dynamic> body = {
       'fullName': fullName.trim(),
@@ -573,6 +577,16 @@ class ApiService {
       }
       if (serviceType != null && serviceType.trim().isNotEmpty) {
         body['serviceType'] = serviceType.trim();
+      }
+      if (role == 'doctor' &&
+          cvFileName != null &&
+          cvFileName.trim().isNotEmpty &&
+          cvFileData != null &&
+          cvFileData.trim().isNotEmpty) {
+        body['cvFileName'] = cvFileName.trim();
+        body['cvFileData'] = cvFileData.trim();
+        body['cvMimeType'] = (cvMimeType ?? 'application/pdf').trim();
+        if (cvFileSize != null) body['cvFileSize'] = cvFileSize;
       }
     }
 
@@ -1068,10 +1082,10 @@ class ApiService {
       'date': date,
       'time': time,
     };
-    final uri = _endpoint('/patient/appointments/check-duplicate').replace(queryParameters: queryParams);
-    final response = await _sendRequest(
-      http.get(uri, headers: _jsonHeaders),
-    );
+    final uri = _endpoint(
+      '/patient/appointments/check-duplicate',
+    ).replace(queryParameters: queryParams);
+    final response = await _sendRequest(http.get(uri, headers: _jsonHeaders));
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final data = jsonDecode(response.body);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/doctor_session.dart';
 import '../../../services/doctor_service.dart';
 import '../../../core/app_colors.dart';
+import 'doctor_ui_constants.dart';
 
 class PendingApprovalScreen extends StatefulWidget {
   final String userId;
@@ -50,6 +51,7 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: DoctorUiConstants.doctorBackground,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),

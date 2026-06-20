@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:async';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -218,6 +220,8 @@ class _SignupScreenState extends State<SignupScreen> {
 
   // Doctor/Nurse specific controllers
   final TextEditingController specialtyController = TextEditingController();
+  final TextEditingController customSpecialtyController =
+      TextEditingController();
   final TextEditingController licenseController = TextEditingController();
   final TextEditingController experienceController = TextEditingController();
   final TextEditingController clinicNameController = TextEditingController();
@@ -227,6 +231,18 @@ class _SignupScreenState extends State<SignupScreen> {
   String _selectedGender = 'male';
   String _consultationType = 'both'; // home, online, both
   bool _homeCareAvailability = true;
+  String? _selectedDoctorSpecialty;
+  PlatformFile? _doctorCvFile;
+
+  static const List<String> _doctorSpecialties = [
+    'Cardiology',
+    'General Medicine',
+    'Orthopedics',
+    'Neurology',
+    'Dermatology',
+    'ENT Specialist',
+    'Other',
+  ];
 
   double? _gpsLat;
   double? _gpsLng;
@@ -250,6 +266,7 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _obscureConfirmPassword = true;
 
   bool get _isDark => themeController.isDark;
+  bool get _showLegacyDoctorSpecialtyField => false;
 
   @override
   void initState() {
@@ -613,6 +630,7 @@ class _SignupScreenState extends State<SignupScreen> {
     currentMedicationsController.dispose();
     emergencyContactController.dispose();
     specialtyController.dispose();
+    customSpecialtyController.dispose();
     licenseController.dispose();
     experienceController.dispose();
     clinicNameController.dispose();
@@ -787,6 +805,50 @@ class _SignupScreenState extends State<SignupScreen> {
     }
   }
 
+  Future<void> _pickDoctorCv() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf'],
+      allowMultiple: false,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final file = result.files.first;
+    final isPdf = file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+      _showMessage('Please upload a PDF file.', color: Colors.red.shade700);
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      _showMessage(
+        'CV file is too large. Maximum size is 10 MB.',
+        color: Colors.red.shade700,
+      );
+      return;
+    }
+    if (file.bytes == null || file.bytes!.isEmpty) {
+      _showMessage(
+        'Could not read the selected PDF. Please choose another file.',
+        color: Colors.red.shade700,
+      );
+      return;
+    }
+
+    setState(() => _doctorCvFile = file);
+  }
+
+  void _removeDoctorCv() {
+    setState(() => _doctorCvFile = null);
+  }
+
+  String _doctorSpecializationValue() {
+    if (_selectedDoctorSpecialty == 'Other') {
+      return customSpecialtyController.text.trim();
+    }
+    return (_selectedDoctorSpecialty ?? specialtyController.text).trim();
+  }
+
   bool _isStrongPassword(String input) {
     final regex = RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$');
     return regex.hasMatch(input);
@@ -799,13 +861,19 @@ class _SignupScreenState extends State<SignupScreen> {
       return;
     }
 
-    if (_selectedRole == 'doctor' && addressController.text.trim().isEmpty) {
+    if (_selectedRole == 'doctor' &&
+        _showLegacyDoctorSpecialtyField &&
+        addressController.text.trim().isEmpty) {
       _showMessage(
         CarelinkL10n.of(context).isArabic
             ? 'موقع العيادة مطلوب للطبيب'
             : 'Location/Clinic address is required for Doctors',
         color: Colors.red.shade700,
       );
+      return;
+    }
+    if (_selectedRole == 'doctor' && _doctorCvFile == null) {
+      _showMessage('Upload CV (PDF) is required.', color: Colors.red.shade700);
       return;
     }
     if (_selectedRole == 'nurse' && addressController.text.trim().isEmpty) {
@@ -923,6 +991,9 @@ class _SignupScreenState extends State<SignupScreen> {
         return;
       }
 
+      final cvFile = _doctorCvFile;
+      final cvBytes = cvFile?.bytes;
+
       // 2. Perform register
       final response = await ApiService().register(
         nameController.text.trim(),
@@ -933,6 +1004,8 @@ class _SignupScreenState extends State<SignupScreen> {
         confirmPassword: confirmPasswordController.text,
         specialization: _selectedRole == 'patient'
             ? null
+            : _selectedRole == 'doctor'
+            ? _doctorSpecializationValue()
             : specialtyController.text.trim(),
         addressText: addressController.text.trim().isEmpty
             ? null
@@ -963,6 +1036,12 @@ class _SignupScreenState extends State<SignupScreen> {
             : (_selectedRole == 'doctor'
                   ? _consultationType
                   : (_homeCareAvailability ? 'home care' : 'online')),
+        cvFileName: _selectedRole == 'doctor' ? cvFile?.name : null,
+        cvFileSize: _selectedRole == 'doctor' ? cvFile?.size : null,
+        cvMimeType: _selectedRole == 'doctor' ? 'application/pdf' : null,
+        cvFileData: _selectedRole == 'doctor' && cvBytes != null
+            ? base64Encode(cvBytes)
+            : null,
         phoneVerificationToken: _phoneVerificationToken,
         emailVerificationToken: _emailVerificationToken,
       );
@@ -1480,6 +1559,199 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
+  Widget _buildDoctorSpecialtyDropdown(CarelinkPalette p) {
+    return _buildFieldWrapper(
+      p,
+      label: 'Medical Specialty',
+      child: DropdownButtonFormField<String>(
+        initialValue: _selectedDoctorSpecialty,
+        dropdownColor: p.surface,
+        icon: Icon(Icons.expand_more_rounded, color: p.inkMuted),
+        style: GoogleFonts.inter(
+          color: p.inkDark,
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
+        decoration: InputDecoration(
+          prefixIcon: Icon(
+            Icons.health_and_safety_outlined,
+            color: p.inkMuted,
+            size: 22,
+          ),
+          hintText: 'Select medical specialty',
+          hintStyle: GoogleFonts.inter(
+            color: p.inkMuted,
+            fontWeight: FontWeight.w500,
+            fontSize: 14.5,
+          ),
+          filled: true,
+          fillColor: p.isDark
+              ? const Color(0xFF123640).withValues(alpha: 0.55)
+              : Colors.white,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 12,
+            horizontal: 12,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: p.stroke, width: 1),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: p.stroke, width: 1),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.red.shade400, width: 1),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.red.shade600, width: 1.5),
+          ),
+          errorStyle: GoogleFonts.inter(
+            fontSize: 12,
+            color: Colors.red.shade600,
+          ),
+        ),
+        items: _doctorSpecialties
+            .map(
+              (specialty) => DropdownMenuItem<String>(
+                value: specialty,
+                child: Text(specialty),
+              ),
+            )
+            .toList(),
+        validator: (value) {
+          if (value == null || value.trim().isEmpty) {
+            return 'Medical specialty is required';
+          }
+          return null;
+        },
+        onChanged: (value) {
+          setState(() {
+            _selectedDoctorSpecialty = value;
+            specialtyController.text = value == 'Other' ? '' : (value ?? '');
+            if (value != 'Other') customSpecialtyController.clear();
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildDoctorCvUpload(CarelinkPalette p) {
+    final file = _doctorCvFile;
+    return _buildFieldWrapper(
+      p,
+      label: 'Upload CV (PDF)',
+      child: FormField<PlatformFile>(
+        initialValue: file,
+        validator: (_) {
+          if (_selectedRole == 'doctor' && _doctorCvFile == null) {
+            return 'Upload CV (PDF) is required';
+          }
+          return null;
+        },
+        builder: (field) {
+          final hasError = field.hasError;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: p.isDark
+                      ? const Color(0xFF123640).withValues(alpha: 0.55)
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: hasError ? Colors.red.shade400 : p.stroke,
+                    width: hasError ? 1.4 : 1,
+                  ),
+                ),
+                child: file == null
+                    ? InkWell(
+                        onTap: _pickDoctorCv,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.upload_file_rounded,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Choose one PDF file (max 10 MB)',
+                                style: GoogleFonts.inter(
+                                  color: p.inkMuted,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Row(
+                        children: [
+                          const Icon(
+                            Icons.picture_as_pdf_rounded,
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  file.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    color: p.inkDark,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  '${(file.size / (1024 * 1024)).toStringAsFixed(2)} MB',
+                                  style: GoogleFonts.inter(
+                                    color: p.inkMuted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _removeDoctorCv,
+                            child: const Text('Remove'),
+                          ),
+                        ],
+                      ),
+              ),
+              if (hasError) ...[
+                const SizedBox(height: 6),
+                Text(
+                  field.errorText!,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: Colors.red.shade600,
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildStep2RoleDetails(CarelinkPalette p) {
     final isAr = CarelinkL10n.of(context).isArabic;
     final roles = [
@@ -1663,7 +1935,7 @@ class _SignupScreenState extends State<SignupScreen> {
               onPressed: _pickLocation,
             ),
             validator: (v) {
-              if (_selectedRole != 'patient') {
+              if (_selectedRole == 'nurse') {
                 if (v == null || v.trim().isEmpty) {
                   return isAr ? 'الموقع مطلوب' : 'Location is required';
                 }
@@ -1712,19 +1984,36 @@ class _SignupScreenState extends State<SignupScreen> {
 
           // Role specific Doctor fields
           if (_selectedRole == 'doctor') ...[
-            _buildTextField(
-              p,
-              label: context.tr('auth.specialization'),
-              hint: isAr ? 'مثال: طبيب قلب' : 'e.g. Cardiologist',
-              icon: Icons.health_and_safety_outlined,
-              controller: specialtyController,
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) {
-                  return isAr ? 'التخصص مطلوب' : 'Specialty is required';
-                }
-                return null;
-              },
-            ),
+            _buildDoctorSpecialtyDropdown(p),
+            if (_selectedDoctorSpecialty == 'Other')
+              _buildTextField(
+                p,
+                label: 'Please specify your specialization',
+                hint: 'Enter your medical specialization',
+                icon: Icons.edit_note_outlined,
+                controller: customSpecialtyController,
+                validator: (v) {
+                  if (_selectedDoctorSpecialty == 'Other' &&
+                      (v == null || v.trim().isEmpty)) {
+                    return 'Custom specialization is required';
+                  }
+                  return null;
+                },
+              ),
+            if (_showLegacyDoctorSpecialtyField)
+              _buildTextField(
+                p,
+                label: context.tr('auth.specialization'),
+                hint: isAr ? 'مثال: طبيب قلب' : 'e.g. Cardiologist',
+                icon: Icons.health_and_safety_outlined,
+                controller: specialtyController,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) {
+                    return isAr ? 'التخصص مطلوب' : 'Specialty is required';
+                  }
+                  return null;
+                },
+              ),
             _buildTextField(
               p,
               label: context.tr('auth.licenseNumber'),
@@ -1758,6 +2047,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 return null;
               },
             ),
+            _buildDoctorCvUpload(p),
             _buildFieldWrapper(
               p,
               label: context.tr('auth.consultationType'),

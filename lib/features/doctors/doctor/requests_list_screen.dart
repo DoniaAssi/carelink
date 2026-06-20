@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/app_colors.dart';
 import '../../../services/doctor_service.dart';
+import 'doctor_ui_constants.dart';
 import 'initial_diagnosis_report_screen.dart';
 import 'medical_record_screen.dart';
 import 'medical_report_form.dart';
@@ -24,6 +25,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
   List<dynamic> _requests = [];
   String? _currentStatus;
   String? _busyRequestId;
+  String _doctorId = '';
   Map<String, int> _filterCounts = {
     'all': 0,
     'available': 0,
@@ -33,7 +35,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
     'cancelled': 0,
   };
 
-  static const _pageColor = Color(0xFFE8F5F2);
+  static const _pageColor = DoctorUiConstants.doctorBackground;
   static const _primary = Color(0xFF0F8B8D);
 
   bool _asBool(dynamic value) {
@@ -59,6 +61,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final doctorId = prefs.getString('doctor_userId') ?? '';
+      _doctorId = doctorId;
 
       List<dynamic> requests;
       if (_currentStatus == 'available') {
@@ -383,6 +386,64 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
     }
   }
 
+  Future<void> _openReportForRequest(Map<String, dynamic> request) async {
+    final requestId = _requestIdOf(request);
+    if (requestId.isEmpty) return;
+
+    final requestData = Map<String, dynamic>.from(request);
+    if (_asBool(requestData['hasReportForVisit'])) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('A report already exists for this completed visit.'),
+        ),
+      );
+      _loadRequests();
+      return;
+    }
+
+    var hasInitial = _asBool(
+      requestData['hasInitialDiagnosisReportForCase'] ??
+          requestData['hasInitialDiagnosisReport'],
+    );
+
+    try {
+      final doctorId = _doctorId.isNotEmpty
+          ? _doctorId
+          : (requestData['providerUserId'] ?? '').toString();
+      if (!hasInitial) {
+        final response = await _doctorService.getInitialDiagnosisReport(
+          requestId,
+          doctorUserId: doctorId,
+        );
+        hasInitial = _asBool(response['hasInitialDiagnosisReport']);
+      }
+      requestData['hasInitialDiagnosisReport'] = hasInitial;
+      requestData['hasInitialDiagnosisReportForCase'] = hasInitial;
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error checking initial diagnosis: $e')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => hasInitial
+            ? MedicalReportFormScreen(
+                requestId: requestId,
+                requestData: requestData,
+              )
+            : InitialDiagnosisReportScreen(
+                requestId: requestId,
+                requestData: requestData,
+              ),
+      ),
+    ).then((_) => _loadRequests());
+  }
+
   Widget _buildEmptyState() {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -459,8 +520,11 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
     final canOpenRecord = patientId.isNotEmpty;
     final canComplete =
         status.toLowerCase() == 'confirmed' && requestId.isNotEmpty;
+    final hasReportForVisit = _asBool(request['hasReportForVisit']);
     final canFileReport =
-        status.toLowerCase() == 'completed' && requestId.isNotEmpty;
+        status.toLowerCase() == 'completed' &&
+        requestId.isNotEmpty &&
+        !hasReportForVisit;
     final isBusy = _busyRequestId == requestId;
 
     return Container(
@@ -760,36 +824,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: ElevatedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) {
-                      final requestData = Map<String, dynamic>.from(request);
-                      final hasInitial = _asBool(
-                        requestData['hasInitialDiagnosisReport'],
-                      );
-                      debugPrint(
-                        '[doctor:requests:file-report:navigate] '
-                        'requestId=$requestId '
-                        'patientId=${requestData['patientUserId']} '
-                        'doctorId=${requestData['providerUserId']} '
-                        'hasInitialDiagnosisReport=${requestData['hasInitialDiagnosisReport']} '
-                        'parsed=$hasInitial',
-                      );
-                      return hasInitial
-                          ? MedicalReportFormScreen(
-                              requestId: requestId,
-                              requestData: requestData,
-                            )
-                          : InitialDiagnosisReportScreen(
-                              requestId: requestId,
-                              requestData: requestData,
-                            );
-                    },
-                  ),
-                ).then((_) => _loadRequests());
-              },
+              onPressed: () => _openReportForRequest(request),
               icon: const Icon(Icons.description_outlined, size: 18),
               label: const Text('File Report'),
               style: ElevatedButton.styleFrom(

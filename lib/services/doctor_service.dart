@@ -266,6 +266,53 @@ class DoctorService {
   }
 
   // ============================================
+  // INITIAL DIAGNOSIS REPORT
+  // ============================================
+  Future<Map<String, dynamic>> getInitialDiagnosisReport(
+    String serviceRequestId, {
+    String? doctorUserId,
+  }) async {
+    try {
+      var endpoint = '${ApiEndpoints.doctorInitialDiagnosis}/$serviceRequestId';
+      if (doctorUserId != null && doctorUserId.isNotEmpty) {
+        endpoint += '?doctorUserId=$doctorUserId';
+      }
+      final response = await _apiService.get(endpoint);
+      return response is Map<String, dynamic> ? response : {};
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> createInitialDiagnosisReport({
+    required String serviceRequestId,
+    required String doctorUserId,
+    required String chiefComplaint,
+    required String symptoms,
+    required String diagnosis,
+    required String treatmentPlan,
+    required String nursingInstructions,
+    required int requiredVisits,
+  }) async {
+    try {
+      final response = await _apiService
+          .post(ApiEndpoints.doctorInitialDiagnosis, {
+            'serviceRequestId': serviceRequestId,
+            'doctorUserId': doctorUserId,
+            'chiefComplaint': chiefComplaint,
+            'symptoms': symptoms,
+            'diagnosis': diagnosis,
+            'treatmentPlan': treatmentPlan,
+            'nursingInstructions': nursingInstructions,
+            'requiredVisits': requiredVisits,
+          });
+      return response;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ============================================
   // MANAGE AVAILABILITY
   // ============================================
   Future<Map<String, dynamic>> setAvailability(

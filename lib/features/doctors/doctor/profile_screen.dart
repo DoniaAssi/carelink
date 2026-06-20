@@ -5,6 +5,7 @@ import '../../../core/doctor_session.dart';
 import '../../../core/locale_controller.dart';
 import '../../../services/doctor_service.dart';
 import '../../../core/app_colors.dart';
+import 'doctor_ui_constants.dart';
 
 class DoctorProfileScreen extends StatefulWidget {
   const DoctorProfileScreen({super.key});
@@ -327,6 +328,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       listenable: localeController,
       builder: (context, _) {
         return Scaffold(
+          backgroundColor: DoctorUiConstants.doctorBackground,
           appBar: AppBar(
             title: Text(context.dtr('doctor.nav.profile')),
             backgroundColor: AppColors.primary,
