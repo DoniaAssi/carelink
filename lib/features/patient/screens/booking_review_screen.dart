@@ -112,6 +112,42 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
         children: [
           const BookingStepIndicator(currentStep: BookingFlowStep.review),
           const SizedBox(height: 20),
+          if (r.isRebook) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: 0.22),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.replay_rounded,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      context.l10n.isArabic
+                          ? 'هذا حجز جديد مبني على حجز سابق.'
+                          : 'This is a new booking based on a previous booking.',
+                      style: TextStyle(
+                        color: p.inkDark,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),

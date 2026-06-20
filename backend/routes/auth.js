@@ -118,19 +118,80 @@ async function hasColumn(tableName, columnName) {
   }
 }
 
-async function hasTable(tableName) {
-  const key = `table.${tableName}`;
-  if (columnCache.has(key)) return columnCache.get(key);
+function experienceTierFromYears(years) {
+  const value = Number(years || 0);
+  if (value >= 8) return 'senior';
+  if (value >= 3) return 'mid';
+  return 'junior';
+}
 
-  try {
-    const [rows] = await db.query('SHOW TABLES LIKE ?', [tableName]);
-    const exists = rows.length > 0;
-    columnCache.set(key, exists);
-    return exists;
-  } catch (_) {
-    columnCache.set(key, false);
-    return false;
+async function saveProviderDocumentUpload(userId, label, rawValue) {
+  const value = (rawValue || '').toString().trim();
+  if (!value.startsWith('data:')) return value || null;
+
+  const matches = value.match(/^data:([^;]+);base64,(.+)$/);
+  if (!matches || matches.length !== 3) return value || null;
+
+  const mime = matches[1].toLowerCase();
+  const extByMime = {
+    'application/pdf': 'pdf',
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+  };
+  const ext = extByMime[mime] || 'bin';
+  const fs = require('fs');
+  const path = require('path');
+  const uploadsDir = path.join(__dirname, '..', 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
   }
+
+  const safeLabel = label.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+  const filename = `provider_${safeLabel}_${userId}_${Date.now()}.${ext}`;
+  const buffer = Buffer.from(matches[2].replace(/\s/g, ''), 'base64');
+  await fs.promises.writeFile(path.join(uploadsDir, filename), buffer);
+  return `/uploads/${filename}`;
+}
+
+async function ensureProviderRegistrationExtensions(connection) {
+  const careProviderColumns = [
+    ['license_number', 'VARCHAR(120) NULL'],
+    ['years_experience', 'INT NULL'],
+    ['experience_tier', "VARCHAR(24) NOT NULL DEFAULT 'junior'"],
+    ['serviceAreas', 'TEXT NULL'],
+    ['biography', 'TEXT NULL'],
+    ['previousWorkplaces', 'TEXT NULL'],
+    ['homeCareAvailable', 'TINYINT(1) NOT NULL DEFAULT 0'],
+    ['is_rate_approved', 'TINYINT(1) NOT NULL DEFAULT 0'],
+    ['hourly_rate', 'DECIMAL(10,2) NOT NULL DEFAULT 0'],
+    ['status', "VARCHAR(24) NOT NULL DEFAULT 'pending'"],
+    ['experience_level', "VARCHAR(24) NOT NULL DEFAULT 'junior'"],
+  ];
+
+  for (const [column, definition] of careProviderColumns) {
+    if (!(await hasColumn('careprovider', column))) {
+      await connection.query(
+        `ALTER TABLE careprovider ADD COLUMN ${column} ${definition}`,
+      );
+      columnCache.set(`careprovider.${column}`, true);
+    }
+  }
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS provider_documents (
+      documentId CHAR(36) NOT NULL PRIMARY KEY,
+      providerUserId CHAR(36) NOT NULL,
+      medical_certificate VARCHAR(1024) NULL,
+      nursing_license VARCHAR(1024) NULL,
+      id_card VARCHAR(1024) NULL,
+      cv_file VARCHAR(1024) NULL,
+      workplace_history TEXT NULL,
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_provider_documents_provider (providerUserId)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
 }
 
 function syntheticEmail(provider, providerId) {
@@ -194,6 +255,7 @@ async function getOrCreateSocialUser({
   try {
     connection = await db.getConnection();
     await connection.beginTransaction();
+    await ensureProviderRegistrationExtensions(connection);
 
     const userId = randomUUID();
     const generatedPasswordHash = await bcrypt.hash(
@@ -260,6 +322,20 @@ router.post('/register', async (req, res) => {
     experienceYears,
     licenseNumber,
     serviceType,
+    serviceAreas,
+    biography,
+    previousWorkplaces,
+    workplaceHistory,
+    cvFile,
+    cvFileUrl,
+    medicalCertificate,
+    medicalCertificateUrl,
+    nursingLicense,
+    nursingLicenseUrl,
+    idCard,
+    idCardUrl,
+    homeCareAvailability,
+    homeCareAvailable,
     chronicDiseases,
     allergies,
     currentMedications,
@@ -283,6 +359,27 @@ router.post('/register', async (req, res) => {
   const normalizedGender = (gender || '').toString().trim().toLowerCase();
   const normalizedLicense = (licenseNumber || '').toString().trim();
   const normalizedServiceType = (serviceType || '').toString().trim();
+  const normalizedServiceAreas = (serviceAreas || '').toString().trim();
+  const normalizedBiography = (biography || '').toString().trim();
+  const normalizedPreviousWorkplaces = (
+    previousWorkplaces ||
+    workplaceHistory ||
+    ''
+  )
+    .toString()
+    .trim();
+  const normalizedCvFile = (cvFileUrl || cvFile || '').toString().trim();
+  const normalizedMedicalCertificate = (
+    medicalCertificateUrl ||
+    medicalCertificate ||
+    ''
+  )
+    .toString()
+    .trim();
+  const normalizedNursingLicense = (nursingLicenseUrl || nursingLicense || '')
+    .toString()
+    .trim();
+  const normalizedIdCard = (idCardUrl || idCard || '').toString().trim();
   const normalizedProfileImageUrl = (profileImageUrl || '').toString().trim();
   const normalizedCvFileName = (cvFileName || '').toString().trim();
   const normalizedCvFileData = (cvFileData || '').toString().trim();
@@ -297,6 +394,14 @@ router.post('/register', async (req, res) => {
   const parsedExperience = Number.isFinite(Number(experienceYears))
     ? Number(experienceYears)
     : null;
+  const experienceTier = experienceTierFromYears(parsedExperience ?? 0);
+  const normalizedHomeCareAvailable =
+    homeCareAvailability === true ||
+    homeCareAvailable === true ||
+    homeCareAvailability === 1 ||
+    homeCareAvailable === 1 ||
+    homeCareAvailability === '1' ||
+    homeCareAvailable === '1';
   const parsedGpsLat =
     gpsLat == null || gpsLat === '' ? null : Number(gpsLat);
   const parsedGpsLng =
@@ -523,7 +628,16 @@ router.post('/register', async (req, res) => {
       const hasLicenseNumber = await hasColumn('careprovider', 'licenseNumber');
       const hasServiceType = await hasColumn('careprovider', 'serviceType');
       const hasProviderAddress = await hasColumn('careprovider', 'providerAddress');
-      const hasApprovalStatus = await hasColumn('careprovider', 'approvalStatus');
+      const hasLicenseSnake = await hasColumn('careprovider', 'license_number');
+      const hasYearsSnake = await hasColumn('careprovider', 'years_experience');
+      const hasExperienceTier = await hasColumn('careprovider', 'experience_tier');
+      const hasExperienceLevel = await hasColumn('careprovider', 'experience_level');
+      const hasServiceAreas = await hasColumn('careprovider', 'serviceAreas');
+      const hasBiography = await hasColumn('careprovider', 'biography');
+      const hasPreviousWorkplaces = await hasColumn('careprovider', 'previousWorkplaces');
+      const hasHomeCareAvailable = await hasColumn('careprovider', 'homeCareAvailable');
+      const hasRateApproved = await hasColumn('careprovider', 'is_rate_approved');
+      const hasStatus = await hasColumn('careprovider', 'status');
 
       const providerColumns = [
         'userId',
@@ -550,6 +664,22 @@ router.post('/register', async (req, res) => {
         providerColumns.push('licenseNumber');
         providerValues.push(normalizedLicense || null);
       }
+      if (hasLicenseSnake) {
+        providerColumns.push('license_number');
+        providerValues.push(normalizedLicense || null);
+      }
+      if (hasYearsSnake) {
+        providerColumns.push('years_experience');
+        providerValues.push(parsedExperience ?? 0);
+      }
+      if (hasExperienceTier) {
+        providerColumns.push('experience_tier');
+        providerValues.push(experienceTier);
+      }
+      if (hasExperienceLevel) {
+        providerColumns.push('experience_level');
+        providerValues.push(experienceTier);
+      }
       if (hasServiceType) {
         providerColumns.push('serviceType');
         providerValues.push(normalizedServiceType || null);
@@ -558,8 +688,28 @@ router.post('/register', async (req, res) => {
         providerColumns.push('providerAddress');
         providerValues.push(normalizedAddress || null);
       }
-      if (hasApprovalStatus) {
-        providerColumns.push('approvalStatus');
+      if (hasServiceAreas) {
+        providerColumns.push('serviceAreas');
+        providerValues.push(normalizedServiceAreas || null);
+      }
+      if (hasBiography) {
+        providerColumns.push('biography');
+        providerValues.push(normalizedBiography || null);
+      }
+      if (hasPreviousWorkplaces) {
+        providerColumns.push('previousWorkplaces');
+        providerValues.push(normalizedPreviousWorkplaces || null);
+      }
+      if (hasHomeCareAvailable) {
+        providerColumns.push('homeCareAvailable');
+        providerValues.push(normalizedHomeCareAvailable ? 1 : 0);
+      }
+      if (hasRateApproved) {
+        providerColumns.push('is_rate_approved');
+        providerValues.push(0);
+      }
+      if (hasStatus) {
+        providerColumns.push('status');
         providerValues.push('pending');
       }
 
@@ -628,6 +778,42 @@ router.post('/register', async (req, res) => {
         await connection.query(
           'INSERT INTO nurse (userId) VALUES (?)',
           [userId]
+        );
+      }
+
+      const savedCvFile = await saveProviderDocumentUpload(userId, 'cv_file', normalizedCvFile);
+      const savedMedicalCertificate = await saveProviderDocumentUpload(
+        userId,
+        'medical_certificate',
+        normalizedMedicalCertificate,
+      );
+      const savedNursingLicense = await saveProviderDocumentUpload(
+        userId,
+        'nursing_license',
+        normalizedNursingLicense,
+      );
+      const savedIdCard = await saveProviderDocumentUpload(userId, 'id_card', normalizedIdCard);
+
+      if (
+        savedCvFile ||
+        savedMedicalCertificate ||
+        savedNursingLicense ||
+        savedIdCard ||
+        normalizedPreviousWorkplaces
+      ) {
+        await connection.query(
+          `INSERT INTO provider_documents
+             (documentId, providerUserId, medical_certificate, nursing_license, id_card, cv_file, workplace_history)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            randomUUID(),
+            userId,
+            savedMedicalCertificate || null,
+            savedNursingLicense || normalizedLicense || null,
+            savedIdCard || null,
+            savedCvFile || null,
+            normalizedPreviousWorkplaces || null,
+          ],
         );
       }
     }

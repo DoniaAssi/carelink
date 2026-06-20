@@ -10,6 +10,11 @@ class NurseDashboardModel {
     required this.completedVisitsCount,
     required this.inProgressVisitsCount,
     required this.pendingRequestsCount,
+    required this.canWork,
+    required this.rateApprovalStatus,
+    required this.approvedHourlyRate,
+    required this.specialization,
+    required this.rateGateMessage,
   });
 
   final String nurseName;
@@ -20,6 +25,11 @@ class NurseDashboardModel {
   final int completedVisitsCount;
   final int inProgressVisitsCount;
   final int pendingRequestsCount;
+  final bool canWork;
+  final String rateApprovalStatus;
+  final double approvedHourlyRate;
+  final String specialization;
+  final String rateGateMessage;
 }
 
 class VisitModel {

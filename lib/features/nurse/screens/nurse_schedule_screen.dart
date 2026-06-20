@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:carelink/core/app_colors.dart';
@@ -10,10 +12,12 @@ import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
 import 'package:carelink/features/nurse/services/nurse_repository.dart';
 import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/models/user.dart';
+import 'package:carelink/shared/models/visit_report.dart';
 import 'package:carelink/shared/services/provider_profile_service.dart';
 import 'package:carelink/shared/services/report_service.dart';
 import 'package:carelink/shared/services/service_request_service.dart';
 
+import 'nurse_visit_reports.dart';
 import 'nurse_ui.dart';
 
 class NurseScheduleScreen extends StatefulWidget {
@@ -698,6 +702,12 @@ class NurseSetAvailabilityScreen extends StatefulWidget {
 class _NurseSetAvailabilityScreenState
     extends State<NurseSetAvailabilityScreen> {
   bool available = true;
+  bool eligibilityLoading = true;
+  bool canManageAvailability = false;
+  String eligibilityMessage =
+      'Accept your admin-set hourly rate before setting availability.';
+  String approvedSpecialization = 'Nursing';
+  double approvedHourlyRate = 0;
   final workingDays = <String>{
     'Monday',
     'Tuesday',
@@ -713,6 +723,40 @@ class _NurseSetAvailabilityScreenState
     slots = widget.initialSlots
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
+    _loadEligibility();
+  }
+
+  Future<void> _loadEligibility() async {
+    try {
+      final response = await http.get(
+        Uri.parse(
+          '${ProviderProfileService.baseUrl}/nurse/rate-status/${widget.user.userId}',
+        ),
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (!mounted) return;
+        setState(() {
+          canManageAvailability = data['canWork'] == true;
+          eligibilityMessage =
+              (data['reason'] ??
+                      'Accept your admin-set hourly rate before setting availability.')
+                  .toString();
+          approvedSpecialization =
+              (data['specialization'] ?? 'Nursing').toString();
+          approvedHourlyRate = _double(data['providerRate']);
+          eligibilityLoading = false;
+        });
+        return;
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      canManageAvailability = false;
+      eligibilityMessage =
+          'Could not verify your rate approval status. Please try again.';
+      eligibilityLoading = false;
+    });
   }
 
   @override
@@ -730,6 +774,15 @@ class _NurseSetAvailabilityScreenState
         body: ListView(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
           children: [
+            if (eligibilityLoading)
+              const LinearProgressIndicator(minHeight: 3)
+            else if (!canManageAvailability) ...[
+              _lockedCard(),
+              const SizedBox(height: 14),
+            ] else ...[
+              _approvedRateCard(),
+              const SizedBox(height: 14),
+            ],
             _card(
               child: SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -800,7 +853,7 @@ class _NurseSetAvailabilityScreenState
                   const SizedBox(height: 14),
                   for (final slot in slots) _slotEditRow(slot),
                   TextButton.icon(
-                    onPressed: _openAddTimeSlot,
+                    onPressed: canManageAvailability ? _openAddTimeSlot : null,
                     icon: const Icon(Icons.add_rounded),
                     label: const Text('Add Time Slot'),
                     style: TextButton.styleFrom(
@@ -815,7 +868,7 @@ class _NurseSetAvailabilityScreenState
             SizedBox(
               height: 52,
               child: ElevatedButton(
-                onPressed: _save,
+                onPressed: canManageAvailability ? _save : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -850,6 +903,65 @@ class _NurseSetAvailabilityScreenState
         ],
       ),
       child: child,
+    );
+  }
+
+  Widget _lockedCard() {
+    return _card(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.lock_clock_rounded, color: Color(0xFFF59E0B)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              eligibilityMessage,
+              style: const TextStyle(
+                color: Color(0xFF111827),
+                fontWeight: FontWeight.w900,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _approvedRateCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _readOnlyRow('Specialization', approvedSpecialization),
+          const Divider(height: 22),
+          _readOnlyRow('Approved Hourly Rate', _money(approvedHourlyRate)),
+        ],
+      ),
+    );
+  }
+
+  Widget _readOnlyRow(String label, String value) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF78909C),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ),
+      ],
     );
   }
 
@@ -913,7 +1025,12 @@ class _NurseSetAvailabilityScreenState
   Future<void> _openAddTimeSlot() async {
     final slot = await Navigator.push<Map<String, dynamic>>(
       context,
-      MaterialPageRoute(builder: (_) => const NurseAddTimeSlotScreen()),
+      MaterialPageRoute(
+        builder: (_) => NurseAddTimeSlotScreen(
+          specialization: approvedSpecialization,
+          approvedHourlyRate: approvedHourlyRate,
+        ),
+      ),
     );
     if (slot == null) return;
     setState(() => slots.add(slot));
@@ -968,10 +1085,29 @@ class _NurseSetAvailabilityScreenState
     if (parts.length >= 2) return '${parts[0]}:${parts[1]}';
     return text.isEmpty ? '--:--' : text;
   }
+
+  double _double(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _money(num value) {
+    final fixed = value % 1 == 0
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(2);
+    return '$fixed ILS/hour';
+  }
 }
 
 class NurseAddTimeSlotScreen extends StatefulWidget {
-  const NurseAddTimeSlotScreen({super.key});
+  const NurseAddTimeSlotScreen({
+    super.key,
+    required this.specialization,
+    required this.approvedHourlyRate,
+  });
+
+  final String specialization;
+  final double approvedHourlyRate;
 
   @override
   State<NurseAddTimeSlotScreen> createState() => _NurseAddTimeSlotScreenState();
@@ -981,12 +1117,12 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
   String day = 'Wednesday';
   TimeOfDay start = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay end = const TimeOfDay(hour: 13, minute: 0);
-  String serviceType = 'Home visit';
-  String location = 'Birzeit, Ramallah';
+  final locationController = TextEditingController(text: 'Birzeit, Ramallah');
   final notesController = TextEditingController();
 
   @override
   void dispose() {
+    locationController.dispose();
     notesController.dispose();
     super.dispose();
   }
@@ -1035,20 +1171,17 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
               if (picked != null) setState(() => end = picked);
             }),
             const SizedBox(height: 16),
-            _label('Service Type'),
-            _dropdown(serviceType, const [
-              'Home visit',
-              'Elderly care',
-              'Post-surgery care',
-              'Medication assistance',
-            ], (v) => setState(() => serviceType = v!)),
+            _label('Specialization'),
+            _readOnlyField(widget.specialization),
+            const SizedBox(height: 16),
+            _label('Approved Hourly Rate'),
+            _readOnlyField(_money(widget.approvedHourlyRate)),
             const SizedBox(height: 16),
             _label('Location'),
-            _dropdown(location, const [
-              'Birzeit, Ramallah',
-              'Al-bireh, Ramallah',
-              'Beitunia, Ramallah',
-            ], (v) => setState(() => location = v!)),
+            TextField(
+              controller: locationController,
+              decoration: _decoration('Visit location'),
+            ),
             const SizedBox(height: 16),
             _label('Notes (Optional)'),
             TextField(
@@ -1066,8 +1199,10 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
                     'day': day,
                     'startTime': _format24(start),
                     'endTime': _format24(end),
-                    'serviceType': serviceType,
-                    'location': location,
+                    'serviceType': widget.specialization,
+                    'specialization': widget.specialization,
+                    'approvedHourlyRate': widget.approvedHourlyRate,
+                    'location': locationController.text.trim(),
                     'notes': notesController.text.trim(),
                   });
                 },
@@ -1118,6 +1253,22 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
     );
   }
 
+  Widget _readOnlyField(String value) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE0ECEA)),
+      ),
+      child: Text(
+        value.trim().isEmpty ? 'Not set' : value,
+        style: const TextStyle(fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+
   Widget _timeTile(String value, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
@@ -1153,6 +1304,13 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
 
   String _format24(TimeOfDay time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _money(num value) {
+    final fixed = value % 1 == 0
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(2);
+    return '$fixed ILS/hour';
   }
 
   String _formatClock(TimeOfDay time) {
@@ -1700,6 +1858,7 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
   }
 
   Widget _timerPreviewCard() {
+    final canStart = _canStartVisit(request.status);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: _cardDecoration(),
@@ -1738,18 +1897,23 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
           ),
           InkWell(
             borderRadius: BorderRadius.circular(999),
-            onTap: isSaving ? null : _confirmStartVisit,
+            onTap: isSaving || !canStart ? null : _confirmStartVisit,
             child: Container(
               width: 46,
               height: 46,
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.12),
+                color: (canStart ? AppColors.primary : const Color(0xFF94A3B8))
+                    .withValues(alpha: 0.12),
                 shape: BoxShape.circle,
-                border: Border.all(color: AppColors.primary),
+                border: Border.all(
+                  color: canStart ? AppColors.primary : const Color(0xFF94A3B8),
+                ),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.play_arrow_rounded,
-                color: AppColors.primaryDark,
+                color: canStart
+                    ? AppColors.primaryDark
+                    : const Color(0xFF94A3B8),
               ),
             ),
           ),
@@ -1822,7 +1986,7 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
 
   Widget? _bottomAction() {
     final status = request.status.toLowerCase();
-    if (status == 'assigned' || status == 'scheduled' || status == 'pending') {
+    if (_canStartVisit(status)) {
       return SafeArea(
         top: false,
         child: Padding(
@@ -1854,7 +2018,7 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
           child: SizedBox(
             height: 54,
             child: ElevatedButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: _continueVisit,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -1868,10 +2032,44 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
         ),
       );
     }
+    if (status == 'waiting_report') {
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
+          child: SizedBox(
+            height: 54,
+            child: ElevatedButton.icon(
+              onPressed: _openCreateReport,
+              icon: const Icon(Icons.description_outlined),
+              label: const Text(
+                'Create Report',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return null;
   }
 
   Future<void> _confirmStartVisit() async {
+    if (!_canStartVisit(request.status)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Start Visit is available only for accepted visits.'),
+        ),
+      );
+      return;
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -1924,6 +2122,56 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
     } finally {
       if (mounted) setState(() => isSaving = false);
     }
+  }
+
+  void _continueVisit() {
+    final startTime = request.actualStartedAt ?? DateTime.now();
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VisitInProgressScreen(
+          request: request,
+          user: widget.user,
+          startTime: startTime,
+          onChanged: widget.onChanged,
+        ),
+      ),
+    );
+  }
+
+  void _openCreateReport() {
+    final startTime = request.actualStartedAt ?? request.scheduledDate;
+    final elapsed = request.actualDurationMinutes > 0
+        ? Duration(minutes: request.actualDurationMinutes)
+        : DateTime.now().difference(startTime);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreateReportScreen(
+          request: request,
+          user: widget.user,
+          startTime: startTime,
+          visitNotes: '',
+          checklist: const <String, bool>{
+            'Vital signs': true,
+            'Medication administration': true,
+            'Personal care': false,
+            'Patient education': false,
+            'Environment safety': false,
+          },
+          elapsed: elapsed,
+          onChanged: widget.onChanged,
+        ),
+      ),
+    );
+  }
+
+  bool _canStartVisit(String status) {
+    final value = status.toLowerCase().trim();
+    return value == 'accepted' ||
+        value == 'assigned' ||
+        value == 'scheduled' ||
+        value == 'confirmed';
   }
 
   Widget _chip(String text, Color color) {
@@ -2025,6 +2273,7 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
   final notesController = TextEditingController();
   late Timer timer;
   late Duration elapsed;
+  bool isCompleting = false;
   final checklist = <String, bool>{
     'Vital signs': false,
     'Medication administration': false,
@@ -2130,7 +2379,7 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
             child: SizedBox(
               height: 54,
               child: ElevatedButton(
-                onPressed: _completeVisit,
+                onPressed: isCompleting ? null : _completeVisit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -2138,10 +2387,19 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: const Text(
-                  'Complete Visit',
-                  style: TextStyle(fontWeight: FontWeight.w900),
-                ),
+                child: isCompleting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          valueColor: AlwaysStoppedAnimation(Colors.white),
+                        ),
+                      )
+                    : const Text(
+                        'Complete Visit',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
               ),
             ),
           ),
@@ -2229,21 +2487,58 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
     );
   }
 
-  void _completeVisit() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CreateReportScreen(
-          request: widget.request,
-          user: widget.user,
-          startTime: widget.startTime,
-          visitNotes: notesController.text.trim(),
-          checklist: checklist,
-          elapsed: elapsed,
-          onChanged: widget.onChanged,
+  Future<void> _completeVisit() async {
+    setState(() => isCompleting = true);
+    final payload = checklist.entries
+        .map(
+          (entry) => {
+            'activity': entry.key,
+            'done': entry.value,
+            'notes': entry.key == 'Visit notes'
+                ? notesController.text.trim()
+                : '',
+          },
+        )
+        .toList();
+    try {
+      final ended = await ServiceRequestService.endVisit(
+        widget.request.id,
+        providerUserId: widget.user.userId,
+        nursingActivities: payload,
+      );
+      if (!ended) return;
+      await widget.onChanged();
+      if (!mounted) return;
+      final now = DateTime.now();
+      final completedRequest = ServiceRequest.fromJson({
+        ...widget.request.toJson(),
+        'status': 'waiting_report',
+        'actualEndedAt': now.toIso8601String(),
+        'actualDurationMinutes': elapsed.inMinutes,
+        'nursingActivities': payload,
+      });
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CreateReportScreen(
+            request: completedRequest,
+            user: widget.user,
+            startTime: widget.startTime,
+            visitNotes: notesController.text.trim(),
+            checklist: checklist,
+            elapsed: elapsed,
+            onChanged: widget.onChanged,
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => isCompleting = false);
+    }
   }
 
   InputDecoration _inputDecoration(String hint) {
@@ -2317,12 +2612,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   final oxygenController = TextEditingController();
   final symptomsController = TextEditingController();
   final reportNotesController = TextEditingController();
-  final medicationNameController = TextEditingController();
-  final medicationNotesController = TextEditingController();
   final followUpInstructionsController = TextEditingController();
   final otherCareController = TextEditingController();
-  var dosage = '1 Tablet';
-  var route = 'Oral';
   var currentPage = 0;
   var painLevel = 1.0;
   var stable = true;
@@ -2339,11 +2630,9 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     'Respiratory therapy': false,
     'Other care': false,
   };
-  final attachments = <IconData>[
-    Icons.image_outlined,
-    Icons.image_outlined,
-    Icons.image_outlined,
-  ];
+  final medications = <_MedicationEntry>[];
+  final attachments = <XFile>[];
+  final imagePicker = ImagePicker();
 
   @override
   void initState() {
@@ -2363,8 +2652,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     oxygenController.dispose();
     symptomsController.dispose();
     reportNotesController.dispose();
-    medicationNameController.dispose();
-    medicationNotesController.dispose();
     followUpInstructionsController.dispose();
     otherCareController.dispose();
     pageController.dispose();
@@ -2696,50 +2983,31 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         _sectionTitle('Medications Given'),
         _card(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _input(
-                'Medication Name',
-                medicationNameController,
-                'Medication name',
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _dropdown(
-                      value: dosage,
-                      items: const ['1 Tablet', '2 Tablets', '5 ml', '10 ml'],
-                      onChanged: (value) => setState(() => dosage = value),
+              if (medications.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: NurseUi.softSurface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: NurseUi.border),
+                  ),
+                  child: Text(
+                    'No medications added yet',
+                    style: TextStyle(
+                      color: NurseUi.muted,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _dropdown(
-                      value: route,
-                      items: const [
-                        'Oral',
-                        'IV',
-                        'IM',
-                        'Subcutaneous',
-                        'Topical',
-                        'Inhalation',
-                        'Other',
-                      ],
-                      onChanged: (value) => setState(() => route = value),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: medicationNotesController,
-                minLines: 3,
-                maxLines: 4,
-                maxLength: 200,
-                decoration: _inputDecoration('Medication notes'),
-              ),
+                ),
+              for (var i = 0; i < medications.length; i++) ...[
+                _medicationTile(medications[i], i),
+                const SizedBox(height: 10),
+              ],
               TextButton.icon(
-                onPressed: () {},
+                onPressed: _showMedicationForm,
                 icon: const Icon(Icons.add_rounded),
                 label: const Text('Add Medication'),
                 style: TextButton.styleFrom(
@@ -2812,9 +3080,9 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             separatorBuilder: (context, index) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
               if (index == attachments.length) {
-                return _attachmentTile(Icons.add_rounded, 'Add More');
+                return _attachmentAddTile();
               }
-              return _attachmentTile(attachments[index], '');
+              return _attachmentImageTile(attachments[index], index);
             },
           ),
         ),
@@ -2866,11 +3134,22 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         _sectionTitle('Care Provided'),
         _reviewCard([_ReviewItem('Selected Care', care)]),
         _sectionTitle('Medication'),
+        _reviewCard(
+          medications.isEmpty
+              ? const [_ReviewItem('Medications Given', 'None')]
+              : [
+                  for (var i = 0; i < medications.length; i++)
+                    _ReviewItem('Medication ${i + 1}', medications[i].summary),
+                ],
+        ),
+        _sectionTitle('Attachments'),
         _reviewCard([
-          _ReviewItem('Medication', medicationNameController.text.trim()),
-          _ReviewItem('Dosage', dosage),
-          _ReviewItem('Route', route),
-          _ReviewItem('Notes', medicationNotesController.text.trim()),
+          _ReviewItem(
+            'Images',
+            attachments.isEmpty
+                ? 'No attachments'
+                : '${attachments.length} attachment(s)',
+          ),
         ]),
         _sectionTitle('Notes & Follow-up'),
         _reviewCard([
@@ -2964,6 +3243,253 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     );
   }
 
+  Widget _medicationTile(_MedicationEntry medication, int index) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: NurseUi.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.medication_outlined,
+              color: AppColors.primaryDark,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  medication.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${medication.dosage} - ${medication.route}',
+                  style: TextStyle(
+                    color: NurseUi.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (medication.notes.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    medication.notes,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: NurseUi.muted, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Remove medication',
+            icon: const Icon(Icons.delete_outline_rounded),
+            color: const Color(0xFFEF4444),
+            onPressed: () => setState(() => medications.removeAt(index)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showMedicationForm() async {
+    final nameController = TextEditingController();
+    final notesController = TextEditingController();
+    var selectedDosage = '1 Tablet';
+    var selectedRoute = 'Oral';
+
+    final entry = await showModalBottomSheet<_MedicationEntry>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF4FAF9),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Add Medication',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _sheetTextField(
+                      controller: nameController,
+                      label: 'Medication Name',
+                      hint: 'Ibuprofen, Paracetamol',
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _sheetDropdown(
+                            label: 'Dosage',
+                            value: selectedDosage,
+                            items: const [
+                              '1 Tablet',
+                              '2 Tablets',
+                              '5 ml',
+                              'Injection',
+                            ],
+                            onChanged: (value) =>
+                                setSheetState(() => selectedDosage = value),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _sheetDropdown(
+                            label: 'Route',
+                            value: selectedRoute,
+                            items: const ['Oral', 'IV', 'IM'],
+                            onChanged: (value) =>
+                                setSheetState(() => selectedRoute = value),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _sheetTextField(
+                      controller: notesController,
+                      label: 'Notes',
+                      hint: 'Given for pain and inflammation',
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          final name = nameController.text.trim();
+                          if (name.isEmpty) return;
+                          Navigator.pop(
+                            sheetContext,
+                            _MedicationEntry(
+                              name: name,
+                              dosage: selectedDosage,
+                              route: selectedRoute,
+                              notes: notesController.text.trim(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('Add Medication'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    nameController.dispose();
+    notesController.dispose();
+    if (entry == null || !mounted) return;
+    setState(() => medications.add(entry));
+  }
+
+  Widget _sheetTextField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    int maxLines = 1,
+  }) {
+    return TextField(
+      controller: controller,
+      maxLines: maxLines,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: NurseUi.border),
+        ),
+      ),
+    );
+  }
+
+  Widget _sheetDropdown({
+    required String label,
+    required String value,
+    required List<String> items,
+    required ValueChanged<String> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      decoration: InputDecoration(
+        labelText: label,
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: NurseUi.border),
+        ),
+      ),
+      items: [
+        for (final item in items)
+          DropdownMenuItem<String>(value: item, child: Text(item)),
+      ],
+      onChanged: (value) {
+        if (value != null) onChanged(value);
+      },
+    );
+  }
+
   Widget _vitalsCard() {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -3027,51 +3553,133 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     );
   }
 
-  Widget _dropdown({
-    required String value,
-    required List<String> items,
-    required ValueChanged<String> onChanged,
-  }) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      items: [
-        for (final item in items)
-          DropdownMenuItem(value: item, child: Text(item)),
-      ],
-      onChanged: (value) {
-        if (value != null) onChanged(value);
-      },
-      decoration: _inputDecoration(''),
-    );
-  }
-
-  Widget _attachmentTile(IconData icon, String label) {
-    return Container(
-      width: 76,
-      height: 76,
-      decoration: BoxDecoration(
-        color: label.isEmpty ? Colors.white : NurseUi.softSurface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: NurseUi.border),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: AppColors.primaryDark),
-          if (label.isNotEmpty) ...[
-            const SizedBox(height: 4),
+  Widget _attachmentAddTile() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: _pickAttachment,
+      child: Container(
+        width: 84,
+        height: 82,
+        decoration: BoxDecoration(
+          color: NurseUi.softSurface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: NurseUi.border),
+        ),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.add_rounded, color: AppColors.primaryDark),
+            SizedBox(height: 4),
             Text(
-              label,
-              style: const TextStyle(
+              'Add More',
+              textAlign: TextAlign.center,
+              style: TextStyle(
                 color: AppColors.primaryDark,
                 fontSize: 10,
                 fontWeight: FontWeight.w900,
               ),
             ),
           ],
-        ],
+        ),
       ),
     );
+  }
+
+  Widget _attachmentImageTile(XFile file, int index) {
+    return Stack(
+      children: [
+        Container(
+          width: 84,
+          height: 82,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: NurseUi.border),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.image_outlined, color: AppColors.primaryDark),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                child: Text(
+                  file.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.primaryDark,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          top: 0,
+          right: 0,
+          child: InkWell(
+            onTap: () => setState(() => attachments.removeAt(index)),
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: const BoxDecoration(
+                color: Color(0xFFEF4444),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.close_rounded,
+                color: Colors.white,
+                size: 14,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickAttachment() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Choose from gallery'),
+                onTap: () => Navigator.pop(context, ImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined),
+                title: const Text('Take a photo'),
+                onTap: () => Navigator.pop(context, ImageSource.camera),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (source == null) return;
+
+    if (source == ImageSource.gallery) {
+      final images = await imagePicker.pickMultiImage();
+      if (images.isEmpty || !mounted) return;
+      setState(() => attachments.addAll(images));
+      return;
+    }
+
+    final image = await imagePicker.pickImage(source: ImageSource.camera);
+    if (image == null || !mounted) return;
+    setState(() => attachments.add(image));
   }
 
   Widget _reviewCard(List<_ReviewItem> items) {
@@ -3220,6 +3828,14 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     return values;
   }
 
+  String _medicationReviewText() {
+    if (medications.isEmpty) return 'None';
+    return medications
+        .map((medication) => medication.summary)
+        .where((line) => line.trim().isNotEmpty)
+        .join('\n');
+  }
+
   String _formatDate(DateTime date) {
     const months = [
       'Jan',
@@ -3250,15 +3866,13 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     final vitals =
         'BP: ${bloodPressureController.text.trim()}, HR: ${heartRateController.text.trim()}, Temp: ${temperatureController.text.trim()}, O2: ${oxygenController.text.trim()}';
     final care = _selectedCare.join(', ');
-    final medication = [
-      medicationNameController.text.trim(),
-      dosage,
-      route,
-      medicationNotesController.text.trim(),
-    ].where((value) => value.trim().isNotEmpty).join(' | ');
+    final medication = jsonEncode(
+      medications.map((medication) => medication.toJson()).toList(),
+    );
     final summary = reportNotesController.text.trim();
+    final attachmentRefs = attachments.map((file) => file.path).toList();
     try {
-      final saved = await ReportService.createReport(
+      final savedReport = await ReportService.createReportRecord(
         providerId: widget.user.userId,
         requestId: widget.request.id,
         patientId: widget.request.patientId,
@@ -3277,8 +3891,9 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         recommendations: followUpNeeded
             ? followUpInstructionsController.text.trim()
             : '',
+        attachments: attachmentRefs,
       );
-      if (!saved) throw Exception('Failed to submit report');
+      if (savedReport == null) throw Exception('Failed to submit report');
       try {
         await nurseRepository.updateRequestStatus(
           requestId: widget.request.id,
@@ -3309,7 +3924,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                 ? 'Nurse'
                 : widget.user.fullName,
             reportSummary:
-                'Condition: ${stable ? 'Stable' : 'Critical'}\n$vitals\nCare provided: $care\nMedication: $medication\nSummary: $summary',
+                'Condition: ${stable ? 'Stable' : 'Critical'}\n$vitals\nCare provided: $care\nMedications: ${_medicationReviewText()}\nAttachments: ${attachmentRefs.length}\nSummary: $summary',
+            report: savedReport,
           ),
         ),
       );
@@ -3345,6 +3961,34 @@ class _ReviewItem {
   const _ReviewItem(this.label, this.value);
 }
 
+class _MedicationEntry {
+  const _MedicationEntry({
+    required this.name,
+    required this.dosage,
+    required this.route,
+    required this.notes,
+  });
+
+  final String name;
+  final String dosage;
+  final String route;
+  final String notes;
+
+  Map<String, String> toJson() {
+    return {'name': name, 'dosage': dosage, 'route': route, 'notes': notes};
+  }
+
+  String get summary {
+    final parts = [
+      name,
+      dosage,
+      route,
+    ].where((value) => value.trim().isNotEmpty).join(' - ');
+    if (notes.trim().isEmpty) return parts;
+    return '$parts\n$notes';
+  }
+}
+
 class ReportSubmittedScreen extends StatelessWidget {
   const ReportSubmittedScreen({
     super.key,
@@ -3352,12 +3996,14 @@ class ReportSubmittedScreen extends StatelessWidget {
     required this.user,
     required this.submittedBy,
     required this.reportSummary,
+    this.report,
   });
 
   final ServiceRequest request;
   final User user;
   final String submittedBy;
   final String reportSummary;
+  final VisitReport? report;
 
   @override
   Widget build(BuildContext context) {
@@ -3420,6 +4066,17 @@ class ReportSubmittedScreen extends StatelessWidget {
                 icon: Icons.description_outlined,
                 label: 'View Report',
                 onPressed: () {
+                  final submittedReport = report;
+                  if (submittedReport != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            ReportDetailsScreen(report: submittedReport),
+                      ),
+                    );
+                    return;
+                  }
                   Navigator.push(
                     context,
                     MaterialPageRoute(

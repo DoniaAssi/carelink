@@ -54,6 +54,138 @@ async function hasTable(tableName) {
   }
 }
 
+async function ensureDoctorRateGateTables() {
+  if (await hasTable('careprovider')) {
+    const columns = [
+      ['is_rate_approved', 'TINYINT(1) NOT NULL DEFAULT 0'],
+      ['hourly_rate', 'DECIMAL(10,2) NULL'],
+      ["status", "ENUM('pending','active','inactive') NOT NULL DEFAULT 'pending'"],
+      ["experience_level", "ENUM('junior','mid','senior') NULL"],
+    ];
+    for (const [column, definition] of columns) {
+      if (!(await hasColumn('careprovider', column))) {
+        await db.execute(`ALTER TABLE careprovider ADD COLUMN ${column} ${definition}`);
+        columnCache.set(`careprovider.${column}`, true);
+      }
+    }
+  }
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS provider_rates (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      providerId CHAR(36) NOT NULL,
+      provider_id CHAR(36) NULL,
+      specialization VARCHAR(120) NOT NULL,
+      provider_hour_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      provider_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      admin_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      patient_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      status VARCHAR(24) NOT NULL DEFAULT 'active',
+      rateAcceptanceStatus ENUM('pending','accepted','rejected') NOT NULL DEFAULT 'pending',
+      rateSetAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      rateAcceptedAt DATETIME NULL,
+      rateRejectedAt DATETIME NULL,
+      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_provider_rates_provider (providerId),
+      KEY idx_provider_rates_status (status, rateAcceptanceStatus)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  const rateColumns = [
+    ['provider_id', 'CHAR(36) NULL'],
+    ['provider_hour_rate', 'DECIMAL(10,2) NOT NULL DEFAULT 0'],
+    ['provider_rate', 'DECIMAL(10,2) NOT NULL DEFAULT 0'],
+    ['admin_rate', 'DECIMAL(10,2) NOT NULL DEFAULT 0'],
+    ['patient_rate', 'DECIMAL(10,2) NOT NULL DEFAULT 0'],
+    ['status', "VARCHAR(24) NOT NULL DEFAULT 'active'"],
+    [
+      'rateAcceptanceStatus',
+      "ENUM('pending','accepted','rejected') NOT NULL DEFAULT 'pending'",
+    ],
+    ['rateSetAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP'],
+    ['rateAcceptedAt', 'DATETIME NULL'],
+    ['rateRejectedAt', 'DATETIME NULL'],
+  ];
+  for (const [column, definition] of rateColumns) {
+    if (!(await hasColumn('provider_rates', column))) {
+      await db.execute(`ALTER TABLE provider_rates ADD COLUMN ${column} ${definition}`);
+      columnCache.set(`provider_rates.${column}`, true);
+    }
+  }
+}
+
+async function getProviderWorkEligibility(providerId) {
+  await ensureDoctorRateGateTables();
+  const [[profile]] = await db.query(
+    `SELECT
+       c.userId,
+       COALESCE(c.specialization, c.serviceType, '') AS specialization,
+       COALESCE(c.status, 'pending') AS providerStatus,
+       COALESCE(c.is_rate_approved, 0) AS isRateApproved,
+       COALESCE(c.hourly_rate, 0) AS hourlyRate,
+       COALESCE(u.isActive, 0) AS userIsActive
+     FROM careprovider c
+     JOIN user u ON BINARY u.userId = BINARY c.userId
+     WHERE BINARY c.userId = BINARY ?
+     LIMIT 1`,
+    [providerId],
+  );
+
+  if (!profile) {
+    return {
+      canWork: false,
+      reason: 'Provider profile not found',
+      providerStatus: 'inactive',
+      rateAcceptanceStatus: 'missing',
+      providerRate: 0,
+      specialization: '',
+    };
+  }
+
+  const [[rate]] = await db.query(
+    `SELECT
+       specialization,
+       COALESCE(provider_rate, provider_hour_rate, 0) AS providerRate,
+       rateAcceptanceStatus,
+       status
+     FROM provider_rates
+     WHERE BINARY providerId = BINARY ?
+     ORDER BY
+       CASE WHEN rateAcceptanceStatus = 'accepted' THEN 0 ELSE 1 END,
+       updatedAt DESC,
+       id DESC
+     LIMIT 1`,
+    [providerId],
+  );
+
+  const providerRate = Number(rate?.providerRate || profile.hourlyRate || 0);
+  const rateAccepted = (rate?.rateAcceptanceStatus || '').toLowerCase() === 'accepted';
+  const careproviderApproved = dbBool(profile.isRateApproved);
+  const activeStatus = (profile.providerStatus || '').toLowerCase() === 'active';
+  const canWork = activeStatus && providerRate > 0 && (rateAccepted || careproviderApproved);
+
+  return {
+    canWork,
+    reason: canWork
+      ? 'Provider is active and hourly rate is accepted'
+      : 'Accept your admin-set hourly rate before starting work.',
+    providerStatus: profile.providerStatus || 'pending',
+    rateAcceptanceStatus: rate?.rateAcceptanceStatus || 'pending',
+    providerRate,
+    specialization: rate?.specialization || profile.specialization || '',
+  };
+}
+
+async function assertProviderCanWork(providerId) {
+  const eligibility = await getProviderWorkEligibility(providerId);
+  if (!eligibility.canWork) {
+    const err = new Error(eligibility.reason);
+    err.status = 403;
+    err.eligibility = eligibility;
+    throw err;
+  }
+  return eligibility;
+}
+
 async function ensureMedicalAccessLogTable() {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS medicalrecordaccesslog (
@@ -968,6 +1100,14 @@ router.post('/requests/:requestId/accept', async (req, res) => {
   }
 
   try {
+    try {
+      await assertProviderCanWork(doctorId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
     // Check if request exists and is available to this doctor
     const [requestRows] = await db.query(
       `SELECT * FROM servicerequest
@@ -1045,6 +1185,14 @@ router.post('/requests/:requestId/complete', async (req, res) => {
   }
 
   try {
+    try {
+      await assertProviderCanWork(doctorId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
     const [requestRows] = await db.query(
       'SELECT * FROM servicerequest WHERE requestId = ? AND providerUserId = ?',
       [requestId, doctorId]
@@ -1102,6 +1250,14 @@ router.post('/requests/:requestId/reject', async (req, res) => {
   }
 
   try {
+    try {
+      await assertProviderCanWork(doctorId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
     // Check if request exists and is available to this doctor or unassigned
     const [requestRows] = await db.query(
       `SELECT * FROM servicerequest
@@ -1656,6 +1812,14 @@ router.put('/availability/:doctorId', async (req, res) => {
   const { isAvailable } = req.body;
 
   try {
+    try {
+      await assertProviderCanWork(doctorId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
     await db.query(
       'UPDATE careprovider SET isAvailable = ? WHERE userId = ?',
       [isAvailable ? 1 : 0, doctorId]
@@ -1677,6 +1841,14 @@ router.get('/availability/:doctorId', async (req, res) => {
   const { doctorId } = req.params;
 
   try {
+    try {
+      await assertProviderCanWork(doctorId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
     const [rows] = await db.query(
       'SELECT isAvailable FROM careprovider WHERE userId = ?',
       [doctorId]
@@ -1768,6 +1940,14 @@ router.get('/schedule/:doctorId', async (req, res) => {
   const { doctorId } = req.params;
 
   try {
+    try {
+      await assertProviderCanWork(doctorId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
     const [rows] = await db.query(
       'SELECT * FROM availabilityslot WHERE providerUserId = ? ORDER BY day, startTime',
       [doctorId]
@@ -1791,6 +1971,14 @@ router.post('/schedule/:doctorId', async (req, res) => {
   }
 
   try {
+    try {
+      await assertProviderCanWork(doctorId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
     const slotId = `slot-${doctorId.substring(0, 4)}-${randomUUID().substring(0, 8)}`;
     
     await db.query(
@@ -1811,6 +1999,14 @@ router.delete('/schedule/:doctorId/:slotId', async (req, res) => {
   const { doctorId, slotId } = req.params;
 
   try {
+    try {
+      await assertProviderCanWork(doctorId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
     await db.query(
       'DELETE FROM availabilityslot WHERE slot_id = ? AND providerUserId = ?',
       [slotId, doctorId]

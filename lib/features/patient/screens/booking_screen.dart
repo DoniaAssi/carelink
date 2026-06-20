@@ -4,24 +4,30 @@ import 'package:intl/intl.dart' as intl;
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'select_visit_location_screen.dart';
-import 'package:carelink/features/patient/widgets/booking_provider_summary.dart';
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 
 class BookingScreen extends StatefulWidget {
   final BookingRequestModel request;
+  final bool previousTimeUnavailable;
 
-  const BookingScreen({super.key, required this.request});
+  const BookingScreen({
+    super.key,
+    required this.request,
+    this.previousTimeUnavailable = false,
+  });
 
   @override
   State<BookingScreen> createState() => _BookingScreenState();
 }
 
 class _BookingScreenState extends State<BookingScreen> {
+  final _api = ApiService();
   DateTime _selectedDate = DateTime.now();
   DateTime _visibleStartDate = DateTime.now();
   String? _selectedTimeLabel;
@@ -38,16 +44,19 @@ class _BookingScreenState extends State<BookingScreen> {
       _selectedDate.month,
       _selectedDate.day,
     );
-    _selectedTimeLabel = widget.request.appointmentTime.trim().isEmpty
+    _selectedTimeLabel =
+        widget.previousTimeUnavailable ||
+            widget.request.appointmentTime.trim().isEmpty
         ? null
         : widget.request.appointmentTime.trim();
     _loadAvailabilityData();
   }
 
+  // ignore: unused_element
   List<DateTime> get _dateOptions {
     final dates = <DateTime>[];
-    final weekStart = _startOfWeek(_visibleStartDate);
-    for (var offset = 0; offset < 7; offset++) {
+    final weekStart = _startOfWeek(_selectedDate);
+    for (var offset = 0; offset < 14; offset++) {
       dates.add(
         DateTime(weekStart.year, weekStart.month, weekStart.day + offset),
       );
@@ -110,31 +119,146 @@ class _BookingScreenState extends State<BookingScreen> {
     return DateTime(now.year, now.month, now.day);
   }
 
-  void _continue() {
-    if (_selectedTimeLabel == null) {
+  bool _isChecking = false;
+
+  Future<void> _continue() async {
+    if (_selectedTimeLabel == null ||
+        !_timeOptionsForSelectedDate.contains(_selectedTimeLabel)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.tr('booking.dateTime.chooseFirst'))),
       );
       return;
     }
 
-    final request = widget.request.copyWith(
-      appointmentDate: _selectedDate.toIso8601String().split('T').first,
-      appointmentTime: _to24h(_selectedTimeLabel!),
-    );
+    setState(() => _isChecking = true);
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => SelectVisitLocationScreen(request: request),
-      ),
-    );
+    try {
+      final dateStr = _selectedDate.toIso8601String().split('T').first;
+      final time24 = _to24h(_selectedTimeLabel!);
+
+      // Re-validate availability
+      final providerJson = await _api.getProviderById(
+        widget.request.providerId,
+        realAvailability: true,
+      );
+      final blocked = (await _api.getProviderBlockedSlots(
+        widget.request.providerId,
+      )).toSet();
+
+      final availableSlots =
+          (providerJson['availableSlots'] as List?)
+              ?.map((s) => s as Map<String, dynamic>)
+              .toList() ??
+          [];
+      bool stillAvailable = false;
+      for (final slot in availableSlots) {
+        final time = (slot['startTime'] ?? '').toString();
+        if (_normalizeTime(time) != time24) continue;
+
+        final slotDateStr = slot['date']?.toString();
+        if (slotDateStr != null && slotDateStr.isNotEmpty) {
+          final parsed = DateTime.tryParse(slotDateStr);
+          if (parsed != null &&
+              parsed.year == _selectedDate.year &&
+              parsed.month == _selectedDate.month &&
+              parsed.day == _selectedDate.day) {
+            stillAvailable = true;
+            break;
+          }
+        } else {
+          final slotDay = (slot['day'] ?? '').toString().toLowerCase();
+          const weekdays = {
+            'monday': DateTime.monday,
+            'tuesday': DateTime.tuesday,
+            'wednesday': DateTime.wednesday,
+            'thursday': DateTime.thursday,
+            'friday': DateTime.friday,
+            'saturday': DateTime.saturday,
+            'sunday': DateTime.sunday,
+          };
+          if (weekdays[slotDay] == _selectedDate.weekday) {
+            stillAvailable = true;
+            break;
+          }
+        }
+      }
+
+      if (!stillAvailable ||
+          blocked.contains(
+            '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')} $time24',
+          )) {
+        if (!mounted) return;
+        setState(() => _isChecking = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              context.l10n.isArabic
+                  ? 'عذراً، تم حجز هذا الموعد للتو. الرجاء اختيار وقت آخر.'
+                  : 'Sorry, this appointment was just booked. Please choose another time.',
+            ),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        _loadAvailabilityData();
+        return;
+      }
+
+      // Duplicate booking check
+      final isDuplicate = await _api.checkDuplicateBooking(
+        patientId: widget.request.patientId,
+        providerId: widget.request.providerId,
+        serviceType: widget.request.serviceType,
+        date: dateStr,
+        time: time24,
+      );
+
+      if (!mounted) return;
+
+      if (isDuplicate) {
+        setState(() => _isChecking = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              context.l10n.isArabic
+                  ? 'لديك طلب حجز موجود بالفعل لهذا الموعد.'
+                  : 'You already have a booking request for this appointment.',
+            ),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+
+      setState(() => _isChecking = false);
+
+      final request = widget.request.copyWith(
+        appointmentDate: dateStr,
+        appointmentTime: time24,
+      );
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SelectVisitLocationScreen(request: request),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isChecking = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final canContinue = _selectedTimeLabel != null;
     final options = _timeOptionsForSelectedDate;
+    final canContinue =
+        _selectedTimeLabel != null && options.contains(_selectedTimeLabel);
 
     final p = CarelinkPalette.of(context);
     return Scaffold(
@@ -162,7 +286,8 @@ class _BookingScreenState extends State<BookingScreen> {
           child: PatientPrimaryButton(
             height: 54,
             icon: Icons.arrow_forward_rounded,
-            onPressed: canContinue ? _continue : null,
+            onPressed: canContinue && !_isChecking ? _continue : null,
+            isLoading: _isChecking,
             label: context.tr('booking.continue'),
           ),
         ),
@@ -174,225 +299,24 @@ class _BookingScreenState extends State<BookingScreen> {
           children: [
             const BookingStepIndicator(currentStep: BookingFlowStep.dateTime),
             const SizedBox(height: 12),
-            BookingProviderSummary(request: widget.request, compact: true),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: p.isDark
-                    ? const Color(0xFF132A26)
-                    : const Color(0xFFE8F7F5),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: p.isDark
-                      ? const Color(0xFF1B3D37)
-                      : const Color(0xFFCDEEEA),
-                ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(
-                    Icons.event_available_rounded,
-                    color: AppColors.primary,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          context.l10n.isArabic
-                              ? 'اختر التاريخ'
-                              : 'Choose a date',
-                          style: TextStyle(
-                            color: p.isDark
-                                ? const Color(0xFF7FE2D1)
-                                : const Color(0xFF0F7A69),
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          context.l10n.isArabic
-                              ? 'اختر يوماً من الأسبوع أو افتح التقويم لعرض المزيد من المواعيد.'
-                              : 'Choose a day from the week or open the calendar to see more appointments.',
-                          style: TextStyle(
-                            color: p.inkMuted,
-                            fontSize: 12.2,
-                            height: 1.35,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Row(
-              children: [
-                Text(
-                  _monthYear(_selectedDate),
-                  style: TextStyle(
-                    color: p.inkDark,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                  ),
-                ),
-                const Spacer(),
-                PatientPressable(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: _openCalendarPicker,
-                  child: Container(
-                    width: 42,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: p.surface,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: p.stroke),
-                    ),
-                    child: const Icon(
-                      Icons.calendar_month_rounded,
-                      color: AppColors.primary,
-                      size: 21,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 86,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: _dateOptions.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (context, index) {
-                  final d = _dateOptions[index];
-                  final selected = _isSameDay(d, _selectedDate);
-                  final available = !_isDateDisabled(d);
-                  return PatientPressable(
-                    onTap: available ? () => _selectDate(d) : null,
-                    enabled: available,
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      width: context.l10n.isArabic ? 82 : 64,
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? AppColors.primary
-                            : available
-                            ? p.surface
-                            : p.surfaceSoft.withValues(alpha: 0.72),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: selected
-                              ? AppColors.primary
-                              : available
-                              ? AppColors.primary.withValues(alpha: 0.28)
-                              : p.stroke,
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                _shortDay(d),
-                                maxLines: 1,
-                                style: TextStyle(
-                                  color: selected
-                                      ? const Color(0xFFCDEEEA)
-                                      : available
-                                      ? p.inkMuted
-                                      : p.inkMuted.withValues(alpha: 0.52),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${d.day}',
-                            style: TextStyle(
-                              color: selected
-                                  ? Colors.white
-                                  : available
-                                  ? p.inkDark
-                                  : p.inkMuted.withValues(alpha: 0.55),
-                              fontWeight: FontWeight.w800,
-                              fontSize: 18,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 10),
+            _providerSummaryCard(p),
+            const SizedBox(height: 16),
+            _dateSelector(p),
+            const SizedBox(height: 18),
             Text(
               context.tr('booking.dateTime.selectTime'),
               style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
                 color: p.inkDark,
               ),
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 10,
-              children: options.map((time) {
-                final selected = _selectedTimeLabel == time;
-                return PatientPressable(
-                  onTap: () => setState(() => _selectedTimeLabel = time),
-                  enabled: true,
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: selected ? AppColors.primary : p.surface,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: selected ? AppColors.primary : p.stroke,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.access_time_rounded,
-                          size: 14,
-                          color: selected ? Colors.white : p.inkMuted,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          time,
-                          style: TextStyle(
-                            color: selected ? Colors.white : p.inkDark,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
+            if (widget.previousTimeUnavailable) ...[
+              _previousTimeUnavailableNotice(p),
+              const SizedBox(height: 10),
+            ],
+            _timeSelector(p, options),
             if (_isLoadingTimes)
               Padding(
                 padding: const EdgeInsets.only(top: 10),
@@ -405,45 +329,15 @@ class _BookingScreenState extends State<BookingScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 10),
                 child: Text(
-                  context.tr('booking.dateTime.noTimes'),
+                  context.l10n.isArabic
+                      ? 'لا توجد أوقات متاحة لهذا التاريخ. يرجى اختيار تاريخ آخر.'
+                      : 'No available times for this date. Please choose another date.',
                   style: TextStyle(color: p.inkMuted),
                 ),
               ),
             if (_selectedTimeLabel != null) ...[
               const SizedBox(height: 18),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: p.surfaceSoft,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.check_circle_rounded,
-                      color: AppColors.primary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                            context.l10n.isArabic
-                                ? 'الموعد المختار: ${_selectedDate.day} ${intl.DateFormat.MMMM('ar').format(_selectedDate)} • $_selectedTimeLabel'
-                                : 'Selected appointment: ${intl.DateFormat.MMM('en').format(_selectedDate)} ${_selectedDate.day} • $_selectedTimeLabel',
-                        style: TextStyle(
-                          color: p.inkDark,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _selectedAppointmentSummary(p),
             ],
           ],
         ),
@@ -457,6 +351,444 @@ class _BookingScreenState extends State<BookingScreen> {
       blurRadius: 16,
       offset: const Offset(0, 8),
     );
+  }
+
+  Widget _previousTimeUnavailableNotice(CarelinkPalette p) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFE082)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            color: Color(0xFFF57F17),
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              context.l10n.isArabic
+                  ? 'وقت الموعد السابق لم يعد متاحاً. يرجى اختيار وقت متاح آخر.'
+                  : 'Previous appointment time is no longer available.\nPlease choose another available time.',
+              style: const TextStyle(
+                color: Color(0xFFF57F17),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _providerSummaryCard(CarelinkPalette p) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: p.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: p.stroke.withValues(alpha: 0.5)),
+        boxShadow: [_cardShadow(p)],
+      ),
+      child: Row(
+        children: [
+          _providerAvatar(p),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.request.providerName.trim().isEmpty
+                            ? (context.l10n.isArabic
+                                  ? 'مقدم الرعاية'
+                                  : 'Care provider')
+                            : widget.request.providerName.trim(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: p.inkDark,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(
+                      Icons.verified_rounded,
+                      color: AppColors.primary,
+                      size: 16,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  widget.request.specialization.trim().isEmpty
+                      ? widget.request.providerRole
+                      : widget.request.specialization,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: p.inkMuted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.home_work_outlined,
+                        color: AppColors.primary,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          widget.request.serviceType.trim().isEmpty
+                              ? (context.l10n.isArabic ? 'الخدمة' : 'Service')
+                              : widget.request.serviceType.trim(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _providerAvatar(CarelinkPalette p) {
+    final url = _imageUrl(widget.request.providerImageUrl);
+    final name = widget.request.providerName.trim();
+    final initials = name
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .take(2)
+        .map((part) => part.characters.first.toUpperCase())
+        .join();
+    final fallback = Container(
+      color: AppColors.primary.withValues(alpha: p.isDark ? 0.20 : 0.10),
+      alignment: Alignment.center,
+      child: Text(
+        initials.isEmpty ? 'CL' : initials,
+        style: const TextStyle(
+          color: AppColors.primary,
+          fontSize: 18,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: p.surfaceSoft,
+        border: Border.all(color: p.stroke.withValues(alpha: 0.6)),
+      ),
+      child: ClipOval(
+        child: url == null
+            ? fallback
+            : Image.network(
+                url,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => fallback,
+              ),
+      ),
+    );
+  }
+
+  Widget _dateSelector(CarelinkPalette p) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              context.l10n.isArabic ? 'اختر تاريخاً' : 'Choose a date',
+              style: TextStyle(
+                color: p.inkDark,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            PatientPressable(
+              borderRadius: BorderRadius.circular(12),
+              onTap: _openCalendarPicker,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: p.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: p.stroke.withValues(alpha: 0.6)),
+                ),
+                child: const Icon(
+                  Icons.calendar_month_rounded,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 94,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _dateOptions.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final date = _dateOptions[index];
+              return _horizontalDateCard(p, date);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _horizontalDateCard(CarelinkPalette p, DateTime date) {
+    final selected = _isSameDay(date, _selectedDate);
+    final available = !_isDateDisabled(date);
+    return PatientPressable(
+      enabled: available,
+      onTap: available ? () => _selectDate(date) : null,
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedScale(
+        scale: selected ? 1.05 : 1,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          width: 62,
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppColors.primary
+                : available
+                ? p.surface
+                : p.surfaceSoft.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected
+                  ? AppColors.primary
+                  : available
+                  ? p.stroke.withValues(alpha: 0.8)
+                  : p.stroke.withValues(alpha: 0.3),
+              width: 1,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.25),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                _shortDay(date),
+                maxLines: 1,
+                style: TextStyle(
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.9)
+                      : available
+                      ? p.inkMuted
+                      : p.inkMuted.withValues(alpha: 0.4),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${date.day}',
+                style: TextStyle(
+                  color: selected
+                      ? Colors.white
+                      : available
+                      ? p.inkDark
+                      : p.inkMuted.withValues(alpha: 0.4),
+                  fontSize: 22,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                intl.DateFormat.MMM('en').format(date),
+                style: TextStyle(
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.9)
+                      : available
+                      ? p.inkMuted
+                      : p.inkMuted.withValues(alpha: 0.4),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (selected)
+                Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  width: 16,
+                  height: 2,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _timeSelector(CarelinkPalette p, List<String> options) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: options.map((time) {
+        final selected = _selectedTimeLabel == time;
+        return PatientPressable(
+          onTap: () => setState(() => _selectedTimeLabel = time),
+          borderRadius: BorderRadius.circular(12),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.primary : p.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected
+                    ? AppColors.primary
+                    : p.stroke.withValues(alpha: 0.7),
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Text(
+              time,
+              style: TextStyle(
+                color: selected ? Colors.white : p.inkDark,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _selectedAppointmentSummary(CarelinkPalette p) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F5E9),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFA5D6A7)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: Color(0xFF4CAF50),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.check_rounded,
+              color: Colors.white,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  context.l10n.isArabic
+                      ? 'Selected Appointment'
+                      : 'Selected Appointment',
+                  style: const TextStyle(
+                    color: Color(0xFF2E7D32),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${intl.DateFormat.MMM('en').format(_selectedDate)} ${_selectedDate.day} • $_selectedTimeLabel',
+                  style: const TextStyle(
+                    color: Color(0xFF1B5E20),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _imageUrl(String? raw) {
+    final value = raw?.trim() ?? '';
+    if (value.isEmpty || value.toLowerCase() == 'null') return null;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    return value.startsWith('/')
+        ? '${ApiService.baseUrl}$value'
+        : '${ApiService.baseUrl}/$value';
   }
 
   Future<void> _loadAvailabilityData() async {
@@ -478,26 +810,33 @@ class _BookingScreenState extends State<BookingScreen> {
       }
 
       if (!mounted) return;
-      if (provider.availableSlots.isEmpty) {
-        Navigator.pop(context, true);
+      if (!ProviderBookingEligibility.canBook(provider)) {
+        setState(() {
+          _providerSlots = const [];
+          _blockedDateTimes.clear();
+          _selectedTimeLabel = null;
+        });
+        return;
+      }
+
+      _providerSlots = provider.availableSlots;
+      _blockedDateTimes
+        ..clear()
+        ..addAll(blocked);
+      final initialDate = _initialSelectableDate();
+      if (initialDate == null) {
+        setState(() {
+          _selectedTimeLabel = null;
+        });
         return;
       }
 
       setState(() {
-        _providerSlots = provider.availableSlots;
-        _blockedDateTimes
-          ..clear()
-          ..addAll(blocked);
-        final firstDate = _firstSelectableDateFrom(_today);
-        if (firstDate != null) {
-          _selectedDate = firstDate;
-          _visibleStartDate = _startOfWeek(firstDate);
-          final availableTimesForFirstDate = _timeOptionsForDate(firstDate);
-          if (availableTimesForFirstDate.length == 1) {
-            _selectedTimeLabel = availableTimesForFirstDate.first;
-          } else {
-            _selectedTimeLabel = null;
-          }
+        _selectedDate = initialDate;
+        _visibleStartDate = DateTime(initialDate.year, initialDate.month);
+        if (_selectedTimeLabel != null &&
+            !_timeOptionsForDate(initialDate).contains(_selectedTimeLabel)) {
+          _selectedTimeLabel = null;
         }
       });
     } catch (_) {
@@ -532,6 +871,10 @@ class _BookingScreenState extends State<BookingScreen> {
     };
 
     final sameDaySlots = _providerSlots.where((slot) {
+      final exactDate = DateTime.tryParse(slot.date.trim());
+      if (exactDate != null) {
+        return _isSameDay(exactDate, d);
+      }
       final dayRaw = slot.day.toString().trim().toLowerCase();
       if (dayRaw.isEmpty) return false;
       final weekday = weekdayMap[dayRaw];
@@ -594,6 +937,30 @@ class _BookingScreenState extends State<BookingScreen> {
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
+  DateTime get _visibleMonth =>
+      DateTime(_visibleStartDate.year, _visibleStartDate.month);
+
+  bool _canGoToPreviousMonth() {
+    final current = _visibleMonth;
+    final first = DateTime(_today.year, _today.month);
+    return current.isAfter(first);
+  }
+
+  bool _canGoToNextMonth() {
+    final current = _visibleMonth;
+    final last = DateTime(_today.year + 1, 12);
+    return current.isBefore(last);
+  }
+
+  void _changeVisibleMonth(int delta) {
+    final next = DateTime(_visibleMonth.year, _visibleMonth.month + delta);
+    final first = DateTime(_today.year, _today.month);
+    final last = DateTime(_today.year + 1, 12);
+    if (next.isBefore(first) || next.isAfter(last)) return;
+    setState(() => _visibleStartDate = next);
+  }
+
+  // ignore: unused_element
   DateTime _startOfWeek(DateTime date) {
     final normalized = DateTime(date.year, date.month, date.day);
     return normalized.subtract(
@@ -606,7 +973,7 @@ class _BookingScreenState extends State<BookingScreen> {
     if (_isDateDisabled(normalized)) return;
     setState(() {
       _selectedDate = normalized;
-      _visibleStartDate = _startOfWeek(normalized);
+      _visibleStartDate = DateTime(normalized.year, normalized.month);
       final times = _timeOptionsForDate(normalized);
       if (times.length == 1) {
         _selectedTimeLabel = times.first;
@@ -616,13 +983,172 @@ class _BookingScreenState extends State<BookingScreen> {
     });
   }
 
+  // ignore: unused_element
+  Widget _buildInlineMonthCalendar(CarelinkPalette p) {
+    final visibleMonth = _visibleMonth;
+    final firstOfMonth = DateTime(visibleMonth.year, visibleMonth.month);
+    final daysInMonth = DateTime(
+      visibleMonth.year,
+      visibleMonth.month + 1,
+      0,
+    ).day;
+    final leadingBlanks = firstOfMonth.weekday - DateTime.monday;
+    final totalCells = leadingBlanks + daysInMonth;
+    final rows = (totalCells / 7).ceil();
+    final cellCount = rows * 7;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: p.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: p.stroke.withValues(alpha: 0.72)),
+        boxShadow: [_cardShadow(p)],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _monthYear(visibleMonth),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: p.inkDark,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              _monthNavButton(
+                p,
+                icon: context.l10n.isArabic
+                    ? Icons.chevron_right_rounded
+                    : Icons.chevron_left_rounded,
+                enabled: _canGoToPreviousMonth(),
+                onTap: () => _changeVisibleMonth(-1),
+              ),
+              const SizedBox(width: 8),
+              _monthNavButton(
+                p,
+                icon: context.l10n.isArabic
+                    ? Icons.chevron_left_rounded
+                    : Icons.chevron_right_rounded,
+                enabled: _canGoToNextMonth(),
+                onTap: () => _changeVisibleMonth(1),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: List.generate(7, (index) {
+              final labelDate = DateTime(2024, 1, DateTime.monday + index);
+              return Expanded(
+                child: Center(
+                  child: Text(
+                    _shortDay(labelDate),
+                    style: TextStyle(
+                      color: p.inkMuted,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 9),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: cellCount,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 12,
+            ),
+            itemBuilder: (context, index) {
+              final day = index - leadingBlanks + 1;
+              if (day < 1 || day > daysInMonth) {
+                return const SizedBox.shrink();
+              }
+              final date = DateTime(visibleMonth.year, visibleMonth.month, day);
+              return _calendarDayCell(
+                context,
+                p,
+                date,
+                onSelected: () => _selectDate(date),
+              );
+            },
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                context.l10n.isArabic ? 'Available dates' : 'Available dates',
+                style: TextStyle(
+                  color: p.inkMuted,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _monthNavButton(
+    CarelinkPalette p, {
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return PatientPressable(
+      enabled: enabled,
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(9),
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: enabled ? p.surface : p.surfaceSoft.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: p.stroke.withValues(alpha: 0.72)),
+        ),
+        child: Icon(
+          icon,
+          color: enabled
+              ? AppColors.primary
+              : p.inkMuted.withValues(alpha: 0.42),
+          size: 19,
+        ),
+      ),
+    );
+  }
+
+  // ignore: unused_element
   Future<void> _openCalendarPicker() async {
     DateTime visibleMonth = DateTime(_selectedDate.year, _selectedDate.month);
+    DateTime sheetSelectedDate = _selectedDate;
     final picked = await showModalBottomSheet<DateTime>(
       context: context,
       useSafeArea: true,
-      showDragHandle: true,
       isScrollControlled: true,
+      barrierColor: Colors.black.withValues(alpha: 0.48),
       backgroundColor: Colors.transparent,
       builder: (context) {
         return StatefulBuilder(
@@ -646,131 +1172,214 @@ class _BookingScreenState extends State<BookingScreen> {
             final rows = (totalCells / 7).ceil();
             final cellCount = rows * 7;
 
-            return Container(
-              margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
-              decoration: BoxDecoration(
-                color: p.surface,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: p.stroke),
-                boxShadow: [_cardShadow(p)],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        _monthYear(visibleMonth),
-                        style: TextStyle(
-                          color: p.inkDark,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: canGoBack
-                            ? () => setModalState(() {
-                                visibleMonth = DateTime(
-                                  visibleMonth.year,
-                                  visibleMonth.month - 1,
-                                );
-                              })
-                            : null,
-                        icon: Icon(
-                          context.l10n.isArabic
-                              ? Icons.chevron_right_rounded
-                              : Icons.chevron_left_rounded,
-                        ),
-                        color: AppColors.primary,
-                      ),
-                      IconButton(
-                        onPressed: canGoForward
-                            ? () => setModalState(() {
-                                visibleMonth = DateTime(
-                                  visibleMonth.year,
-                                  visibleMonth.month + 1,
-                                );
-                              })
-                            : null,
-                        icon: Icon(
-                          context.l10n.isArabic
-                              ? Icons.chevron_left_rounded
-                              : Icons.chevron_right_rounded,
-                        ),
-                        color: AppColors.primary,
-                      ),
-                    ],
+            return FractionallySizedBox(
+              heightFactor: 0.88,
+              alignment: Alignment.bottomCenter,
+              child: SafeArea(
+                top: false,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                  decoration: BoxDecoration(
+                    color: p.surface,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(28),
+                    ),
+                    border: Border.all(color: p.stroke.withValues(alpha: 0.7)),
+                    boxShadow: [_cardShadow(p)],
                   ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: List.generate(7, (index) {
-                      final date = DateTime(2026, 6, DateTime.monday + index);
-                      return Expanded(
-                        child: Center(
-                          child: Text(
-                            _shortDay(date),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 44,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: p.inkMuted.withValues(alpha: 0.24),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _monthYear(visibleMonth),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: p.inkDark,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          _monthNavButton(
+                            p,
+                            icon: context.l10n.isArabic
+                                ? Icons.chevron_right_rounded
+                                : Icons.chevron_left_rounded,
+                            enabled: canGoBack,
+                            onTap: () => setModalState(() {
+                              visibleMonth = DateTime(
+                                visibleMonth.year,
+                                visibleMonth.month - 1,
+                              );
+                            }),
+                          ),
+                          const SizedBox(width: 8),
+                          _monthNavButton(
+                            p,
+                            icon: context.l10n.isArabic
+                                ? Icons.chevron_left_rounded
+                                : Icons.chevron_right_rounded,
+                            enabled: canGoForward,
+                            onTap: () => setModalState(() {
+                              visibleMonth = DateTime(
+                                visibleMonth.year,
+                                visibleMonth.month + 1,
+                              );
+                            }),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 22),
+                      Row(
+                        children: List.generate(7, (index) {
+                          final date = DateTime(
+                            2026,
+                            6,
+                            DateTime.monday + index,
+                          );
+                          return Expanded(
+                            child: Center(
+                              child: Text(
+                                _shortDay(date),
+                                style: TextStyle(
+                                  color: p.inkMuted,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                      const SizedBox(height: 12),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: cellCount,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 7,
+                              mainAxisSpacing: 8,
+                              crossAxisSpacing: 8,
+                            ),
+                        itemBuilder: (context, index) {
+                          final day = index - leadingBlanks + 1;
+                          if (day < 1 || day > daysInMonth) {
+                            return const SizedBox.shrink();
+                          }
+                          final date = DateTime(
+                            visibleMonth.year,
+                            visibleMonth.month,
+                            day,
+                          );
+                          return _calendarDayCell(
+                            context,
+                            p,
+                            date,
+                            selectedDate: sheetSelectedDate,
+                            onSelected: () => setModalState(() {
+                              sheetSelectedDate = date;
+                            }),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: AppColors.primary,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 7),
+                          Text(
+                            context.l10n.isArabic
+                                ? 'أيام فيها مواعيد متاحة'
+                                : 'Available dates',
                             style: TextStyle(
                               color: p.inkMuted,
-                              fontSize: 11,
+                              fontSize: 10.5,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
-                        ),
-                      );
-                    }),
-                  ),
-                  const SizedBox(height: 8),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: cellCount,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 7,
-                          mainAxisSpacing: 6,
-                          crossAxisSpacing: 6,
-                        ),
-                    itemBuilder: (context, index) {
-                      final day = index - leadingBlanks + 1;
-                      if (day < 1 || day > daysInMonth) {
-                        return const SizedBox.shrink();
-                      }
-                      final date = DateTime(
-                        visibleMonth.year,
-                        visibleMonth.month,
-                        day,
-                      );
-                      return _calendarDayCell(context, p, date);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
+                        ],
+                      ),
+                      const SizedBox(height: 18),
                       Container(
-                        width: 7,
-                        height: 7,
-                        decoration: const BoxDecoration(
-                          color: AppColors.primary,
-                          shape: BoxShape.circle,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(
+                            alpha: p.isDark ? 0.16 : 0.08,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.12),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.event_available_rounded,
+                              color: AppColors.primary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                '${intl.DateFormat.MMM('en').format(sheetSelectedDate)} ${sheetSelectedDate.day}, ${sheetSelectedDate.year}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: p.inkDark,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 7),
-                      Text(
-                        context.l10n.isArabic
-                            ? 'أيام فيها مواعيد متاحة'
-                            : 'Available dates',
-                        style: TextStyle(
-                          color: p.inkMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                      const Spacer(),
+                      PatientPrimaryButton(
+                        height: 52,
+                        icon: Icons.check_rounded,
+                        label: context.l10n.isArabic ? 'تم' : 'Done',
+                        onPressed: () => Navigator.pop(
+                          context,
+                          DateTime(
+                            sheetSelectedDate.year,
+                            sheetSelectedDate.month,
+                            sheetSelectedDate.day,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
             );
           },
@@ -784,59 +1393,70 @@ class _BookingScreenState extends State<BookingScreen> {
   Widget _calendarDayCell(
     BuildContext context,
     CarelinkPalette p,
-    DateTime date,
-  ) {
+    DateTime date, {
+    DateTime? selectedDate,
+    VoidCallback? onSelected,
+  }) {
     final available = !_isDateDisabled(date);
-    final selected = _isSameDay(date, _selectedDate);
+    final selected = _isSameDay(date, selectedDate ?? _selectedDate);
     final muted = date.isBefore(_today) || !available;
 
     return PatientPressable(
-      onTap: available ? () => Navigator.pop(context, date) : null,
+      onTap: available
+          ? (onSelected ?? () => Navigator.pop(context, date))
+          : null,
       enabled: available,
       borderRadius: BorderRadius.circular(12),
-      child: Container(
-        decoration: BoxDecoration(
-          color: selected
-              ? AppColors.primary
-              : available
-              ? AppColors.primary.withValues(alpha: p.isDark ? 0.13 : 0.07)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected
-                ? AppColors.primary
-                : available
-                ? AppColors.primary.withValues(alpha: 0.20)
-                : p.stroke.withValues(alpha: 0.35),
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              '${date.day}',
-              style: TextStyle(
+      child: Center(
+        child: FractionallySizedBox(
+          widthFactor: 0.94,
+          heightFactor: 0.94,
+          child: Container(
+            decoration: BoxDecoration(
+              color: selected
+                  ? AppColors.primary
+                  : available
+                  ? AppColors.primary.withValues(alpha: p.isDark ? 0.15 : 0.10)
+                  : p.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
                 color: selected
-                    ? Colors.white
-                    : muted
-                    ? p.inkMuted.withValues(alpha: 0.46)
-                    : p.inkDark,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
+                    ? AppColors.primary
+                    : available
+                    ? AppColors.primary.withValues(alpha: 0.14)
+                    : p.stroke.withValues(alpha: 0.62),
               ),
             ),
-            const SizedBox(height: 4),
-            Container(
-              width: 5,
-              height: 5,
-              decoration: BoxDecoration(
-                color: available
-                    ? (selected ? Colors.white : AppColors.primary)
-                    : Colors.transparent,
-                shape: BoxShape.circle,
-              ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '${date.day}',
+                  style: TextStyle(
+                    color: selected
+                        ? Colors.white
+                        : muted
+                        ? p.inkMuted.withValues(alpha: 0.58)
+                        : p.inkDark,
+                    fontSize: 15,
+                    height: 1,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Container(
+                  width: 5.5,
+                  height: 5.5,
+                  decoration: BoxDecoration(
+                    color: available
+                        ? (selected ? Colors.white : AppColors.primary)
+                        : Colors.transparent,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -848,6 +1468,15 @@ class _BookingScreenState extends State<BookingScreen> {
       if (!_isDateDisabled(d)) return d;
     }
     return null;
+  }
+
+  DateTime? _initialSelectableDate() {
+    final oldDate = DateTime.tryParse(widget.request.appointmentDate.trim());
+    if (widget.previousTimeUnavailable && oldDate != null) {
+      final normalizedOld = DateTime(oldDate.year, oldDate.month, oldDate.day);
+      if (!_isDateDisabled(normalizedOld)) return normalizedOld;
+    }
+    return _firstSelectableDateFrom(_today);
   }
 
   String? _normalizeTime(String raw) {

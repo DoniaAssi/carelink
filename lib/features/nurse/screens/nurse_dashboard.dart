@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:carelink/core/app_colors.dart';
-import 'package:carelink/features/notifications/notifications_screen.dart';
 import 'package:carelink/features/nurse/models/nurse_dashboard_model.dart';
 import 'package:carelink/features/nurse/services/nurse_dashboard_repository.dart';
 import 'package:carelink/shared/models/service_request.dart';
@@ -13,6 +12,8 @@ import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
 import 'nurse_patients.dart';
+import 'nurse_activity_screen.dart';
+import 'nurse_earnings_screen.dart';
 import 'nurse_profile.dart';
 import 'nurse_schedule_screen.dart';
 import 'nurse_service_requests.dart';
@@ -66,6 +67,44 @@ class _NurseDashboardState extends State<NurseDashboard> {
     } catch (_) {}
   }
 
+  Future<void> _decideRate(String decision) async {
+    try {
+      final response = await http.post(
+        Uri.parse(
+          '${ApiService.baseUrl}/nurse/rate-status/${widget.user.userId}/decision',
+        ),
+        headers: const {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({'decision': decision}),
+      );
+      final body = jsonDecode(response.body);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final message = body is Map<String, dynamic>
+            ? body['error']?.toString()
+            : null;
+        throw Exception(message ?? 'Failed to update rate decision');
+      }
+      await dashboardController.refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            decision == 'accepted'
+                ? 'Hourly rate accepted. Your work tools are unlocked.'
+                : 'Hourly rate rejected. Your work tools remain locked.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return NurseUi.reactive(
@@ -78,7 +117,15 @@ class _NurseDashboardState extends State<NurseDashboard> {
             _homePage(),
             NurseScheduleScreen(user: widget.user),
             NursePatients(user: widget.user),
-            NurseVisitReports(user: widget.user),
+            NurseEarningsScreen(user: widget.user),
+            ActivityScreen(
+              user: widget.user,
+              showBottomNavigation: false,
+              onRateAccepted: () {
+                dashboardController.refresh();
+                setState(() => selectedIndex = 0);
+              },
+            ),
             NurseProfile(user: widget.user),
           ],
         ),
@@ -122,12 +169,106 @@ class _NurseDashboardState extends State<NurseDashboard> {
         const SizedBox(height: 34),
         _greeting(model),
         const SizedBox(height: 30),
-        _quickGrid(),
-        const SizedBox(height: 34),
-        _upcomingVisitsSection(model),
-        const SizedBox(height: 32),
-        _motivationBanner(),
+        if (!model.canWork) ...[
+          _rateGateCard(model),
+        ] else ...[
+          _quickGrid(),
+          const SizedBox(height: 34),
+          _upcomingVisitsSection(model),
+          const SizedBox(height: 32),
+          _motivationBanner(),
+        ],
       ],
+    );
+  }
+
+  Widget _rateGateCard(NurseDashboardModel model) {
+    final hasRate = model.approvedHourlyRate > 0;
+    final status = model.rateApprovalStatus.toLowerCase();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: _modernShadow,
+        border: Border.all(color: const Color(0xFFF59E0B)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.lock_clock_rounded, color: Color(0xFFF59E0B)),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Hourly Rate Approval',
+                  style: TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            hasRate
+                ? 'Admin approved your rate: ${_money(model.approvedHourlyRate)}/hour'
+                : model.rateGateMessage,
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 18,
+              height: 1.35,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          if (hasRate) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Specialization: ${model.specialization}',
+              style: const TextStyle(
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+          if (hasRate && status != 'rejected') ...[
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _decideRate('accepted'),
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Accept Rate'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F766E),
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _decideRate('rejected'),
+                    icon: const Icon(Icons.close_rounded),
+                    label: const Text('Reject'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFB91C1C),
+                      side: const BorderSide(color: Color(0xFFB91C1C)),
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -154,14 +295,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
         IconButton(
           icon: const Icon(Icons.notifications_none_rounded, size: 32),
           color: const Color(0xFF0F172A),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => NotificationsScreen(userId: widget.user.userId),
-              ),
-            ).then((_) => dashboardController.refresh());
-          },
+          onPressed: () => setState(() => selectedIndex = 4),
         ),
         if (count > 0) Positioned(right: 4, top: 3, child: _smallBadge(count)),
       ],
@@ -233,7 +367,12 @@ class _NurseDashboardState extends State<NurseDashboard> {
       (
         Icons.insert_chart_outlined,
         'Reports',
-        () => setState(() => selectedIndex = 3),
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => NurseVisitReports(user: widget.user),
+          ),
+        ),
       ),
     ];
 
@@ -683,10 +822,11 @@ class _NurseDashboardState extends State<NurseDashboard> {
             ),
             const Divider(),
             _drawerItem(Icons.home_rounded, 'Home', 0),
-            _drawerItem(Icons.calendar_month_rounded, 'Schedule', 1),
+            _drawerItem(Icons.calendar_month_rounded, 'Sessions', 1),
             _drawerItem(Icons.people_outline_rounded, 'Patients', 2),
-            _drawerItem(Icons.insert_chart_outlined, 'Reports', 3),
-            _drawerItem(Icons.person_rounded, 'Profile', 4),
+            _drawerItem(Icons.account_balance_wallet_outlined, 'Earnings', 3),
+            _drawerItem(Icons.notifications_none_rounded, 'Notifications', 4),
+            _drawerItem(Icons.person_rounded, 'Profile', 5),
           ],
         ),
       ),
@@ -699,8 +839,29 @@ class _NurseDashboardState extends State<NurseDashboard> {
       title: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
       onTap: () {
         Navigator.pop(context);
+        if (!_canOpenTab(index)) {
+          _showRateLockedMessage();
+          setState(() => selectedIndex = 0);
+          return;
+        }
         setState(() => selectedIndex = index);
       },
+    );
+  }
+
+  bool _canOpenTab(int index) {
+    final canWork = dashboardController.model?.canWork == true;
+    if (canWork) return true;
+    return index == 0 || index == 4;
+  }
+
+  void _showRateLockedMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Accept your admin-set hourly rate before using nurse services.',
+        ),
+      ),
     );
   }
 
@@ -769,11 +930,12 @@ class _NurseDashboardState extends State<NurseDashboard> {
 
   Widget _bottomNav() {
     final items = [
-      (Icons.home_rounded, 'Home'),
-      (Icons.calendar_month_rounded, 'Schedule'),
-      (Icons.groups_rounded, 'Patients'),
-      (Icons.folder_copy_outlined, 'Reports'),
-      (Icons.person_rounded, 'Profile'),
+      (Icons.home_outlined, 'Home'),
+      (Icons.calendar_month_outlined, 'Sessions'),
+      (Icons.people_outline_rounded, 'Patients'),
+      (Icons.account_balance_wallet_outlined, 'Earnings'),
+      (Icons.notifications_none_rounded, 'Notifications'),
+      (Icons.person_outline_rounded, 'Profile'),
     ];
     return Container(
       margin: const EdgeInsets.fromLTRB(4, 0, 4, 4),
@@ -796,7 +958,14 @@ class _NurseDashboardState extends State<NurseDashboard> {
             for (var i = 0; i < items.length; i++)
               Expanded(
                 child: InkWell(
-                  onTap: () => setState(() => selectedIndex = i),
+                  onTap: () {
+                    if (!_canOpenTab(i)) {
+                      _showRateLockedMessage();
+                      setState(() => selectedIndex = 0);
+                      return;
+                    }
+                    setState(() => selectedIndex = i);
+                  },
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -805,7 +974,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
                         color: selectedIndex == i
                             ? AppColors.primaryDark
                             : const Color(0xFF90A4AE),
-                        size: 23,
+                        size: 21,
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -814,7 +983,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
                           color: selectedIndex == i
                               ? AppColors.primaryDark
                               : const Color(0xFF90A4AE),
-                          fontSize: 11,
+                          fontSize: 9,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -832,6 +1001,13 @@ class _NurseDashboardState extends State<NurseDashboard> {
     final clean = name.trim();
     if (clean.isEmpty) return 'Nurse';
     return clean.split(RegExp(r'\s+')).first;
+  }
+
+  String _money(num value) {
+    final fixed = value % 1 == 0
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(2);
+    return '$fixed ILS';
   }
 
   BoxDecoration _modernCardDecoration({required double radius}) {

@@ -429,6 +429,19 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
 
   void _openDetails(ServiceRequest request) {
     if (nurseRequestIsCancelled(request)) return;
+    if (_opensVisitLifecycle(request.status)) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => VisitDashboardScreen(
+            request: request,
+            user: widget.user,
+            onChanged: _loadRequests,
+          ),
+        ),
+      );
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -441,6 +454,16 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
         ),
       ),
     );
+  }
+
+  bool _opensVisitLifecycle(String status) {
+    final value = status.toLowerCase().trim();
+    return value == 'accepted' ||
+        value == 'assigned' ||
+        value == 'scheduled' ||
+        value == 'confirmed' ||
+        value == 'in_progress' ||
+        value == 'waiting_report';
   }
 
   void _snack(String message) {
@@ -2278,22 +2301,16 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
   }
 
   Future<void> _startVisit() async {
-    await _runAction(() async {
-      final ok = await ServiceRequestService.startVisit(
-        request.id,
-        providerUserId: widget.providerUserId,
-      );
-      if (ok) {
-        setState(() {
-          request = ServiceRequest.fromJson({
-            ...request.toJson(),
-            'status': 'in_progress',
-            'actualStartedAt': DateTime.now().toIso8601String(),
-          });
-        });
-        await widget.onChanged();
-      }
-    }, 'Visit started');
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VisitDashboardScreen(
+          request: request,
+          user: widget.currentUser,
+          onChanged: widget.onChanged,
+        ),
+      ),
+    );
   }
 
   Future<void> _endVisit() async {

@@ -905,7 +905,7 @@ const Map<String, String> _ar = {
   'auth.confirmPassword': 'تأكيد كلمة المرور',
   'auth.dateOfBirth': 'تاريخ الميلاد',
   'auth.locationVerifiedSuccess': 'تم التحقق من الموقع بنجاح',
-  'auth.placeholder.fullName': 'جوليا مروان',
+  'auth.placeholder.fullName':"اسم المستخدم",
   'auth.placeholder.phone': '599000000',
   'auth.placeholder.email': 'name@example.com',
   'auth.placeholder.password': 'أدخل كلمة المرور',

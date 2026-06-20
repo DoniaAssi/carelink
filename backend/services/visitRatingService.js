@@ -55,7 +55,7 @@ async function recomputeProviderRatingStats(providerUserId) {
   const [agg] = await db.query(
     `SELECT AVG(stars) AS a, COUNT(*) AS c
      FROM providervisitrating
-     WHERE providerUserId = ?`,
+     WHERE BINARY providerUserId = BINARY ?`,
     [providerUserId],
   );
   const cnt = Number(agg[0]?.c || 0);
@@ -64,12 +64,12 @@ async function recomputeProviderRatingStats(providerUserId) {
   const hasRc = await careproviderHasRatingsCount();
   if (hasRc) {
     await db.execute(
-      `UPDATE careprovider SET overallRating = ?, ratingsCount = ? WHERE userId = ?`,
+      `UPDATE careprovider SET overallRating = ?, ratingsCount = ? WHERE BINARY userId = BINARY ?`,
       [value, cnt, providerUserId],
     );
   } else {
     await db.execute(
-      `UPDATE careprovider SET overallRating = ? WHERE userId = ?`,
+      `UPDATE careprovider SET overallRating = ? WHERE BINARY userId = BINARY ?`,
       [value, providerUserId],
     );
   }
@@ -114,7 +114,7 @@ async function submitPatientVisitRating({
   const [rows] = await db.query(
     `SELECT requestId, patientUserId, providerUserId, status
      FROM servicerequest
-     WHERE requestId = ?`,
+     WHERE BINARY requestId = BINARY ?`,
     [appointmentId],
   );
 
@@ -138,7 +138,7 @@ async function submitPatientVisitRating({
   }
 
   const [existing] = await db.query(
-    'SELECT ratingId FROM providervisitrating WHERE TRIM(requestId) = TRIM(?)',
+    'SELECT ratingId FROM providervisitrating WHERE BINARY TRIM(requestId) = BINARY TRIM(?)',
     [appointmentId],
   );
 
@@ -188,7 +188,7 @@ async function listRatingsForProvider(providerUserId, limit = 100) {
   const cap = Math.min(Math.max(Number(limit) || 100, 1), 500);
   const [agg] = await db.query(
     `SELECT AVG(stars) AS a, COUNT(*) AS c
-     FROM providervisitrating WHERE providerUserId = ?`,
+     FROM providervisitrating WHERE BINARY providerUserId = BINARY ?`,
     [providerUserId],
   );
   const cnt = Number(agg[0]?.c || 0);
@@ -200,9 +200,9 @@ async function listRatingsForProvider(providerUserId, limit = 100) {
             COALESCE(u.fullName, 'Anonymous') AS patientName,
             COALESCE(s.serviceType, '') AS reasonForVisit
      FROM providervisitrating r
-     LEFT JOIN user u ON u.userId = r.patientUserId
-     LEFT JOIN servicerequest s ON s.requestId = r.requestId
-     WHERE r.providerUserId = ?
+     LEFT JOIN user u ON BINARY u.userId = BINARY r.patientUserId
+     LEFT JOIN servicerequest s ON BINARY s.requestId = BINARY r.requestId
+     WHERE BINARY r.providerUserId = BINARY ?
      ORDER BY r.createdAt DESC
      LIMIT ?`,
     [providerUserId, cap],
@@ -224,8 +224,8 @@ async function listRatingsForPatient(patientUserId, limit = 200) {
             pvr.providerUserId, pvr.stars, pvr.comment, pvr.createdAt,
             COALESCE(TRIM(c.specialization), '') AS specialization
      FROM providervisitrating pvr
-     LEFT JOIN careprovider c ON c.userId = pvr.providerUserId
-     WHERE pvr.patientUserId = ?
+     LEFT JOIN careprovider c ON BINARY c.userId = BINARY pvr.providerUserId
+     WHERE BINARY pvr.patientUserId = BINARY ?
      ORDER BY pvr.createdAt DESC
      LIMIT ?`,
     [patientUserId, cap],
@@ -234,7 +234,7 @@ async function listRatingsForPatient(patientUserId, limit = 200) {
   const [byProv] = await db.query(
     `SELECT providerUserId, AVG(stars) AS avgStars, COUNT(*) AS n
      FROM providervisitrating
-     WHERE patientUserId = ?
+     WHERE BINARY patientUserId = BINARY ?
      GROUP BY providerUserId`,
     [patientUserId],
   );
@@ -248,8 +248,8 @@ async function listRatingsForPatient(patientUserId, limit = 200) {
     `SELECT TRIM(COALESCE(c.specialization, '')) AS spec,
             AVG(pvr.stars) AS avgStars
      FROM providervisitrating pvr
-     LEFT JOIN careprovider c ON c.userId = pvr.providerUserId
-     WHERE pvr.patientUserId = ?
+     LEFT JOIN careprovider c ON BINARY c.userId = BINARY pvr.providerUserId
+     WHERE BINARY pvr.patientUserId = BINARY ?
        AND LENGTH(TRIM(COALESCE(c.specialization, ''))) > 0
      GROUP BY TRIM(COALESCE(c.specialization, ''))
      HAVING AVG(pvr.stars) >= 4`,
@@ -275,7 +275,7 @@ async function legacyProviderReviewHasRating(appointmentId) {
   if (!(await providerReviewTableExists())) return false;
   try {
     const [a] = await db.query(
-      'SELECT 1 AS ok FROM providerreview WHERE TRIM(requestId) = TRIM(?) LIMIT 1',
+      'SELECT 1 AS ok FROM providerreview WHERE BINARY TRIM(requestId) = BINARY TRIM(?) LIMIT 1',
       [appointmentId],
     );
     if (a.length > 0) return true;
@@ -284,7 +284,7 @@ async function legacyProviderReviewHasRating(appointmentId) {
   }
   try {
     const [b] = await db.query(
-      'SELECT 1 AS ok FROM providerreview WHERE TRIM(appointmentId) = TRIM(?) LIMIT 1',
+      'SELECT 1 AS ok FROM providerreview WHERE BINARY TRIM(appointmentId) = BINARY TRIM(?) LIMIT 1',
       [appointmentId],
     );
     return b.length > 0;

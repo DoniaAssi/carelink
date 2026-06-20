@@ -1,270 +1,440 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:carelink/core/app_colors.dart';
+
 import 'package:carelink/shared/models/user.dart';
-import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/models/visit_report.dart';
 import 'package:carelink/shared/services/report_service.dart';
-import 'package:carelink/shared/services/service_request_service.dart';
-import 'nurse_medical_report_form.dart';
+
 import 'nurse_ui.dart';
 
-class NurseVisitReports extends StatefulWidget {
-  final User user;
+class ReportsListScreen extends NurseVisitReports {
+  const ReportsListScreen({super.key, required super.user});
+}
 
+class NurseVisitReports extends StatefulWidget {
   const NurseVisitReports({super.key, required this.user});
+
+  final User user;
 
   @override
   State<NurseVisitReports> createState() => _NurseVisitReportsState();
 }
 
 class _NurseVisitReportsState extends State<NurseVisitReports> {
-  List<ServiceRequest> completedRequests = [];
-  List<VisitReport> visitReports = [];
+  static const Color _background = Color(0xFFF4FAF9);
+  static const Color _primary = Color(0xFF0F766E);
+  static const Color _text = Color(0xFF111827);
+  static const Color _muted = Color(0xFF6B7280);
+
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _refreshTimer;
+
   bool isLoading = true;
+  String selectedFilter = 'All';
+  String searchQuery = '';
+  List<VisitReport> reports = [];
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _searchController.addListener(_onSearchChanged);
+    _loadReports();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      _loadReports(silent: true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _searchController
+      ..removeListener(_onSearchChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    setState(() => searchQuery = _searchController.text.trim().toLowerCase());
+  }
+
+  Future<void> _loadReports({bool silent = false}) async {
+    if (!silent && mounted) setState(() => isLoading = true);
+    final data = await ReportService.getReports(widget.user.userId);
+    if (!mounted) return;
+    setState(() {
+      reports = data
+        ..sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
+      isLoading = false;
+    });
+  }
+
+  List<VisitReport> get filteredReports {
+    return reports.where((report) {
+      final status = _statusLabel(report.status);
+      final matchesFilter =
+          selectedFilter == 'All' ||
+          status.toLowerCase() == selectedFilter.toLowerCase();
+      if (!matchesFilter) return false;
+      if (searchQuery.isEmpty) return true;
+      final searchText =
+          '${report.patientName} ${report.serviceType} ${report.status}'
+              .toLowerCase();
+      return searchText.contains(searchQuery);
+    }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     return NurseUi.reactive(
-      (context) => Scaffold(
-        backgroundColor: NurseUi.background,
-        appBar: AppBar(
-          title: Text(
-            NurseUi.label(
-              'Visit Reports',
-              '\u062a\u0642\u0627\u0631\u064a\u0631 \u0627\u0644\u0632\u064a\u0627\u0631\u0627\u062a',
-            ),
-          ),
-          backgroundColor: NurseUi.background,
-          foregroundColor: NurseUi.text,
-          elevation: 0,
-          actions: [
-            NurseModeControls(providerUserId: widget.user.userId),
-            IconButton(
-              icon: const Icon(Icons.add),
-              onPressed: () => _showNewReportDialog(),
-            ),
-          ],
+      (context) => Container(
+        color: _background,
+        child: SafeArea(
+          child: isLoading
+              ? const Center(child: CircularProgressIndicator(color: _primary))
+              : RefreshIndicator(
+                  color: _primary,
+                  onRefresh: _loadReports,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
+                    children: [
+                      _header(),
+                      const SizedBox(height: 16),
+                      _searchBox(),
+                      const SizedBox(height: 14),
+                      _filterTabs(),
+                      const SizedBox(height: 16),
+                      if (filteredReports.isEmpty)
+                        _emptyState()
+                      else ...[
+                        for (final report in filteredReports)
+                          _reportCard(report),
+                        const SizedBox(height: 18),
+                        const Center(
+                          child: Text(
+                            'All reports loaded',
+                            style: TextStyle(
+                              color: _muted,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
         ),
-        body: isLoading
-            ? const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation(AppColors.primary),
-                ),
-              )
-            : RefreshIndicator(
-                onRefresh: _loadData,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    _buildHeroCard(),
-                    const SizedBox(height: 20),
-                    _sectionTitle('Completed Visits Ready For Reports'),
-                    const SizedBox(height: 10),
-                    if (completedRequests.isEmpty)
-                      _buildEmptyState(
-                        title: 'No completed visits yet',
-                        message:
-                            'Reports can be created after a visit is completed.',
-                        buttonLabel: 'Refresh',
-                        onPressed: _loadData,
-                      )
-                    else
-                      for (final request in completedRequests)
-                        _buildCompletedRequestTile(request),
-                    const SizedBox(height: 22),
-                    _sectionTitle('Submitted Reports'),
-                    const SizedBox(height: 10),
-                    if (visitReports.isEmpty)
-                      _buildEmptyState(
-                        title: 'No submitted reports yet',
-                        message:
-                            'Submitted nursing medical reports will appear here.',
-                        buttonLabel: 'Create Report',
-                        onPressed: _showNewReportDialog,
-                      )
-                    else
-                      for (final report in visitReports)
-                        _buildReportCard(report),
-                  ],
-                ),
-              ),
       ),
     );
   }
 
-  Widget _buildHeroCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: NurseUi.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(
-              alpha: NurseUi.isDarkMode.value ? 0.18 : 0.05,
+  Widget _header() {
+    return Row(
+      children: [
+        const Expanded(
+          child: Text(
+            'Reports',
+            style: TextStyle(
+              color: _text,
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
             ),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
           ),
-        ],
+        ),
+        IconButton(
+          tooltip: 'Filter',
+          onPressed: () {},
+          icon: const Icon(Icons.filter_list_rounded, color: _primary),
+        ),
+      ],
+    );
+  }
+
+  Widget _searchBox() {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: _shadow,
       ),
       child: Row(
         children: [
-          Container(
-            width: 68,
-            height: 68,
-            decoration: BoxDecoration(
-              color: NurseUi.softSurface,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Icon(
-              Icons.description_outlined,
-              color: AppColors.primary,
-              size: 34,
+          const Icon(Icons.search_rounded, size: 20, color: _muted),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                hintText: 'Search reports...',
+                isDense: true,
+              ),
+              style: const TextStyle(color: _text, fontWeight: FontWeight.w700),
             ),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ],
+      ),
+    );
+  }
+
+  Widget _filterTabs() {
+    final filters = ['All', 'Completed', 'In Progress', 'Draft'];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final filter in filters) ...[
+            _filterChip(filter),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(String filter) {
+    final selected = selectedFilter == filter;
+    final count = filter == 'All'
+        ? reports.length
+        : reports
+              .where(
+                (report) =>
+                    _statusLabel(report.status).toLowerCase() ==
+                    filter.toLowerCase(),
+              )
+              .length;
+    return ChoiceChip(
+      label: Text('$filter ($count)'),
+      selected: selected,
+      onSelected: (_) => setState(() => selectedFilter = filter),
+      showCheckmark: false,
+      visualDensity: VisualDensity.compact,
+      selectedColor: _primary,
+      backgroundColor: Colors.white,
+      side: BorderSide(color: selected ? _primary : const Color(0xFFE5E7EB)),
+      labelStyle: TextStyle(
+        color: selected ? Colors.white : _text,
+        fontSize: 12,
+        fontWeight: FontWeight.w900,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+    );
+  }
+
+  Widget _reportCard(VisitReport report) {
+    final patient = _patientName(report);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: _shadow,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ReportDetailsScreen(report: report),
+              ),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
               children: [
-                Text(
-                  'Create and manage reports',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                    color: NurseUi.text,
+                CircleAvatar(
+                  radius: 23,
+                  backgroundColor: const Color(0xFFDDF2EF),
+                  child: Text(
+                    _initial(patient),
+                    style: const TextStyle(
+                      color: _primary,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  'Send nursing medical summaries after completed visits',
-                  style: TextStyle(
-                    fontSize: 14,
-                    height: 1.35,
-                    fontWeight: FontWeight.w700,
-                    color: NurseUi.muted,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        patient,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _text,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        _serviceType(report),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.calendar_today_rounded,
+                            color: _muted,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(
+                              _dateTime(report.scheduledDate),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _muted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _statusBadge(report.status),
+                    const SizedBox(height: 14),
+                    const Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: _primary,
+                      size: 16,
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _sectionTitle(String text) {
-    return Text(
-      text,
-      style: TextStyle(
-        fontSize: 20,
-        fontWeight: FontWeight.w900,
-        color: NurseUi.text,
-      ),
-    );
-  }
-
-  Widget _buildEmptyState({
-    required String title,
-    required String message,
-    required String buttonLabel,
-    required VoidCallback onPressed,
-  }) {
+  Widget _emptyState() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 34),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 44),
       decoration: BoxDecoration(
-        color: NurseUi.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: _shadow,
       ),
-      child: Column(
-        children: [
-          Container(
-            width: 76,
-            height: 76,
-            decoration: BoxDecoration(
-              color: NurseUi.softSurface,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.assignment_turned_in_rounded,
-              size: 42,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.bold,
-              color: NurseUi.text,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: NurseUi.muted),
-          ),
-          const SizedBox(height: 22),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            onPressed: onPressed,
-            icon: const Icon(Icons.add),
-            label: Text(
-              buttonLabel,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
+      child: const Center(
+        child: Text(
+          'No reports available',
+          style: TextStyle(color: _muted, fontWeight: FontWeight.w900),
+        ),
       ),
     );
   }
 
-  Widget _buildCompletedRequestTile(ServiceRequest request) {
-    final patientName = request.patientName.isEmpty
-        ? 'Patient ${request.patientId}'
-        : request.patientName;
-    final serviceType = request.serviceType.isEmpty
-        ? 'Nursing visit'
-        : request.serviceType;
+  List<BoxShadow> get _shadow => [
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.055),
+      blurRadius: 18,
+      offset: const Offset(0, 8),
+    ),
+  ];
+}
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: NurseUi.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
+class ReportDetailsScreen extends StatelessWidget {
+  const ReportDetailsScreen({super.key, required this.report});
+
+  static const Color _background = Color(0xFFF4FAF9);
+  static const Color _primary = Color(0xFF0F766E);
+  static const Color _success = Color(0xFF22C55E);
+  static const Color _text = Color(0xFF111827);
+  static const Color _muted = Color(0xFF6B7280);
+
+  final VisitReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    return NurseUi.reactive(
+      (context) => Scaffold(
+        backgroundColor: _background,
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+            children: [
+              _topBar(context),
+              const SizedBox(height: 16),
+              _patientHeaderCard(),
+              const SizedBox(height: 14),
+              _visitInformationCard(),
+              const SizedBox(height: 14),
+              _summaryCard(),
+              const SizedBox(height: 14),
+              _careProvidedGrid(),
+              const SizedBox(height: 14),
+              _vitalSignsGrid(),
+              const SizedBox(height: 18),
+              _viewFullReportButton(context),
+            ],
+          ),
+        ),
       ),
+    );
+  }
+
+  Widget _topBar(BuildContext context) {
+    return Row(
+      children: [
+        IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_ios_rounded, size: 20),
+        ),
+        const Expanded(
+          child: Text(
+            'Report Details',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: _text, fontWeight: FontWeight.w900),
+          ),
+        ),
+        IconButton(
+          onPressed: () {},
+          icon: const Icon(Icons.more_vert_rounded, color: _primary),
+        ),
+      ],
+    );
+  }
+
+  Widget _patientHeaderCard() {
+    final patient = _patientName(report);
+    return _card(
       child: Row(
         children: [
           CircleAvatar(
             radius: 24,
-            backgroundColor: NurseUi.softSurface,
+            backgroundColor: const Color(0xFFDDF2EF),
             child: Text(
-              patientName.isNotEmpty ? patientName[0].toUpperCase() : 'P',
+              _initial(patient),
               style: const TextStyle(
-                color: AppColors.primary,
+                color: _primary,
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -275,800 +445,383 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  patientName,
+                  patient,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 16,
+                  style: const TextStyle(
+                    color: _text,
                     fontWeight: FontWeight.w900,
-                    color: NurseUi.text,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
-                  serviceType,
+                  _serviceType(report),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
+                  style: const TextStyle(
+                    color: _muted,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: NurseUi.muted,
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          OutlinedButton.icon(
-            onPressed: () => _openReportForm(request),
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text('Report'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              side: const BorderSide(color: AppColors.primary),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReportCard(VisitReport report) {
-    final summary = report.visitSummary.trim().isNotEmpty
-        ? report.visitSummary.trim()
-        : 'No summary available yet.';
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: NurseUi.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(
-              alpha: NurseUi.isDarkMode.value ? 0.18 : 0.05,
-            ),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        report.serviceType.isNotEmpty
-                            ? report.serviceType
-                            : 'Visit Report',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: NurseUi.text,
+                const SizedBox(height: 5),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      color: _primary,
+                      size: 15,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        _location(report),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.location_on,
-                            size: 14,
-                            color: NurseUi.muted,
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              report.location.isNotEmpty
-                                  ? report.location
-                                  : 'Location unavailable',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: NurseUi.muted,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    report.status.toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _reportMetric(
-                  Icons.calendar_today_rounded,
-                  'Visit Date',
-                  _formatDate(report.scheduledDate),
-                ),
-                _reportMetric(
-                  Icons.schedule_rounded,
-                  'Duration',
-                  report.durationHours > 0
-                      ? '${report.durationHours} hours'
-                      : 'Not specified',
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Summary',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: AppColors.primaryDark,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: NurseUi.softSurface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: NurseUi.border.withValues(alpha: 0.7),
-                ),
-              ),
-              child: Text(
-                summary,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: NurseUi.text,
-                  height: 1.4,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onPressed: () => _viewFullReport(report),
-                    icon: const Icon(Icons.visibility, size: 16),
-                    label: const Text(
-                      'View Full Report',
-                      style: TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: NurseUi.softSurface,
-                      foregroundColor: AppColors.primaryDark,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      side: BorderSide(
-                        color: NurseUi.border.withValues(alpha: 0.8),
-                      ),
-                    ),
-                    onPressed: () => _editReport(report),
-                    icon: const Icon(Icons.edit, size: 16),
-                    label: Text(
-                      'Edit Report',
-                      style: TextStyle(
-                        color: AppColors.primaryDark,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+          ),
+          _statusBadge(report.status),
+        ],
       ),
     );
   }
 
-  Widget _reportMetric(IconData icon, String label, String value) {
-    return Row(
+  Widget _visitInformationCard() {
+    return _sectionCard(
+      title: 'Visit Information',
       children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, size: 17, color: AppColors.primaryDark),
+        _infoRow(
+          Icons.calendar_today_rounded,
+          'Date & Time',
+          _dateTime(report.scheduledDate),
         ),
-        const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: TextStyle(fontSize: 11, color: NurseUi.muted)),
-            const SizedBox(height: 2),
-            Text(
-              value,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: NurseUi.text,
-                fontSize: 13,
-              ),
-            ),
-          ],
+        _infoRow(Icons.timer_outlined, 'Duration', _duration(report)),
+        _infoRow(
+          Icons.local_hospital_outlined,
+          'Visit Type',
+          _serviceType(report),
+        ),
+        _infoRow(
+          Icons.play_arrow_rounded,
+          'Started At',
+          _time(report.createdAt),
+        ),
+        _infoRow(
+          Icons.check_circle_outline,
+          'Completed At',
+          _time(report.updatedAt),
         ),
       ],
     );
   }
 
-  Future<void> _loadData() async {
-    setState(() {
-      isLoading = true;
-    });
-    try {
-      final requests = await ServiceRequestService.getProviderRequests(
-        widget.user.userId,
-        status: 'completed',
-      );
-      final reports = await ReportService.getReports(widget.user.userId);
-      if (!mounted) return;
-      setState(() {
-        completedRequests = requests;
-        visitReports = reports;
-        isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        completedRequests = [];
-        visitReports = [];
-        isLoading = false;
-      });
-      // ignore: avoid_print
-      print('Error loading reports or requests: $e');
-    }
-  }
-
-  void _showNewReportDialog() {
-    if (completedRequests.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No completed visits ready for a report')),
-      );
-      return;
-    }
-    _openReportForm(completedRequests.first);
-  }
-
-  void _openReportForm(ServiceRequest request) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => NurseMedicalReportFormScreen(
-          providerUserId: widget.user.userId,
-          request: request,
-        ),
-      ),
-    ).then((value) {
-      if (value == true) _loadData();
-    });
-  }
-
-  void _viewFullReport(VisitReport report) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      isScrollControlled: true,
-      builder: (context) => FullReportView(report: report),
-    );
-  }
-
-  void _editReport(VisitReport report) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      isScrollControlled: true,
-      builder: (context) => EditReportForm(report: report, onSaved: _loadData),
-    );
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
-  }
-}
-
-class NewReportForm extends StatefulWidget {
-  final String providerUserId;
-  final List<ServiceRequest> completedRequests;
-  final Future<void> Function() onSaved;
-
-  const NewReportForm({
-    super.key,
-    required this.providerUserId,
-    required this.completedRequests,
-    required this.onSaved,
-  });
-
-  @override
-  State<NewReportForm> createState() => _NewReportFormState();
-}
-
-class _NewReportFormState extends State<NewReportForm> {
-  final patientIdController = TextEditingController();
-  final patientNameController = TextEditingController();
-  final serviceTypeController = TextEditingController();
-  final locationController = TextEditingController();
-  final visitSummaryController = TextEditingController();
-  final vitalSignsController = TextEditingController();
-  final medicationsController = TextEditingController();
-  final observationsController = TextEditingController();
-  final recommendationsController = TextEditingController();
-
-  String selectedPatient = '';
-  String selectedService = '';
-  ServiceRequest? selectedRequest;
-  DateTime visitDate = DateTime.now();
-  int visitDuration = 1;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.completedRequests.isNotEmpty) {
-      selectedRequest = widget.completedRequests.first;
-      selectedPatient = selectedRequest!.patientName.isEmpty
-          ? selectedRequest!.patientId
-          : selectedRequest!.patientName;
-      selectedService = selectedRequest!.serviceType;
-      visitDate = selectedRequest!.scheduledDate;
-    }
-  }
-
-  @override
-  void dispose() {
-    patientIdController.dispose();
-    patientNameController.dispose();
-    serviceTypeController.dispose();
-    locationController.dispose();
-    visitSummaryController.dispose();
-    vitalSignsController.dispose();
-    medicationsController.dispose();
-    observationsController.dispose();
-    recommendationsController.dispose();
-    super.dispose();
-  }
-
-  List<String> get patients => widget.completedRequests
-      .map(
-        (request) => request.patientName.isEmpty
-            ? request.patientId
-            : request.patientName,
-      )
-      .toSet()
-      .toList();
-
-  List<String> get services => {
-    ...widget.completedRequests
-        .map((request) => request.serviceType)
-        .where((service) => service.trim().isNotEmpty),
-    'Home Nursing Care',
-    'Medication Administration',
-    'Vital Signs Monitoring',
-    'Wound Care',
-    'Patient Education',
-  }.toList();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
-      decoration: BoxDecoration(
-        color: NurseUi.background,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'New Visit Report',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: NurseUi.text,
-                ),
-              ),
-              IconButton(
-                icon: Icon(Icons.close, color: NurseUi.text),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
+  Widget _summaryCard() {
+    final summary = report.visitSummary.trim().isEmpty
+        ? 'Not recorded'
+        : report.visitSummary.trim();
+    return _sectionCard(
+      title: 'Summary',
+      children: [
+        Text(
+          summary,
+          style: const TextStyle(
+            color: _text,
+            height: 1.45,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        ),
+      ],
+    );
+  }
+
+  Widget _careProvidedGrid() {
+    final items = [
+      _CareItem(
+        'Medication\nAdministration',
+        Icons.medication_outlined,
+        report.medications,
+      ),
+      _CareItem('Wound Care', Icons.healing_rounded, report.observations),
+      _CareItem(
+        'Vital Signs\nMonitoring',
+        Icons.favorite_outline,
+        report.vitalSigns,
+      ),
+      _CareItem('Personal Care', Icons.person_outline, report.visitSummary),
+      _CareItem(
+        'Patient\nEducation',
+        Icons.menu_book_outlined,
+        report.recommendations,
+      ),
+      _CareItem('IV Support', Icons.invert_colors, report.observations),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 2, bottom: 10),
+          child: Text(
+            'Care Provided',
+            style: TextStyle(color: _text, fontWeight: FontWeight.w900),
+          ),
+        ),
+        GridView.builder(
+          itemCount: items.length,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 1.18,
+          ),
+          itemBuilder: (context, index) {
+            final item = items[index];
+            final done = _hasCareData(item.source, item.label);
+            return Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: _shadow,
+              ),
+              child: Stack(
                 children: [
-                  if (widget.completedRequests.isEmpty) ...[
-                    _manualField('Patient ID', patientIdController),
-                    _manualField('Patient Name', patientNameController),
-                  ] else ...[
-                    Text(
-                      'Patient',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: NurseUi.text,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedPatient.isEmpty
-                          ? null
-                          : selectedPatient,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: NurseUi.surface,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          item.icon,
+                          color: done ? _primary : const Color(0xFF9CA3AF),
+                          size: 23,
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
+                        const SizedBox(height: 8),
+                        Text(
+                          item.label,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _text,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            height: 1.15,
+                          ),
                         ),
-                      ),
-                      hint: const Text('Select patient'),
-                      items: patients.map((patient) {
-                        return DropdownMenuItem<String>(
-                          value: patient,
-                          child: Text(patient),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          selectedPatient = value!;
-                          selectedRequest = widget.completedRequests.firstWhere(
-                            (request) =>
-                                request.patientName == value ||
-                                request.patientId == value,
-                            orElse: () => widget.completedRequests.first,
-                          );
-                          selectedService =
-                              selectedRequest?.serviceType ?? selectedService;
-                          visitDate =
-                              selectedRequest?.scheduledDate ?? visitDate;
-                        });
-                      },
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-
-                  // Service Type
-                  if (widget.completedRequests.isEmpty)
-                    _manualField('Service Type', serviceTypeController)
-                  else ...[
-                    Text(
-                      'Service Type',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: NurseUi.text,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedService.isEmpty
-                          ? null
-                          : selectedService,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: NurseUi.surface,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
-                      hint: const Text('Select service type'),
-                      items: services.map((service) {
-                        return DropdownMenuItem<String>(
-                          value: service,
-                          child: Text(service),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() => selectedService = value!);
-                      },
-                    ),
-                  ],
-                  if (widget.completedRequests.isEmpty)
-                    _manualField('Location', locationController),
-                  const SizedBox(height: 16),
-
-                  // Visit Date and Duration
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Visit Date',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: NurseUi.text,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            InkWell(
-                              onTap: _selectDate,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: NurseUi.surface,
-                                  border: Border.all(color: NurseUi.border),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.calendar_today,
-                                      size: 20,
-                                      color: AppColors.primaryDark,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '${visitDate.day}/${visitDate.month}/${visitDate.year}',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: NurseUi.text,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Duration (hours)',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: NurseUi.text,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            TextField(
-                              keyboardType: TextInputType.number,
-                              decoration: InputDecoration(
-                                filled: true,
-                                fillColor: NurseUi.surface,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                              ),
-                              onChanged: (value) {
-                                setState(
-                                  () =>
-                                      visitDuration = int.tryParse(value) ?? 1,
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Visit Summary
-                  Text(
-                    'Visit Summary',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: NurseUi.text,
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: visitSummaryController,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      hintText: 'Brief summary of the visit...',
-                      filled: true,
-                      fillColor: NurseUi.surface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      contentPadding: const EdgeInsets.all(16),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Vital Signs
-                  Text(
-                    'Vital Signs',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: NurseUi.text,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: vitalSignsController,
-                    maxLines: 2,
-                    decoration: InputDecoration(
-                      hintText: 'Blood pressure, heart rate, temperature, etc.',
-                      filled: true,
-                      fillColor: NurseUi.surface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      contentPadding: const EdgeInsets.all(16),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Medications Administered
-                  Text(
-                    'Medications Administered',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: NurseUi.text,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: medicationsController,
-                    maxLines: 2,
-                    decoration: InputDecoration(
-                      hintText: 'List medications given and dosages...',
-                      filled: true,
-                      fillColor: NurseUi.surface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      contentPadding: const EdgeInsets.all(16),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Observations
-                  Text(
-                    'Clinical Observations',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: NurseUi.text,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: observationsController,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      hintText: 'Patient condition, symptoms, concerns...',
-                      filled: true,
-                      fillColor: NurseUi.surface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      contentPadding: const EdgeInsets.all(16),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Recommendations
-                  Text(
-                    'Recommendations',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: NurseUi.text,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: recommendationsController,
-                    maxLines: 2,
-                    decoration: InputDecoration(
-                      hintText: 'Follow-up care, lifestyle advice, etc.',
-                      filled: true,
-                      fillColor: NurseUi.surface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      contentPadding: const EdgeInsets.all(16),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Submit Button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: _submitReport,
-                      child: const Text(
-                        'Submit Report',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Icon(
+                      done
+                          ? Icons.check_circle_rounded
+                          : Icons.radio_button_unchecked_rounded,
+                      color: done ? _success : const Color(0xFFCBD5E1),
+                      size: 16,
                     ),
                   ),
                 ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _vitalSignsGrid() {
+    final vitals = _parseVitals(report.vitalSigns);
+    final items = [
+      _VitalItem(
+        'Blood Pressure',
+        vitals['blood pressure'] ?? vitals['bp'] ?? 'Not recorded',
+        Icons.monitor_heart_outlined,
+      ),
+      _VitalItem(
+        'Heart Rate',
+        vitals['heart rate'] ?? vitals['hr'] ?? 'Not recorded',
+        Icons.favorite_border,
+      ),
+      _VitalItem(
+        'Temperature',
+        vitals['temperature'] ?? vitals['temp'] ?? 'Not recorded',
+        Icons.thermostat,
+      ),
+      _VitalItem(
+        'Oxygen Saturation',
+        vitals['oxygen saturation'] ?? vitals['spo2'] ?? 'Not recorded',
+        Icons.air,
+      ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 2, bottom: 10),
+          child: Text(
+            'Vital Signs',
+            style: TextStyle(color: _text, fontWeight: FontWeight.w900),
+          ),
+        ),
+        GridView.builder(
+          itemCount: items.length,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 2.35,
+          ),
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: _shadow,
+              ),
+              child: Row(
+                children: [
+                  Icon(item.icon, color: _primary, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          item.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _muted,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          item.value,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _text,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _viewFullReportButton(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: ElevatedButton.icon(
+        onPressed: () => _showFullReport(context),
+        icon: const Icon(Icons.description_outlined, size: 18),
+        label: const Text('View Full Report'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _primary,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+      ),
+    );
+  }
+
+  void _showFullReport(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _FullReportSheet(report: report),
+    );
+  }
+
+  Widget _sectionCard({required String title, required List<Widget> children}) {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(color: _text, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _card({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: _shadow,
+      ),
+      child: child,
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Icon(icon, color: _primary, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: _muted,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Flexible(
+            child: Text(
+              value.trim().isEmpty ? 'Not recorded' : value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                color: _text,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ),
@@ -1077,212 +830,70 @@ class _NewReportFormState extends State<NewReportForm> {
     );
   }
 
-  Future<void> _selectDate() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: visitDate,
-      firstDate: DateTime.now().subtract(const Duration(days: 30)),
-      lastDate: DateTime.now(),
-    );
-    if (picked != null) {
-      setState(() => visitDate = picked);
-    }
-  }
-
-  Widget _manualField(String label, TextEditingController controller) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: TextField(
-        controller: controller,
-        decoration: InputDecoration(
-          labelText: label,
-          filled: true,
-          fillColor: NurseUi.surface,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          contentPadding: const EdgeInsets.all(16),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _submitReport() async {
-    final patientId =
-        selectedRequest?.patientId ?? patientIdController.text.trim();
-    final patientName = selectedRequest?.patientName.isNotEmpty == true
-        ? selectedRequest!.patientName
-        : (patientNameController.text.trim().isNotEmpty
-              ? patientNameController.text.trim()
-              : patientId);
-    final serviceType = selectedRequest?.serviceType.isNotEmpty == true
-        ? selectedRequest!.serviceType
-        : (selectedService.isNotEmpty
-              ? selectedService
-              : serviceTypeController.text.trim());
-    final location = selectedRequest?.location.isNotEmpty == true
-        ? selectedRequest!.location
-        : locationController.text.trim();
-
-    if (patientId.isEmpty ||
-        serviceType.isEmpty ||
-        visitSummaryController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please fill patient, service, and summary'),
-        ),
-      );
-      return;
-    }
-
-    final success = await ReportService.createReport(
-      providerId: widget.providerUserId,
-      requestId: selectedRequest?.id ?? '',
-      patientId: patientId,
-      patientName: patientName,
-      serviceType: serviceType,
-      location: location,
-      scheduledDate: visitDate,
-      durationHours: visitDuration,
-      visitSummary: visitSummaryController.text.trim(),
-      vitalSigns: vitalSignsController.text.trim(),
-      medications: medicationsController.text.trim(),
-      observations: observationsController.text.trim(),
-      recommendations: recommendationsController.text.trim(),
-    );
-    if (success) await widget.onSaved();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          success ? 'Report submitted successfully' : 'Failed to submit report',
-        ),
-      ),
-    );
-    if (success) Navigator.pop(context);
-  }
+  List<BoxShadow> get _shadow => [
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.055),
+      blurRadius: 18,
+      offset: const Offset(0, 8),
+    ),
+  ];
 }
 
-class FullReportView extends StatelessWidget {
-  final VisitReport report;
+class _FullReportSheet extends StatelessWidget {
+  const _FullReportSheet({required this.report});
 
-  const FullReportView({super.key, required this.report});
+  static const Color _background = Color(0xFFF4FAF9);
+  static const Color _primary = Color(0xFF0F766E);
+  static const Color _text = Color(0xFF111827);
+
+  final VisitReport report;
 
   @override
   Widget build(BuildContext context) {
-    final patient = report.patientName.isNotEmpty
-        ? report.patientName
-        : report.patientId;
     return Container(
       height: MediaQuery.of(context).size.height * 0.86,
-      decoration: BoxDecoration(
-        color: NurseUi.background,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: const BoxDecoration(
+        color: _background,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 12, 10),
+            padding: const EdgeInsets.fromLTRB(18, 14, 10, 8),
             child: Row(
               children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const Icon(
-                    Icons.description_rounded,
-                    color: AppColors.primaryDark,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Report Summary',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: NurseUi.text,
-                        ),
-                      ),
-                      Text(
-                        patient.isNotEmpty ? patient : 'Patient report',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: NurseUi.muted, fontSize: 13),
-                      ),
-                    ],
+                const Expanded(
+                  child: Text(
+                    'Full Report',
+                    style: TextStyle(
+                      color: _text,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
                 IconButton(
-                  icon: Icon(Icons.close, color: NurseUi.text),
                   onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
                 ),
               ],
             ),
           ),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 6, 20, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppColors.primary, AppColors.primaryDark],
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      _smartSummary(report),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        height: 1.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _detailTile(
-                          Icons.medical_services_rounded,
-                          'Service',
-                          report.serviceType.isNotEmpty
-                              ? report.serviceType
-                              : 'Nursing service',
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _detailTile(
-                          Icons.event_rounded,
-                          'Date',
-                          _formatDate(report.scheduledDate),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  _buildReportSection('Clinical Notes', report.visitSummary),
-                  _buildReportSection('Vital Signs', report.vitalSigns),
-                  _buildReportSection('Medications', report.medications),
-                  _buildReportSection('Observations', report.observations),
-                  _buildReportSection(
-                    'Recommendations',
-                    report.recommendations,
-                  ),
-                ],
-              ),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
+              children: [
+                _section('Patient', _patientName(report)),
+                _section('Service Type', _serviceType(report)),
+                _section('Location', _location(report)),
+                _section('Date & Time', _dateTime(report.scheduledDate)),
+                _section('Duration', _duration(report)),
+                _section('Summary', report.visitSummary),
+                _section('Vital Signs', report.vitalSigns),
+                _section('Medications', report.medications),
+                _section('Observations', report.observations),
+                _section('Recommendations', report.recommendations),
+              ],
             ),
           ),
         ],
@@ -1290,398 +901,179 @@ class FullReportView extends StatelessWidget {
     );
   }
 
-  Widget _detailTile(IconData icon, String label, String value) {
+  Widget _section(String title, String value) {
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: NurseUi.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 20, color: AppColors.primaryDark),
-          const SizedBox(height: 8),
-          Text(label, style: TextStyle(fontSize: 11, color: NurseUi.muted)),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: NurseUi.text,
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReportSection(String title, String content) {
-    final body = content.trim().isEmpty ? 'Not recorded.' : content.trim();
-    return Container(
+      width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: NurseUi.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: NurseUi.border.withValues(alpha: 0.8)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.055),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: AppColors.primaryDark,
+            style: const TextStyle(
+              color: _primary,
+              fontWeight: FontWeight.w900,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            body,
-            style: TextStyle(fontSize: 14, color: NurseUi.text, height: 1.45),
+            value.trim().isEmpty ? 'Not recorded' : value.trim(),
+            style: const TextStyle(
+              color: _text,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
     );
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
-  }
-
-  String _smartSummary(VisitReport report) {
-    final parts = <String>[];
-    final patient = report.patientName.isNotEmpty
-        ? report.patientName
-        : 'The patient';
-    final service = report.serviceType.isNotEmpty
-        ? report.serviceType
-        : 'nursing care';
-    parts.add(
-      '$patient received $service on ${_formatDate(report.scheduledDate)}.',
-    );
-    if (report.visitSummary.trim().isNotEmpty) {
-      parts.add('Visit focus: ${report.visitSummary.trim()}');
-    }
-    if (report.vitalSigns.trim().isNotEmpty) {
-      parts.add('Vitals noted: ${report.vitalSigns.trim()}');
-    }
-    if (report.medications.trim().isNotEmpty) {
-      parts.add('Medications: ${report.medications.trim()}');
-    }
-    if (report.observations.trim().isNotEmpty) {
-      parts.add('Clinical observation: ${report.observations.trim()}');
-    }
-    if (report.recommendations.trim().isNotEmpty) {
-      parts.add('Recommended next step: ${report.recommendations.trim()}');
-    }
-    if (parts.length == 1) {
-      parts.add('No detailed clinical notes were added to this report yet.');
-    }
-    return parts.join('\n\n');
   }
 }
 
-class EditReportForm extends StatefulWidget {
-  final VisitReport report;
-  final Future<void> Function() onSaved;
+class _CareItem {
+  const _CareItem(this.label, this.icon, this.source);
 
-  const EditReportForm({
-    super.key,
-    required this.report,
-    required this.onSaved,
-  });
-
-  @override
-  State<EditReportForm> createState() => _EditReportFormState();
+  final String label;
+  final IconData icon;
+  final String source;
 }
 
-class _EditReportFormState extends State<EditReportForm> {
-  late final TextEditingController visitSummaryController;
-  late final TextEditingController patientNameController;
-  late final TextEditingController serviceTypeController;
-  late final TextEditingController locationController;
-  late final TextEditingController durationController;
-  late final TextEditingController vitalSignsController;
-  late final TextEditingController medicationsController;
-  late final TextEditingController observationsController;
-  late final TextEditingController recommendationsController;
+class _VitalItem {
+  const _VitalItem(this.label, this.value, this.icon);
 
-  @override
-  void initState() {
-    super.initState();
-    visitDate = widget.report.scheduledDate;
-    patientNameController = TextEditingController(
-      text: widget.report.patientName,
-    );
-    serviceTypeController = TextEditingController(
-      text: widget.report.serviceType,
-    );
-    locationController = TextEditingController(text: widget.report.location);
-    durationController = TextEditingController(
-      text: widget.report.durationHours > 0
-          ? widget.report.durationHours.toString()
-          : '',
-    );
-    visitSummaryController = TextEditingController(
-      text: widget.report.visitSummary,
-    );
-    vitalSignsController = TextEditingController(
-      text: widget.report.vitalSigns,
-    );
-    medicationsController = TextEditingController(
-      text: widget.report.medications,
-    );
-    observationsController = TextEditingController(
-      text: widget.report.observations,
-    );
-    recommendationsController = TextEditingController(
-      text: widget.report.recommendations,
-    );
+  final String label;
+  final String value;
+  final IconData icon;
+}
+
+Widget _statusBadge(String status) {
+  final label = _statusLabel(status);
+  final color = _statusColor(label);
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w900),
+    ),
+  );
+}
+
+String _statusLabel(String status) {
+  final value = status.toLowerCase().trim().replaceAll('_', ' ');
+  if (value.contains('progress')) return 'In Progress';
+  if (value.contains('draft')) return 'Draft';
+  return 'Completed';
+}
+
+Color _statusColor(String label) {
+  if (label == 'In Progress') return const Color(0xFF3B82F6);
+  if (label == 'Draft') return const Color(0xFFF59E0B);
+  return const Color(0xFF22C55E);
+}
+
+String _patientName(VisitReport report) {
+  final name = report.patientName.trim();
+  if (name.isNotEmpty) return name;
+  final id = report.patientId.trim();
+  return id.isEmpty ? 'Patient' : 'Patient $id';
+}
+
+String _serviceType(VisitReport report) {
+  final value = report.serviceType.trim();
+  return value.isEmpty ? 'Nursing Care' : value;
+}
+
+String _location(VisitReport report) {
+  final value = report.location.trim();
+  return value.isEmpty ? 'Location not recorded' : value;
+}
+
+String _duration(VisitReport report) {
+  if (report.durationHours <= 0) return 'Not recorded';
+  if (report.durationHours == 1) return '1 hour';
+  return '${report.durationHours} hours';
+}
+
+String _initial(String value) {
+  final clean = value.trim();
+  if (clean.isEmpty) return 'P';
+  return clean.substring(0, 1).toUpperCase();
+}
+
+String _dateTime(DateTime date) {
+  final months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final month = months[date.month - 1];
+  return '$month ${date.day}, ${date.year} - ${_time(date)}';
+}
+
+String _time(DateTime date) {
+  final hour = date.hour == 0
+      ? 12
+      : date.hour > 12
+      ? date.hour - 12
+      : date.hour;
+  final minute = date.minute.toString().padLeft(2, '0');
+  final period = date.hour >= 12 ? 'PM' : 'AM';
+  return '$hour:$minute $period';
+}
+
+bool _hasCareData(String source, String label) {
+  final text = source.trim().toLowerCase();
+  if (text.isEmpty) return false;
+  final cleanLabel = label.toLowerCase().replaceAll('\n', ' ');
+  final words = cleanLabel.split(' ').where((word) => word.length > 3);
+  return words.any(text.contains) || text.length > 8;
+}
+
+Map<String, String> _parseVitals(String value) {
+  final result = <String, String>{};
+  final normalized = value.replaceAll('\n', ';').replaceAll('|', ';');
+  for (final part in normalized.split(';')) {
+    final clean = part.trim();
+    if (clean.isEmpty) continue;
+    final separator = clean.contains(':')
+        ? ':'
+        : clean.contains('=')
+        ? '='
+        : '';
+    if (separator.isEmpty) continue;
+    final pieces = clean.split(separator);
+    if (pieces.length < 2) continue;
+    final key = pieces.first.trim().toLowerCase();
+    final val = pieces.sublist(1).join(separator).trim();
+    if (key.isNotEmpty && val.isNotEmpty) result[key] = val;
   }
-
-  @override
-  void dispose() {
-    patientNameController.dispose();
-    serviceTypeController.dispose();
-    locationController.dispose();
-    durationController.dispose();
-    visitSummaryController.dispose();
-    vitalSignsController.dispose();
-    medicationsController.dispose();
-    observationsController.dispose();
-    recommendationsController.dispose();
-    super.dispose();
+  if (result.isEmpty && value.trim().isNotEmpty) {
+    result['blood pressure'] = value.trim();
   }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
-      decoration: BoxDecoration(
-        color: NurseUi.background,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Edit Visit Report',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: NurseUi.text,
-                ),
-              ),
-              IconButton(
-                icon: Icon(Icons.close, color: NurseUi.text),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _field('Patient Name', patientNameController),
-                  _field('Service Type', serviceTypeController),
-                  _field('Location', locationController),
-                  _dateField(),
-                  _field(
-                    'Duration (hours)',
-                    durationController,
-                    keyboardType: TextInputType.number,
-                  ),
-                  _field('Visit Summary', visitSummaryController, maxLines: 3),
-                  _field('Vital Signs', vitalSignsController, maxLines: 3),
-                  _field(
-                    'Medications Administered',
-                    medicationsController,
-                    maxLines: 2,
-                  ),
-                  _field(
-                    'Clinical Observations',
-                    observationsController,
-                    maxLines: 3,
-                  ),
-                  _field(
-                    'Recommendations',
-                    recommendationsController,
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 4),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: _updateReport,
-                      child: const Text(
-                        'Update Report',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  DateTime visitDate = DateTime.now();
-
-  Widget _field(
-    String label,
-    TextEditingController controller, {
-    int maxLines = 1,
-    TextInputType? keyboardType,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: NurseUi.text,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: controller,
-            maxLines: maxLines,
-            keyboardType: keyboardType,
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: NurseUi.surface,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              contentPadding: const EdgeInsets.all(16),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _dateField() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Visit Date',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: NurseUi.text,
-            ),
-          ),
-          const SizedBox(height: 8),
-          InkWell(
-            onTap: _selectDate,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: NurseUi.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: NurseUi.border),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.calendar_today, size: 18),
-                  const SizedBox(width: 8),
-                  Text(
-                    _formatDate(visitDate),
-                    style: TextStyle(color: NurseUi.text),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _selectDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: visitDate,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (picked != null) setState(() => visitDate = picked);
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
-  }
-
-  Future<void> _updateReport() async {
-    final success = await ReportService.updateReport(
-      reportId: widget.report.id,
-      providerId: widget.report.providerId,
-      requestId: widget.report.requestId,
-      patientId: widget.report.patientId,
-      patientName: patientNameController.text.trim(),
-      serviceType: serviceTypeController.text.trim(),
-      location: locationController.text.trim(),
-      scheduledDate: visitDate,
-      durationHours: int.tryParse(durationController.text.trim()) ?? 0,
-      visitSummary: visitSummaryController.text.trim(),
-      vitalSigns: vitalSignsController.text.trim(),
-      medications: medicationsController.text.trim(),
-      observations: observationsController.text.trim(),
-      recommendations: recommendationsController.text.trim(),
-    );
-
-    if (success) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Report updated successfully')),
-        );
-        await widget.onSaved();
-        if (!mounted) return;
-        Navigator.pop(context);
-      }
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to update report')),
-        );
-      }
-    }
-  }
+  return result;
 }

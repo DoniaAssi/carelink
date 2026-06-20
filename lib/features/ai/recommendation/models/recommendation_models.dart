@@ -13,11 +13,13 @@ class RecommendationRequest {
   });
 
   final String rawQuery;
+
   /// One of [AiCategoryRegistry] keys, e.g. `cardiology`.
   final String? categoryKey;
   final DateTime? requestedDateTime;
   final bool isUrgent;
   final bool isComplexCase;
+
   /// Normalised token for specialization matching (filled by parser).
   final String requestedServiceKeyword;
 }
@@ -75,7 +77,8 @@ class RecommendationWeights {
   );
 
   RecommendationWeights normalized() {
-    final sum = locationWeight +
+    final sum =
+        locationWeight +
         specializationWeight +
         availabilityWeight +
         ratingWeight +
@@ -131,19 +134,25 @@ class PatientRecommendationProfile {
   final List<String> medications;
   final List<String> previousSurgeries;
   final PatientCareSummary careSummary;
+
   /// `providerId` → 1–5 stars (drives personalization for returning users).
   final Map<String, double> previousProviderRatings;
+
   /// Specialties where this patient’s past ratings averaged ≥ 4/5 (rule-based boost).
   final Map<String, double> specializationRatingAffinity;
   final List<String> successfulVisitProviderIds;
   final List<String> visitReportTexts;
   final List<String> followUpHints;
+
   /// When true, [RecommendationWeights] allocates 15% to history and scales others.
   final bool hasHistoryForWeighting;
+
   /// AI-extracted summaries from uploaded medical records.
   final List<String> aiSummaries;
+
   /// Raw OCR text from uploaded medical records.
   final List<String> ocrTexts;
+
   /// Analysis tags extracted from medical records.
   final List<String> analysisTags;
 }
@@ -160,6 +169,7 @@ class AIRecommendationResult {
     this.aiMatchReason,
     this.matchedTags = const [],
     this.medicalMatchScore,
+    this.recommendationId,
   });
 
   final ProviderModel provider;
@@ -168,12 +178,16 @@ class AIRecommendationResult {
   final ScoreBreakdown breakdown;
   final RecommendationWeights weights;
   final List<String> recommendationReasons;
+
   /// Reason derived from AI-processed medical records (e.g. OCR/tags).
   final String? aiMatchReason;
+
   /// Human-readable care-need labels matched from medical records.
   final List<String> matchedTags;
+
   /// 0–1 score for medical record compatibility.
   final double? medicalMatchScore;
+  final String? recommendationId;
 
   String get primaryReason => recommendationReasons.isEmpty
       ? 'High composite match under transparent weighted criteria.'
@@ -252,4 +266,3 @@ class MedicalRecordEntry {
   final bool usedForAiMatching;
   final String source;
 }
-

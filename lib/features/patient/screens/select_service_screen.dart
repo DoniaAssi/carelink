@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
@@ -95,6 +96,7 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
     try {
       final data = await ApiService().getProviderById(
         widget.request.providerId,
+        realAvailability: true,
       );
       final provider = ProviderModel.fromJson(data);
       if (!mounted) return;
@@ -122,7 +124,7 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
     final provider = _provider;
     if (service == null ||
         provider == null ||
-        provider.availableSlots.isEmpty ||
+        !ProviderBookingEligibility.canBook(provider) ||
         _checkingAvailability) {
       return;
     }
@@ -135,7 +137,7 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
           realAvailability: true,
         ),
       );
-      if (!freshProvider.isAvailable || freshProvider.availableSlots.isEmpty) {
+      if (!ProviderBookingEligibility.canBook(freshProvider)) {
         if (!mounted) return;
         if (widget.returnWhenUnavailable) {
           Navigator.pop(context, true);
@@ -194,7 +196,8 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
     final provider = _provider;
-    final hasSlots = provider != null && provider.availableSlots.isNotEmpty;
+    final hasSlots =
+        provider != null && ProviderBookingEligibility.canBook(provider);
     final canContinue =
         !_loading &&
         !_checkingAvailability &&
@@ -202,15 +205,21 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
         _selectedService != null;
     return Scaffold(
       backgroundColor: p.pageBg,
-      appBar: PatientAppBar(title: context.l10n.isArabic ? 'اختر الخدمة' : context.tr('booking.selectService.title')),
+      appBar: PatientAppBar(
+        title: context.l10n.isArabic
+            ? 'اختر الخدمة'
+            : context.tr('booking.selectService.title'),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
           const SizedBox(height: 12),
-          BookingStepIndicator(currentStep: BookingFlowStep.service),
+          const BookingStepIndicator(currentStep: BookingFlowStep.provider),
           const SizedBox(height: 24),
           Text(
-            context.l10n.isArabic ? 'ما الخدمة المطلوبة؟' : context.tr('booking.selectService.prompt'),
+            context.l10n.isArabic
+                ? 'ما الخدمة المطلوبة؟'
+                : context.tr('booking.selectService.prompt'),
             style: TextStyle(
               color: p.inkDark,
               fontSize: 20,
@@ -274,7 +283,13 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
 }
 
 class _ServiceOption {
-  const _ServiceOption(this.name, this.titleKey, this.descKey, this.icon, this.price);
+  const _ServiceOption(
+    this.name,
+    this.titleKey,
+    this.descKey,
+    this.icon,
+    this.price,
+  );
 
   final String name;
   final String titleKey;

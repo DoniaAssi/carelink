@@ -74,12 +74,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
         additionalNotes: widget.request.additionalNotes,
         paymentMethod: 'mock_card',
         paymentStatus: 'paid',
-        status: 'pending',
+        status: 'pending_provider_approval',
+        recommendationId: widget.request.recommendationId,
       );
 
       final appointmentId = (booking['appointmentId'] ?? '').toString();
       if (appointmentId.isEmpty) {
         throw Exception('Booking created but appointment id is missing');
+      }
+      final recommendationId = widget.request.recommendationId?.trim() ?? '';
+      if (recommendationId.isNotEmpty) {
+        api
+            .markRecommendationBookingCreated(
+              recommendationId: recommendationId,
+              relatedBookingId: appointmentId,
+            )
+            .catchError((error) {
+              debugPrint(
+                '[AIRecommendations] failed to mark booking created: $error',
+              );
+            });
       }
 
       // 3. Record the payment in the ledger
@@ -90,6 +104,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         amount: widget.request.totalAmount,
         method: 'mock_card',
       );
+      debugPrint('[BookingDebug] payment ledger result: $result');
 
       if (result['success'] != true && result['exists'] != true) {
         throw Exception(
@@ -136,7 +151,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
       body: Stack(
         children: [
           ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 132),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              12,
+              16,
+              24 + MediaQuery.paddingOf(context).bottom,
+            ),
             children: [
               _AmountSummaryCard(
                 palette: p,
@@ -168,6 +188,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 cardController: _cardController,
                 expiryController: _expiryController,
                 cvvController: _cvvController,
+                submitting: _submitting,
+                onPay: _pay,
               ),
             ],
           ),
@@ -193,36 +215,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
             ),
         ],
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Container(
-          decoration: BoxDecoration(
-            color: p.surface,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: p.isDark ? 0.18 : 0.07),
-                blurRadius: 18,
-                offset: const Offset(0, -4),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const _CompactSecurityNote(),
-              const SizedBox(height: 10),
-              PatientPrimaryButton(
-                height: 56,
-                onPressed: _submitting ? null : _pay,
-                isLoading: _submitting,
-                icon: Icons.lock_rounded,
-                label: isArabic ? 'تأكيد الدفع' : 'Confirm Payment',
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -305,13 +297,29 @@ class _AmountSummaryCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Text(
-            '${amount.toStringAsFixed(2)} ${context.tr('payment.currencySymbol')}',
-            style: const TextStyle(
-              color: AppColors.primary,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${amount.toStringAsFixed(2)} ${context.tr('payment.currencySymbol')}',
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                context.l10n.isArabic
+                    ? 'ط·آ§ط¸â€‍ط¸â€¦ط·آ¨ط¸â€‍ط·ط› ط·آ§ط¸â€‍ط·آ¥ط·آ¬ط¸â€¦ط·آ§ط¸â€‍ط¸ظ¹'
+                    : 'Total Amount',
+                style: TextStyle(
+                  color: palette.inkMuted,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -347,6 +355,8 @@ class _CardForm extends StatelessWidget {
     required this.cardController,
     required this.expiryController,
     required this.cvvController,
+    required this.submitting,
+    required this.onPay,
   });
 
   final CarelinkPalette palette;
@@ -356,6 +366,8 @@ class _CardForm extends StatelessWidget {
   final TextEditingController cardController;
   final TextEditingController expiryController;
   final TextEditingController cvvController;
+  final bool submitting;
+  final VoidCallback onPay;
 
   @override
   Widget build(BuildContext context) {
@@ -401,6 +413,15 @@ class _CardForm extends StatelessWidget {
               controller: cardController,
               hint: '0000 0000 0000 0000',
               icon: Icons.credit_card_rounded,
+              suffix: const Text(
+                'VISA',
+                style: TextStyle(
+                  color: Color(0xFF1A2C9B),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
               keyboardType: TextInputType.number,
               textDirection: TextDirection.ltr,
               inputFormatters: [
@@ -443,6 +464,11 @@ class _CardForm extends StatelessWidget {
                     controller: cvvController,
                     hint: 'CVV',
                     icon: Icons.lock_outline_rounded,
+                    suffix: Icon(
+                      Icons.help_outline_rounded,
+                      color: palette.inkMuted,
+                      size: 20,
+                    ),
                     keyboardType: TextInputType.number,
                     textDirection: TextDirection.ltr,
                     obscureText: true,
@@ -456,6 +482,16 @@ class _CardForm extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 22),
+            const _CompactSecurityNote(),
+            const SizedBox(height: 14),
+            PatientPrimaryButton(
+              height: 58,
+              onPressed: submitting ? null : onPay,
+              isLoading: submitting,
+              icon: Icons.lock_rounded,
+              label: isArabic ? 'تأكيد الدفع' : 'Confirm Payment',
             ),
           ],
         ),
@@ -477,6 +513,7 @@ class _LabeledField extends StatelessWidget {
     this.textCapitalization = TextCapitalization.none,
     this.inputFormatters,
     this.obscureText = false,
+    this.suffix,
   });
 
   final CarelinkPalette palette;
@@ -490,6 +527,7 @@ class _LabeledField extends StatelessWidget {
   final TextCapitalization textCapitalization;
   final List<TextInputFormatter>? inputFormatters;
   final bool obscureText;
+  final Widget? suffix;
 
   @override
   Widget build(BuildContext context) {
@@ -520,6 +558,12 @@ class _LabeledField extends StatelessWidget {
               fontSize: 14,
             ),
             prefixIcon: Icon(icon, color: AppColors.primary, size: 20),
+            suffixIcon: suffix == null
+                ? null
+                : Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 14),
+                    child: Center(widthFactor: 1, child: suffix),
+                  ),
             filled: true,
             fillColor: palette.isDark
                 ? palette.surfaceSoft
@@ -589,7 +633,7 @@ class _CreditCardPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
     final number = cardNumber.trim().isEmpty
-        ? '•••• •••• •••• ••••'
+        ? 'â€¢â€¢â€¢â€¢ â€¢â€¢â€¢â€¢ â€¢â€¢â€¢â€¢ â€¢â€¢â€¢â€¢'
         : cardNumber.trim();
     final holder = cardHolder.trim().isEmpty
         ? 'CARD HOLDER'

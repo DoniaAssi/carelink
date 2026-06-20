@@ -1,5 +1,7 @@
 const express = require('express');
+const { randomUUID } = require('crypto');
 const db = require('../db');
+const { insertNotification } = require('../notifications');
 
 const router = express.Router();
 
@@ -36,9 +38,13 @@ async function hasColumn(tableName, columnName) {
 }
 
 async function ensureAdminColumns() {
-  if (await hasColumn('user', 'isActive')) {
-    await db.query('UPDATE user SET isActive = 1 WHERE isActive IS NULL');
+  if (!(await hasColumn('user', 'isActive'))) {
+    await db.query(
+      'ALTER TABLE user ADD COLUMN isActive TINYINT(1) NOT NULL DEFAULT 1',
+    );
+    cache.set('user.isActive', true);
   }
+  await db.query('UPDATE user SET isActive = 1 WHERE isActive IS NULL');
 
   if (!(await hasColumn('careprovider', 'approvalStatus'))) {
     await db.query(
@@ -48,6 +54,25 @@ async function ensureAdminColumns() {
     await db.query(
       "UPDATE careprovider SET approvalStatus = 'approved' WHERE approvalStatus IS NULL OR approvalStatus = ''",
     );
+  }
+  const careProviderColumns = [
+    ['is_rate_approved', 'TINYINT(1) NOT NULL DEFAULT 0'],
+    ['hourly_rate', 'DECIMAL(10,2) NOT NULL DEFAULT 0'],
+    ['status', "VARCHAR(24) NOT NULL DEFAULT 'pending'"],
+    ['experience_level', "VARCHAR(24) NOT NULL DEFAULT 'junior'"],
+    ['license_number', 'VARCHAR(120) NULL'],
+    ['years_experience', 'INT NULL'],
+    ['experience_tier', "VARCHAR(24) NOT NULL DEFAULT 'junior'"],
+    ['serviceAreas', 'TEXT NULL'],
+    ['biography', 'TEXT NULL'],
+    ['previousWorkplaces', 'TEXT NULL'],
+    ['homeCareAvailable', 'TINYINT(1) NOT NULL DEFAULT 0'],
+  ];
+  for (const [column, definition] of careProviderColumns) {
+    if (!(await hasColumn('careprovider', column))) {
+      await db.query(`ALTER TABLE careprovider ADD COLUMN ${column} ${definition}`);
+      cache.set(`careprovider.${column}`, true);
+    }
   }
 
   if (await hasTable('provider_certification')) {
@@ -78,6 +103,21 @@ async function ensureAdminColumns() {
       }
     }
   }
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS provider_documents (
+      documentId CHAR(36) NOT NULL PRIMARY KEY,
+      providerUserId CHAR(36) NOT NULL,
+      medical_certificate VARCHAR(1024) NULL,
+      nursing_license VARCHAR(1024) NULL,
+      id_card VARCHAR(1024) NULL,
+      cv_file VARCHAR(1024) NULL,
+      workplace_history TEXT NULL,
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_provider_documents_provider (providerUserId)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
 }
 
 function num(value) {
@@ -87,10 +127,10 @@ function num(value) {
 async function getMetrics() {
   const [[users]] = await db.query(`
     SELECT
-      SUM(role = 'patient') AS patients,
-      SUM(role = 'nurse') AS nurses,
-      SUM(role = 'doctor') AS doctors,
-      SUM(role = 'admin') AS admins,
+      SUM(BINARY CAST(role AS CHAR) = BINARY 'patient') AS patients,
+      SUM(BINARY CAST(role AS CHAR) = BINARY 'nurse') AS nurses,
+      SUM(BINARY CAST(role AS CHAR) = BINARY 'doctor') AS doctors,
+      SUM(BINARY CAST(role AS CHAR) = BINARY 'admin') AS admins,
       COUNT(*) AS totalUsers,
       SUM(COALESCE(isActive, 1) = 0) AS inactiveUsers
     FROM user
@@ -98,9 +138,9 @@ async function getMetrics() {
 
   const [[providers]] = await db.query(`
     SELECT
-      SUM(approvalStatus = 'pending') AS pendingProviders,
-      SUM(approvalStatus = 'approved') AS approvedProviders,
-      SUM(approvalStatus = 'rejected') AS rejectedProviders,
+      SUM(BINARY CAST(approvalStatus AS CHAR) = BINARY 'pending') AS pendingProviders,
+      SUM(BINARY CAST(approvalStatus AS CHAR) = BINARY 'approved') AS approvedProviders,
+      SUM(BINARY CAST(approvalStatus AS CHAR) = BINARY 'rejected') AS rejectedProviders,
       COALESCE(AVG(overallRating), 0) AS averageProviderRating
     FROM careprovider
   `);
@@ -108,9 +148,9 @@ async function getMetrics() {
   const [[requests]] = await db.query(`
     SELECT
       COUNT(*) AS totalRequests,
-      SUM(status = 'pending') AS pendingRequests,
-      SUM(status IN ('completed', 'done')) AS completedRequests,
-      SUM(status IN ('cancelled', 'canceled')) AS cancelledRequests
+      SUM(BINARY CAST(status AS CHAR) = BINARY 'pending') AS pendingRequests,
+      SUM(BINARY CAST(status AS CHAR) IN (BINARY 'completed', BINARY 'done')) AS completedRequests,
+      SUM(BINARY CAST(status AS CHAR) IN (BINARY 'cancelled', BINARY 'canceled')) AS cancelledRequests
     FROM servicerequest
   `);
 
@@ -127,8 +167,8 @@ async function getMetrics() {
   if (await hasTable('payment')) {
     const [[row]] = await db.query(`
       SELECT
-        COALESCE(SUM(CASE WHEN paymentStatus = 'paid' THEN amount ELSE 0 END), 0) AS paidAmount,
-        SUM(paymentStatus = 'paid') AS paidCount
+        COALESCE(SUM(CASE WHEN BINARY CAST(paymentStatus AS CHAR) = BINARY 'paid' THEN amount ELSE 0 END), 0) AS paidAmount,
+        SUM(BINARY CAST(paymentStatus AS CHAR) = BINARY 'paid') AS paidCount
       FROM payment
     `);
     payments = row;
@@ -167,38 +207,65 @@ async function getRegistrationRequests() {
       COALESCE(u.isActive, 1) AS isActive,
       cp.specialization,
       cp.experienceYears,
+      cp.years_experience,
+      cp.experience_tier,
+      cp.experience_level,
       cp.serviceType,
       cp.licenseNumber,
+      cp.license_number,
+      cp.serviceAreas,
+      cp.biography,
+      cp.previousWorkplaces,
+      cp.homeCareAvailable,
       cp.providerAddress,
       cp.overallRating,
       COALESCE(cp.approvalStatus, 'pending') AS approvalStatus,
       COUNT(pc.certId) AS certificationCount,
-      SUM(COALESCE(pc.isVerified, 0) = 1) AS verifiedCertificationCount
+      SUM(COALESCE(pc.isVerified, 0) = 1) AS verifiedCertificationCount,
+      COUNT(DISTINCT pd.documentId) AS documentCount
     FROM user u
-    JOIN careprovider cp ON cp.userId = u.userId
-    LEFT JOIN provider_certification pc ON pc.providerUserId = u.userId
-    WHERE u.role IN ('nurse', 'doctor')
+    JOIN careprovider cp ON BINARY cp.userId = BINARY u.userId
+    LEFT JOIN provider_certification pc ON BINARY pc.providerUserId = BINARY u.userId
+    LEFT JOIN provider_documents pd ON BINARY pd.providerUserId = BINARY u.userId
+    WHERE BINARY CAST(u.role AS CHAR) IN (BINARY 'nurse', BINARY 'doctor')
     GROUP BY
       u.userId, u.fullName, u.email, u.phone, u.role, u.isActive,
-      cp.specialization, cp.experienceYears, cp.serviceType, cp.licenseNumber,
-      cp.providerAddress, cp.overallRating, cp.approvalStatus
+      cp.specialization, cp.experienceYears, cp.years_experience,
+      cp.experience_tier, cp.experience_level, cp.serviceType,
+      cp.licenseNumber, cp.license_number, cp.serviceAreas, cp.biography,
+      cp.previousWorkplaces, cp.homeCareAvailable, cp.providerAddress,
+      cp.overallRating, cp.approvalStatus
     ORDER BY
-      FIELD(COALESCE(cp.approvalStatus, 'pending'), 'pending', 'rejected', 'approved'),
+      CASE BINARY COALESCE(CAST(cp.approvalStatus AS CHAR), 'pending')
+        WHEN BINARY 'pending' THEN 1
+        WHEN BINARY 'rejected' THEN 2
+        WHEN BINARY 'approved' THEN 3
+        ELSE 4
+      END,
       u.fullName
   `);
   return rows.map((row) => ({
     ...row,
     isActive: Boolean(row.isActive),
+    experienceTier:
+      row.experience_tier ||
+      row.experience_level ||
+      (Number(row.experienceYears || row.years_experience || 0) >= 8
+        ? 'senior'
+        : Number(row.experienceYears || row.years_experience || 0) >= 3
+          ? 'mid'
+          : 'junior'),
     certificationCount: num(row.certificationCount),
     verifiedCertificationCount: num(row.verifiedCertificationCount),
+    documentCount: num(row.documentCount),
   }));
 }
 
 async function getUsers(role = 'all') {
   const params = [];
-  let where = "WHERE u.role IN ('patient', 'nurse', 'doctor')";
+  let where = "WHERE BINARY CAST(u.role AS CHAR) IN (BINARY 'patient', BINARY 'nurse', BINARY 'doctor')";
   if (['patient', 'nurse', 'doctor'].includes(role)) {
-    where += ' AND u.role = ?';
+    where += ' AND BINARY CAST(u.role AS CHAR) = BINARY ?';
     params.push(role);
   }
 
@@ -214,11 +281,14 @@ async function getUsers(role = 'all') {
       cp.specialization,
       cp.serviceType,
       cp.overallRating,
-      COALESCE(cp.approvalStatus, CASE WHEN u.role = 'patient' THEN 'approved' ELSE 'pending' END) AS approvalStatus,
+      COALESCE(
+        cp.approvalStatus,
+        CASE WHEN BINARY CAST(u.role AS CHAR) = BINARY 'patient' THEN 'approved' ELSE 'pending' END
+      ) AS approvalStatus,
       p.addressText
     FROM user u
-    LEFT JOIN careprovider cp ON cp.userId = u.userId
-    LEFT JOIN patient p ON p.userId = u.userId
+    LEFT JOIN careprovider cp ON BINARY cp.userId = BINARY u.userId
+    LEFT JOIN patient p ON BINARY p.userId = BINARY u.userId
     ${where}
     ORDER BY u.role, u.fullName
     `,
@@ -235,7 +305,7 @@ async function getCertifications(providerId) {
     SELECT certId, providerUserId, name, fileUrl, originalName, mimeType, fileSize,
            createdAt, COALESCE(isVerified, 0) AS isVerified, verifiedAt
     FROM provider_certification
-    WHERE providerUserId = ?
+    WHERE BINARY providerUserId = BINARY ?
     ORDER BY createdAt DESC
     `,
     [providerId],
@@ -257,9 +327,9 @@ async function getRatings() {
       pr.role AS providerRole,
       sr.serviceType
     FROM providervisitrating r
-    LEFT JOIN user pu ON pu.userId = r.patientUserId
-    LEFT JOIN user pr ON pr.userId = r.providerUserId
-    LEFT JOIN servicerequest sr ON sr.requestId = r.requestId
+    LEFT JOIN user pu ON BINARY pu.userId = BINARY r.patientUserId
+    LEFT JOIN user pr ON BINARY pr.userId = BINARY r.providerUserId
+    LEFT JOIN servicerequest sr ON BINARY sr.requestId = BINARY r.requestId
     ORDER BY r.createdAt DESC
     LIMIT 100
   `);
@@ -290,11 +360,11 @@ async function getPerformance() {
       cp.specialization,
       cp.overallRating,
       COUNT(sr.requestId) AS totalVisits,
-      SUM(sr.status IN ('completed', 'done')) AS completedVisits
+      SUM(BINARY CAST(sr.status AS CHAR) IN (BINARY 'completed', BINARY 'done')) AS completedVisits
     FROM user u
-    JOIN careprovider cp ON cp.userId = u.userId
-    LEFT JOIN servicerequest sr ON sr.providerUserId = u.userId
-    WHERE u.role IN ('nurse', 'doctor')
+    JOIN careprovider cp ON BINARY cp.userId = BINARY u.userId
+    LEFT JOIN servicerequest sr ON BINARY sr.providerUserId = BINARY u.userId
+    WHERE BINARY CAST(u.role AS CHAR) IN (BINARY 'nurse', BINARY 'doctor')
     GROUP BY u.userId, u.fullName, u.role, cp.specialization, cp.overallRating
     ORDER BY completedVisits DESC, cp.overallRating DESC
     LIMIT 10
@@ -311,19 +381,674 @@ async function getPerformance() {
   };
 }
 
+async function getProviderDocuments(providerId) {
+  await ensureAdminColumns();
+  const [rows] = await db.query(
+    `
+    SELECT documentId, providerUserId, medical_certificate, nursing_license,
+           id_card, cv_file, workplace_history, createdAt, updatedAt
+    FROM provider_documents
+    WHERE BINARY providerUserId = BINARY ?
+    ORDER BY createdAt DESC
+    `,
+    [providerId],
+  );
+  return rows;
+}
+
+async function ensureFinanceTables() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS admin_commission (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      specialization VARCHAR(100) NOT NULL,
+      serviceType ENUM('doctor','nurse') NOT NULL,
+      commission_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+      UNIQUE KEY uq_admin_commission_service (specialization, serviceType)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS provider_rates (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      providerId CHAR(36) NOT NULL,
+      provider_id CHAR(36) NULL,
+      specialization VARCHAR(100) NOT NULL,
+      provider_hour_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      provider_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      admin_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      patient_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      status VARCHAR(24) NOT NULL DEFAULT 'active',
+      rateAcceptanceStatus ENUM('pending','accepted','rejected') NOT NULL DEFAULT 'pending',
+      rateSetAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      rateAcceptedAt DATETIME NULL,
+      rateRejectedAt DATETIME NULL,
+      UNIQUE KEY uq_provider_rate (providerId, specialization)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS provider_rate_approval (
+      provider_id CHAR(36) NOT NULL,
+      specialization VARCHAR(100) NOT NULL,
+      admin_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (provider_id, specialization)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS rate_approvals (
+      provider_id CHAR(36) NOT NULL,
+      admin_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+      status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (provider_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  const rateColumns = [
+    ['provider_id', 'ALTER TABLE provider_rates ADD COLUMN provider_id CHAR(36) NULL'],
+    ['provider_rate', 'ALTER TABLE provider_rates ADD COLUMN provider_rate DECIMAL(10,2) NOT NULL DEFAULT 0'],
+    ['admin_rate', 'ALTER TABLE provider_rates ADD COLUMN admin_rate DECIMAL(10,2) NOT NULL DEFAULT 0'],
+    ['patient_rate', 'ALTER TABLE provider_rates ADD COLUMN patient_rate DECIMAL(10,2) NOT NULL DEFAULT 0'],
+    ['status', "ALTER TABLE provider_rates ADD COLUMN status VARCHAR(24) NOT NULL DEFAULT 'active'"],
+    [
+      'rateAcceptanceStatus',
+      "ALTER TABLE provider_rates ADD COLUMN rateAcceptanceStatus ENUM('pending','accepted','rejected') NOT NULL DEFAULT 'pending'",
+    ],
+    ['rateSetAt', 'ALTER TABLE provider_rates ADD COLUMN rateSetAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP'],
+    ['rateAcceptedAt', 'ALTER TABLE provider_rates ADD COLUMN rateAcceptedAt DATETIME NULL'],
+    ['rateRejectedAt', 'ALTER TABLE provider_rates ADD COLUMN rateRejectedAt DATETIME NULL'],
+  ];
+  for (const [column, sql] of rateColumns) {
+    if (await hasColumn('provider_rates', column)) continue;
+    try {
+      await db.query(sql);
+      cache.set(`provider_rates.${column}`, true);
+    } catch (_) {}
+  }
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS admin_wallet (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      total_income DECIMAL(10,2) NOT NULL DEFAULT 0
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS provider_wallet (
+      providerId CHAR(36) NOT NULL PRIMARY KEY,
+      total_earned DECIMAL(10,2) NOT NULL DEFAULT 0,
+      pending_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+      paid_amount DECIMAL(10,2) NOT NULL DEFAULT 0
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS payout_requests (
+      payoutId CHAR(36) NOT NULL PRIMARY KEY,
+      providerId CHAR(36) NULL,
+      amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+      status ENUM('requested','approved','rejected','paid') NOT NULL DEFAULT 'requested',
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS transaction_log (
+      transactionId CHAR(36) NOT NULL PRIMARY KEY,
+      providerId CHAR(36) NULL,
+      patientId CHAR(36) NULL,
+      total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+      admin_share DECIMAL(10,2) NOT NULL DEFAULT 0,
+      provider_share DECIMAL(10,2) NOT NULL DEFAULT 0,
+      type ENUM('payment','payout') NOT NULL,
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await db.query(`INSERT IGNORE INTO admin_wallet (id, total_income) VALUES (1, 0)`);
+  try {
+    await db.query(
+      `ALTER TABLE admin_commission ADD UNIQUE KEY uq_admin_commission_service (specialization, serviceType)`,
+    );
+  } catch (_) {}
+  try {
+    await db.query(
+      `ALTER TABLE provider_rates ADD UNIQUE KEY uq_provider_rate (providerId, specialization)`,
+    );
+  } catch (_) {}
+
+  if (await hasTable('payment')) {
+    const additions = [
+      ['provider_amount', 'ALTER TABLE payment ADD COLUMN provider_amount DECIMAL(10,2) NULL'],
+      ['admin_amount', 'ALTER TABLE payment ADD COLUMN admin_amount DECIMAL(10,2) NULL'],
+      ['final_amount', 'ALTER TABLE payment ADD COLUMN final_amount DECIMAL(10,2) NULL'],
+      [
+        'status',
+        "ALTER TABLE payment ADD COLUMN status ENUM('pending','paid_to_admin','transferred_to_provider','refunded') DEFAULT 'pending'",
+      ],
+    ];
+    for (const [column, sql] of additions) {
+      if (await hasColumn('payment', column)) continue;
+      try {
+        await db.query(sql);
+        cache.set(`payment.${column}`, true);
+      } catch (_) {}
+    }
+  }
+
+  const defaults = [
+    ['Cardiology', 'doctor', 20],
+    ['Neurology', 'doctor', 30],
+    ['General Medicine', 'doctor', 15],
+    ['Elderly Care', 'nurse', 10],
+    ['Pediatrics Care', 'nurse', 6],
+    ['Wound Care', 'nurse', 8],
+    ['Home Nursing Care', 'nurse', 6],
+  ];
+  for (const row of defaults) {
+    const [[existing]] = await db.query(
+      `SELECT id FROM admin_commission
+       WHERE CONVERT(specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+             CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
+         AND BINARY CAST(serviceType AS CHAR) = BINARY ?
+       LIMIT 1`,
+      [row[0], row[1]],
+    );
+    if (!existing) {
+      await db.query(
+        `INSERT INTO admin_commission (specialization, serviceType, commission_amount)
+         VALUES (?, ?, ?)`,
+        row,
+      );
+    }
+  }
+}
+
+async function syncFinanceLedger() {
+  await ensureFinanceTables();
+  if (!(await hasTable('payment'))) return;
+  const [payments] = await db.query(`
+    SELECT
+      p.paymentId, p.requestId, p.patientUserId, p.providerUserId,
+      COALESCE(p.final_amount, p.amount, 0) AS totalAmount,
+      COALESCE(p.provider_amount, 0) AS currentProviderAmount,
+      COALESCE(p.admin_amount, 0) AS currentAdminAmount,
+      COALESCE(p.status, 'pending') AS escrowStatus,
+      sr.serviceType AS requestServiceType,
+      u.role AS providerRole,
+      cp.specialization
+    FROM payment p
+    LEFT JOIN servicerequest sr ON BINARY sr.requestId = BINARY p.requestId
+    LEFT JOIN user u ON BINARY u.userId = BINARY p.providerUserId
+    LEFT JOIN careprovider cp ON BINARY cp.userId = BINARY p.providerUserId
+    WHERE BINARY LOWER(CAST(p.paymentStatus AS CHAR)) = BINARY 'paid'
+      AND (
+        p.provider_amount IS NULL OR p.admin_amount IS NULL OR
+        p.final_amount IS NULL OR
+        BINARY COALESCE(CAST(p.status AS CHAR), 'pending') = BINARY 'pending'
+      )
+    ORDER BY p.createdAt ASC
+    LIMIT 500
+  `);
+
+  for (const payment of payments) {
+    const providerId = (payment.providerUserId || '').toString();
+    const role = (payment.providerRole || '').toString().toLowerCase() === 'doctor'
+      ? 'doctor'
+      : 'nurse';
+    const specialization =
+      (payment.specialization || payment.requestServiceType || 'Home Nursing Care')
+        .toString()
+        .trim();
+    const total = Math.max(0, Number(payment.totalAmount || 0));
+
+    const [[rateRow]] = await db.query(
+      `SELECT provider_hour_rate
+       FROM provider_rates
+       WHERE BINARY providerId = BINARY ?
+       ORDER BY id DESC
+       LIMIT 1`,
+      [providerId],
+    );
+    const [[commissionRow]] = await db.query(
+      `SELECT commission_amount
+       FROM admin_commission
+       WHERE CONVERT(specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+             CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
+         AND BINARY CAST(serviceType AS CHAR) = BINARY ?
+       ORDER BY id DESC
+       LIMIT 1`,
+      [specialization, role],
+    );
+    const commission = Math.max(0, Number(commissionRow?.commission_amount || 0));
+    let providerShare = Number(rateRow?.provider_hour_rate || 0);
+    if (!Number.isFinite(providerShare) || providerShare <= 0) {
+      providerShare = Math.max(0, total - commission);
+    }
+    if (providerShare > total) providerShare = Math.max(0, total - commission);
+    const adminShare = Math.max(0, total - providerShare);
+
+    await db.query(
+      `UPDATE payment
+       SET provider_amount = ?, admin_amount = ?, final_amount = ?,
+           status = 'paid_to_admin', updatedAt = NOW()
+       WHERE BINARY paymentId = BINARY ?`,
+      [providerShare, adminShare, total, payment.paymentId],
+    );
+    await db.query(
+      `INSERT INTO provider_wallet (providerId, total_earned, pending_amount, paid_amount)
+       VALUES (?, ?, ?, 0)
+       ON DUPLICATE KEY UPDATE
+         total_earned = total_earned + VALUES(total_earned),
+         pending_amount = pending_amount + VALUES(pending_amount)`,
+      [providerId, providerShare, providerShare],
+    );
+    await db.query(
+      `UPDATE admin_wallet SET total_income = total_income + ? WHERE id = 1`,
+      [adminShare],
+    );
+    await db.query(
+      `INSERT IGNORE INTO transaction_log
+       (transactionId, providerId, patientId, total_amount, admin_share, provider_share, type, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, 'payment', NOW())`,
+      [
+        payment.paymentId,
+        providerId,
+        payment.patientUserId,
+        total,
+        adminShare,
+        providerShare,
+      ],
+    );
+  }
+}
+
+async function getFinanceData() {
+  await syncFinanceLedger();
+
+  const [[overview]] = await db.query(`
+    SELECT
+      COALESCE(SUM(COALESCE(final_amount, amount, 0)), 0) AS totalRevenue,
+      COALESCE(SUM(CASE WHEN BINARY COALESCE(CAST(status AS CHAR), 'pending') = BINARY 'paid_to_admin'
+        THEN COALESCE(provider_amount, 0) ELSE 0 END), 0) AS pendingEscrow,
+      COALESCE(SUM(CASE WHEN BINARY COALESCE(CAST(status AS CHAR), 'pending') = BINARY 'transferred_to_provider'
+        THEN COALESCE(provider_amount, 0) ELSE 0 END), 0) AS releasedToProviders,
+      COALESCE(SUM(COALESCE(admin_amount, 0)), 0) AS platformProfit,
+      COUNT(*) AS paymentCount
+    FROM payment
+    WHERE BINARY LOWER(CAST(paymentStatus AS CHAR)) = BINARY 'paid'
+  `);
+  const [[wallet]] = await db.query(
+    `SELECT COALESCE(total_income, 0) AS totalIncome FROM admin_wallet WHERE id = 1`,
+  );
+  const [pricing] = await db.query(`
+    SELECT
+      pr.id AS rateId,
+      pr.providerId,
+      COALESCE(u.fullName, 'Unassigned Provider') AS providerName,
+      COALESCE(u.role, ac.serviceType, 'nurse') AS providerRole,
+      COALESCE(cp.experienceYears, 0) AS experienceYears,
+      COALESCE(cp.overallRating, 0) AS performanceRating,
+      pr.specialization,
+      pr.provider_hour_rate AS providerRate,
+      COALESCE(pr.rateAcceptanceStatus, 'pending') AS rateAcceptanceStatus,
+      pr.rateSetAt,
+      pr.rateAcceptedAt,
+      pr.rateRejectedAt,
+      COALESCE(ac.commission_amount, 0) AS adminCommission,
+      (pr.provider_hour_rate + COALESCE(ac.commission_amount, 0)) AS patientPrice
+    FROM provider_rates pr
+    LEFT JOIN user u ON BINARY u.userId = BINARY pr.providerId
+    LEFT JOIN careprovider cp ON BINARY cp.userId = BINARY pr.providerId
+    LEFT JOIN admin_commission ac
+      ON CONVERT(ac.specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+         CONVERT(pr.specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci
+     AND BINARY CAST(ac.serviceType AS CHAR) =
+         CASE WHEN BINARY CAST(u.role AS CHAR) = BINARY 'doctor' THEN BINARY 'doctor' ELSE BINARY 'nurse' END
+    ORDER BY providerRole, pr.specialization, providerName
+  `);
+  const [transactions] = await db.query(`
+    SELECT
+      p.paymentId, p.requestId, p.patientUserId, p.providerUserId,
+      pu.fullName AS patientName,
+      pr.fullName AS providerName,
+      COALESCE(p.final_amount, p.amount, 0) AS totalAmount,
+      COALESCE(p.admin_amount, 0) AS adminShare,
+      COALESCE(p.provider_amount, 0) AS providerShare,
+      p.paymentStatus,
+      COALESCE(p.status, 'pending') AS escrowStatus,
+      p.createdAt
+    FROM payment p
+    LEFT JOIN user pu ON BINARY pu.userId = BINARY p.patientUserId
+    LEFT JOIN user pr ON BINARY pr.userId = BINARY p.providerUserId
+    ORDER BY p.createdAt DESC
+    LIMIT 120
+  `);
+  const [payouts] = await db.query(`
+    SELECT
+      po.payoutId, po.providerId, po.amount, po.status, po.createdAt,
+      u.fullName AS providerName,
+      u.role AS providerRole,
+      cp.specialization,
+      COALESCE(w.total_earned, 0) AS totalEarned,
+      COALESCE(w.pending_amount, 0) AS pendingAmount,
+      COALESCE(w.paid_amount, 0) AS paidAmount,
+      COUNT(sr.requestId) AS completedSessions
+    FROM payout_requests po
+    LEFT JOIN user u ON BINARY u.userId = BINARY po.providerId
+    LEFT JOIN careprovider cp ON BINARY cp.userId = BINARY po.providerId
+    LEFT JOIN provider_wallet w ON BINARY w.providerId = BINARY po.providerId
+    LEFT JOIN servicerequest sr
+      ON BINARY sr.providerUserId = BINARY po.providerId
+     AND BINARY LOWER(CAST(sr.status AS CHAR)) IN (BINARY 'completed', BINARY 'done')
+    GROUP BY po.payoutId, po.providerId, po.amount, po.status, po.createdAt,
+      u.fullName, u.role, cp.specialization, w.total_earned, w.pending_amount, w.paid_amount
+    ORDER BY CASE BINARY CAST(po.status AS CHAR)
+      WHEN BINARY 'requested' THEN 1
+      WHEN BINARY 'approved' THEN 2
+      WHEN BINARY 'paid' THEN 3
+      WHEN BINARY 'rejected' THEN 4
+      ELSE 5
+    END, po.createdAt DESC
+  `);
+  const [wallets] = await db.query(`
+    SELECT
+      w.providerId,
+      u.fullName AS providerName,
+      u.role AS providerRole,
+      cp.specialization,
+      w.total_earned AS totalEarned,
+      w.pending_amount AS pendingAmount,
+      w.paid_amount AS paidAmount
+    FROM provider_wallet w
+    LEFT JOIN user u ON BINARY u.userId = BINARY w.providerId
+    LEFT JOIN careprovider cp ON BINARY cp.userId = BINARY w.providerId
+    ORDER BY w.pending_amount DESC, w.total_earned DESC
+  `);
+  const [topServices] = await db.query(`
+    SELECT
+      COALESCE(
+        CONVERT(sr.serviceType USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+        CONVERT(cp.specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+        CONVERT('Service' USING utf8mb4) COLLATE utf8mb4_unicode_ci
+      ) AS serviceType,
+      COUNT(*) AS completedRequests,
+      COALESCE(SUM(COALESCE(p.final_amount, p.amount, 0)), 0) AS revenue
+    FROM servicerequest sr
+    LEFT JOIN payment p ON BINARY p.requestId = BINARY sr.requestId
+    LEFT JOIN careprovider cp ON BINARY cp.userId = BINARY sr.providerUserId
+    WHERE BINARY LOWER(CAST(sr.status AS CHAR)) IN (BINARY 'completed', BINARY 'done')
+    GROUP BY COALESCE(
+      CONVERT(sr.serviceType USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+      CONVERT(cp.specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+      CONVERT('Service' USING utf8mb4) COLLATE utf8mb4_unicode_ci
+    )
+    ORDER BY revenue DESC, completedRequests DESC
+    LIMIT 8
+  `);
+
+  return {
+    overview: {
+      totalRevenue: Number(overview?.totalRevenue || 0),
+      pendingEscrow: Number(overview?.pendingEscrow || 0),
+      releasedToProviders: Number(overview?.releasedToProviders || 0),
+      platformProfit: Number(overview?.platformProfit || wallet?.totalIncome || 0),
+      paymentCount: num(overview?.paymentCount),
+    },
+    pricing,
+    transactions,
+    payouts,
+    wallets,
+    topServices,
+    flow: [
+      { step: 'Patient pays', description: 'Final patient price is collected by CareLink admin.' },
+      { step: 'Admin holds funds', description: 'Payment stays in escrow until the visit is completed.' },
+      { step: 'Split payment', description: 'Provider earning and admin commission are calculated from DB rates.' },
+      { step: 'Release payout', description: 'Admin approves payout and provider wallet is updated.' },
+    ],
+  };
+}
+
+async function upsertFinancePricing(body) {
+  await ensureAdminColumns();
+  await ensureFinanceTables();
+  const providerId = (body.providerId || '').toString().trim();
+  const specialization = (body.specialization || '').toString().trim();
+  const serviceType = (body.serviceType || '').toString().trim().toLowerCase();
+  const providerRate = Number(body.providerRate);
+  const commission = Number(body.adminCommission);
+  const patientRate = providerRate + commission;
+
+  if (!specialization || !['doctor', 'nurse'].includes(serviceType)) {
+    const e = new Error('specialization and serviceType doctor/nurse are required');
+    e.status = 400;
+    throw e;
+  }
+  if (!Number.isFinite(providerRate) || providerRate < 0) {
+    const e = new Error('providerRate must be a valid positive number');
+    e.status = 400;
+    throw e;
+  }
+  if (!Number.isFinite(commission) || commission < 0) {
+    const e = new Error('adminCommission must be a valid positive number');
+    e.status = 400;
+    throw e;
+  }
+
+  const [[existingCommission]] = await db.query(
+    `SELECT id FROM admin_commission
+     WHERE CONVERT(specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+           CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
+       AND BINARY CAST(serviceType AS CHAR) = BINARY ?
+     ORDER BY id DESC
+     LIMIT 1`,
+    [specialization, serviceType],
+  );
+  if (existingCommission) {
+    await db.query(
+      `UPDATE admin_commission SET commission_amount = ? WHERE id = ?`,
+      [commission, existingCommission.id],
+    );
+  } else {
+    await db.query(
+      `INSERT INTO admin_commission (specialization, serviceType, commission_amount)
+       VALUES (?, ?, ?)`,
+      [specialization, serviceType, commission],
+    );
+  }
+  if (providerId) {
+    const [[existingRate]] = await db.query(
+      `SELECT id FROM provider_rates
+       WHERE BINARY providerId = BINARY ?
+         AND CONVERT(specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+             CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
+       ORDER BY id DESC
+       LIMIT 1`,
+      [providerId, specialization],
+    );
+    if (existingRate) {
+      await db.query(
+        `UPDATE provider_rates
+         SET provider_hour_rate = ?,
+             provider_rate = ?,
+             admin_rate = ?,
+             patient_rate = ?,
+             provider_id = ?,
+             status = 'active',
+             rateAcceptanceStatus = 'pending',
+             rateSetAt = NOW(),
+             rateAcceptedAt = NULL,
+             rateRejectedAt = NULL
+         WHERE id = ?`,
+        [providerRate, providerRate, commission, patientRate, providerId, existingRate.id],
+      );
+    } else {
+      await db.query(
+        `INSERT INTO provider_rates
+         (providerId, provider_id, specialization, provider_hour_rate,
+          provider_rate, admin_rate, patient_rate, status, rateAcceptanceStatus, rateSetAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 'pending', NOW())`,
+        [
+          providerId,
+          providerId,
+          specialization,
+          providerRate,
+          providerRate,
+          commission,
+          patientRate,
+        ],
+      );
+    }
+    try {
+      await insertNotification({
+        userId: providerId,
+        type: 'system',
+        title: 'Hourly rate set',
+        body: `Admin set your ${specialization} hourly rate to ${providerRate} ILS. Please accept it before starting work.`,
+      });
+    } catch (_) {}
+    await db.query(
+      `INSERT INTO provider_rate_approval (provider_id, specialization, admin_rate, status)
+       VALUES (?, ?, ?, 'pending')
+       ON DUPLICATE KEY UPDATE
+         admin_rate = VALUES(admin_rate),
+         status = 'pending',
+         updated_at = NOW()`,
+      [providerId, specialization, providerRate],
+    );
+    await db.query(
+      `INSERT INTO rate_approvals (provider_id, admin_rate, status)
+       VALUES (?, ?, 'pending')
+       ON DUPLICATE KEY UPDATE
+         admin_rate = VALUES(admin_rate),
+         status = 'pending',
+         updated_at = NOW()`,
+      [providerId, providerRate],
+    );
+    await db.query(
+      `UPDATE careprovider
+       SET is_rate_approved = 0,
+           hourly_rate = ?,
+           status = 'inactive'
+       WHERE BINARY userId = BINARY ?`,
+      [providerRate, providerId],
+    );
+    await db.query('UPDATE user SET isActive = 0 WHERE BINARY userId = BINARY ?', [
+      providerId,
+    ]);
+  }
+  return { success: true };
+}
+
+async function updatePayoutStatus(payoutId, action) {
+  await syncFinanceLedger();
+  const normalized = action === 'approve' ? 'paid' : action === 'reject' ? 'rejected' : '';
+  if (!normalized) {
+    const e = new Error('action must be approve or reject');
+    e.status = 400;
+    throw e;
+  }
+  const [rows] = await db.query(
+    `SELECT payoutId, providerId, amount, status
+     FROM payout_requests
+     WHERE BINARY payoutId = BINARY ?
+     LIMIT 1`,
+    [payoutId],
+  );
+  if (!rows.length) {
+    const e = new Error('Payout request not found');
+    e.status = 404;
+    throw e;
+  }
+  const payout = rows[0];
+  if (!['requested', 'approved'].includes((payout.status || '').toLowerCase())) {
+    const e = new Error('Payout is already closed');
+    e.status = 409;
+    throw e;
+  }
+
+  if (normalized === 'rejected') {
+    await db.query(
+      `UPDATE payout_requests SET status = 'rejected' WHERE BINARY payoutId = BINARY ?`,
+      [payoutId],
+    );
+    return { success: true, status: 'rejected' };
+  }
+
+  const amount = Math.max(0, Number(payout.amount || 0));
+  const [[wallet]] = await db.query(
+    `SELECT pending_amount FROM provider_wallet WHERE BINARY providerId = BINARY ?`,
+    [payout.providerId],
+  );
+  if (Number(wallet?.pending_amount || 0) + 0.001 < amount) {
+    const e = new Error('Provider wallet pending amount is not enough for this payout');
+    e.status = 409;
+    throw e;
+  }
+
+  await db.query(
+    `UPDATE payout_requests SET status = 'paid' WHERE BINARY payoutId = BINARY ?`,
+    [payoutId],
+  );
+  await db.query(
+    `UPDATE provider_wallet
+     SET pending_amount = GREATEST(0, pending_amount - ?),
+         paid_amount = paid_amount + ?
+     WHERE BINARY providerId = BINARY ?`,
+    [amount, amount, payout.providerId],
+  );
+  await db.query(
+    `INSERT IGNORE INTO transaction_log
+     (transactionId, providerId, patientId, total_amount, admin_share, provider_share, type, createdAt)
+     VALUES (?, ?, NULL, ?, 0, ?, 'payout', NOW())`,
+    [payoutId, payout.providerId, amount, amount],
+  );
+  await db.query(
+    `UPDATE payment
+     SET status = 'transferred_to_provider', updatedAt = NOW()
+     WHERE BINARY providerUserId = BINARY ?
+       AND BINARY CAST(status AS CHAR) = BINARY 'paid_to_admin'
+     ORDER BY createdAt ASC
+     LIMIT 100`,
+    [payout.providerId],
+  );
+  return { success: true, status: 'paid' };
+}
+
 router.get('/dashboard', async (req, res) => {
   try {
     await ensureAdminColumns();
-    const [metrics, requests, users, ratings, performance] = await Promise.all([
+    const [metrics, requests, users, ratings, performance, finance] = await Promise.all([
       getMetrics(),
       getRegistrationRequests(),
       getUsers(req.query.role?.toString() || 'all'),
       getRatings(),
       getPerformance(),
+      getFinanceData(),
     ]);
-    res.json({ metrics, requests, users, ratings, performance });
+    res.json({ metrics, requests, users, ratings, performance, finance });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/finance', async (req, res) => {
+  try {
+    res.json(await getFinanceData());
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.put('/finance/pricing', async (req, res) => {
+  try {
+    res.json(await upsertFinancePricing(req.body || {}));
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.put('/finance/payouts/:payoutId/:action', async (req, res) => {
+  try {
+    res.json(await updatePayoutStatus(req.params.payoutId, req.params.action));
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -331,6 +1056,15 @@ router.get('/providers/:providerId/certifications', async (req, res) => {
   try {
     await ensureAdminColumns();
     res.json(await getCertifications(req.params.providerId));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/providers/:providerId/documents', async (req, res) => {
+  try {
+    await ensureAdminColumns();
+    res.json(await getProviderDocuments(req.params.providerId));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -359,11 +1093,19 @@ router.put('/providers/:providerId/approval', async (req, res) => {
     await ensureAdminColumns();
     if (status === 'approved') {
       const certs = await getCertifications(req.params.providerId);
+      const documents = await getProviderDocuments(req.params.providerId);
       const hasUnverified = certs.some((cert) => !cert.isVerified);
-      if (certs.length === 0 || hasUnverified) {
+      const hasUploadedDocuments = documents.some(
+        (doc) =>
+          doc.medical_certificate ||
+          doc.nursing_license ||
+          doc.id_card ||
+          doc.cv_file,
+      );
+      if ((certs.length === 0 && !hasUploadedDocuments) || hasUnverified) {
         return res.status(409).json({
           error:
-            'Verify all provider certifications before approving this account.',
+            'Review provider documents and verify certifications before approving this account.',
         });
       }
     }
@@ -372,10 +1114,37 @@ router.put('/providers/:providerId/approval', async (req, res) => {
       'UPDATE careprovider SET approvalStatus = ? WHERE userId = ?',
       [status, req.params.providerId],
     );
-    await db.execute('UPDATE user SET isActive = ? WHERE userId = ?', [
-      status === 'approved' ? 1 : 0,
-      req.params.providerId,
-    ]);
+    if (status === 'approved') {
+      const [[rate]] = await db.query(
+        `SELECT rateAcceptanceStatus
+         FROM provider_rates
+         WHERE BINARY providerId = BINARY ?
+         ORDER BY id DESC
+         LIMIT 1`,
+        [req.params.providerId],
+      );
+      const active = (rate?.rateAcceptanceStatus || '').toLowerCase() === 'accepted';
+      await db.execute('UPDATE user SET isActive = ? WHERE userId = ?', [
+        active ? 1 : 0,
+        req.params.providerId,
+      ]);
+      await db.execute(
+        `UPDATE careprovider
+         SET status = ?, is_rate_approved = ?
+         WHERE userId = ?`,
+        [active ? 'active' : 'inactive', active ? 1 : 0, req.params.providerId],
+      );
+    } else {
+      await db.execute('UPDATE user SET isActive = 0 WHERE userId = ?', [
+        req.params.providerId,
+      ]);
+      await db.execute(
+        `UPDATE careprovider
+         SET status = 'inactive', is_rate_approved = 0
+         WHERE userId = ?`,
+        [req.params.providerId],
+      );
+    }
     res.json({ success: true, status });
   } catch (err) {
     res.status(500).json({ error: err.message });

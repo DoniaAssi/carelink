@@ -171,9 +171,6 @@ class ProviderProfileService {
         headers: const <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode({
           'providerId': cleanProviderId,
-          'specialization': 'Home Nursing',
-          'serviceType': 'Home visit',
-          'bio': 'Home Nursing',
           'isAvailable': isAvailable,
         }),
       );

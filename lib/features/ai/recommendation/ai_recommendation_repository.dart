@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:carelink/features/ai/recommendation/mock_ai_data.dart';
 import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
 import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/features/patient/services/patient_care_summary.dart';
@@ -34,19 +33,28 @@ class PatientRecommendationProfileRepository {
     required String? userId,
     required bool returningDemo,
   }) async {
+    final defaultPatient = PatientRecommendationProfile(
+      id: userId ?? 'guest',
+      fullName: 'Patient',
+      locationLatitude: 31.9539,
+      locationLongitude: 35.9106,
+      chronicDiseases: [],
+      allergies: [],
+      medications: [],
+      previousSurgeries: [],
+      careSummary: PatientCareSummary.empty,
+      hasHistoryForWeighting: false,
+      visitReportTexts: [],
+      followUpHints: [],
+      successfulVisitProviderIds: [],
+      previousProviderRatings: {},
+    );
+
     if (userId == null || userId.trim().isEmpty) {
-      return returningDemo
-          ? MockAiData.returningPatient('guest_returning')
-          : MockAiData.newPatient('guest');
+      return defaultPatient;
     }
 
-    if (returningDemo) {
-      final base = MockAiData.returningPatient(userId.trim());
-      return _mergeWithApi(userId.trim(), base);
-    }
-
-    final fresh = MockAiData.newPatient(userId.trim());
-    return _mergeWithApi(userId.trim(), fresh);
+    return _mergeWithApi(userId.trim(), defaultPatient);
   }
 
   Future<PatientRecommendationProfile> _mergeWithApi(

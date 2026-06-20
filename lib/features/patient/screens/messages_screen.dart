@@ -47,9 +47,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
       if (!mounted) return;
 
-      final messagesData = results[0] as List<dynamic>;
-      final activeAppointments = results[1] as List<dynamic>;
-      final historyAppointments = results[2] as List<dynamic>;
+      final messagesData = results[0];
+      final activeAppointments = results[1];
+      final historyAppointments = results[2];
 
       final List<dynamic> allAppointments = [
         ...activeAppointments,

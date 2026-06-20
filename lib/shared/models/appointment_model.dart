@@ -7,6 +7,7 @@ class AppointmentModel {
   final String providerImageUrl;
   final String specialization;
   final String status;
+  final String subStatus;
   final String location;
   final String visitAddress;
   final String locationNote;
@@ -19,6 +20,9 @@ class AppointmentModel {
   final double? visitLongitude;
   final String notes;
   final DateTime? scheduledAt;
+  final DateTime? requestedRescheduleAt;
+  final DateTime? rescheduleRejectedAt;
+  final String rescheduleRejectionReason;
   final double? providerCurrentLat;
   final double? providerCurrentLng;
   final DateTime? providerLocationUpdatedAt;
@@ -36,6 +40,7 @@ class AppointmentModel {
     this.providerImageUrl = '',
     required this.specialization,
     required this.status,
+    this.subStatus = '',
     required this.location,
     required this.visitAddress,
     required this.locationNote,
@@ -48,6 +53,9 @@ class AppointmentModel {
     this.visitLongitude,
     required this.notes,
     required this.scheduledAt,
+    this.requestedRescheduleAt,
+    this.rescheduleRejectedAt,
+    this.rescheduleRejectionReason = '',
     this.providerCurrentLat,
     this.providerCurrentLng,
     this.providerLocationUpdatedAt,
@@ -75,6 +83,7 @@ class AppointmentModel {
               .toString(),
       specialization: (json['specialization'] ?? '').toString(),
       status: (json['status'] ?? 'pending').toString(),
+      subStatus: (json['subStatus'] ?? '').toString(),
       location: (json['location'] ?? '').toString(),
       visitAddress: (json['visitAddress'] ?? '').toString(),
       locationNote: (json['locationNote'] ?? '').toString(),
@@ -92,6 +101,14 @@ class AppointmentModel {
       ),
       notes: (json['notes'] ?? '').toString(),
       scheduledAt: DateTime.tryParse(rawDate.replaceFirst(' ', 'T')),
+      requestedRescheduleAt: DateTime.tryParse(
+        (json['requestedRescheduleAt'] ?? '').toString().replaceFirst(' ', 'T'),
+      ),
+      rescheduleRejectedAt: DateTime.tryParse(
+        (json['rescheduleRejectedAt'] ?? '').toString().replaceFirst(' ', 'T'),
+      ),
+      rescheduleRejectionReason: (json['rescheduleRejectionReason'] ?? '')
+          .toString(),
       providerCurrentLat: double.tryParse(
         (json['providerCurrentLat'] ?? '').toString(),
       ),

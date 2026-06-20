@@ -14,10 +14,11 @@ import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/features/patient/screens/provider_details_screen.dart';
 import 'package:carelink/features/patient/screens/chat_screen.dart';
+import 'package:carelink/features/patient/utils/appointment_action_helper.dart';
+import 'package:carelink/features/patient/utils/rebook_flow_helper.dart';
 import 'package:carelink/shared/services/patient_recent_chats_service.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/features/patient/widgets/reschedule_modal.dart';
-import 'package:carelink/features/patient/widgets/change_provider_modal.dart';
 
 class BookingDetailsScreen extends StatefulWidget {
   final String appointmentId;
@@ -88,7 +89,10 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
       ProviderModel? prov;
       try {
-        final provData = await _api.getProviderById(apt.providerUserId);
+        final provData = await _api.getProviderById(
+          apt.providerUserId,
+          realAvailability: true,
+        );
         prov = ProviderModel.fromJson(provData);
       } catch (_) {
         // Fallback or mute if provider fetch fails
@@ -149,22 +153,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     final status = appointment?.status.toLowerCase();
     return status == 'pending_provider_approval' ||
         status == 'pending' ||
-        status == 'pending_payment' ||
-        status == 'payment_pending' ||
-        status == 'confirmed';
-  }
-
-  bool get _canReschedule {
-    if (appointment == null) return false;
-    final s = appointment!.status.toLowerCase().trim();
-    return s == 'pending_provider_approval' ||
-        s == 'pending' ||
-        s == 'pending_payment' ||
-        s == 'payment_pending' ||
-        s == 'request_sent' ||
-        s == 'requested' ||
-        s == 'waiting_provider_response' ||
-        s == 'waiting response';
+        status == 'confirmed' ||
+        status == 'accepted';
   }
 
   Future<void> _cancel() async {
@@ -198,8 +188,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       backgroundColor: Colors.transparent,
       builder: (sheetCtx) {
         return RescheduleModal(
-          appointmentId: appointment!.appointmentId,
-          providerUserId: appointment!.providerUserId,
+          appointment: appointment!,
           onSuccess: () {
             Navigator.pop(sheetCtx);
             _load();
@@ -209,42 +198,14 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     );
   }
 
-  void _openChangeProviderModal() {
-    if (appointment == null) return;
-
-    if (appointment!.scheduledAt != null) {
-      final now = DateTime.now();
-      final diff = appointment!.scheduledAt!.difference(now);
-      if (diff.inHours < 2) {
-        final isAr = localeController.isArabic;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isAr
-                  ? 'لا يمكن تغيير مقدم الرعاية قبل الموعد بوقت قصير.'
-                  : 'Provider change is not available close to the appointment time.',
-            ),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-        return;
-      }
-    }
-
-    showModalBottomSheet<void>(
+  Future<void> _showRebookChoices() async {
+    final apt = appointment;
+    if (apt == null) return;
+    await RebookFlowHelper.startFromAppointment(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) {
-        return ChangeProviderModal(
-          appointment: appointment!,
-          patientUserId: widget.patientUserId,
-          onSuccess: () {
-            Navigator.pop(sheetCtx);
-            _load();
-          },
-        );
-      },
+      appointment: apt,
+      patientUserId: widget.patientUserId,
+      priceHint: _hintAmountFromOverview(),
     );
   }
 
@@ -515,6 +476,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
   Widget _buildStatusBannerSection(CarelinkPalette p) {
     final status = appointment!.status.toLowerCase();
+    final subStatus = appointment!.subStatus.toLowerCase().trim();
     final isAr = localeController.isArabic;
 
     Color bg;
@@ -522,7 +484,29 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     String title;
     String subtitle;
 
-    if (status == 'pending_payment' || status == 'payment_pending') {
+    if (subStatus == 'reschedule_requested') {
+      bg = AppColors.warning.withValues(alpha: 0.12);
+      textCol = AppColors.warning;
+      title = isAr
+          ? 'طلب تغيير الموعد بانتظار الموافقة'
+          : 'Reschedule request pending approval';
+      final requested = appointment!.requestedRescheduleAt;
+      subtitle = requested == null
+          ? (isAr
+                ? 'موعدك الأصلي ما زال مؤكداً حتى يوافق مقدم الرعاية.'
+                : 'Your original appointment remains confirmed until the provider approves.')
+          : (isAr
+                ? 'موعدك الأصلي ما زال مؤكداً. الموعد المطلوب: ${_formatDateOnly(requested)} ${_formatTimeOnly(requested)}'
+                : 'Your original appointment remains confirmed. Requested time: ${_formatDateOnly(requested)} ${_formatTimeOnly(requested)}');
+    } else if (appointment!.rescheduleRejectedAt != null &&
+        status == 'confirmed') {
+      bg = Colors.redAccent.withValues(alpha: 0.10);
+      textCol = Colors.redAccent;
+      title = isAr ? 'تم رفض طلب تغيير الموعد' : 'Reschedule request rejected';
+      subtitle = isAr
+          ? 'تم رفض طلب تغيير الموعد، وبقي موعدك الأصلي كما هو.'
+          : 'Your reschedule request was rejected, and your original appointment remains unchanged.';
+    } else if (status == 'pending_payment' || status == 'payment_pending') {
       bg = Colors.orange.withValues(alpha: 0.12);
       textCol = const Color(0xFFE56B16);
       title = isAr ? 'بانتظار الدفع' : 'Waiting Payment';
@@ -566,7 +550,9 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     } else {
       bg = p.surfaceSoft;
       textCol = p.inkDark;
-      title = status.toUpperCase();
+      title = status.isNotEmpty
+          ? status.toUpperCase()
+          : (isAr ? 'غير معروف' : 'Unknown');
       subtitle = '';
     }
 
@@ -1454,62 +1440,133 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   Widget _buildStickyBottomActions(CarelinkPalette p) {
+    if (appointment == null) return const SizedBox.shrink();
+
     final isAr = localeController.isArabic;
-    if (!_canReschedule && !_canCancel) return const SizedBox.shrink();
+    final actionState = AppointmentActionHelper.getActionState(
+      status: appointment!.status,
+      paymentStatus: appointment!.paymentStatus,
+      requestedRescheduleAt: appointment!.requestedRescheduleAt,
+    );
+
+    if (actionState.type == AppointmentActionType.hidden && !_canCancel) {
+      return const SizedBox.shrink();
+    }
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
         color: p.surface,
         border: Border(top: BorderSide(color: p.stroke)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: p.isDark ? 0.22 : 0.07),
-            blurRadius: 18,
-            offset: const Offset(0, -6),
+            color: Colors.black.withValues(alpha: p.isDark ? 0.22 : 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
           ),
         ],
       ),
       child: SafeArea(
         top: false,
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (_canReschedule)
-              Expanded(
-                child: _buildCompactAction(
-                  palette: p,
-                  icon: Icons.edit_calendar_rounded,
-                  label: isAr ? 'تعديل الموعد' : 'Reschedule',
-                  color: AppColors.primary,
-                  onTap: _openRescheduleModal,
-                ),
+            if (actionState.type != AppointmentActionType.hidden) ...[
+              SizedBox(
+                width: double.infinity,
+                child: _buildActionStateButton(p, isAr, actionState),
               ),
-            if (_canReschedule && _canCancel) const SizedBox(width: 8),
-            if (_canCancel)
-              Expanded(
-                child: _buildCompactAction(
-                  palette: p,
-                  icon: Icons.sync_alt_rounded,
-                  label: isAr ? 'تغيير المقدم' : 'Change',
-                  color: const Color(0xFF167C83),
-                  onTap: _openChangeProviderModal,
+              if (!actionState.isEnabled &&
+                  actionState.helperTextEn != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  isAr ? actionState.helperTextAr! : actionState.helperTextEn!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: p.inkMuted,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-              ),
-            if (_canCancel) const SizedBox(width: 8),
-            if (_canCancel)
-              Expanded(
+              ],
+            ],
+
+            if (_canCancel &&
+                actionState.type != AppointmentActionType.bookAgain) ...[
+              if (actionState.type != AppointmentActionType.hidden)
+                const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
                 child: _buildCompactAction(
                   palette: p,
                   icon: Icons.close_rounded,
-                  label: isAr ? 'إلغاء الحجز' : 'Cancel',
+                  label: isAr ? 'إلغاء الحجز' : 'Cancel Booking',
                   color: const Color(0xFFD93636),
                   onTap: isCancelling ? null : _showCancelConfirmationDialog,
                   isLoading: isCancelling,
                   destructive: true,
                 ),
               ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildActionStateButton(
+    CarelinkPalette p,
+    bool isAr,
+    AppointmentActionState state,
+  ) {
+    final label = AppointmentActionHelper.getLabel(state.type, isAr);
+    final icon = AppointmentActionHelper.getIcon(state.type);
+
+    VoidCallback? onTap;
+    if (state.isEnabled) {
+      if (state.type == AppointmentActionType.changeAppointment ||
+          state.type == AppointmentActionType.requestReschedule) {
+        onTap = _openRescheduleModal;
+      } else if (state.type == AppointmentActionType.bookAgain) {
+        onTap = _showRebookChoices;
+      }
+    }
+
+    if (!state.isEnabled) {
+      return OutlinedButton.icon(
+        onPressed: null,
+        style: OutlinedButton.styleFrom(
+          backgroundColor: p.isDark
+              ? const Color(0xFF2D3748)
+              : const Color(0xFFF1F5F9),
+          disabledForegroundColor: p.inkMuted,
+          minimumSize: const Size.fromHeight(52),
+          side: BorderSide.none,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        icon: Icon(icon, size: 20),
+        label: Text(
+          label,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+      );
+    }
+
+    return FilledButton.icon(
+      onPressed: onTap,
+      style: FilledButton.styleFrom(
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        minimumSize: const Size.fromHeight(52),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        elevation: 0,
+      ),
+      icon: Icon(icon, size: 20),
+      label: Text(
+        label,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
       ),
     );
   }

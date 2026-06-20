@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/locale_controller.dart';
+import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/shared/services/patient_favorites_service.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
+import 'package:carelink/features/patient/screens/booking_screen.dart';
 import 'package:carelink/features/patient/screens/provider_details_screen.dart';
-import 'package:carelink/features/patient/screens/select_service_screen.dart';
+import 'package:carelink/features/patient/utils/booking_service_helper.dart';
 import 'package:carelink/shared/models/provider_model.dart';
-import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 
 class PatientFavoritesScreen extends StatefulWidget {
@@ -54,11 +55,22 @@ class _PatientFavoritesScreenState extends State<PatientFavoritesScreen>
         final copy = Map<String, dynamic>.from(favorite);
         final providerId = copy['providerId']?.toString() ?? '';
         try {
-          final data = await ApiService().getProviderById(providerId);
+          final data = await ApiService().getProviderById(
+            providerId,
+            realAvailability: true,
+          );
           final provider = ProviderModel.fromJson(data);
-          copy['hasAvailableSlots'] = provider.availableSlots.isNotEmpty;
+          copy['hasAvailableSlots'] = ProviderBookingEligibility.canBook(
+            provider,
+          );
           copy['availableSlots'] = data['availableSlots'];
           copy['serviceType'] = provider.serviceType;
+          copy['isAvailable'] = provider.isAvailable;
+          copy['profileImageUrl'] = provider.profileImageUrl;
+          copy['displayName'] = provider.fullName;
+          copy['specialization'] = provider.specialization;
+          copy['role'] = provider.role;
+          copy['consultationFee'] = provider.consultationFee;
         } catch (_) {
           copy['hasAvailableSlots'] = false;
         }
@@ -250,10 +262,20 @@ class _PatientFavoritesScreenState extends State<PatientFavoritesScreen>
         prov['profilePictureUrl']?.toString() ??
         prov['profileImageUrl']?.toString();
     final rating = double.tryParse(prov['rating']?.toString() ?? '0') ?? 0.0;
+    final availableSlots =
+        (prov['availableSlots'] as List?)
+            ?.whereType<Map>()
+            .map(
+              (slot) =>
+                  AvailabilitySlot.fromJson(Map<String, dynamic>.from(slot)),
+            )
+            .toList() ??
+        const <AvailabilitySlot>[];
     final isAvailable =
-        prov['isAvailable'] == true ||
-        prov['isAvailable'] == 1 ||
-        prov['isAvailable']?.toString() == '1';
+        (prov['isAvailable'] == true ||
+            prov['isAvailable'] == 1 ||
+            prov['isAvailable']?.toString() == '1') &&
+        availableSlots.isNotEmpty;
     final role = prov['role']?.toString() ?? 'doctor';
     final fee = double.tryParse(
       prov['consultationFee']?.toString() ??
@@ -271,6 +293,7 @@ class _PatientFavoritesScreenState extends State<PatientFavoritesScreen>
       role: role,
       isAvailable: isAvailable,
       consultationFee: fee,
+      availableSlots: availableSlots,
     );
   }
 
@@ -296,11 +319,14 @@ class _PatientFavoritesScreenState extends State<PatientFavoritesScreen>
   Future<void> _openBooking(Map<String, dynamic> prov) async {
     var provider = _toProviderModel(prov);
     try {
-      final data = await ApiService().getProviderById(provider.userId);
+      final data = await ApiService().getProviderById(
+        provider.userId,
+        realAvailability: true,
+      );
       provider = ProviderModel.fromJson(data);
     } catch (_) {}
     if (!mounted) return;
-    if (provider.availableSlots.isEmpty) {
+    if (!ProviderBookingEligibility.canBook(provider)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -312,34 +338,16 @@ class _PatientFavoritesScreenState extends State<PatientFavoritesScreen>
       );
       return;
     }
+    final request = BookingServiceHelper.createRequestForProvider(
+      provider: provider,
+      patientId: widget.patientUserId,
+    );
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => SelectServiceScreen(
-          request: BookingRequestModel(
-            patientId: widget.patientUserId,
-            providerId: provider.userId,
-            providerName: provider.fullName,
-            providerRole: provider.role,
-            providerImageUrl: provider.profileImageUrl ?? '',
-            specialization: provider.specialization,
-            serviceType: provider.serviceType,
-            appointmentDate: '',
-            appointmentTime: '',
-            visitLatitude: provider.gpsLat ?? 0,
-            visitLongitude: provider.gpsLng ?? 0,
-            visitAddress: '',
-            locationNote: '',
-            patientReason: '',
-            symptoms: '',
-            isUrgent: false,
-            additionalNotes: '',
-            price: provider.consultationFee ?? 0,
-            extraFees: 0,
-            paymentMethod: '',
-            paymentStatus: '',
-            bookingStatus: 'pending',
-          ),
+        builder: (_) => BookingScreen(
+          request: request,
         ),
       ),
     );
@@ -383,10 +391,7 @@ class _FavoriteCard extends StatelessWidget {
   double get _rating =>
       double.tryParse(data['rating']?.toString() ?? '0') ?? 0.0;
 
-  bool get _isAvailable =>
-      data['isAvailable'] == true ||
-      data['isAvailable'] == 1 ||
-      data['isAvailable']?.toString() == '1';
+  bool get _isAvailable => canBook;
 
   String? get _imageUrl {
     final raw =
@@ -724,8 +729,8 @@ class _FavoriteCard extends StatelessWidget {
     final available = _isAvailable;
     final color = available ? AppColors.primary : p.inkMuted;
     final label = available
-        ? _t('Available Today', 'متاح اليوم')
-        : _t('Unavailable', 'غير متاح');
+        ? _t('Available appointments', 'مواعيد متاحة')
+        : _t('No available appointments', 'لا توجد مواعيد متاحة');
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(

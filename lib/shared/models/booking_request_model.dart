@@ -24,6 +24,9 @@ class BookingRequestModel {
   final String paymentMethod;
   final String paymentStatus;
   final String bookingStatus;
+  final bool isRebook;
+  final String previousAppointmentId;
+  final String? recommendationId;
 
   const BookingRequestModel({
     required this.patientId,
@@ -49,6 +52,9 @@ class BookingRequestModel {
     required this.paymentMethod,
     required this.paymentStatus,
     required this.bookingStatus,
+    this.isRebook = false,
+    this.previousAppointmentId = '',
+    this.recommendationId,
   });
 
   double get discount {
@@ -95,6 +101,9 @@ class BookingRequestModel {
     String? paymentMethod,
     String? paymentStatus,
     String? bookingStatus,
+    bool? isRebook,
+    String? previousAppointmentId,
+    String? recommendationId,
   }) {
     return BookingRequestModel(
       patientId: patientId ?? this.patientId,
@@ -120,6 +129,10 @@ class BookingRequestModel {
       paymentMethod: paymentMethod ?? this.paymentMethod,
       paymentStatus: paymentStatus ?? this.paymentStatus,
       bookingStatus: bookingStatus ?? this.bookingStatus,
+      isRebook: isRebook ?? this.isRebook,
+      previousAppointmentId:
+          previousAppointmentId ?? this.previousAppointmentId,
+      recommendationId: recommendationId ?? this.recommendationId,
     );
   }
 

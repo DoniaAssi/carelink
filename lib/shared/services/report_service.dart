@@ -50,6 +50,42 @@ class ReportService {
     required String medications,
     required String observations,
     required String recommendations,
+    List<String> attachments = const [],
+  }) async {
+    final report = await createReportRecord(
+      providerId: providerId,
+      requestId: requestId,
+      patientId: patientId,
+      patientName: patientName,
+      serviceType: serviceType,
+      location: location,
+      scheduledDate: scheduledDate,
+      durationHours: durationHours,
+      visitSummary: visitSummary,
+      vitalSigns: vitalSigns,
+      medications: medications,
+      observations: observations,
+      recommendations: recommendations,
+      attachments: attachments,
+    );
+    return report != null;
+  }
+
+  static Future<VisitReport?> createReportRecord({
+    required String providerId,
+    required String requestId,
+    required String patientId,
+    required String patientName,
+    required String serviceType,
+    required String location,
+    required DateTime scheduledDate,
+    required int durationHours,
+    required String visitSummary,
+    required String vitalSigns,
+    required String medications,
+    required String observations,
+    required String recommendations,
+    List<String> attachments = const [],
   }) async {
     try {
       final response = await http.post(
@@ -68,11 +104,15 @@ class ReportService {
           'medications': medications,
           'observations': observations,
           'recommendations': recommendations,
+          'attachments': attachments,
         }),
       );
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        return true;
+        final data = jsonDecode(response.body);
+        if (data is Map) {
+          return VisitReport.fromJson(Map<String, dynamic>.from(data));
+        }
       }
       _logError(
         'Request URL: ${response.request?.url} | HTTP method: POST | '
@@ -81,7 +121,7 @@ class ReportService {
     } catch (e) {
       _logError('Error message: $e');
     }
-    return false;
+    return null;
   }
 
   static Future<bool> updateReport({
@@ -99,6 +139,7 @@ class ReportService {
     required String medications,
     required String observations,
     required String recommendations,
+    List<String> attachments = const [],
   }) async {
     try {
       final response = await http.post(
@@ -118,6 +159,7 @@ class ReportService {
           'medications': medications,
           'observations': observations,
           'recommendations': recommendations,
+          'attachments': attachments,
         }),
       );
 

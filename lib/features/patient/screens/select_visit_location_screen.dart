@@ -14,7 +14,6 @@ import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'booking_review_screen.dart';
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
-import 'package:carelink/features/patient/widgets/booking_provider_summary.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 
 class SelectVisitLocationScreen extends StatefulWidget {

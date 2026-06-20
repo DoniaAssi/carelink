@@ -4,7 +4,7 @@ import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 
-enum BookingFlowStep { provider, service, dateTime, location, review }
+enum BookingFlowStep { provider, dateTime, location, review }
 
 class BookingStepIndicator extends StatelessWidget {
   final BookingFlowStep currentStep;
@@ -13,7 +13,6 @@ class BookingStepIndicator extends StatelessWidget {
 
   static const _labelKeys = <String>[
     'booking.step.provider',
-    'booking.step.service',
     'booking.step.dateTime',
     'booking.step.location',
     'booking.step.review',
@@ -101,34 +100,37 @@ class _StepDot extends StatelessWidget {
     
     Color bgColor;
     Color iconColor;
+    Color borderColor;
     
     if (done || current) {
       bgColor = AppColors.primary;
       iconColor = Colors.white;
+      borderColor = AppColors.primary;
     } else {
-      bgColor = p.surfaceSoft;
+      bgColor = Colors.transparent;
       iconColor = p.inkMuted;
+      borderColor = p.stroke;
     }
 
     return Container(
-      width: 22,
-      height: 22,
+      width: 26,
+      height: 26,
       decoration: BoxDecoration(
         color: bgColor,
         shape: BoxShape.circle,
         border: Border.all(
-          color: done || current ? AppColors.primary : p.stroke,
-          width: 1,
+          color: borderColor,
+          width: 1.5,
         ),
       ),
       alignment: Alignment.center,
       child: done
-          ? const Icon(Icons.check_rounded, color: Colors.white, size: 14)
+          ? const Icon(Icons.check_rounded, color: Colors.white, size: 16)
           : Text(
               label,
               style: TextStyle(
                 color: iconColor,
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: FontWeight.w800,
               ),
             ),

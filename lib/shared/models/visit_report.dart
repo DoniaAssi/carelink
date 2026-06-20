@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class VisitReport {
   /// Backend uses UUID strings; numeric ids are still supported in JSON.
   final String id;
@@ -14,6 +16,7 @@ class VisitReport {
   final String medications;
   final String observations;
   final String recommendations;
+  final List<String> attachments;
   final String status;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -33,6 +36,7 @@ class VisitReport {
     required this.medications,
     required this.observations,
     required this.recommendations,
+    this.attachments = const [],
     required this.status,
     required this.createdAt,
     required this.updatedAt,
@@ -54,6 +58,7 @@ class VisitReport {
       medications: json['medications'] ?? '',
       observations: json['observations'] ?? '',
       recommendations: json['recommendations'] ?? '',
+      attachments: _parseStringList(json['attachments']),
       status: json['status'] ?? 'completed',
       createdAt: _parseDateTime(json['createdAt']),
       updatedAt: _parseDateTime(json['updatedAt']),
@@ -76,6 +81,7 @@ class VisitReport {
       'medications': medications,
       'observations': observations,
       'recommendations': recommendations,
+      'attachments': attachments,
       'status': status,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
@@ -100,5 +106,25 @@ class VisitReport {
       return DateTime.tryParse(value) ?? DateTime.now();
     }
     return DateTime.now();
+  }
+
+  static List<String> _parseStringList(dynamic value) {
+    if (value is List) {
+      return value.map((item) => item.toString()).toList();
+    }
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) {
+          return decoded.map((item) => item.toString()).toList();
+        }
+      } catch (_) {}
+      return value
+          .split('|')
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    return const [];
   }
 }
