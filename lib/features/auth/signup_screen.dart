@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -246,6 +245,9 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _homeCareAvailability = true;
   String? _selectedDoctorSpecialty;
   PlatformFile? _doctorCvFile;
+  final List<PlatformFile?> _doctorRequiredCertificates =
+      List<PlatformFile?>.filled(3, null);
+  final List<PlatformFile?> _doctorAdditionalCertificates = <PlatformFile?>[];
 
   static const List<String> _doctorSpecialties = [
     'Cardiology',
@@ -874,6 +876,69 @@ class _SignupScreenState extends State<SignupScreen> {
     setState(() => setFileName(file.name));
   }
 
+  Future<PlatformFile?> _pickDoctorDocument({required bool pdfOnly}) async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: pdfOnly
+          ? const ['pdf']
+          : const ['pdf', 'jpg', 'jpeg', 'png'],
+      allowMultiple: false,
+      withData: true,
+    );
+    final file = result?.files.single;
+    if (file == null) return null;
+
+    final bytes = file.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      _showMessage(
+        'Could not read this file. Please choose another file.',
+        color: Colors.red.shade700,
+      );
+      return null;
+    }
+    if (bytes.length > 10 * 1024 * 1024) {
+      _showMessage(
+        'File is too large. Maximum size is 10 MB.',
+        color: Colors.red.shade700,
+      );
+      return null;
+    }
+    return file;
+  }
+
+  bool get _hasRequiredDoctorDocuments =>
+      _doctorCvFile != null &&
+      _doctorRequiredCertificates.every((file) => file != null);
+
+  void _showMissingDoctorDocumentsMessage() {
+    _showMessage(
+      'Upload your CV and all three required certificates.',
+      color: Colors.red.shade700,
+    );
+  }
+
+  String _doctorDocumentMimeType(PlatformFile file) {
+    return switch ((file.extension ?? '').toLowerCase()) {
+      'pdf' => 'application/pdf',
+      'png' => 'image/png',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      _ => 'application/octet-stream',
+    };
+  }
+
+  Map<String, dynamic> _doctorCertificatePayload(
+    PlatformFile file,
+    String name,
+  ) {
+    return <String, dynamic>{
+      'name': name,
+      'fileName': file.name,
+      'fileData': base64Encode(file.bytes!),
+      'mimeType': _doctorDocumentMimeType(file),
+      'fileSize': file.size,
+    };
+  }
+
   bool _isStrongPassword(String input) {
     final regex = RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$');
     return regex.hasMatch(input);
@@ -897,8 +962,8 @@ class _SignupScreenState extends State<SignupScreen> {
       );
       return;
     }
-    if (_selectedRole == 'doctor' && _doctorCvFile == null) {
-      _showMessage('Upload CV (PDF) is required.', color: Colors.red.shade700);
+    if (_selectedRole == 'doctor' && !_hasRequiredDoctorDocuments) {
+      _showMissingDoctorDocumentsMessage();
       return;
     }
     if (_selectedRole == 'nurse' && addressController.text.trim().isEmpty) {
@@ -994,6 +1059,11 @@ class _SignupScreenState extends State<SignupScreen> {
       _showMissingNurseDocumentsMessage();
       return;
     }
+    if (_selectedRole == 'doctor' && !_hasRequiredDoctorDocuments) {
+      setState(() => _stepIndex = 1);
+      _showMissingDoctorDocumentsMessage();
+      return;
+    }
 
     setState(() => _isLoading = true);
     try {
@@ -1022,6 +1092,21 @@ class _SignupScreenState extends State<SignupScreen> {
 
       final cvFile = _doctorCvFile;
       final cvBytes = cvFile?.bytes;
+      final doctorCertificates = _selectedRole == 'doctor'
+          ? <Map<String, dynamic>>[
+              for (var i = 0; i < _doctorRequiredCertificates.length; i++)
+                _doctorCertificatePayload(
+                  _doctorRequiredCertificates[i]!,
+                  'Certificate ${i + 1}',
+                ),
+              for (var i = 0; i < _doctorAdditionalCertificates.length; i++)
+                if (_doctorAdditionalCertificates[i] != null)
+                  _doctorCertificatePayload(
+                    _doctorAdditionalCertificates[i]!,
+                    'Additional Certificate ${i + 1}',
+                  ),
+            ]
+          : null;
 
       // 2. Perform register
       final response = await ApiService().register(
@@ -1091,6 +1176,13 @@ class _SignupScreenState extends State<SignupScreen> {
             : null,
         phoneVerificationToken: _phoneVerificationToken,
         emailVerificationToken: _emailVerificationToken,
+        cvFileName: _selectedRole == 'doctor' ? cvFile?.name : null,
+        cvFileData: _selectedRole == 'doctor' && cvBytes != null
+            ? base64Encode(cvBytes)
+            : null,
+        cvMimeType: _selectedRole == 'doctor' ? 'application/pdf' : null,
+        cvFileSize: _selectedRole == 'doctor' ? cvFile?.size : null,
+        certificates: doctorCertificates,
       );
 
       // Add emergency contact if it was entered and table supports it
@@ -2036,7 +2128,16 @@ class _SignupScreenState extends State<SignupScreen> {
                 return null;
               },
             ),
-            _buildDoctorCvUpload(p),
+            _buildTextField(
+              p,
+              label: context.tr('auth.bio'),
+              hint: isAr
+                  ? 'نبذة مختصرة عن خبرتك المهنية'
+                  : 'Brief professional background bio',
+              icon: Icons.description_outlined,
+              controller: bioController,
+            ),
+            _buildDoctorProfessionalDocuments(p),
             _buildFieldWrapper(
               p,
               label: context.tr('auth.consultationType'),
@@ -2109,21 +2210,11 @@ class _SignupScreenState extends State<SignupScreen> {
             const SizedBox(height: 18),
             _buildTextField(
               p,
-              label: context.tr('auth.bio'),
-              hint: isAr
-                  ? 'نبذة مختصرة عن خبرتك المهنية'
-                  : 'Brief professional background bio',
-              icon: Icons.description_outlined,
-              controller: bioController,
-            ),
-            _buildTextField(
-              p,
               label: 'Previous workplaces',
               hint: 'Hospitals, clinics, home care agencies',
               icon: Icons.business_center_outlined,
               controller: workplaceHistoryController,
             ),
-            _buildProviderDocumentsUpload(p),
           ],
 
           // Role specific Nurse fields
@@ -2579,10 +2670,278 @@ class _SignupScreenState extends State<SignupScreen> {
       ),
     );
   }
-  
-  _doctorSpecializationValue() {}
-  
-  _buildDoctorSpecialtyDropdown(CarelinkPalette p) {}
-  
-  _buildDoctorCvUpload(CarelinkPalette p) {}
+
+  String _doctorSpecializationValue() {
+    if (_selectedDoctorSpecialty == 'Other') {
+      return customSpecialtyController.text.trim();
+    }
+    return _selectedDoctorSpecialty?.trim() ?? '';
+  }
+
+  Widget _buildDoctorSpecialtyDropdown(CarelinkPalette p) {
+    return _buildFieldWrapper(
+      p,
+      label: 'Medical Specialty',
+      child: DropdownButtonFormField<String>(
+        initialValue: _selectedDoctorSpecialty,
+        isExpanded: true,
+        dropdownColor: p.surface,
+        icon: Icon(Icons.expand_more_rounded, color: p.inkMuted),
+        style: GoogleFonts.inter(
+          color: p.inkDark,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+        decoration: InputDecoration(
+          hintText: 'Select your medical specialty',
+          prefixIcon: Icon(Icons.health_and_safety_outlined, color: p.inkMuted),
+          filled: true,
+          fillColor: p.isDark
+              ? const Color(0xFF123640).withValues(alpha: 0.55)
+              : Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 14,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: p.stroke),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: p.stroke),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+          ),
+        ),
+        items: _doctorSpecialties
+            .map(
+              (specialty) => DropdownMenuItem<String>(
+                value: specialty,
+                child: Text(specialty),
+              ),
+            )
+            .toList(),
+        validator: (value) => value == null || value.isEmpty
+            ? 'Medical specialty is required'
+            : null,
+        onChanged: (value) {
+          setState(() {
+            _selectedDoctorSpecialty = value;
+            if (value != 'Other') customSpecialtyController.clear();
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildDoctorDocumentTile(
+    CarelinkPalette p, {
+    required String title,
+    required String helper,
+    required PlatformFile? file,
+    required VoidCallback onPick,
+    required VoidCallback onRemove,
+  }) {
+    final hasFile = file != null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPick,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: p.isDark
+                  ? const Color(0xFF123640).withValues(alpha: 0.55)
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: hasFile ? AppColors.primary : p.stroke,
+                width: hasFile ? 1.4 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    hasFile
+                        ? Icons.description_rounded
+                        : Icons.upload_file_rounded,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.inter(
+                          color: p.inkDark,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        hasFile ? file.name : helper,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: hasFile ? AppColors.primary : p.inkMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (hasFile)
+                  IconButton(
+                    tooltip: 'Remove',
+                    onPressed: onRemove,
+                    icon: const Icon(Icons.close_rounded),
+                    color: Colors.red.shade600,
+                  )
+                else
+                  Icon(Icons.chevron_right_rounded, color: p.inkMuted),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDoctorProfessionalDocuments(CarelinkPalette p) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: p.isDark
+            ? const Color(0xFF0D2D36).withValues(alpha: 0.55)
+            : const Color(0xFFF7FBFA),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: p.stroke),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.folder_copy_outlined, color: AppColors.primary),
+              const SizedBox(width: 10),
+              Text(
+                'Professional Documents',
+                style: GoogleFonts.inter(
+                  color: p.inkDark,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Your account remains pending until these documents are reviewed.',
+            style: GoogleFonts.inter(
+              color: p.inkMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildDoctorDocumentTile(
+            p,
+            title: 'Upload CV *',
+            helper: 'PDF only, maximum 10 MB',
+            file: _doctorCvFile,
+            onPick: () async {
+              final file = await _pickDoctorDocument(pdfOnly: true);
+              if (file != null) setState(() => _doctorCvFile = file);
+            },
+            onRemove: () => setState(() => _doctorCvFile = null),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Required Certificates',
+            style: GoogleFonts.inter(
+              color: p.inkDark,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (var i = 0; i < _doctorRequiredCertificates.length; i++)
+            _buildDoctorDocumentTile(
+              p,
+              title: 'Certificate ${i + 1} *',
+              helper: 'PDF, JPG, or PNG',
+              file: _doctorRequiredCertificates[i],
+              onPick: () async {
+                final file = await _pickDoctorDocument(pdfOnly: false);
+                if (file != null) {
+                  setState(() => _doctorRequiredCertificates[i] = file);
+                }
+              },
+              onRemove: () =>
+                  setState(() => _doctorRequiredCertificates[i] = null),
+            ),
+          if (_doctorAdditionalCertificates.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Additional Certificates (Optional)',
+              style: GoogleFonts.inter(
+                color: p.inkDark,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (var i = 0; i < _doctorAdditionalCertificates.length; i++)
+              _buildDoctorDocumentTile(
+                p,
+                title: 'Additional Certificate ${i + 1}',
+                helper: 'PDF, JPG, or PNG',
+                file: _doctorAdditionalCertificates[i],
+                onPick: () async {
+                  final file = await _pickDoctorDocument(pdfOnly: false);
+                  if (file != null) {
+                    setState(() => _doctorAdditionalCertificates[i] = file);
+                  }
+                },
+                onRemove: () =>
+                    setState(() => _doctorAdditionalCertificates.removeAt(i)),
+              ),
+          ],
+          OutlinedButton.icon(
+            onPressed: () =>
+                setState(() => _doctorAdditionalCertificates.add(null)),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Add Another Certificate'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: const BorderSide(color: AppColors.primary),
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

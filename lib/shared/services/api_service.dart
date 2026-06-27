@@ -522,6 +522,7 @@ class ApiService {
     String? cvFileData,
     String? cvMimeType,
     int? cvFileSize,
+    List<Map<String, dynamic>>? certificates,
   }) async {
     final Map<String, dynamic> body = {
       'fullName': fullName.trim(),
@@ -595,6 +596,10 @@ class ApiService {
         body['cvFileData'] = cvFileData.trim();
         body['cvMimeType'] = (cvMimeType ?? 'application/pdf').trim();
         if (cvFileSize != null) body['cvFileSize'] = cvFileSize;
+      }
+      if (role == 'doctor' && certificates != null) {
+        body['certificates'] = certificates;
+      }
       if (serviceAreas != null && serviceAreas.trim().isNotEmpty) {
         body['serviceAreas'] = serviceAreas.trim();
       }
@@ -619,7 +624,6 @@ class ApiService {
       if (homeCareAvailability != null) {
         body['homeCareAvailability'] = homeCareAvailability;
       }
-    }
     }
 
     final response = await _sendRequest(

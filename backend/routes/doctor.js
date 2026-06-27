@@ -151,7 +151,7 @@ async function getProviderWorkEligibility(providerId) {
      WHERE BINARY providerId = BINARY ?
      ORDER BY
        CASE WHEN rateAcceptanceStatus = 'accepted' THEN 0 ELSE 1 END,
-       updatedAt DESC,
+       rateSetAt DESC,
        id DESC
      LIMIT 1`,
     [providerId],

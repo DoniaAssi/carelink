@@ -6,11 +6,17 @@ const RESEND_INTERVAL_MS = 30 * 1000;
 const MAX_WRONG_ATTEMPTS = 5;
 const BCRYPT_ROUNDS = 10;
 
-/** @type {Map<string, { codeHash: string, expiresAt: number, attempts: number, lastSentAt: number }>} */
+/** @type {Map<string, { codeHash: string, debugCode?: string, expiresAt: number, attempts: number, lastSentAt: number, verifiedAt?: number }>} */
 const challenges = new Map();
+const OTP_DEBUG_LOGS =
+  process.env.NODE_ENV !== 'production' && process.env.OTP_DEBUG_LOGS !== '0';
 
 function storageKey(channel, target, purpose) {
-  return `${channel}:${target}:${purpose}`;
+  const normalizedTarget = channel === 'email'
+    ? (target || '').toString().trim().toLowerCase()
+    : (target || '').toString().replace(/\D/g, '');
+  const normalizedPurpose = (purpose || '').toString().trim().toLowerCase();
+  return `${channel}:${normalizedTarget}:${normalizedPurpose}`;
 }
 
 function pruneExpired() {
@@ -50,12 +56,24 @@ async function startChallenge(channel, target, purpose) {
 
   const plainCode = generateSixDigitCode();
   const codeHash = await bcrypt.hash(plainCode, BCRYPT_ROUNDS);
+  const previousInvalidated = challenges.delete(k);
   challenges.set(k, {
     codeHash,
+    ...(OTP_DEBUG_LOGS ? { debugCode: plainCode } : {}),
     expiresAt: now + CODE_TTL_MS,
     attempts: 0,
     lastSentAt: now,
   });
+  if (OTP_DEBUG_LOGS) {
+    console.log('[OTP SEND]', {
+      key: k,
+      email: channel === 'email' ? target : undefined,
+      storedOtp: plainCode,
+      expirationTime: new Date(now + CODE_TTL_MS).toISOString(),
+      currentTime: new Date(now).toISOString(),
+      previousInvalidated,
+    });
+  }
   return { plainCode };
 }
 
@@ -67,8 +85,25 @@ async function completeChallenge(channel, target, purpose, rawCode) {
   const k = storageKey(channel, target, purpose);
   const ch = challenges.get(k);
   const code = (rawCode || '').toString().trim();
+  const now = Date.now();
 
-  if (!ch || ch.expiresAt < Date.now()) {
+  if (OTP_DEBUG_LOGS) {
+    console.log('[OTP VERIFY]', {
+      key: k,
+      email: channel === 'email' ? target : undefined,
+      enteredOtp: code,
+      storedOtp: ch?.debugCode ?? '(stored as bcrypt hash)',
+      storedOtpHash: ch?.codeHash,
+      expirationTime: ch ? new Date(ch.expiresAt).toISOString() : null,
+      currentTime: new Date(now).toISOString(),
+      attempts: ch?.attempts ?? null,
+      previouslyVerifiedAt: ch?.verifiedAt
+        ? new Date(ch.verifiedAt).toISOString()
+        : null,
+    });
+  }
+
+  if (!ch || ch.expiresAt < now) {
     const err = new Error('Invalid or expired code');
     err.statusCode = 400;
     throw err;
@@ -90,13 +125,34 @@ async function completeChallenge(channel, target, purpose, rawCode) {
     throw err;
   }
 
-  challenges.delete(k);
+  // Keep the latest successfully verified challenge until expiry. This makes
+  // signup retry-safe when account creation fails after OTP verification.
+  ch.verifiedAt = now;
   return true;
+}
+
+function invalidateChallenge(channel, target, purpose) {
+  return challenges.delete(storageKey(channel, target, purpose));
+}
+
+function getChallengeDebugInfo(channel, target, purpose) {
+  const ch = challenges.get(storageKey(channel, target, purpose));
+  if (!ch) return null;
+  return {
+    storedOtp: OTP_DEBUG_LOGS ? ch.debugCode : undefined,
+    storedOtpHash: ch.codeHash,
+    expirationTime: new Date(ch.expiresAt).toISOString(),
+    lastSentAt: new Date(ch.lastSentAt).toISOString(),
+    attempts: ch.attempts,
+    verifiedAt: ch.verifiedAt ? new Date(ch.verifiedAt).toISOString() : null,
+  };
 }
 
 module.exports = {
   startChallenge,
   completeChallenge,
+  invalidateChallenge,
+  getChallengeDebugInfo,
   generateSixDigitCode,
   CODE_TTL_MS,
   RESEND_INTERVAL_MS,

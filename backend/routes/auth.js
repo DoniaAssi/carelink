@@ -17,6 +17,7 @@ const {
 const router = express.Router();
 const googleClient = new OAuth2Client();
 const columnCache = new Map();
+const tableCache = new Map();
 
 const SIGNUP_PROOF_TTL_MS = 15 * 60 * 1000;
 
@@ -114,6 +115,24 @@ async function hasColumn(tableName, columnName) {
     return exists;
   } catch (_) {
     columnCache.set(key, false);
+    return false;
+  }
+}
+
+async function hasTable(tableName) {
+  if (tableCache.has(tableName)) return tableCache.get(tableName);
+
+  try {
+    const [rows] = await db.query('SHOW TABLES LIKE ?', [tableName]);
+    const exists = rows.length > 0;
+    tableCache.set(tableName, exists);
+    return exists;
+  } catch (err) {
+    console.error('[Signup] Table lookup failed:', {
+      tableName,
+      error: err.message,
+    });
+    tableCache.set(tableName, false);
     return false;
   }
 }
@@ -345,6 +364,7 @@ router.post('/register', async (req, res) => {
     cvFileData,
     cvMimeType,
     cvFileSize,
+    certificates,
   } = req.body;
 
   const normalizedFullName = (fullName || '').toString().trim();
@@ -389,6 +409,17 @@ router.post('/register', async (req, res) => {
   const parsedCvFileSize = Number.isFinite(Number(cvFileSize))
     ? Number(cvFileSize)
     : null;
+  const normalizedCertificates = Array.isArray(certificates)
+    ? certificates.map((certificate, index) => ({
+        name: (certificate?.name || `Certificate ${index + 1}`).toString().trim(),
+        fileName: (certificate?.fileName || '').toString().trim(),
+        fileData: (certificate?.fileData || '').toString().trim(),
+        mimeType: (certificate?.mimeType || '').toString().trim().toLowerCase(),
+        fileSize: Number.isFinite(Number(certificate?.fileSize))
+          ? Number(certificate.fileSize)
+          : null,
+      }))
+    : [];
   const normalizedPassword = (password || '').toString();
   const normalizedConfirmPassword = (confirmPassword || '').toString();
   const parsedExperience = Number.isFinite(Number(experienceYears))
@@ -449,6 +480,12 @@ router.post('/register', async (req, res) => {
   }
   phoneVerificationSecrets.delete(normalizedPhoneVerification);
 
+  if (normalizedRole === 'doctor') {
+    console.log('[Doctor Signup] Verify Doctor completed', {
+      email: normalizedEmail,
+    });
+  }
+
   if (normalizedFullName.length < 2 || /^\d+$/.test(normalizedFullName)) {
     return res.status(400).json({ error: 'Invalid full name' });
   }
@@ -504,6 +541,31 @@ router.post('/register', async (req, res) => {
       if (parsedCvFileSize != null && parsedCvFileSize > 10 * 1024 * 1024) {
         return res.status(400).json({ error: 'Doctor CV maximum size is 10 MB' });
       }
+      if (normalizedCertificates.length < 3) {
+        return res.status(400).json({
+          error: 'Three required doctor certificates must be uploaded',
+        });
+      }
+      const allowedCertificateTypes = new Set([
+        'application/pdf',
+        'image/jpeg',
+        'image/png',
+      ]);
+      for (const certificate of normalizedCertificates) {
+        if (!certificate.fileName || !certificate.fileData) {
+          return res.status(400).json({ error: 'Certificate file data is required' });
+        }
+        if (!allowedCertificateTypes.has(certificate.mimeType)) {
+          return res.status(400).json({
+            error: 'Certificates must be PDF, JPG, or PNG files',
+          });
+        }
+        if (certificate.fileSize != null && certificate.fileSize > 10 * 1024 * 1024) {
+          return res.status(400).json({
+            error: 'Each certificate must be 10 MB or smaller',
+          });
+        }
+      }
     }
   }
 
@@ -523,6 +585,13 @@ router.post('/register', async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(normalizedPassword, 10);
     const userId = randomUUID();
+
+    if (normalizedRole === 'doctor') {
+      console.log('[Doctor Signup] Creating doctor account...', {
+        email: normalizedEmail,
+        userId,
+      });
+    }
 
     connection = await db.getConnection();
     await connection.beginTransaction();
@@ -638,6 +707,7 @@ router.post('/register', async (req, res) => {
       const hasHomeCareAvailable = await hasColumn('careprovider', 'homeCareAvailable');
       const hasRateApproved = await hasColumn('careprovider', 'is_rate_approved');
       const hasStatus = await hasColumn('careprovider', 'status');
+      const hasApprovalStatus = await hasColumn('careprovider', 'approvalStatus');
 
       const providerColumns = [
         'userId',
@@ -712,12 +782,27 @@ router.post('/register', async (req, res) => {
         providerColumns.push('status');
         providerValues.push('pending');
       }
+      if (hasApprovalStatus) {
+        providerColumns.push('approvalStatus');
+        providerValues.push('pending');
+      }
 
       await connection.query(
         `INSERT INTO careprovider (${providerColumns.join(', ')})
          VALUES (${providerColumns.map(() => '?').join(', ')})`,
         providerValues
       );
+
+      let hasProviderCertificationTable = false;
+      if (normalizedRole === 'doctor') {
+        console.log('[Doctor Signup] Before hasTable(provider_certification)');
+        hasProviderCertificationTable = await hasTable(
+          'provider_certification',
+        );
+        console.log('[Doctor Signup] Certification table check completed', {
+          exists: hasProviderCertificationTable,
+        });
+      }
 
       if (normalizedRole === 'doctor' && normalizedCvFileData) {
         try {
@@ -739,7 +824,7 @@ router.post('/register', async (req, res) => {
           await fs.promises.writeFile(filePath, buffer);
           const fileUrl = `/uploads/provider_cv/${filename}`;
 
-          if (await hasTable('provider_certification')) {
+          if (hasProviderCertificationTable) {
             const certColumns = ['certId', 'providerUserId', 'name'];
             const certValues = [randomUUID(), userId, 'Upload CV'];
             if (await hasColumn('provider_certification', 'fileUrl')) {
@@ -766,6 +851,66 @@ router.post('/register', async (req, res) => {
           }
         } catch (cvErr) {
           throw cvErr;
+        }
+      }
+
+      if (normalizedRole === 'doctor' && normalizedCertificates.length > 0) {
+        const fs = require('fs');
+        const path = require('path');
+        const uploadsDir = path.join(
+          __dirname,
+          '..',
+          'uploads',
+          'provider_certificates',
+        );
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+
+        for (let index = 0; index < normalizedCertificates.length; index += 1) {
+          const certificate = normalizedCertificates[index];
+          const buffer = Buffer.from(certificate.fileData, 'base64');
+          if (buffer.length === 0 || buffer.length > 10 * 1024 * 1024) {
+            throw new Error('Each certificate must be a valid file up to 10 MB');
+          }
+          const extension = certificate.mimeType === 'application/pdf'
+            ? 'pdf'
+            : certificate.mimeType === 'image/png'
+              ? 'png'
+              : 'jpg';
+          const safeOriginalName = certificate.fileName.replace(
+            /[^a-zA-Z0-9._-]/g,
+            '_',
+          );
+          const filename = `certificate_${userId}_${Date.now()}_${index}.${extension}`;
+          await fs.promises.writeFile(path.join(uploadsDir, filename), buffer);
+          const fileUrl = `/uploads/provider_certificates/${filename}`;
+
+          if (hasProviderCertificationTable) {
+            const certColumns = ['certId', 'providerUserId', 'name'];
+            const certValues = [randomUUID(), userId, certificate.name];
+            if (await hasColumn('provider_certification', 'fileUrl')) {
+              certColumns.push('fileUrl');
+              certValues.push(fileUrl);
+            }
+            if (await hasColumn('provider_certification', 'originalName')) {
+              certColumns.push('originalName');
+              certValues.push(safeOriginalName);
+            }
+            if (await hasColumn('provider_certification', 'mimeType')) {
+              certColumns.push('mimeType');
+              certValues.push(certificate.mimeType);
+            }
+            if (await hasColumn('provider_certification', 'fileSize')) {
+              certColumns.push('fileSize');
+              certValues.push(buffer.length);
+            }
+            await connection.query(
+              `INSERT INTO provider_certification (${certColumns.join(', ')})
+               VALUES (${certColumns.map(() => '?').join(', ')})`,
+              certValues,
+            );
+          }
         }
       }
 
@@ -1166,6 +1311,7 @@ router.post('/send-verification-code', async (req, res) => {
     return res.status(400).json({ error: 'purpose must be signup or password_reset' });
   }
 
+  let challengeCreated = false;
   try {
     if (purpose === 'signup') {
       const [rows] = await db.query(
@@ -1182,6 +1328,7 @@ router.post('/send-verification-code', async (req, res) => {
       normalizedEmail,
       purpose,
     );
+    challengeCreated = true;
     const mailResult = await dispatchEmailVerificationCode({
       to: normalizedEmail,
       code: plainCode,
@@ -1201,6 +1348,13 @@ router.post('/send-verification-code', async (req, res) => {
     }
     return res.json(payload);
   } catch (err) {
+    if (challengeCreated) {
+      verificationCodes.invalidateChallenge(
+        'email',
+        normalizedEmail,
+        purpose,
+      );
+    }
     if (err.statusCode === 429) {
       return res.status(429).json({
         error: err.message,
@@ -1227,6 +1381,19 @@ router.post('/verify-code', async (req, res) => {
   }
 
   try {
+    if (process.env.NODE_ENV !== 'production' && process.env.OTP_DEBUG_LOGS !== '0') {
+      console.log('[OTP VERIFY REQUEST]', {
+        email: normalizedEmail,
+        enteredOtp: rawCode,
+        purpose,
+        challenge: verificationCodes.getChallengeDebugInfo(
+          'email',
+          normalizedEmail,
+          purpose,
+        ),
+        currentTime: new Date().toISOString(),
+      });
+    }
     await verificationCodes.completeChallenge(
       'email',
       normalizedEmail,
