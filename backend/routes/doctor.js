@@ -120,9 +120,10 @@ async function getProviderWorkEligibility(providerId) {
        c.userId,
        COALESCE(c.specialization, c.serviceType, '') AS specialization,
        COALESCE(c.status, 'pending') AS providerStatus,
+       COALESCE(c.approvalStatus, 'pending') AS approvalStatus,
        COALESCE(c.is_rate_approved, 0) AS isRateApproved,
        COALESCE(c.hourly_rate, 0) AS hourlyRate,
-       COALESCE(u.isActive, 0) AS userIsActive
+       COALESCE(u.isActive, 1) AS userIsActive
      FROM careprovider c
      JOIN user u ON BINARY u.userId = BINARY c.userId
      WHERE BINARY c.userId = BINARY ?
@@ -144,9 +145,12 @@ async function getProviderWorkEligibility(providerId) {
   const [[rate]] = await db.query(
     `SELECT
        specialization,
-       COALESCE(provider_rate, provider_hour_rate, 0) AS providerRate,
+       COALESCE(NULLIF(provider_rate, 0), provider_hour_rate, 0) AS providerRate,
        rateAcceptanceStatus,
-       status
+       status,
+       rateSetAt,
+       rateAcceptedAt,
+       rateRejectedAt
      FROM provider_rates
      WHERE BINARY providerId = BINARY ?
      ORDER BY
@@ -160,19 +164,62 @@ async function getProviderWorkEligibility(providerId) {
   const providerRate = Number(rate?.providerRate || profile.hourlyRate || 0);
   const rateAccepted = (rate?.rateAcceptanceStatus || '').toLowerCase() === 'accepted';
   const careproviderApproved = dbBool(profile.isRateApproved);
+  const adminApproved =
+    (profile.approvalStatus || '').toLowerCase() === 'approved';
+  const userActive = dbBool(profile.userIsActive);
   const activeStatus = (profile.providerStatus || '').toLowerCase() === 'active';
-  const canWork = activeStatus && providerRate > 0 && (rateAccepted || careproviderApproved);
+  const canWork =
+    adminApproved &&
+    userActive &&
+    activeStatus &&
+    providerRate > 0 &&
+    (rateAccepted || careproviderApproved);
+
+  let reason = '';
+  if (!adminApproved) {
+    reason = 'Admin approval is required before using doctor services.';
+  } else if (providerRate <= 0) {
+    reason = 'The administrator has not assigned your service rate yet.';
+  } else if ((rate?.rateAcceptanceStatus || '').toLowerCase() === 'rejected') {
+    reason = 'You rejected the assigned rate. Please wait for administrator review.';
+  } else if (!rateAccepted) {
+    reason = 'Please review and accept your admin-assigned service rate.';
+  } else if (!userActive || !activeStatus) {
+    reason = 'Your doctor account is inactive. Please contact the administrator.';
+  }
 
   return {
     canWork,
     reason: canWork
-      ? 'Provider is active and hourly rate is accepted'
-      : 'Accept your admin-set hourly rate before starting work.',
+      ? 'Doctor account and service rate are active.'
+      : reason,
     providerStatus: profile.providerStatus || 'pending',
+    approvalStatus: profile.approvalStatus || 'pending',
     rateAcceptanceStatus: rate?.rateAcceptanceStatus || 'pending',
     providerRate,
     specialization: rate?.specialization || profile.specialization || '',
+    rateSetAt: rate?.rateSetAt || null,
+    rateAcceptedAt: rate?.rateAcceptedAt || null,
+    rateRejectedAt: rate?.rateRejectedAt || null,
+    isActive: dbBool(profile.userIsActive),
   };
+}
+
+async function assertDoctorUser(doctorId) {
+  const [[doctor]] = await db.query(
+    `SELECT userId
+     FROM user
+     WHERE BINARY userId = BINARY ?
+       AND BINARY LOWER(CAST(role AS CHAR)) = BINARY 'doctor'
+     LIMIT 1`,
+    [doctorId],
+  );
+  if (!doctor) {
+    const err = new Error('Doctor not found');
+    err.status = 404;
+    throw err;
+  }
+  return doctor;
 }
 
 async function assertProviderCanWork(providerId) {
@@ -502,6 +549,120 @@ router.get('/approval-status/:userId', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// DOCTOR SERVICE RATE APPROVAL
+// ============================================
+router.get('/rate-status/:doctorId', async (req, res) => {
+  const doctorId = (req.params.doctorId || '').toString().trim();
+  try {
+    await assertDoctorUser(doctorId);
+    res.json(await getProviderWorkEligibility(doctorId));
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.post('/rate-status/:doctorId/decision', async (req, res) => {
+  const doctorId = (req.params.doctorId || '').toString().trim();
+  const decision = (req.body?.decision || '').toString().trim().toLowerCase();
+  if (!['accepted', 'rejected'].includes(decision)) {
+    return res.status(400).json({
+      error: 'decision must be accepted or rejected',
+    });
+  }
+
+  try {
+    await assertDoctorUser(doctorId);
+    await ensureDoctorRateGateTables();
+
+    const [[provider]] = await db.query(
+      `SELECT COALESCE(specialization, 'General Medicine') AS specialization
+       FROM careprovider
+       WHERE BINARY userId = BINARY ?
+       LIMIT 1`,
+      [doctorId],
+    );
+    const [rates] = await db.query(
+      `SELECT id, specialization,
+              COALESCE(NULLIF(provider_rate, 0), provider_hour_rate, 0) AS providerRate
+       FROM provider_rates
+       WHERE BINARY providerId = BINARY ?
+       ORDER BY rateSetAt DESC, id DESC
+       LIMIT 1`,
+      [doctorId],
+    );
+    if (!rates.length || Number(rates[0].providerRate || 0) <= 0) {
+      return res.status(404).json({
+        error: 'The administrator has not assigned your service rate yet',
+      });
+    }
+
+    const rate = rates[0];
+    await db.query(
+      `UPDATE provider_rates
+       SET rateAcceptanceStatus = ?,
+           rateAcceptedAt = CASE WHEN ? = 'accepted' THEN NOW() ELSE NULL END,
+           rateRejectedAt = CASE WHEN ? = 'rejected' THEN NOW() ELSE NULL END
+       WHERE id = ?`,
+      [decision, decision, decision, rate.id],
+    );
+
+    const accepted = decision === 'accepted';
+    const specialization =
+      rate.specialization || provider?.specialization || 'General Medicine';
+    const providerRate = Number(rate.providerRate || 0);
+
+    if (await hasTable('provider_rate_approval')) {
+      await db.query(
+        `INSERT INTO provider_rate_approval
+           (provider_id, specialization, admin_rate, status)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           admin_rate = VALUES(admin_rate),
+           status = VALUES(status),
+           updated_at = NOW()`,
+        [
+          doctorId,
+          specialization,
+          providerRate,
+          accepted ? 'approved' : 'rejected',
+        ],
+      );
+    }
+    if (await hasTable('rate_approvals')) {
+      await db.query(
+        `INSERT INTO rate_approvals (provider_id, admin_rate, status)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           admin_rate = VALUES(admin_rate),
+           status = VALUES(status),
+           updated_at = NOW()`,
+        [doctorId, providerRate, accepted ? 'approved' : 'rejected'],
+      );
+    }
+
+    await db.query(
+      `UPDATE careprovider
+       SET is_rate_approved = ?,
+           hourly_rate = ?,
+           status = ?
+       WHERE BINARY userId = BINARY ?`,
+      [accepted ? 1 : 0, providerRate, accepted ? 'active' : 'inactive', doctorId],
+    );
+    await db.query(
+      `UPDATE user SET isActive = ? WHERE BINARY userId = BINARY ?`,
+      [accepted ? 1 : 0, doctorId],
+    );
+
+    res.json({
+      success: true,
+      ...(await getProviderWorkEligibility(doctorId)),
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -1841,14 +2002,7 @@ router.get('/availability/:doctorId', async (req, res) => {
   const { doctorId } = req.params;
 
   try {
-    try {
-      await assertProviderCanWork(doctorId);
-    } catch (err) {
-      return res.status(err.status || 403).json({
-        error: err.message,
-        eligibility: err.eligibility || null,
-      });
-    }
+    await assertDoctorUser(doctorId);
     const [rows] = await db.query(
       'SELECT isAvailable FROM careprovider WHERE userId = ?',
       [doctorId]
@@ -1940,14 +2094,7 @@ router.get('/schedule/:doctorId', async (req, res) => {
   const { doctorId } = req.params;
 
   try {
-    try {
-      await assertProviderCanWork(doctorId);
-    } catch (err) {
-      return res.status(err.status || 403).json({
-        error: err.message,
-        eligibility: err.eligibility || null,
-      });
-    }
+    await assertDoctorUser(doctorId);
     const [rows] = await db.query(
       'SELECT * FROM availabilityslot WHERE providerUserId = ? ORDER BY day, startTime',
       [doctorId]
@@ -1987,6 +2134,43 @@ router.post('/schedule/:doctorId', async (req, res) => {
     );
 
     res.json({ success: true, message: 'Availability slot added', slotId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// UPDATE AVAILABILITY SLOT
+// ============================================
+router.put('/schedule/:doctorId/:slotId', async (req, res) => {
+  const { doctorId, slotId } = req.params;
+  const { day, startTime, endTime } = req.body;
+
+  if (!day || !startTime || !endTime) {
+    return res.status(400).json({
+      error: 'Day, startTime, and endTime are required',
+    });
+  }
+
+  try {
+    try {
+      await assertProviderCanWork(doctorId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
+    const [result] = await db.query(
+      `UPDATE availabilityslot
+       SET day = ?, startTime = ?, endTime = ?
+       WHERE slot_id = ? AND providerUserId = ?`,
+      [day, startTime, endTime, slotId, doctorId],
+    );
+    if (!result.affectedRows) {
+      return res.status(404).json({ error: 'Availability slot not found' });
+    }
+    res.json({ success: true, message: 'Availability slot updated' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2087,6 +2271,15 @@ router.get('/payments/:doctorId', async (req, res) => {
   const { doctorId } = req.params;
 
   try {
+    await assertDoctorUser(doctorId);
+    try {
+      await assertProviderCanWork(doctorId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
     const [rows] = await db.query(
       `SELECT 
         p.*,

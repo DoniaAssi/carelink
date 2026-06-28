@@ -409,6 +409,23 @@ class DoctorService {
     }
   }
 
+  Future<Map<String, dynamic>> updateScheduleSlot(
+    String doctorId,
+    String slotId, {
+    required String day,
+    required String startTime,
+    required String endTime,
+  }) async {
+    try {
+      return await _apiService.put(
+        '${ApiEndpoints.doctorSchedule}/$doctorId/$slotId',
+        {'day': day, 'startTime': startTime, 'endTime': endTime},
+      );
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   // ============================================
   // DELETE SCHEDULE SLOT
   // ============================================
@@ -480,6 +497,33 @@ class DoctorService {
         '${ApiEndpoints.doctorPayments}/$doctorId',
       );
       return response;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ============================================
+  // DOCTOR SERVICE RATE APPROVAL
+  // ============================================
+  Future<Map<String, dynamic>> getRateStatus(String doctorId) async {
+    try {
+      return await _apiService.get(
+        '${ApiEndpoints.doctorRateStatus}/$doctorId',
+      );
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> decideRate(
+    String doctorId,
+    String decision,
+  ) async {
+    try {
+      return await _apiService.post(
+        '${ApiEndpoints.doctorRateStatus}/$doctorId/decision',
+        {'decision': decision},
+      );
     } catch (e) {
       rethrow;
     }

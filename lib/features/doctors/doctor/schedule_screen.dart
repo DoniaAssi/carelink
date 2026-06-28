@@ -118,16 +118,22 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     }
   }
 
-  Future<void> _addSlot() async {
-    String? selectedDay;
-    TimeOfDay? startTime;
-    TimeOfDay? endTime;
+  Future<void> _addSlot({
+    String? day,
+    Map<String, dynamic>? existingSlot,
+  }) async {
+    String? selectedDay = existingSlot?['day']?.toString() ?? day;
+    TimeOfDay? startTime = _parseSlotTime(existingSlot?['startTime']);
+    TimeOfDay? endTime = _parseSlotTime(existingSlot?['endTime']);
+    final editing = existingSlot != null;
 
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Add Availability Slot'),
+          title: Text(
+            editing ? 'Edit Availability Slot' : 'Add Availability Slot',
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -199,13 +205,23 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                   );
                   return;
                 }
+                final startMinutes = startTime!.hour * 60 + startTime!.minute;
+                final endMinutes = endTime!.hour * 60 + endTime!.minute;
+                if (endMinutes <= startMinutes) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('End time must be after start time'),
+                    ),
+                  );
+                  return;
+                }
                 Navigator.pop(context, {
                   'day': selectedDay,
                   'startTime': startTime,
                   'endTime': endTime,
                 });
               },
-              child: const Text('Add'),
+              child: Text(editing ? 'Save' : 'Add'),
             ),
           ],
         ),
@@ -219,18 +235,32 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
           final timeRange = '$startTimeStr - $endTimeStr';
           debugPrint('Selected time: $timeRange');
 
-          await _doctorService.addScheduleSlot(
-            _doctorId,
-            day: result['day'],
-            startTime: _formatTimeForApi(result['startTime']),
-            endTime: _formatTimeForApi(result['endTime']),
-          );
+          if (editing) {
+            await _doctorService.updateScheduleSlot(
+              _doctorId,
+              (existingSlot['slot_id'] ?? '').toString(),
+              day: result['day'],
+              startTime: _formatTimeForApi(result['startTime']),
+              endTime: _formatTimeForApi(result['endTime']),
+            );
+          } else {
+            await _doctorService.addScheduleSlot(
+              _doctorId,
+              day: result['day'],
+              startTime: _formatTimeForApi(result['startTime']),
+              endTime: _formatTimeForApi(result['endTime']),
+            );
+          }
 
           _loadData();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Slot added successfully'),
+              SnackBar(
+                content: Text(
+                  editing
+                      ? 'Slot updated successfully'
+                      : 'Slot added successfully',
+                ),
                 backgroundColor: AppColors.success,
               ),
             );
@@ -290,8 +320,63 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     }
   }
 
+  Future<void> _disableDaySlots(
+    String day,
+    List<Map<String, dynamic>> slots,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Disable $day'),
+        content: const Text(
+          'All availability periods for this day will be removed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Disable'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      for (final slot in slots) {
+        final slotId = (slot['slot_id'] ?? '').toString();
+        if (slotId.isNotEmpty) {
+          await _doctorService.deleteScheduleSlot(_doctorId, slotId);
+        }
+      }
+      await _loadData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$day availability disabled')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   String _formatTimeForApi(TimeOfDay time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:00';
+  }
+
+  TimeOfDay? _parseSlotTime(dynamic value) {
+    final parts = value?.toString().split(':') ?? const <String>[];
+    if (parts.length < 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    return TimeOfDay(hour: hour, minute: minute);
   }
 
   @override
@@ -843,6 +928,15 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       key: const ValueKey('availability-tab'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const Text(
+          'Availability Status',
+          style: TextStyle(
+            color: _ink,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 12),
         _availabilityStatusCard(),
         const SizedBox(height: 24),
         const Text(
@@ -984,35 +1078,96 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                   ),
                 ),
                 const SizedBox(height: 5),
-                Text(
-                  hasSlots ? _slotSummary(daySlots) : 'Not available',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _muted,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+                if (hasSlots)
+                  ...daySlots.map(
+                    (slot) => Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        _slotTime(slot),
+                        style: const TextStyle(
+                          color: _muted,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  const Text(
+                    'Not available',
+                    style: TextStyle(
+                      color: _muted,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
+          IconButton(
+            tooltip: 'Add period for $day',
+            onPressed: () => _addSlot(day: day),
+            icon: const Icon(Icons.add_circle_outline_rounded),
+            color: _primary,
+          ),
           Switch(
             value: hasSlots,
-            onChanged: (_) => hasSlots
-                ? _deleteSlot((daySlots.first['slot_id'] ?? '').toString())
-                : _addSlot(),
+            onChanged: (_) =>
+                hasSlots ? _disableDaySlots(day, daySlots) : _addSlot(day: day),
             activeThumbColor: _primary,
           ),
           if (hasSlots)
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert_rounded, color: _muted),
-              onSelected: (slotId) => _deleteSlot(slotId),
+              onSelected: (action) {
+                if (action == 'add') {
+                  _addSlot(day: day);
+                  return;
+                }
+                final separator = action.indexOf(':');
+                if (separator < 0) return;
+                final type = action.substring(0, separator);
+                final slotId = action.substring(separator + 1);
+                final slot = daySlots.cast<Map<String, dynamic>?>().firstWhere(
+                  (item) => (item?['slot_id'] ?? '').toString() == slotId,
+                  orElse: () => null,
+                );
+                if (slot == null) return;
+                if (type == 'edit') {
+                  _addSlot(day: day, existingSlot: slot);
+                } else if (type == 'delete') {
+                  _deleteSlot(slotId);
+                }
+              },
               itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'add',
+                  child: ListTile(
+                    leading: Icon(Icons.add_rounded),
+                    title: Text('Add another period'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
                 for (final slot in daySlots)
                   PopupMenuItem(
-                    value: (slot['slot_id'] ?? '').toString(),
-                    child: Text('Delete ${_slotTime(slot)}'),
+                    value: 'edit:${(slot['slot_id'] ?? '').toString()}',
+                    child: ListTile(
+                      leading: const Icon(Icons.edit_outlined),
+                      title: Text('Edit ${_slotTime(slot)}'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                for (final slot in daySlots)
+                  PopupMenuItem(
+                    value: 'delete:${(slot['slot_id'] ?? '').toString()}',
+                    child: ListTile(
+                      leading: const Icon(
+                        Icons.delete_outline_rounded,
+                        color: Colors.red,
+                      ),
+                      title: Text('Delete ${_slotTime(slot)}'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
                   ),
               ],
             )
@@ -1155,10 +1310,6 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
   String? _cleanText(dynamic value) {
     final text = value?.toString().trim() ?? '';
     return text.isEmpty ? null : text;
-  }
-
-  String _slotSummary(List<Map<String, dynamic>> slots) {
-    return slots.map(_slotTime).join(', ');
   }
 
   String _slotTime(Map<String, dynamic> slot) {

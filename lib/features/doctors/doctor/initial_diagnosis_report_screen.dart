@@ -29,9 +29,14 @@ class _InitialDiagnosisReportScreenState
   final _diagnosisController = TextEditingController();
   final _treatmentPlanController = TextEditingController();
   final _nursingInstructionsController = TextEditingController();
+  final _chronicDiseasesController = TextEditingController();
+  final _allergiesController = TextEditingController();
+  final _currentMedicationsController = TextEditingController();
+  final _previousSurgeriesController = TextEditingController();
 
   final Set<String> _symptoms = {};
   Map<String, dynamic> _medicalRecord = {};
+  String? _selectedBloodType;
   bool _isLoadingRecord = true;
   bool _isSaving = false;
   int _requiredVisits = 5;
@@ -40,6 +45,16 @@ class _InitialDiagnosisReportScreenState
   static const _primary = Color(0xFF0F8B8D);
   static const _ink = Color(0xFF101828);
   static const _muted = Color(0xFF667085);
+  static const _bloodTypes = <String>[
+    'A+',
+    'A-',
+    'B+',
+    'B-',
+    'AB+',
+    'AB-',
+    'O+',
+    'O-',
+  ];
 
   @override
   void initState() {
@@ -56,6 +71,10 @@ class _InitialDiagnosisReportScreenState
     _diagnosisController.dispose();
     _treatmentPlanController.dispose();
     _nursingInstructionsController.dispose();
+    _chronicDiseasesController.dispose();
+    _allergiesController.dispose();
+    _currentMedicationsController.dispose();
+    _previousSurgeriesController.dispose();
     super.dispose();
   }
 
@@ -79,8 +98,27 @@ class _InitialDiagnosisReportScreenState
       );
 
       if (!mounted) return;
+      final bloodType = _text(record['bloodType']);
+      final chronicDiseases = _medicalListValue(
+        record['diseases'],
+        const ['diseaseName', 'name', 'title'],
+        fallback:
+            _text(record['chronicConditions']) ??
+            _text(record['previousConditions']),
+      );
+      final allergies = _medicalListValue(record['allergies'], const [
+        'allergyName',
+        'name',
+        'title',
+      ], fallback: _text(record['allergiesText']));
+      _chronicDiseasesController.text = _editableMedicalValue(chronicDiseases);
+      _allergiesController.text = _editableMedicalValue(allergies);
+      _currentMedicationsController.text =
+          _text(record['currentMedications']) ?? '';
+      _previousSurgeriesController.text = _text(record['pastSurgeries']) ?? '';
       setState(() {
         _medicalRecord = record;
+        _selectedBloodType = _bloodTypes.contains(bloodType) ? bloodType : null;
         _isLoadingRecord = false;
       });
     } catch (_) {
@@ -314,7 +352,6 @@ class _InitialDiagnosisReportScreenState
                   ),
                 ),
               ),
-              _readOnlyBadge(),
             ],
           ),
           const SizedBox(height: 16),
@@ -324,41 +361,48 @@ class _InitialDiagnosisReportScreenState
               child: CircularProgressIndicator(),
             )
           else ...[
-            _profileRow(
-              Icons.water_drop,
-              'Blood Type',
-              _text(_medicalRecord['bloodType']) ?? 'Not set',
+            _medicalFieldLabel(Icons.water_drop, 'Blood Type', required: true),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedBloodType,
+              isExpanded: true,
+              decoration: _medicalInputDecoration('Select blood type'),
+              items: _bloodTypes
+                  .map(
+                    (type) => DropdownMenuItem<String>(
+                      value: type,
+                      child: Text(type),
+                    ),
+                  )
+                  .toList(),
+              validator: (value) => value == null ? 'Required' : null,
+              onChanged: (value) => setState(() => _selectedBloodType = value),
             ),
-            _profileRow(
-              Icons.monitor_heart,
-              'Chronic Diseases',
-              _medicalListValue(
-                _medicalRecord['diseases'],
-                ['diseaseName', 'name', 'title'],
-                fallback:
-                    _text(_medicalRecord['chronicConditions']) ??
-                    _text(_medicalRecord['previousConditions']),
-              ),
+            const SizedBox(height: 16),
+            _medicalTextField(
+              icon: Icons.monitor_heart,
+              label: 'Chronic Diseases',
+              controller: _chronicDiseasesController,
+              hint: 'Enter chronic diseases...',
             ),
-            _profileRow(
-              Icons.warning_amber_rounded,
-              'Allergies',
-              _medicalListValue(
-                _medicalRecord['allergies'],
-                ['allergyName', 'name', 'title'],
-                fallback: _text(_medicalRecord['allergiesText']),
-              ),
+            _medicalTextField(
+              icon: Icons.warning_amber_rounded,
+              label: 'Allergies',
+              controller: _allergiesController,
+              hint: 'Enter allergies...',
             ),
-            _profileRow(
-              Icons.medication_outlined,
-              'Current Medications',
-              _text(_medicalRecord['currentMedications']) ?? 'Not set',
+            _medicalTextField(
+              icon: Icons.medication_outlined,
+              label: 'Current Medications',
+              controller: _currentMedicationsController,
+              hint: 'Enter current medications...',
             ),
-            _profileRow(
-              Icons.edit_outlined,
-              'Previous Surgeries',
-              _text(_medicalRecord['pastSurgeries']) ?? 'Not set',
-              showDivider: false,
+            _medicalTextField(
+              icon: Icons.edit_outlined,
+              label: 'Previous Surgeries',
+              controller: _previousSurgeriesController,
+              hint: 'Enter previous surgeries...',
+              bottomSpacing: 0,
             ),
           ],
         ],
@@ -596,45 +640,75 @@ class _InitialDiagnosisReportScreenState
     );
   }
 
-  Widget _profileRow(
+  Widget _medicalFieldLabel(
     IconData icon,
-    String label,
-    String value, {
-    bool showDivider = true,
+    String label, {
+    bool required = false,
   }) {
-    return Column(
+    return Row(
       children: [
-        Row(
-          children: [
-            Icon(icon, color: _primary, size: 22),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: _ink,
-                  fontWeight: FontWeight.w800,
+        Icon(icon, color: _primary, size: 21),
+        const SizedBox(width: 10),
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(text: label),
+              if (required)
+                const TextSpan(
+                  text: ' *',
+                  style: TextStyle(color: Colors.red),
                 ),
-              ),
-            ),
-            Flexible(
-              child: Text(
-                value,
-                textAlign: TextAlign.end,
-                style: const TextStyle(
-                  color: _ink,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ],
-        ),
-        if (showDivider)
-          const Padding(
-            padding: EdgeInsets.only(left: 38, top: 12, bottom: 12),
-            child: Divider(height: 1),
+            ],
           ),
+          style: const TextStyle(color: _ink, fontWeight: FontWeight.w800),
+        ),
       ],
+    );
+  }
+
+  Widget _medicalTextField({
+    required IconData icon,
+    required String label,
+    required TextEditingController controller,
+    required String hint,
+    double bottomSpacing = 16,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomSpacing),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _medicalFieldLabel(icon, label),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 4,
+            decoration: _medicalInputDecoration(hint),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _medicalInputDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFDDE7E5)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFDDE7E5)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _primary),
+      ),
     );
   }
 
@@ -679,27 +753,6 @@ class _InitialDiagnosisReportScreenState
           height: 46,
           child: Icon(icon, color: _primary),
         ),
-      ),
-    );
-  }
-
-  Widget _readOnlyBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF2F4F7),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.lock_outline_rounded, size: 15, color: _muted),
-          SizedBox(width: 6),
-          Text(
-            'Read Only',
-            style: TextStyle(color: _muted, fontWeight: FontWeight.w800),
-          ),
-        ],
       ),
     );
   }
@@ -758,6 +811,10 @@ class _InitialDiagnosisReportScreenState
       if (items.isNotEmpty) return items.join(', ');
     }
     return fallback ?? 'Not set';
+  }
+
+  String _editableMedicalValue(String value) {
+    return value == 'Not set' ? '' : value;
   }
 
   String _ageLabel(String? dateOfBirth) {

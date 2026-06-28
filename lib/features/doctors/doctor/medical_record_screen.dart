@@ -449,6 +449,31 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
     final doctorName = (item['doctorName'] ?? 'Doctor').toString();
     final diagnosis = (item['diagnosis'] ?? '').toString();
     final treatmentPlan = (item['treatmentPlan'] ?? '').toString();
+    final bloodType = _firstDisplayValue([
+      item['bloodType'],
+      item['blood_type'],
+    ]);
+    final chronicDiseases = _firstDisplayValue([
+      item['chronicDiseases'],
+      item['chronic_diseases'],
+      item['diseases'],
+    ]);
+    final allergies = _firstDisplayValue([item['allergies']]);
+    final currentMedications = _firstDisplayValue([
+      item['currentMedications'],
+      item['current_medications'],
+    ]);
+    final previousSurgeries = _firstDisplayValue([
+      item['previousSurgeries'],
+      item['pastSurgeries'],
+      item['previous_surgeries'],
+      item['past_surgeries'],
+    ]);
+    final chiefComplaint = _firstDisplayValue([item['chiefComplaint']]);
+    final symptoms = _firstDisplayValue([item['symptoms']]);
+    final nursingInstructions = _firstDisplayValue([
+      item['nursingInstructions'],
+    ]);
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -501,9 +526,63 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
           if (diagnosis.isNotEmpty) _reportText('Diagnosis', diagnosis),
           if (treatmentPlan.isNotEmpty)
             _reportText('Treatment Plan', treatmentPlan),
+          if (bloodType.isNotEmpty) _reportText('Blood Type', bloodType),
+          if (chronicDiseases.isNotEmpty)
+            _reportText('Chronic Diseases', chronicDiseases),
+          if (allergies.isNotEmpty) _reportText('Allergies', allergies),
+          if (currentMedications.isNotEmpty)
+            _reportText('Current Medications', currentMedications),
+          if (previousSurgeries.isNotEmpty)
+            _reportText('Previous Surgeries', previousSurgeries),
+          if (chiefComplaint.isNotEmpty)
+            _reportText('Chief Complaint', chiefComplaint),
+          if (symptoms.isNotEmpty) _reportText('Symptoms', symptoms),
+          if (nursingInstructions.isNotEmpty)
+            _reportText('Nursing Instructions', nursingInstructions),
         ],
       ),
     );
+  }
+
+  String _firstDisplayValue(List<dynamic> values) {
+    for (final value in values) {
+      final formatted = _formatDisplayValue(value);
+      if (formatted.isNotEmpty) return formatted;
+    }
+    return '';
+  }
+
+  String _formatDisplayValue(dynamic value) {
+    if (value == null) return '';
+
+    if (value is Iterable) {
+      return value
+          .map(_formatDisplayValue)
+          .where((item) => item.isNotEmpty)
+          .join(', ');
+    }
+
+    if (value is Map) {
+      for (final key in const [
+        'diseaseName',
+        'allergyName',
+        'name',
+        'value',
+        'description',
+      ]) {
+        final formatted = _formatDisplayValue(value[key]);
+        if (formatted.isNotEmpty) return formatted;
+      }
+      return '';
+    }
+
+    final formatted = value.toString().trim();
+    if (formatted.isEmpty ||
+        formatted.toLowerCase() == 'null' ||
+        formatted.toLowerCase() == 'not set') {
+      return '';
+    }
+    return formatted;
   }
 
   Widget _reportText(String label, String value) {

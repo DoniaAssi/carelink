@@ -33,9 +33,11 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   int _selectedIndex = 0;
   Map<String, dynamic> _stats = {};
   Map<String, dynamic> _profile = {};
+  Map<String, dynamic> _rateStatus = {};
   List<dynamic> _requests = [];
   String _doctorName = '';
   String _doctorId = '';
+  bool _rateDialogShown = false;
 
   @override
   void initState() {
@@ -63,19 +65,34 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       _doctorName = prefs.getString('doctor_fullName') ?? '';
 
       if (_doctorId.isNotEmpty) {
+        final previousRateSetAt = _rateStatus['rateSetAt']?.toString();
         final results = await Future.wait([
           _doctorService.getDashboardStats(_doctorId),
           _doctorService.getRequests(_doctorId),
           _doctorService.getProfile(_doctorId),
+          _doctorService.getRateStatus(_doctorId),
           notificationCenter.load(_doctorId, force: true).then((_) => null),
         ]);
 
         if (!mounted) return;
+        final nextRateStatus = results[3] as Map<String, dynamic>;
+        final nextRateSetAt = nextRateStatus['rateSetAt']?.toString();
         setState(() {
           _stats = results[0] as Map<String, dynamic>;
           _requests = results[1] as List<dynamic>;
           _profile = results[2] as Map<String, dynamic>;
+          _rateStatus = nextRateStatus;
+          if (previousRateSetAt != nextRateSetAt &&
+              (nextRateStatus['rateAcceptanceStatus'] ?? '')
+                      .toString()
+                      .toLowerCase() ==
+                  'pending') {
+            _rateDialogShown = false;
+          }
           _isLoading = false;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _showPendingRateDialog();
         });
       } else if (mounted) {
         setState(() => _isLoading = false);
@@ -84,6 +101,217 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       debugPrint('Dashboard error: $e');
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  bool get _canUsePayments => _rateStatus['canWork'] == true;
+
+  String get _rateAcceptanceStatus =>
+      (_rateStatus['rateAcceptanceStatus'] ?? 'pending')
+          .toString()
+          .toLowerCase();
+
+  double get _assignedRate => _toDouble(_rateStatus['providerRate']);
+
+  Future<void> _showPendingRateDialog() async {
+    if (!mounted ||
+        _rateDialogShown ||
+        _doctorId.isEmpty ||
+        _assignedRate <= 0 ||
+        _rateAcceptanceStatus != 'pending' ||
+        (_rateStatus['approvalStatus'] ?? '').toString().toLowerCase() !=
+            'approved') {
+      return;
+    }
+    _rateDialogShown = true;
+    var submitting = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            backgroundColor: _cardColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+            icon: Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.payments_outlined,
+                color: AppColors.primary,
+                size: 30,
+              ),
+            ),
+            title: Text(
+              'Service Rate Approval',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _primaryText,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'The administrator has assigned your service rate. '
+                  'Please review and accept it before continuing.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _secondaryText,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.09),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Assigned Rate',
+                        style: TextStyle(
+                          color: _secondaryText,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '${_assignedRate.toStringAsFixed(2)} ILS',
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 25,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actionsAlignment: MainAxisAlignment.center,
+            actions: [
+              OutlinedButton(
+                onPressed: submitting
+                    ? null
+                    : () async {
+                        setDialogState(() => submitting = true);
+                        final closed = await _submitRateDecision(
+                          'rejected',
+                          dialogContext,
+                        );
+                        if (!closed && dialogContext.mounted) {
+                          setDialogState(() => submitting = false);
+                        }
+                      },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red.shade700,
+                  side: BorderSide(color: Colors.red.shade400),
+                  minimumSize: const Size(120, 46),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                ),
+                child: const Text('Reject'),
+              ),
+              FilledButton(
+                onPressed: submitting
+                    ? null
+                    : () async {
+                        setDialogState(() => submitting = true);
+                        final closed = await _submitRateDecision(
+                          'accepted',
+                          dialogContext,
+                        );
+                        if (!closed && dialogContext.mounted) {
+                          setDialogState(() => submitting = false);
+                        }
+                      },
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  minimumSize: const Size(120, 46),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                ),
+                child: submitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Accept'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _submitRateDecision(
+    String decision,
+    BuildContext dialogContext,
+  ) async {
+    try {
+      final result = await _doctorService.decideRate(_doctorId, decision);
+      if (!mounted) return false;
+      setState(() => _rateStatus = result);
+      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            decision == 'accepted'
+                ? 'Service rate accepted. Payment is now available.'
+                : 'Service rate rejected. Please wait for administrator review.',
+          ),
+        ),
+      );
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+      return false;
+    }
+  }
+
+  void _selectDashboardTab(int index) {
+    if (index == 3 && !_canUsePayments) {
+      final reason =
+          (_rateStatus['reason'] ??
+                  'Accept your assigned service rate before using Payment.')
+              .toString();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(reason)));
+      _showPendingRateDialog();
+      return;
+    }
+    setState(() => _selectedIndex = index);
+    if (index == 0) _loadDashboardData();
   }
 
   int _toInt(dynamic value) {
@@ -376,7 +604,6 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     final pending = _toInt(_stats['pendingRequests']);
     final today = _toInt(_stats['todayAppointments']);
     final patients = _toInt(_stats['totalPatients']);
-    final completed = _toInt(_stats['completedRequests']);
     final earnings = _toDouble(_stats['totalEarnings']);
     final rating = _toDouble(_stats['averageRating']);
 
@@ -419,21 +646,10 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         onTap: () => setState(() => _selectedIndex = 2),
       ),
       _DashboardAction(
-        title: context.dtr('doctor.dashboard.actionReports'),
-        icon: Icons.feed_outlined,
-        subtitle: completed > 0
-            ? context.dtr(
-                'doctor.dashboard.readyCount',
-                args: {'count': '$completed'},
-              )
-            : null,
-        onTap: () => setState(() => _selectedIndex = 4),
-      ),
-      _DashboardAction(
         title: context.dtr('doctor.dashboard.actionEarnings'),
         icon: Icons.account_balance_wallet_rounded,
         subtitle: earnings > 0 ? earnings.toStringAsFixed(0) : null,
-        onTap: () => setState(() => _selectedIndex = 3),
+        onTap: () => _selectDashboardTab(3),
       ),
       _DashboardAction(
         title: context.dtr('doctor.dashboard.actionReviews'),
@@ -444,27 +660,15 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
           MaterialPageRoute(builder: (context) => const DoctorRatingsScreen()),
         ),
       ),
-      _DashboardAction(
-        title: context.dtr('doctor.dashboard.actionRecords'),
-        icon: Icons.folder_rounded,
-        subtitle: patients > 0
-            ? context.dtr(
-                'doctor.dashboard.patientsCount',
-                args: {'count': '$patients'},
-              )
-            : null,
-        onTap: _openRecords,
-      ),
-      _DashboardAction(
-        title: context.dtr('doctor.dashboard.actionMore'),
-        icon: Icons.more_horiz_rounded,
-        onTap: () => setState(() => _selectedIndex = 5),
-      ),
     ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth >= 620 ? 4 : 2;
+        final crossAxisCount = constraints.maxWidth >= 760
+            ? 5
+            : constraints.maxWidth >= 480
+            ? 3
+            : 2;
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -941,10 +1145,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
           borderRadius: BorderRadius.circular(28),
           child: BottomNavigationBar(
             currentIndex: _selectedIndex,
-            onTap: (index) {
-              setState(() => _selectedIndex = index);
-              if (index == 0) _loadDashboardData();
-            },
+            onTap: _selectDashboardTab,
             selectedItemColor: AppColors.primary,
             unselectedItemColor: _secondaryText,
             selectedLabelStyle: const TextStyle(
@@ -1025,6 +1226,8 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     return appointments.isEmpty ? null : appointments.first;
   }
 
+  // Kept for the existing Records flow; its dashboard shortcut is hidden.
+  // ignore: unused_element
   void _openRecords() {
     final appointment = _nextAppointment;
     final patientId = appointment == null

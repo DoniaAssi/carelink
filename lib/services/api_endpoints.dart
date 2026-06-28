@@ -76,6 +76,7 @@ class ApiEndpoints {
   static const String doctorSchedule = '/doctor/schedule';
   static const String doctorRatings = '/doctor/ratings';
   static const String doctorPayments = '/doctor/payments';
+  static const String doctorRateStatus = '/doctor/rate-status';
   static const String doctorDashboard = '/doctor/dashboard';
   static const String doctorInitialDiagnosis = '/doctor/initial-diagnosis';
 }

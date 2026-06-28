@@ -13,7 +13,7 @@ import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
 import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'package:carelink/features/admin/screens/admin_home_screen.dart';
 import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
-import 'package:carelink/features/doctors/doctor/dashboard_screen.dart';
+import 'package:carelink/features/doctors/doctor/doctor_rate_approval_screen.dart';
 import 'forgot_password_sheet.dart';
 import 'signup_screen.dart';
 
@@ -554,10 +554,11 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     final currentUser = User.fromJson(userMap);
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('session_user_id', userId);
     await prefs.setString('session_display_name', userName);
+    if (!mounted) return;
 
     _showMessage(
       successMessage ?? context.tr('auth.loginSuccessful'),
@@ -590,7 +591,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
         if (!mounted) return;
         appNavigatorKey.currentState?.pushReplacement(
-          MaterialPageRoute(builder: (_) => const DoctorDashboardScreen()),
+          MaterialPageRoute(
+            builder: (_) => DoctorRateApprovalScreen(doctorId: userId),
+          ),
         );
         break;
       case 'admin':

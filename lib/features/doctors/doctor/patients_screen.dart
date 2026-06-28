@@ -547,8 +547,6 @@ class _DoctorPatientDetailsScreenState
                         subtitle: 'View patient notes',
                         onTap: _openNotes,
                       ),
-                      const SizedBox(height: 10),
-                      _removeButton(),
                     ],
                   ),
                 ),
@@ -763,31 +761,6 @@ class _DoctorPatientDetailsScreenState
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _removeButton() {
-    return SizedBox(
-      height: 68,
-      child: OutlinedButton.icon(
-        onPressed: null,
-        icon: const Icon(Icons.delete_outline_rounded, size: 30),
-        label: const Text('Remove Patient'),
-        style: ButtonStyle(
-          foregroundColor: WidgetStateProperty.resolveWith(
-            (_) => const Color(0xFFE11D48),
-          ),
-          side: WidgetStateProperty.all(
-            const BorderSide(color: Color(0xFFE11D48), width: 1.3),
-          ),
-          shape: WidgetStateProperty.all(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          ),
-          textStyle: WidgetStateProperty.all(
-            const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
           ),
         ),
       ),

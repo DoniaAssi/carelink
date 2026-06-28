@@ -3,8 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/doctor_service.dart';
 import '../../../core/app_colors.dart';
 import 'doctor_ui_constants.dart';
+import 'doctor_rate_approval_screen.dart';
 import 'pending_approval_screen.dart';
-import 'dashboard_screen.dart';
 
 class DoctorLoginScreen extends StatefulWidget {
   const DoctorLoginScreen({super.key});
@@ -68,7 +68,9 @@ class _DoctorLoginScreenState extends State<DoctorLoginScreen> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => const DoctorDashboardScreen(),
+              builder: (context) => DoctorRateApprovalScreen(
+                doctorId: response['user']['userId'].toString(),
+              ),
             ),
           );
         }

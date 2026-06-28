@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:carelink/core/app_nav.dart';
 import 'package:carelink/features/admin/screens/admin_home_screen.dart';
 import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
-import 'package:carelink/features/doctors/doctor/dashboard_screen.dart';
+import 'package:carelink/features/doctors/doctor/doctor_rate_approval_screen.dart';
 import 'package:carelink/shared/models/user.dart';
 
 /// Same routing as [LoginScreen] after a successful auth response (`user` map).
@@ -58,14 +58,14 @@ void navigateCarelinkHomeForUserMap(Map<String, dynamic> rawUser) async {
       await prefs.setString('doctor_role', role);
 
       nav.pushReplacement(
-        MaterialPageRoute<void>(builder: (_) => const DoctorDashboardScreen()),
+        MaterialPageRoute<void>(
+          builder: (_) => DoctorRateApprovalScreen(doctorId: userId),
+        ),
       );
       break;
     case 'admin':
       nav.pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => AdminHomeScreen(user: user),
-        ),
+        MaterialPageRoute<void>(builder: (_) => AdminHomeScreen(user: user)),
       );
       break;
     default:

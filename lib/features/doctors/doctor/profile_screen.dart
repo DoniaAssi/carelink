@@ -41,9 +41,12 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       _doctorEmail = prefs.getString('doctor_email') ?? '';
 
       final profile = await _doctorService.getProfile(_doctorId);
-      final availability = await _doctorService.getAvailabilityStatus(
-        _doctorId,
-      );
+      Map<String, dynamic> availability = const {};
+      try {
+        availability = await _doctorService.getAvailabilityStatus(_doctorId);
+      } catch (e) {
+        debugPrint('Doctor availability unavailable: $e');
+      }
       Map<String, dynamic> notificationPrefs = const {};
       try {
         notificationPrefs = await _doctorService.getNotificationPreferences(
@@ -52,9 +55,12 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       } catch (e) {
         debugPrint('Doctor notification preferences unavailable: $e');
       }
+      if (!mounted) return;
       setState(() {
         _profile = profile;
-        _isAvailable = availability['isAvailable'] == true;
+        if (availability.containsKey('isAvailable')) {
+          _isAvailable = availability['isAvailable'] == true;
+        }
         _notificationPrefs = {
           'medicalCases': notificationPrefs['medicalCases'] != false,
           'patientUpdates': notificationPrefs['patientUpdates'] != false,
