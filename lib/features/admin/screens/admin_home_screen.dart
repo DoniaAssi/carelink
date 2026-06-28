@@ -3886,7 +3886,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                               ),
                             ),
                             onPressed: () async {
-                              await _setApproval(provider, 'approved');
+                              await _approveReviewedProvider(provider, certs);
                               if (context.mounted) Navigator.pop(context);
                             },
                             child: const Text(
@@ -4087,14 +4087,38 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Future<void> _verifyCertification(String certId) async {
+    await _verifyCertificationRequest(certId);
+    _toast('Certificate verified');
+    await _load();
+  }
+
+  Future<void> _verifyCertificationRequest(String certId) async {
     final response = await http.put(
       _uri('/admin/certifications/$certId/verify'),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(_message(response));
     }
-    _toast('Certificate verified');
-    await _load();
+  }
+
+  Future<void> _approveReviewedProvider(
+    Map<String, dynamic> provider,
+    List<dynamic> certs,
+  ) async {
+    try {
+      for (final cert in certs) {
+        if (cert is! Map<String, dynamic>) continue;
+        final certId = _text(cert['certId']);
+        final alreadyVerified = cert['isVerified'] == true;
+        final isDocumentRow = certId.startsWith('document:');
+        if (certId.isNotEmpty && !alreadyVerified && !isDocumentRow) {
+          await _verifyCertificationRequest(certId);
+        }
+      }
+      await _setApproval(provider, 'approved');
+    } catch (e) {
+      _toast(e.toString());
+    }
   }
 
   String _absoluteUploadUrl(String url) {

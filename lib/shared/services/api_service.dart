@@ -597,6 +597,16 @@ class ApiService {
         body['cvMimeType'] = (cvMimeType ?? 'application/pdf').trim();
         if (cvFileSize != null) body['cvFileSize'] = cvFileSize;
       }
+      if (role == 'doctor' && certificates != null) {
+        final validCertificates = certificates.where((certificate) {
+          final fileName = certificate['fileName']?.toString().trim() ?? '';
+          final fileData = certificate['fileData']?.toString().trim() ?? '';
+          return fileName.isNotEmpty && fileData.isNotEmpty;
+        }).toList();
+        if (validCertificates.isNotEmpty) {
+          body['certificates'] = validCertificates;
+        }
+      }
       if (serviceAreas != null && serviceAreas.trim().isNotEmpty) {
         body['serviceAreas'] = serviceAreas.trim();
       }
@@ -629,7 +639,6 @@ class ApiService {
         headers: _jsonHeaders,
         body: jsonEncode(body),
       ),
-    
     );
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
