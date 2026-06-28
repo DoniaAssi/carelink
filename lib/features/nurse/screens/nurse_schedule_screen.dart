@@ -1049,7 +1049,7 @@ class _NurseSetAvailabilityScreenState
         ),
       ),
     );
-      if (success) Navigator.pop(context, hourlySlots);
+    if (success) Navigator.pop(context, hourlySlots);
   }
 
   Future<void> _saveLocalSlots(List<Map<String, dynamic>> value) async {
