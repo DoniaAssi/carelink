@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
@@ -326,7 +327,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         final palette = CarelinkPalette.of(context);
         return Directionality(
           textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-          child: Scaffold(
+          child: PatientScaffold(
+            enabled: !_isDoctor,
             backgroundColor: palette.pageBg,
             appBar: _buildAppBar(palette),
             body: _buildBody(palette),

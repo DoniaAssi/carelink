@@ -1,8 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
 
 /// After a visit: provider submits structured report (linked to booking when possible).
@@ -104,7 +106,7 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
     final tx = _treatment.text.trim();
     if (dx.isEmpty && tx.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add diagnosis or treatment plan.')),
+        SnackBar(content: Text(context.tr('patient.report.requireClinicalNote'))),
       );
       return;
     }
@@ -114,7 +116,7 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
       vitals = jsonDecode(_vitalsJson.text.trim());
     } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vital signs must be valid JSON.')),
+        SnackBar(content: Text(context.tr('patient.report.invalidVitals'))),
       );
       return;
     }
@@ -150,7 +152,7 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(e.toString())));
+        ).showSnackBar(SnackBar(content: Text(context.l10n.userMessage(e))));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -159,12 +161,12 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PatientScaffold(
       backgroundColor: _bg,
       appBar: AppBar(
         backgroundColor: _primary,
         foregroundColor: Colors.white,
-        title: const Text('Visit report'),
+        title: Text(context.tr('patient.report.title')),
       ),
       body: Form(
         key: _formKey,
@@ -173,21 +175,21 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
           children:
               [
                     Text(
-                      'Patient: ${widget.patientUserId}',
+                      '${context.tr('patient.report.patient')}: ${widget.patientUserId}',
                       style: TextStyle(color: _muted),
                     ),
                     if (widget.appointmentId != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Text(
-                          'Appointment: ${widget.appointmentId}',
+                          '${context.tr('patient.report.appointment')}: ${widget.appointmentId}',
                           style: TextStyle(fontSize: 12, color: _muted),
                         ),
                       ),
                     TextFormField(
                       controller: _visitDate,
                       readOnly: true,
-                      decoration: _dec('Visit date').copyWith(
+                      decoration: _dec(context.tr('patient.report.visitDate')).copyWith(
                         suffixIcon: IconButton(
                           icon: const Icon(Icons.calendar_month),
                           onPressed: _pickVisitDate,
@@ -196,17 +198,17 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
                     ),
                     TextFormField(
                       controller: _medicationsPrescribed,
-                      decoration: _dec('Medications prescribed (optional)'),
+                      decoration: _dec(context.tr('patient.report.medications')),
                       maxLines: 3,
                     ),
                     TextFormField(
                       controller: _allergiesNoted,
-                      decoration: _dec('Allergies noted this visit (optional)'),
+                      decoration: _dec(context.tr('patient.report.allergies')),
                       maxLines: 2,
                     ),
                     TextFormField(
                       controller: _vitalsJson,
-                      decoration: _dec('Vital signs (JSON)'),
+                      decoration: _dec(context.tr('patient.report.vitals')),
                       maxLines: 4,
                       style: const TextStyle(
                         fontFamily: 'monospace',
@@ -215,24 +217,24 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
                     ),
                     TextFormField(
                       controller: _diagnosis,
-                      decoration: _dec('Diagnosis'),
+                      decoration: _dec(context.tr('patient.report.diagnosis')),
                       maxLines: 3,
                     ),
                     TextFormField(
                       controller: _treatment,
-                      decoration: _dec('Treatment plan'),
+                      decoration: _dec(context.tr('patient.report.treatment')),
                       maxLines: 4,
                     ),
                     TextFormField(
                       controller: _recommendations,
-                      decoration: _dec('Recommendations'),
+                      decoration: _dec(context.tr('patient.report.recommendations')),
                       maxLines: 3,
                     ),
                     SwitchListTile(
                       value: _followRequired,
                       onChanged: (v) => setState(() => _followRequired = v),
                       title: Text(
-                        'Follow-up required',
+                        context.tr('patient.report.followRequired'),
                         style: TextStyle(color: _ink),
                       ),
                       activeThumbColor: _primary,
@@ -240,7 +242,7 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
                     TextFormField(
                       controller: _followUp,
                       readOnly: true,
-                      decoration: _dec('Follow-up date').copyWith(
+                      decoration: _dec(context.tr('patient.report.followDate')).copyWith(
                         suffixIcon: IconButton(
                           icon: const Icon(Icons.calendar_month),
                           onPressed: _pickFollowUp,
@@ -263,7 +265,7 @@ class _AddVisitReportScreenState extends State<AddVisitReportScreen> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Text('Submit report'),
+                          : Text(context.tr('patient.report.submit')),
                     ),
                   ]
                   .map(

@@ -51,8 +51,57 @@ const BOOKING_STATUSES = [
   'confirmed',
   'completed',
   'cancelled',
+  'expired',
+  'missed',
+  'pending_completion',
 ];
 const PAYMENT_STATUSES = ['unpaid', 'pending', 'paid', 'failed', 'refunded'];
+const BEFORE_PROVIDER_APPROVAL_STATUSES = new Set([
+  'pending_provider_approval',
+  'waiting',
+  'pending',
+  'awaiting_provider_approval',
+  'waiting_provider_response',
+  'waiting response',
+  'requested',
+  'request_sent',
+  'new',
+  'pending_payment',
+  'payment_pending',
+]);
+const AFTER_PROVIDER_APPROVAL_STATUSES = new Set([
+  'accepted',
+  'confirmed',
+  'paid',
+  'in_progress',
+  'provider_approved',
+  'approved',
+  'scheduled',
+]);
+const COMPLETED_BOOKING_STATUSES = new Set(['completed', 'done']);
+const EXPIRING_REQUEST_STATUSES = new Set([
+  'pending_provider_approval',
+  'waiting',
+  'pending',
+  'awaiting_provider_approval',
+  'waiting_provider_response',
+  'waiting response',
+  'requested',
+  'request_sent',
+  'new',
+]);
+const MISSABLE_BOOKING_STATUSES = new Set([
+  'pending_payment',
+  'payment_pending',
+  'accepted',
+  'confirmed',
+  'paid',
+  'provider_approved',
+  'approved',
+  'scheduled',
+  'upcoming',
+]);
+const PENDING_COMPLETION_STATUSES = new Set(['in_progress', 'waiting_report']);
 const columnCache = new Map();
 const tableCache = new Map();
 
@@ -265,6 +314,234 @@ function chatMessageSelect() {
 
 function normalizeChatId(value) {
   return (value || '').toString().trim();
+}
+
+async function reconcilePastPatientAppointments({ patientUserId, appointmentId } = {}) {
+  if (!patientUserId && !appointmentId) return;
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const filters = ['sr.scheduledAt < NOW()'];
+    const params = [];
+    if (patientUserId) {
+      filters.push('BINARY sr.patientUserId = BINARY ?');
+      params.push(patientUserId);
+    }
+    if (appointmentId) {
+      filters.push('BINARY sr.requestId = BINARY ?');
+      params.push(appointmentId);
+    }
+
+    const relevantStatuses = [
+      ...EXPIRING_REQUEST_STATUSES,
+      ...MISSABLE_BOOKING_STATUSES,
+      ...PENDING_COMPLETION_STATUSES,
+    ];
+    const [rows] = await connection.query(
+      `SELECT sr.requestId, sr.patientUserId, sr.providerUserId,
+              sr.status AS bookingStatus, p.paymentId, p.amount,
+              p.final_amount AS finalAmount, p.provider_amount AS providerAmount,
+              p.admin_amount AS adminAmount, p.paymentStatus,
+              p.status AS escrowStatus
+       FROM servicerequest sr
+       LEFT JOIN payment p ON BINARY p.requestId = BINARY sr.requestId
+       WHERE ${filters.join(' AND ')}
+         AND LOWER(TRIM(CAST(sr.status AS CHAR(64)))) IN
+             (${relevantStatuses.map(() => '?').join(', ')})
+       FOR UPDATE`,
+      [...params, ...relevantStatuses],
+    );
+
+    for (const row of rows) {
+      const status = (row.bookingStatus || '').toString().trim().toLowerCase();
+
+      if (PENDING_COMPLETION_STATUSES.has(status)) {
+        // Keep the provider-actionable raw state intact. Patient responses
+        // render a past in-progress/waiting-report visit as Pending Completion
+        // until the provider or system explicitly confirms completion.
+        continue;
+      }
+
+      if (MISSABLE_BOOKING_STATUSES.has(status)) {
+        // TODO(admin): review missed/no-show evidence, decide any refund, settle
+        // patient/provider/admin shares, and resolve disputes. No automatic refund.
+        await connection.execute(
+          `UPDATE servicerequest SET status = 'missed'
+           WHERE BINARY requestId = BINARY ?`,
+          [row.requestId],
+        );
+        continue;
+      }
+
+      if (!EXPIRING_REQUEST_STATUSES.has(status)) continue;
+
+      const paymentStatus = (row.paymentStatus || '').toString().trim().toLowerCase();
+      if (row.paymentId && paymentStatus === 'paid') {
+        const [ledgerRows] = await connection.query(
+          `SELECT provider_share AS providerShare, admin_share AS adminShare
+           FROM transaction_log
+           WHERE BINARY transactionId = BINARY ?
+           FOR UPDATE`,
+          [row.paymentId],
+        );
+        const escrowStatus = (row.escrowStatus || '').toString().trim().toLowerCase();
+        const financeWasCredited =
+          ledgerRows.length > 0 ||
+          escrowStatus === 'paid_to_admin' ||
+          escrowStatus === 'transferred_to_provider';
+        const providerCredit = financeWasCredited
+          ? Number(ledgerRows[0]?.providerShare ?? row.providerAmount ?? 0)
+          : 0;
+        const adminCredit = financeWasCredited
+          ? Number(ledgerRows[0]?.adminShare ?? row.adminAmount ?? 0)
+          : 0;
+
+        if (providerCredit > 0) {
+          const walletColumn = escrowStatus === 'transferred_to_provider'
+            ? 'paid_amount'
+            : 'pending_amount';
+          await connection.execute(
+            `UPDATE provider_wallet
+             SET total_earned = GREATEST(0, total_earned - ?),
+                 ${walletColumn} = GREATEST(0, ${walletColumn} - ?)
+             WHERE BINARY providerId = BINARY ?`,
+            [providerCredit, providerCredit, row.providerUserId],
+          );
+        }
+        if (adminCredit > 0) {
+          await connection.execute(
+            `UPDATE admin_wallet
+             SET total_income = GREATEST(0, total_income - ?)
+             WHERE id = 1`,
+            [adminCredit],
+          );
+        }
+        if (ledgerRows.length > 0) {
+          await connection.execute(
+            `UPDATE transaction_log
+             SET provider_share = 0, admin_share = 0
+             WHERE BINARY transactionId = BINARY ?`,
+            [row.paymentId],
+          );
+        }
+
+        await connection.execute(
+          `UPDATE payment
+           SET paymentStatus = 'refunded',
+               final_amount = COALESCE(final_amount, amount),
+               provider_amount = 0,
+               admin_amount = 0,
+               status = 'pending',
+               updatedAt = NOW()
+           WHERE BINARY paymentId = BINARY ?`,
+          [row.paymentId],
+        );
+        await connection.execute(
+          `UPDATE servicerequest
+           SET status = 'expired', paymentStatus = 'refunded'
+           WHERE BINARY requestId = BINARY ?`,
+          [row.requestId],
+        );
+      } else {
+        await connection.execute(
+          `UPDATE servicerequest SET status = 'expired'
+           WHERE BINARY requestId = BINARY ?`,
+          [row.requestId],
+        );
+      }
+    }
+
+    await connection.commit();
+  } catch (error) {
+    try {
+      await connection.rollback();
+    } catch (_) {}
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+const CHAT_REQUEST_STATUSES = [
+  'pending_provider_approval',
+  'pending',
+  'accepted',
+  'confirmed',
+  'paid',
+  'in_progress',
+  'completed',
+];
+
+async function getEligibleChatRequest(userA, userB, requestId = '') {
+  const normalizedRequestId = normalizeChatId(requestId);
+  const placeholders = CHAT_REQUEST_STATUSES.map(() => '?').join(', ');
+  const params = [
+    userA,
+    userB,
+    userB,
+    userA,
+    ...CHAT_REQUEST_STATUSES,
+  ];
+  let requestSql = '';
+  if (normalizedRequestId) {
+    requestSql = 'AND BINARY requestId = BINARY ?';
+    params.push(normalizedRequestId);
+  }
+  const [rows] = await db.query(
+    `SELECT requestId, patientUserId, providerUserId, status
+     FROM servicerequest
+     WHERE (
+       (BINARY patientUserId = BINARY ? AND BINARY providerUserId = BINARY ?)
+       OR
+       (BINARY patientUserId = BINARY ? AND BINARY providerUserId = BINARY ?)
+     )
+       AND LOWER(TRIM(status)) IN (${placeholders})
+       ${requestSql}
+     ORDER BY scheduledAt DESC
+     LIMIT 1`,
+    params
+  );
+  return rows[0] || null;
+}
+
+async function getOrCreateChatConversation(chatRequest) {
+  const { requestId, patientUserId, providerUserId } = chatRequest;
+  const [existing] = await db.query(
+    `SELECT * FROM chatconversation
+     WHERE BINARY patientId = BINARY ?
+       AND BINARY nurseId = BINARY ?
+       AND BINARY requestId = BINARY ?
+     LIMIT 1`,
+    [patientUserId, providerUserId, requestId]
+  );
+  if (existing[0]) return existing[0];
+
+  const conversationId = randomUUID();
+  await db.query(
+    `INSERT INTO chatconversation
+     (conversationId, patientId, nurseId, requestId, appointmentId, visitId,
+      createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    [
+      conversationId,
+      patientUserId,
+      providerUserId,
+      requestId,
+      requestId,
+      requestId,
+    ]
+  );
+  return {
+    conversationId,
+    patientId: patientUserId,
+    nurseId: providerUserId,
+    requestId,
+    appointmentId: requestId,
+    visitId: requestId,
+    lastMessage: null,
+    lastMessageAt: null,
+  };
 }
 
 async function getConversationForUser(conversationId, userId) {
@@ -1106,7 +1383,9 @@ router.get('/appointments/check-duplicate', async (req, res) => {
          AND LOWER(TRIM(serviceType)) = LOWER(TRIM(?))
          AND scheduledAt = ?
          AND LOWER(TRIM(CAST(status AS CHAR(64)))) IN
-           ('pending_provider_approval', 'pending', 'pending_payment', 'payment_pending', 'confirmed')
+           ('pending_provider_approval', 'pending', 'pending_payment', 'payment_pending',
+            'confirmed', 'accepted', 'approved', 'scheduled', 'in_progress',
+            'waiting_report')
        LIMIT 1`,
       [patientId, providerId, (serviceType || 'appointment').toString(), scheduledAt]
     );
@@ -1126,6 +1405,7 @@ router.get('/appointments/upcoming/:patientUserId', async (req, res) => {
   });
 
   try {
+    await reconcilePastPatientAppointments({ patientUserId });
     const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
     const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
     const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
@@ -1197,6 +1477,7 @@ router.get('/appointments/history/:patientUserId', async (req, res) => {
   });
 
   try {
+    await reconcilePastPatientAppointments({ patientUserId });
     const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
     const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
     const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
@@ -1240,7 +1521,8 @@ router.get('/appointments/history/:patientUserId', async (req, res) => {
        LEFT JOIN user u ON sr.providerUserId = u.userId
        LEFT JOIN careprovider c ON u.userId = c.userId
        WHERE TRIM(sr.patientUserId) = TRIM(?)
-         AND ${normStatusSql} IN ('completed', 'cancelled', 'canceled')
+         AND ${normStatusSql} IN
+           ('completed', 'cancelled', 'canceled', 'expired', 'missed', 'pending_completion')
        ORDER BY COALESCE(sr.completedAt, sr.scheduledAt) DESC, sr.scheduledAt DESC`,
       [patientUserId]
     );
@@ -1274,6 +1556,7 @@ router.get('/appointments/:patientUserId', async (req, res) => {
   });
 
   try {
+    await reconcilePastPatientAppointments({ patientUserId });
     const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
     const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
     const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
@@ -1350,6 +1633,7 @@ router.get('/appointments/details/:appointmentId', async (req, res) => {
   const { appointmentId } = req.params;
 
   try {
+    await reconcilePastPatientAppointments({ appointmentId });
     const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
     const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
     const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
@@ -1520,6 +1804,13 @@ router.post('/appointments', async (req, res) => {
     return res.status(400).json({ error: 'Invalid appointment date or time' });
   }
 
+  const [pastRows] = await db.query('SELECT ? <= NOW() AS isPast', [scheduledAt]);
+  if (Number(pastRows[0]?.isPast) === 1) {
+    return res.status(400).json({
+      error: 'Appointments cannot be booked in the past.',
+    });
+  }
+
   try {
     const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
     const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
@@ -1532,6 +1823,57 @@ router.post('/appointments', async (req, res) => {
     const hasPaymentStatus = await hasColumn('servicerequest', 'paymentStatus');
 
     const hasUrgencyLevel = await hasColumn('servicerequest', 'urgencyLevel');
+
+    // Payment retries must be idempotent. If this exact booking already
+    // exists, reuse it and update payment fields only instead of attempting
+    // to insert a duplicate service request.
+    const requestedPaymentStatus = (paymentStatus || '')
+      .toString()
+      .trim()
+      .toLowerCase();
+    const [existingRequests] = await db.query(
+      `SELECT requestId, status
+       FROM servicerequest
+       WHERE BINARY patientUserId = BINARY ?
+         AND BINARY providerUserId = BINARY ?
+         AND scheduledAt = ?
+         AND LOWER(TRIM(CAST(status AS CHAR(64)))) IN
+           ('pending_provider_approval', 'pending', 'pending_payment',
+            'payment_pending', 'confirmed', 'accepted')
+       ORDER BY scheduledAt DESC
+       LIMIT 1`,
+      [patientUserId, finalDoctorUserId, scheduledAt]
+    );
+    if (existingRequests.length > 0 && requestedPaymentStatus === 'paid') {
+      const existing = existingRequests[0];
+      const updates = [];
+      const values = [];
+      if (hasPaymentMethod) {
+        updates.push('paymentMethod = ?');
+        values.push((paymentMethod || 'mock_card').toString().trim().toLowerCase());
+      }
+      if (hasPaymentStatus) {
+        updates.push('paymentStatus = ?');
+        values.push('paid');
+      }
+      if (updates.length > 0) {
+        values.push(existing.requestId);
+        await db.query(
+          `UPDATE servicerequest SET ${updates.join(', ')}
+           WHERE BINARY requestId = BINARY ?`,
+          values
+        );
+      }
+      return res.status(200).json({
+        success: true,
+        existing: true,
+        message: 'تم الدفع بنجاح',
+        appointmentId: existing.requestId,
+        requestId: existing.requestId,
+        status: existing.status,
+        paymentStatus: 'paid'
+      });
+    }
 
     const [availableSlots] = await db.query(
       `SELECT 1
@@ -1973,35 +2315,296 @@ router.put('/appointments/:appointmentId/cancel', async (req, res) => {
   }
 
   try {
-    const [rows] = await db.query(
-      `SELECT requestId, status
-       FROM servicerequest
-       WHERE requestId = ? AND patientUserId = ?`,
-      [appointmentId, patientUserId]
+    await reconcilePastPatientAppointments({ patientUserId, appointmentId });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.query(
+      `SELECT
+         sr.requestId,
+         sr.status AS bookingStatus,
+         sr.scheduledAt,
+         (sr.scheduledAt <= NOW()) AS appointmentPassed,
+         sr.providerUserId,
+         p.paymentId,
+         p.amount,
+         p.final_amount AS finalAmount,
+         p.provider_amount AS providerAmount,
+         p.admin_amount AS adminAmount,
+         p.paymentStatus,
+         p.status AS escrowStatus
+       FROM servicerequest sr
+       LEFT JOIN payment p ON BINARY p.requestId = BINARY sr.requestId
+       WHERE BINARY sr.requestId = BINARY ?
+         AND BINARY sr.patientUserId = BINARY ?
+       FOR UPDATE`,
+      [appointmentId, patientUserId],
     );
 
     if (rows.length === 0) {
+      await connection.rollback();
       return res.status(404).json({ error: 'Appointment not found' });
     }
 
     const current = rows[0];
-    if (!['pending', 'pending_payment', 'payment_pending', 'confirmed'].includes(current.status)) {
+    const bookingStatus = (current.bookingStatus || '').toString().trim().toLowerCase();
+    const paymentStatus = (current.paymentStatus || '').toString().trim().toLowerCase();
+    const totalCents = Math.max(
+      0,
+      Math.round(Number(current.finalAmount ?? current.amount ?? 0) * 100),
+    );
+    const existingProviderCents = Math.max(
+      0,
+      Math.round(Number(current.providerAmount || 0) * 100),
+    );
+    const existingAdminCents = Math.max(
+      0,
+      Math.round(Number(current.adminAmount || 0) * 100),
+    );
+
+    const responseForExistingCancellation = () => {
+      const providerShare = existingProviderCents / 100;
+      const adminShare = existingAdminCents / 100;
+      const refundAmount = Math.max(
+        0,
+        (totalCents - existingProviderCents - existingAdminCents) / 100,
+      );
+      return {
+        success: true,
+        alreadyCancelled: true,
+        appointmentId,
+        bookingStatus: 'cancelled',
+        paymentStatus: current.paymentStatus || null,
+        totalAmount: totalCents / 100,
+        refundAmount: paymentStatus === 'refunded' ? refundAmount : 0,
+        providerShare: paymentStatus === 'refunded' ? providerShare : 0,
+        adminShare: paymentStatus === 'refunded' ? adminShare : 0,
+        refundApplied: paymentStatus === 'refunded',
+        message: 'Appointment was already cancelled',
+      };
+    };
+
+    if (bookingStatus === 'cancelled' || bookingStatus === 'canceled') {
+      await connection.commit();
+      return res.json(responseForExistingCancellation());
+    }
+
+    if (COMPLETED_BOOKING_STATUSES.has(bookingStatus)) {
+      await connection.rollback();
       return res.status(409).json({
-        error: 'Only active appointments can be cancelled'
+        error: 'Completed visits cannot be cancelled or refunded',
       });
     }
 
-    await db.execute(
-      `UPDATE servicerequest
-       SET status = 'cancelled',
-           notes = CONCAT(COALESCE(notes, ''), ?)
-       WHERE requestId = ?`,
-      [reason ? `\nCancelled: ${reason}` : '\nCancelled by patient', appointmentId]
+    if (
+      Number(current.appointmentPassed) === 1 ||
+      ['expired', 'missed', 'pending_completion'].includes(bookingStatus)
+    ) {
+      await connection.rollback();
+      return res.status(409).json({
+        error: bookingStatus === 'expired'
+          ? 'This request expired because the provider did not approve it in time. A full refund applies.'
+          : bookingStatus === 'missed'
+            ? 'A missed appointment cannot be cancelled. Its payment remains held for admin review.'
+            : 'Appointments cannot be cancelled after their scheduled time.',
+      });
+    }
+
+    const beforeApproval = BEFORE_PROVIDER_APPROVAL_STATUSES.has(bookingStatus);
+    const afterApproval = AFTER_PROVIDER_APPROVAL_STATUSES.has(bookingStatus);
+    if (!beforeApproval && !afterApproval) {
+      await connection.rollback();
+      return res.status(409).json({
+        error: `Booking status '${bookingStatus || 'unknown'}' cannot be cancelled`,
+      });
+    }
+
+    const cancellationNote = reason
+      ? `\nCancelled: ${reason}`
+      : '\nCancelled by patient';
+
+    if (!current.paymentId || paymentStatus !== 'paid') {
+      await connection.execute(
+        `UPDATE servicerequest
+         SET status = 'cancelled',
+             cancelledAt = COALESCE(cancelledAt, NOW()),
+             notes = CONCAT(COALESCE(notes, ''), ?)
+         WHERE BINARY requestId = BINARY ?`,
+        [cancellationNote, appointmentId],
+      );
+      await connection.commit();
+      return res.json({
+        success: true,
+        appointmentId,
+        bookingStatus: 'cancelled',
+        paymentStatus: current.paymentStatus || null,
+        totalAmount: totalCents / 100,
+        refundAmount: 0,
+        providerShare: 0,
+        adminShare: 0,
+        refundApplied: false,
+        message: 'Appointment cancelled; no paid payment required a refund',
+      });
+    }
+
+    // Patient cancellation before the appointment: 80% patient refund,
+    // 10% provider fee, and 10% admin fee. Expired requests are reconciled
+    // separately above and always receive a full refund with no fee split.
+    const targetProviderCents = Math.round(totalCents * 0.10);
+    const targetAdminCents = Math.round(totalCents * 0.10);
+    const refundCents = Math.max(
+      0,
+      totalCents - targetProviderCents - targetAdminCents,
+    );
+    const targetProviderShare = targetProviderCents / 100;
+    const targetAdminShare = targetAdminCents / 100;
+
+    const [ledgerRows] = await connection.query(
+      `SELECT provider_share AS providerShare, admin_share AS adminShare
+       FROM transaction_log
+       WHERE BINARY transactionId = BINARY ?
+       FOR UPDATE`,
+      [current.paymentId],
+    );
+    const escrowStatus = (current.escrowStatus || '').toString().trim().toLowerCase();
+    const financeWasCredited =
+      ledgerRows.length > 0 ||
+      escrowStatus === 'paid_to_admin' ||
+      escrowStatus === 'transferred_to_provider';
+    const creditedProviderCents = financeWasCredited
+      ? Math.max(
+          0,
+          Math.round(
+            Number(
+              ledgerRows[0]?.providerShare ?? current.providerAmount ?? 0,
+            ) * 100,
+          ),
+        )
+      : 0;
+    const creditedAdminCents = financeWasCredited
+      ? Math.max(
+          0,
+          Math.round(
+            Number(ledgerRows[0]?.adminShare ?? current.adminAmount ?? 0) * 100,
+          ),
+        )
+      : 0;
+    const providerDelta = (targetProviderCents - creditedProviderCents) / 100;
+    const adminDelta = (targetAdminCents - creditedAdminCents) / 100;
+
+    await connection.execute(
+      `INSERT INTO provider_wallet
+         (providerId, total_earned, pending_amount, paid_amount)
+       VALUES (?, 0, 0, 0)
+       ON DUPLICATE KEY UPDATE providerId = VALUES(providerId)`,
+      [current.providerUserId],
+    );
+    if (escrowStatus === 'transferred_to_provider') {
+      await connection.execute(
+        `UPDATE provider_wallet
+         SET total_earned = GREATEST(0, total_earned + ?),
+             paid_amount = GREATEST(0, paid_amount + ?)
+         WHERE BINARY providerId = BINARY ?`,
+        [providerDelta, providerDelta, current.providerUserId],
+      );
+    } else {
+      await connection.execute(
+        `UPDATE provider_wallet
+         SET total_earned = GREATEST(0, total_earned + ?),
+             pending_amount = GREATEST(0, pending_amount + ?)
+         WHERE BINARY providerId = BINARY ?`,
+        [providerDelta, providerDelta, current.providerUserId],
+      );
+    }
+
+    await connection.execute(
+      `INSERT INTO admin_wallet (id, total_income)
+       VALUES (1, 0)
+       ON DUPLICATE KEY UPDATE id = VALUES(id)`,
+    );
+    await connection.execute(
+      `UPDATE admin_wallet
+       SET total_income = GREATEST(0, total_income + ?)
+       WHERE id = 1`,
+      [adminDelta],
     );
 
-    res.json({ message: 'Appointment cancelled successfully' });
+    await connection.execute(
+      `INSERT INTO transaction_log
+         (transactionId, providerId, patientId, total_amount,
+          admin_share, provider_share, type, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, 'payment', NOW())
+       ON DUPLICATE KEY UPDATE
+         providerId = VALUES(providerId),
+         patientId = VALUES(patientId),
+         total_amount = VALUES(total_amount),
+         admin_share = VALUES(admin_share),
+         provider_share = VALUES(provider_share)`,
+      [
+        current.paymentId,
+        current.providerUserId,
+        patientUserId,
+        totalCents / 100,
+        targetAdminShare,
+        targetProviderShare,
+      ],
+    );
+
+    await connection.execute(
+      `UPDATE payment
+       SET paymentStatus = 'refunded',
+           final_amount = ?,
+           provider_amount = ?,
+           admin_amount = ?,
+           status = ?,
+           updatedAt = NOW()
+       WHERE BINARY paymentId = BINARY ?`,
+      [
+        totalCents / 100,
+        targetProviderShare,
+        targetAdminShare,
+        targetProviderCents > 0 || targetAdminCents > 0
+          ? 'paid_to_admin'
+          : 'pending',
+        current.paymentId,
+      ],
+    );
+    await connection.execute(
+      `UPDATE servicerequest
+       SET status = 'cancelled',
+           cancelledAt = COALESCE(cancelledAt, NOW()),
+           paymentStatus = 'refunded',
+           notes = CONCAT(COALESCE(notes, ''), ?)
+       WHERE BINARY requestId = BINARY ?`,
+      [cancellationNote, appointmentId],
+    );
+
+    await connection.commit();
+    return res.json({
+      success: true,
+      appointmentId,
+      originalBookingStatus: bookingStatus,
+      bookingStatus: 'cancelled',
+      paymentStatus: 'refunded',
+      refundPolicy: 'patient_cancellation_80_percent',
+      totalAmount: totalCents / 100,
+      refundAmount: refundCents / 100,
+      providerShare: targetProviderShare,
+      adminShare: targetAdminShare,
+      refundApplied: true,
+      message: 'Appointment cancelled and refund recorded successfully',
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    try {
+      await connection.rollback();
+    } catch (_) {}
+    return res.status(500).json({ error: err.message });
+  } finally {
+    connection.release();
   }
 });
 router.put('/appointments/:appointmentId/change-provider', async (req, res) => {
@@ -2168,39 +2771,17 @@ router.post('/chat/conversations/get-or-create', async (req, res) => {
 
   try {
     await ensureChatSchema();
-    const [existing] = await db.query(
-      `SELECT * FROM chatconversation
-       WHERE BINARY nurseId = BINARY ?
-         AND BINARY patientId = BINARY ?
-         AND BINARY requestId = BINARY ?
-       LIMIT 1`,
-      [nurseId, patientId, requestId]
+    const chatRequest = await getEligibleChatRequest(
+      patientId,
+      nurseId,
+      requestId
     );
-
-    let conversation = existing[0];
-    if (!conversation) {
-      const conversationId = randomUUID();
-      await db.query(
-        `INSERT INTO chatconversation
-         (conversationId, patientId, nurseId, requestId, appointmentId, visitId,
-          createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-        [conversationId, patientId, nurseId, requestId, appointmentId, visitId]
-      );
-      conversation = {
-        conversationId,
-        patientId,
-        nurseId,
-        requestId,
-        appointmentId,
-        visitId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        lastMessage: null,
-        lastMessageAt: null,
-        lastSenderId: null,
-      };
+    if (!chatRequest || chatRequest.patientUserId !== patientId) {
+      return res.status(403).json({
+        error: 'An eligible service request is required for chat',
+      });
     }
+    const conversation = await getOrCreateChatConversation(chatRequest);
 
     const meta = await getConversationMeta(conversation);
     res.json({ ...conversation, patient: meta.patient, nurse: meta.nurse });
@@ -2331,6 +2912,16 @@ router.post('/chat/conversations/:conversationId/messages', async (req, res) => 
     if (![conversation.patientId, conversation.nurseId].includes(receiverId)) {
       return res.status(403).json({ error: 'Receiver is not in conversation' });
     }
+    const chatRequest = await getEligibleChatRequest(
+      conversation.patientId,
+      conversation.nurseId,
+      conversation.requestId
+    );
+    if (!chatRequest) {
+      return res.status(403).json({
+        error: 'An eligible service request is required for chat',
+      });
+    }
 
     if (clientMessageId) {
       const [dupes] = await db.query(
@@ -2423,31 +3014,71 @@ router.get('/messages/:userId', async (req, res) => {
 
   try {
     await ensureChatSchema();
+    const hasProfileImageUrl = await hasColumn('user', 'profileImageUrl');
     const [rows] = await db.query(
       `SELECT
+          sr.requestId,
+          sr.patientUserId,
+          sr.providerUserId,
+          sr.status AS requestStatus,
           c.conversationId,
-          CASE WHEN c.patientId = ? THEN c.nurseId ELSE c.patientId END AS doctorId,
-          CASE WHEN c.patientId = ? THEN c.nurseId ELSE c.patientId END AS providerId,
-          CASE WHEN c.patientId = ? THEN nurse.fullName ELSE patient.fullName END AS doctorName,
-          CASE WHEN c.patientId = ? THEN nurse.fullName ELSE patient.fullName END AS name,
+          sr.providerUserId AS doctorId,
+          provider.fullName AS providerName,
+          provider.fullName AS doctorName,
+          provider.fullName AS name,
+          provider.role AS providerRole,
           cp.specialization,
-          COALESCE(c.lastMessage, '') AS lastMessage,
-          COALESCE(c.lastMessageAt, c.updatedAt) AS sentAt,
+          cp.specialization AS providerSpecialization,
+          ${hasProfileImageUrl ? 'provider.profileImageUrl' : 'NULL AS profileImageUrl'},
+          ${hasProfileImageUrl ? 'provider.profileImageUrl' : 'NULL AS providerImage'},
+          COALESCE(latest.message, c.lastMessage, '') AS lastMessage,
+          COALESCE(latest.message, c.lastMessage, '') AS message,
+          COALESCE(latest.sentAt, latest.createdAt, c.lastMessageAt) AS lastMessageAt,
+          COALESCE(latest.sentAt, latest.createdAt, c.lastMessageAt) AS sentAt,
           (
             SELECT COUNT(*)
             FROM message m
-            WHERE BINARY m.conversationId = BINARY c.conversationId
+            WHERE (
+                BINARY m.conversationId = BINARY c.conversationId
+                OR (
+                  m.conversationId IS NULL
+                  AND ((BINARY m.senderId = BINARY sr.patientUserId
+                    AND BINARY m.receiverId = BINARY sr.providerUserId)
+                  OR (BINARY m.senderId = BINARY sr.providerUserId
+                    AND BINARY m.receiverId = BINARY sr.patientUserId))
+                )
+              )
               AND BINARY m.receiverId = BINARY ?
               AND m.readAt IS NULL
           ) AS unreadCount
-       FROM chatconversation c
-       LEFT JOIN user patient ON BINARY patient.userId = BINARY c.patientId
-       LEFT JOIN user nurse ON BINARY nurse.userId = BINARY c.nurseId
+       FROM servicerequest sr
+       LEFT JOIN chatconversation c
+         ON BINARY c.requestId = BINARY sr.requestId
+       AND BINARY c.patientId = BINARY sr.patientUserId
+        AND BINARY c.nurseId = BINARY sr.providerUserId
+       LEFT JOIN message latest
+         ON BINARY latest.messageId = BINARY (
+           SELECT m2.messageId
+           FROM message m2
+           WHERE BINARY m2.conversationId = BINARY c.conversationId
+              OR (
+                m2.conversationId IS NULL
+                AND ((BINARY m2.senderId = BINARY sr.patientUserId
+                  AND BINARY m2.receiverId = BINARY sr.providerUserId)
+                OR (BINARY m2.senderId = BINARY sr.providerUserId
+                  AND BINARY m2.receiverId = BINARY sr.patientUserId))
+              )
+           ORDER BY COALESCE(m2.sentAt, m2.createdAt) DESC
+           LIMIT 1
+         )
+       LEFT JOIN user provider
+         ON BINARY provider.userId = BINARY sr.providerUserId
        LEFT JOIN careprovider cp
-         ON BINARY cp.userId = BINARY (CASE WHEN BINARY c.patientId = BINARY ? THEN c.nurseId ELSE c.patientId END)
-       WHERE BINARY c.patientId = BINARY ? OR BINARY c.nurseId = BINARY ?
-       ORDER BY COALESCE(c.lastMessageAt, c.updatedAt) DESC`,
-      [userId, userId, userId, userId, userId, userId, userId, userId]
+         ON BINARY cp.userId = BINARY sr.providerUserId
+       WHERE BINARY sr.patientUserId = BINARY ?
+         AND LOWER(TRIM(sr.status)) IN (${CHAT_REQUEST_STATUSES.map(() => '?').join(', ')})
+       ORDER BY lastMessageAt IS NULL, lastMessageAt DESC, sr.scheduledAt DESC`,
+      [userId, userId, ...CHAT_REQUEST_STATUSES]
     );
 
     res.json(rows);
@@ -2459,9 +3090,17 @@ router.get('/messages/:userId', async (req, res) => {
 router.get('/chat/:userId/:doctorId', async (req, res) => {
   const { userId, doctorId } = req.params;
   const viewerId = (req.query.viewerId || userId).toString().trim();
+  const requestId = normalizeChatId(req.query.requestId);
 
   try {
     await ensureChatSchema();
+    const chatRequest = await getEligibleChatRequest(userId, doctorId, requestId);
+    if (!chatRequest) {
+      return res.status(403).json({
+        error: 'An eligible service request is required for chat',
+      });
+    }
+    const conversation = await getOrCreateChatConversation(chatRequest);
     await touchChatPresence(viewerId);
     await db.query(
       `UPDATE message
@@ -2469,22 +3108,24 @@ router.get('/chat/:userId/:doctorId', async (req, res) => {
            readAt = COALESCE(readAt, NOW()),
            isRead = 1
        WHERE BINARY receiverId = BINARY ?
-         AND (BINARY senderId = BINARY ? OR BINARY senderId = BINARY ?)
+         AND BINARY conversationId = BINARY ?
          AND readAt IS NULL`,
-      [viewerId, userId, doctorId]
+      [viewerId, conversation.conversationId]
     );
 
     const [rows] = await db.query(
       `
       SELECT ${chatMessageSelect()}
       FROM message
-      WHERE
-        (BINARY senderId = BINARY ? AND BINARY receiverId = BINARY ?)
-        OR
-        (BINARY senderId = BINARY ? AND BINARY receiverId = BINARY ?)
+      WHERE BINARY conversationId = BINARY ?
+         OR (
+           conversationId IS NULL
+           AND ((BINARY senderId = BINARY ? AND BINARY receiverId = BINARY ?)
+             OR (BINARY senderId = BINARY ? AND BINARY receiverId = BINARY ?))
+         )
       ORDER BY createdAt ASC
       `,
-      [userId, doctorId, doctorId, userId]
+      [conversation.conversationId, userId, doctorId, doctorId, userId]
     );
 
     res.json(rows);
@@ -2501,6 +3142,7 @@ router.post('/chat/send', async (req, res) => {
     messageType = 'text',
     medicalRecordId,
     voiceDurationSeconds,
+    requestId,
   } = req.body;
   const allowedTypes = ['text', 'medical_record', 'system'];
 
@@ -2513,26 +3155,24 @@ router.post('/chat/send', async (req, res) => {
 
   try {
     await ensureChatSchema();
+    const chatRequest = await getEligibleChatRequest(
+      senderId,
+      receiverId,
+      requestId
+    );
+    if (!chatRequest) {
+      return res.status(403).json({
+        error: 'An eligible service request is required for chat',
+      });
+    }
+    const conversation = await getOrCreateChatConversation(chatRequest);
     await touchChatPresence(senderId);
     const messageId = randomUUID();
-    let conversationId = null;
-    let senderRole = null;
-    let receiverRole = null;
-    const [conversationRows] = await db.query(
-      `SELECT conversationId, patientId, nurseId
-       FROM chatconversation
-       WHERE (patientId = ? AND nurseId = ?) OR (patientId = ? AND nurseId = ?)
-       ORDER BY updatedAt DESC
-       LIMIT 1`,
-      [senderId, receiverId, receiverId, senderId]
-    );
-    if (conversationRows[0]) {
-      conversationId = conversationRows[0].conversationId;
-      senderRole =
-        conversationRows[0].patientId === senderId ? 'patient' : 'nurse';
-      receiverRole =
-        conversationRows[0].patientId === receiverId ? 'patient' : 'nurse';
-    }
+    const conversationId = conversation.conversationId;
+    const senderRole =
+      chatRequest.patientUserId === senderId ? 'patient' : 'provider';
+    const receiverRole =
+      chatRequest.patientUserId === receiverId ? 'patient' : 'provider';
     let attachmentUrl = null;
     let attachmentName = null;
     let attachmentSize = null;
@@ -2611,13 +3251,25 @@ router.post('/chat/send', async (req, res) => {
 });
 
 router.post('/chat/send-attachment', chatUpload.single('file'), async (req, res) => {
-  const { senderId, receiverId, message = '', voiceDurationSeconds } = req.body;
+  const { senderId, receiverId, message = '', voiceDurationSeconds, requestId } = req.body;
   if (!senderId || !receiverId || !req.file) {
     return res.status(400).json({ error: 'senderId, receiverId and file are required' });
   }
 
   try {
     await ensureChatSchema();
+    const chatRequest = await getEligibleChatRequest(
+      senderId,
+      receiverId,
+      requestId
+    );
+    if (!chatRequest) {
+      if (req.file?.path) fs.unlink(req.file.path, () => {});
+      return res.status(403).json({
+        error: 'An eligible service request is required for chat',
+      });
+    }
+    const conversation = await getOrCreateChatConversation(chatRequest);
     await touchChatPresence(senderId);
     const messageId = randomUUID();
     const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
@@ -2630,14 +3282,18 @@ router.post('/chat/send-attachment', chatUpload.single('file'), async (req, res)
 
     await db.execute(
       `INSERT INTO message (
-         messageId, senderId, receiverId, message, messageType,
+         messageId, conversationId, senderId, senderRole, receiverId, receiverRole,
+         message, messageType,
          attachmentUrl, attachmentName, attachmentSize, attachmentMimeType,
          voiceDurationSeconds, createdAt, sentAt, isRead
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)`,
       [
         messageId,
+        conversation.conversationId,
         senderId,
+        chatRequest.patientUserId === senderId ? 'patient' : 'provider',
         receiverId,
+        chatRequest.patientUserId === receiverId ? 'patient' : 'provider',
         message.toString().trim(),
         messageType,
         relativeUrl,
@@ -2646,6 +3302,13 @@ router.post('/chat/send-attachment', chatUpload.single('file'), async (req, res)
         req.file.mimetype,
         voiceDurationSeconds ? Number(voiceDurationSeconds) : null,
       ]
+    );
+    await db.query(
+      `UPDATE chatconversation
+       SET lastMessage = ?, lastMessageAt = NOW(), lastSenderId = ?,
+           updatedAt = NOW()
+       WHERE conversationId = ?`,
+      [message.toString().trim() || originalName, senderId, conversation.conversationId]
     );
 
     res.status(201).json({

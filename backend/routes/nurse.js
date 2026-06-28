@@ -1730,6 +1730,24 @@ async function syncNurseEarnings(providerId) {
     };
   });
 
+  // Preserve provider cancellation compensation when the wallet is rebuilt.
+  // Refunded payments are excluded from completed-session earnings above.
+  const [[cancellationFeesRow]] = await db.query(
+    `SELECT COALESCE(SUM(t.provider_share), 0) AS cancellationFees
+     FROM transaction_log t
+     JOIN payment p ON BINARY p.paymentId = BINARY t.transactionId
+     JOIN servicerequest sr ON BINARY sr.requestId = BINARY p.requestId
+     WHERE BINARY t.providerId = BINARY ?
+       AND t.type = 'payment'
+       AND LOWER(CAST(p.paymentStatus AS CHAR)) = 'refunded'
+       AND LOWER(CAST(sr.status AS CHAR)) IN ('cancelled', 'canceled')`,
+    [providerId],
+  );
+  totalEarned += Math.max(
+    0,
+    Number(cancellationFeesRow?.cancellationFees || 0),
+  );
+
   const [[paidRow]] = await db.query(
     `SELECT COALESCE(SUM(total_amount), 0) AS paid
      FROM transaction_log

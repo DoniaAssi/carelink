@@ -87,7 +87,7 @@ class _RescheduleModalState extends State<RescheduleModal> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        _errorMessage = context.l10n.userMessage(e);
         _isLoading = false;
       });
     }
@@ -105,8 +105,7 @@ class _RescheduleModalState extends State<RescheduleModal> {
     return null;
   }
 
-  DateTime? get _currentAppointment =>
-      widget.appointment.scheduledAt;
+  DateTime? get _currentAppointment => widget.appointment.scheduledAt;
 
   List<DateTime> get _visibleWeekDates {
     return List.generate(
@@ -241,11 +240,11 @@ class _RescheduleModalState extends State<RescheduleModal> {
                 Text(
                   _requiresProviderApproval
                       ? (isAr
-                          ? 'سيتم إرسال الطلب إلى مقدم الرعاية، ولن يتغير موعدك الحالي حتى تتم الموافقة.'
-                          : 'Your reschedule request will be sent to the provider. Your current appointment remains active until approval.')
+                            ? 'سيتم إرسال الطلب إلى مقدم الرعاية، ولن يتغير موعدك الحالي حتى تتم الموافقة.'
+                            : 'Your reschedule request will be sent to the provider. Your current appointment remains active until approval.')
                       : (isAr
-                          ? 'سيتم تحديث طلب الحجز إلى الموعد الجديد، وسيبقى بانتظار موافقة مقدم الرعاية.'
-                          : 'Your booking request will be updated and will remain pending provider approval.'),
+                            ? 'سيتم تحديث طلب الحجز إلى الموعد الجديد، وسيبقى بانتظار موافقة مقدم الرعاية.'
+                            : 'Your booking request will be updated and will remain pending provider approval.'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 15,
@@ -325,13 +324,21 @@ class _RescheduleModalState extends State<RescheduleModal> {
           ),
         ),
         Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            const Icon(
+              Icons.calendar_month_outlined,
+              color: AppColors.primary,
+              size: 23,
+            ),
+            const SizedBox(width: 9),
             Expanded(
               child: Text(
                 context.tr('schedule.edit.title'),
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
                   color: p.inkDark,
                 ),
               ),
@@ -343,7 +350,13 @@ class _RescheduleModalState extends State<RescheduleModal> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 2),
+        Text(
+          isAr ? 'اختر تاريخاً ووقتاً جديداً' : 'Choose a new date and time',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: p.inkMuted, fontSize: 13),
+        ),
+        const SizedBox(height: 12),
         Flexible(
           child: SingleChildScrollView(
             child: _isLoading
@@ -387,51 +400,48 @@ class _RescheduleModalState extends State<RescheduleModal> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildCurrentAppointmentCard(p, isAr),
-        const SizedBox(height: 12),
-        if (_requiresProviderApproval)
+        _sectionTitle(
+          p,
+          isAr ? 'اختر تاريخاً جديداً' : 'Choose a new date',
+          isAr
+              ? 'الأيام المتاحة فقط قابلة للاختيار.'
+              : 'Only available dates can be selected.',
+        ),
+        const SizedBox(height: 10),
+        _buildWeekSelector(p, isAr),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            const Icon(
+              Icons.access_time_rounded,
+              color: AppColors.primary,
+              size: 21,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              isAr ? 'اختر وقتاً متاحاً' : 'Choose an available time',
+              style: TextStyle(
+                color: p.inkDark,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _buildTimeChips(p),
+        if (_requiresProviderApproval) ...[
+          const SizedBox(height: 14),
           _buildInfoBanner(
             p: p,
             isAr: isAr,
             color: AppColors.warning,
             icon: Icons.info_rounded,
-            textAr: 'موعدك الحالي ما زال مؤكداً ولن يتغير حتى يوافق مقدم الرعاية على الموعد الجديد.',
-            textEn: 'Your current appointment remains active until the provider approves your new request.',
-          )
-        else
-          _buildInfoBanner(
-            p: p,
-            isAr: isAr,
-            color: AppColors.primary,
-            icon: Icons.edit_note_rounded,
-            textAr: 'مقدم الرعاية لم يوافق بعد، يمكنك تعديل طلبك مباشرة.',
-            textEn: 'The provider has not approved yet, so you are directly editing your request.',
+            textAr:
+                'موعدك الحالي يبقى فعالاً حتى يوافق مقدم الرعاية على الموعد الجديد.',
+            textEn:
+                'Your current appointment remains active until the provider approves the new time.',
           ),
-        const SizedBox(height: 16),
-        _buildNearestCard(p, isAr, nearest),
-        const SizedBox(height: 18),
-        if (_showCalendar) ...[
-          _sectionTitle(
-            p,
-            isAr ? 'اختر موعداً آخر' : 'Choose another appointment',
-            isAr
-                ? 'الأيام المتاحة فقط قابلة للاختيار.'
-                : 'Only available dates can be selected.',
-          ),
-          const SizedBox(height: 10),
-          _buildWeekSelector(p, isAr),
-          const SizedBox(height: 12),
-          _buildMonthCalendar(p, isAr),
-          const SizedBox(height: 18),
-          _sectionTitle(
-            p,
-            isAr ? 'الأوقات المتاحة' : 'Available times',
-            _selectedDate == null
-                ? (isAr ? 'اختر تاريخاً أولاً.' : 'Choose a date first.')
-                : _formatDateTitle(_selectedDate!, isAr),
-          ),
-          const SizedBox(height: 10),
-          _buildTimeChips(p),
         ],
       ],
     );
@@ -473,10 +483,15 @@ class _RescheduleModalState extends State<RescheduleModal> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildCurrentAppointmentCard(CarelinkPalette p, bool isAr) {
     final a = widget.appointment;
-    final dateStr = a.scheduledAt != null ? _formatShortDate(a.scheduledAt!, isAr) : '';
-    final timeStr = a.scheduledAt != null ? _formatTo12Hour(_formatTime24(a.scheduledAt!)) : '';
+    final dateStr = a.scheduledAt != null
+        ? _formatShortDate(a.scheduledAt!, isAr)
+        : '';
+    final timeStr = a.scheduledAt != null
+        ? _formatTo12Hour(_formatTime24(a.scheduledAt!))
+        : '';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -490,7 +505,11 @@ class _RescheduleModalState extends State<RescheduleModal> {
         children: [
           Row(
             children: [
-              Icon(Icons.event_note_rounded, color: AppColors.primary, size: 20),
+              Icon(
+                Icons.event_note_rounded,
+                color: AppColors.primary,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Text(
                 isAr ? 'موعدك الحالي' : 'Current appointment',
@@ -510,7 +529,9 @@ class _RescheduleModalState extends State<RescheduleModal> {
                   p,
                   icon: Icons.person_rounded,
                   label: isAr ? 'مقدم الرعاية' : 'Provider',
-                  value: a.providerName.isNotEmpty ? a.providerName : (isAr ? 'مقدم الرعاية' : 'Provider'),
+                  value: a.providerName.isNotEmpty
+                      ? a.providerName
+                      : (isAr ? 'مقدم الرعاية' : 'Provider'),
                 ),
               ),
               Expanded(
@@ -533,7 +554,9 @@ class _RescheduleModalState extends State<RescheduleModal> {
                   p,
                   icon: Icons.calendar_today_rounded,
                   label: isAr ? 'التاريخ' : 'Date',
-                  value: dateStr.isNotEmpty ? dateStr : (isAr ? 'غير متوفر' : 'Unavailable'),
+                  value: dateStr.isNotEmpty
+                      ? dateStr
+                      : (isAr ? 'غير متوفر' : 'Unavailable'),
                 ),
               ),
               Expanded(
@@ -541,7 +564,9 @@ class _RescheduleModalState extends State<RescheduleModal> {
                   p,
                   icon: Icons.access_time_rounded,
                   label: isAr ? 'الوقت' : 'Time',
-                  value: timeStr.isNotEmpty ? timeStr : (isAr ? 'غير متوفر' : 'Unavailable'),
+                  value: timeStr.isNotEmpty
+                      ? timeStr
+                      : (isAr ? 'غير متوفر' : 'Unavailable'),
                 ),
               ),
             ],
@@ -554,7 +579,7 @@ class _RescheduleModalState extends State<RescheduleModal> {
                   p,
                   icon: Icons.info_outline_rounded,
                   label: isAr ? 'الحالة' : 'Status',
-                  value: a.status.isNotEmpty ? a.status.toUpperCase() : (isAr ? 'غير معروف' : 'Unknown'),
+                  value: isAr ? 'حجز حالي' : 'Current booking',
                 ),
               ),
             ],
@@ -609,6 +634,7 @@ class _RescheduleModalState extends State<RescheduleModal> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildNearestCard(
     CarelinkPalette p,
     bool isAr,
@@ -877,6 +903,7 @@ class _RescheduleModalState extends State<RescheduleModal> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildMonthCalendar(CarelinkPalette p, bool isAr) {
     final first = DateTime(_visibleMonth.year, _visibleMonth.month);
     final leading = first.weekday - DateTime.monday;
@@ -1042,31 +1069,55 @@ class _RescheduleModalState extends State<RescheduleModal> {
       return _softNotice(p, context.tr('booking.dateTime.noTimes'));
     }
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 10,
+    return Column(
       children: times.map((time) {
         final selected = _selectedTime == time;
-        return PatientPressable(
-          onTap: () => setState(() => _selectedTime = time),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            constraints: const BoxConstraints(minWidth: 92, minHeight: 44),
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? AppColors.primary : p.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: selected ? AppColors.primary : p.stroke,
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: PatientPressable(
+            onTap: () => setState(() => _selectedTime = time),
+            borderRadius: BorderRadius.circular(13),
+            child: Container(
+              height: 54,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: selected ? AppColors.primary : p.surface,
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(
+                  color: selected ? AppColors.primary : p.stroke,
+                ),
               ),
-            ),
-            child: Text(
-              time,
-              style: TextStyle(
-                color: selected ? Colors.white : p.inkDark,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w800,
+              child: Row(
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: selected ? Colors.white : Colors.transparent,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: selected ? Colors.white : p.inkMuted,
+                      ),
+                    ),
+                    child: selected
+                        ? const Icon(
+                            Icons.check_rounded,
+                            size: 15,
+                            color: AppColors.primary,
+                          )
+                        : null,
+                  ),
+                  const Spacer(),
+                  Text(
+                    time,
+                    textDirection: TextDirection.ltr,
+                    style: TextStyle(
+                      color: selected ? Colors.white : p.inkDark,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1295,8 +1346,6 @@ class _RescheduleModalState extends State<RescheduleModal> {
     final month = _monthName(date.month, isAr, short: true);
     return isAr ? '${date.day} $month' : '$month ${date.day}';
   }
-
-
 
   String _monthName(int month, bool isAr, {bool short = false}) {
     const en = [

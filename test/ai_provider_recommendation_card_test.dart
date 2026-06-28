@@ -41,7 +41,7 @@ void main() {
     recommendationReasons: const ['Available match'],
   );
 
-  testWidgets('card body and arrow both invoke provider navigation', (
+  testWidgets('collapsed card expands into premium recommendation details', (
     tester,
   ) async {
     var taps = 0;
@@ -50,8 +50,8 @@ void main() {
         home: Scaffold(
           body: Center(
             child: SizedBox(
-              width: 220,
-              height: 184,
+              width: 320,
+              height: 620,
               child: AiProviderRecommendationCard(
                 result: result,
                 distanceKm: null,
@@ -62,11 +62,46 @@ void main() {
         ),
       ),
     );
+    await tester.pump(const Duration(milliseconds: 200));
 
     await tester.tap(find.text('Available Provider'));
-    expect(taps, 1);
+    await tester.pumpAndSettle();
+    expect(taps, 0);
+    expect(find.text('View details'), findsOneWidget);
+    expect(find.byIcon(Icons.verified_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle_rounded), findsWidgets);
 
-    await tester.tap(find.byIcon(Icons.arrow_forward_rounded));
-    expect(taps, 2);
+    await tester.tap(find.text('View details'));
+    expect(taps, 1);
+  });
+
+  testWidgets('emergency hero card uses the dedicated urgent presentation', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 320,
+              height: 620,
+              child: AiProviderRecommendationCard(
+                result: result,
+                distanceKm: 2.3,
+                onTap: () {},
+                highlighted: true,
+                emergency: true,
+                isArabic: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('الأفضل للحالة الطارئة'), findsOneWidget);
+    expect(find.text('عرض التفاصيل'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

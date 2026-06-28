@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
@@ -203,7 +204,7 @@ class _SelectServiceScreenState extends State<SelectServiceScreen> {
         !_checkingAvailability &&
         hasSlots &&
         _selectedService != null;
-    return Scaffold(
+    return PatientScaffold(
       backgroundColor: p.pageBg,
       appBar: PatientAppBar(
         title: context.l10n.isArabic

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:flutter/services.dart'
     show HapticFeedback, MissingPluginException;
 import 'package:image_picker/image_picker.dart';
@@ -44,18 +45,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   double? _gpsLat;
   double? _gpsLng;
   bool isLoading = false; // saving
-  bool _loading = true; // initial profile load (skeleton)
   Uint8List? _pickedImageBytes;
-
-  List<String> allergiesList = [];
-  List<String> chronicList = [];
-  List<String> medicationsList = [];
 
   bool get _isArabic => localeController.isArabic;
   String _t(String en, String ar) => _isArabic ? ar : en;
-
-  bool get _isPatient =>
-      (widget.userData['role'] ?? 'patient').toString() == 'patient';
 
   // Dedicated AudioPlayer for the success sound.
   // Created once, reused, disposed with the screen.
@@ -89,10 +82,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     selectedGender = d['gender']?.toString();
     _gpsLat = _asDouble(d['gpsLat']);
     _gpsLng = _asDouble(d['gpsLng']);
-
-    allergiesList = _splitCsv(d['allergies']);
-    chronicList = _splitCsv(d['chronicDiseases'] ?? d['chronicConditions']);
-    medicationsList = _splitCsv(d['currentMedications']);
   }
 
   double? _asDouble(Object? value) {
@@ -114,18 +103,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   String _formatDateOfBirthForDisplay() {
-    final parsed = DateTime.tryParse(dateOfBirthController.text.trim());
-    if (parsed == null) return dateOfBirthController.text.trim();
-    final day = parsed.day.toString().padLeft(2, '0');
-    final month = parsed.month.toString().padLeft(2, '0');
-    return '$day/$month/${parsed.year}';
+    return dateOfBirthController.text.trim();
   }
-
-  List<String> _splitCsv(Object? raw) => (raw?.toString() ?? '')
-      .split(',')
-      .map((e) => e.trim())
-      .where((e) => e.isNotEmpty)
-      .toList();
 
   Future<void> _initialLoad() async {
     try {
@@ -133,11 +112,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (!mounted) return;
       setState(() {
         _populateFrom(fresh);
-        _loading = false;
       });
     } catch (_) {
-      // Keep the seeded values; just stop the skeleton.
-      if (mounted) setState(() => _loading = false);
+      // Keep the seeded values. The form remains visible and editable.
     }
   }
 
@@ -523,115 +500,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (v != null) setState(() => selectedGender = v);
   }
 
-  /// Bottom sheet to add a chip item (allergy / condition / medication).
-  Future<void> _showAddChipSheet(String title, List<String> list) async {
-    final controller = TextEditingController();
-    final p = CarelinkPalette.of(context);
-    final scheme = Theme.of(context).colorScheme;
-
-    final result = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: p.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 14,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 18,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: p.stroke,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _t('Add $title', 'إضافة $title'),
-                style: TextStyle(
-                  color: p.inkDark,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (v) => Navigator.pop(context, v.trim()),
-                style: TextStyle(color: p.inkDark, fontWeight: FontWeight.w600),
-                decoration: InputDecoration(
-                  hintText: _t('Enter value…', 'أدخل القيمة…'),
-                  hintStyle: TextStyle(
-                    color: p.inkMuted.withValues(alpha: 0.55),
-                  ),
-                  filled: true,
-                  fillColor: p.pageBg,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 14,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: p.stroke),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: p.stroke),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: scheme.primary, width: 1.6),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 48,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: scheme.primary,
-                    foregroundColor: scheme.onPrimary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  onPressed: () =>
-                      Navigator.pop(context, controller.text.trim()),
-                  child: Text(
-                    _t('Add', 'إضافة'),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (result != null && result.isNotEmpty) {
-      setState(() => list.add(result));
-    }
-  }
-
   // ─────────────────────────── Success overlay ────────────────────────
 
   Future<void> _showSuccessOverlay() async {
@@ -755,18 +623,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       'gpsLat': _gpsLat,
       'gpsLng': _gpsLng,
     };
-    if (_isPatient) {
-      body['chronicDiseases'] = chronicList.isEmpty
-          ? null
-          : chronicList.join(', ');
-      body['allergies'] = allergiesList.isEmpty
-          ? null
-          : allergiesList.join(', ');
-      body['currentMedications'] = medicationsList.isEmpty
-          ? null
-          : medicationsList.join(', ');
-    }
-
     try {
       await ApiService().updatePatientProfile(widget.userId, body);
       await _reloadProfileFromBackend();
@@ -797,67 +653,100 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
-    return Scaffold(
-      backgroundColor: p.pageBg,
-      appBar: const PatientTopActions(showBack: true),
-      bottomNavigationBar: _buildSaveBar(p),
-      body: SafeArea(
-        bottom: false,
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: _loading ? _buildSkeleton(p) : _buildContent(p),
-            ),
+    final scheme = Theme.of(context).colorScheme;
+    return PatientScaffold(
+      enabled: false,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        leading: BackButton(color: scheme.primary),
+        centerTitle: true,
+        title: Text(
+          _t('Edit Profile', 'تعديل الملف الشخصي'),
+          style: TextStyle(
+            color: p.inkDark,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
           ),
+        ),
+        actions: [
+          CarelinkLocaleIconButton(color: scheme.primary),
+          CarelinkThemeIconButton(color: scheme.primary),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 500),
+                    child: _buildContent(p),
+                  ),
+                ),
+              ),
+            ),
+            _buildSaveBar(p),
+          ],
         ),
       ),
     );
   }
 
   Widget _buildSaveBar(CarelinkPalette p) {
-    final scheme = Theme.of(context).colorScheme;
-    final disabled = isLoading || _loading;
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: FilledButton(
-              onPressed: disabled ? null : saveChanges,
-              style: FilledButton.styleFrom(
-                backgroundColor: scheme.primary,
-                foregroundColor: scheme.onPrimary,
-                disabledBackgroundColor: scheme.primary.withValues(alpha: 0.5),
-                disabledForegroundColor: Colors.white.withValues(alpha: 0.9),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
+    final disabled = isLoading;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      color: Theme.of(context).scaffoldBackgroundColor,
+        child: Center(
+          heightFactor: 1.0,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 500),
+            child: SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: Material(
+                color: disabled ? const Color(0xFF9E9E9E) : const Color(0xFF0E8A78),
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
                   borderRadius: BorderRadius.circular(16),
+                  onTap: disabled ? null : saveChanges,
+                  child: Center(
+                    child: isLoading
+                        ? const SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.save_outlined, size: 20, color: Colors.white),
+                              const SizedBox(width: 8),
+                              Text(
+                                _t('Save Changes', 'حفظ التغييرات'),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
                 ),
               ),
-              child: isLoading
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : Text(
-                      _t('Save Changes', 'حفظ التغييرات'),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                      ),
-                    ),
             ),
-          ),
         ),
       ),
     );
@@ -865,48 +754,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Widget _buildContent(CarelinkPalette p) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 4),
-        Text(
-          _t('Edit Profile', 'تعديل الملف الشخصي'),
-          style: TextStyle(
-            color: p.inkDark,
-            fontSize: 22,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 16),
         _buildProfileHeader(p),
-        const SizedBox(height: 22),
+        const SizedBox(height: 16),
 
         // 1 · Personal Information
         _buildSectionCard(
           p,
           title: _t('Personal Information', 'المعلومات الشخصية'),
-          icon: Icons.person_outline_rounded,
           children: [
             _buildTextInput(
               label: _t('Full Name', 'الاسم الكامل'),
               controller: fullNameController,
-              icon: Icons.badge_outlined,
+              icon: Icons.person_outline_rounded,
               placeholder: _t('Your full name', 'اسمك الكامل'),
             ),
-            _buildPickerInput(
-              label: _t('Date of Birth', 'تاريخ الميلاد'),
-              value: _formatDateOfBirthForDisplay(),
-              placeholder: _t('Select date', 'اختر التاريخ'),
-              icon: Icons.calendar_today_outlined,
-              onTap: _pickDateOfBirth,
-            ),
-            _buildPickerInput(
-              label: _t('Gender', 'الجنس'),
-              value: _formatGenderForDisplay(),
-              placeholder: _t('Select gender', 'اختر الجنس'),
-              icon: Icons.wc_outlined,
-              onTap: _showGenderSheet,
-              last: true,
-            ),
+            _buildDateAndGenderFields(),
           ],
         ),
 
@@ -914,7 +778,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         _buildSectionCard(
           p,
           title: _t('Contact Information', 'معلومات الاتصال'),
-          icon: Icons.contact_phone_outlined,
           children: [
             _buildTextInput(
               label: _t('Email Address', 'البريد الإلكتروني'),
@@ -934,62 +797,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ],
         ),
 
-        // 3 · Health Information
-        if (_isPatient)
-          _buildSectionCard(
-            p,
-            title: _t('Health Information', 'المعلومات الصحية'),
-            icon: Icons.favorite_outline_rounded,
-            children: [
-              _buildChipsField(
-                label: _t('Allergies', 'الحساسية'),
-                items: allergiesList,
-                icon: Icons.warning_amber_outlined,
-                onAdd: () =>
-                    _showAddChipSheet(_t('Allergy', 'حساسية'), allergiesList),
-                onRemove: (i) => setState(() => allergiesList.removeAt(i)),
-              ),
-              _buildChipsField(
-                label: _t('Chronic Conditions', 'الأمراض المزمنة'),
-                items: chronicList,
-                icon: Icons.healing_outlined,
-                onAdd: () =>
-                    _showAddChipSheet(_t('Condition', 'مرض مزمن'), chronicList),
-                onRemove: (i) => setState(() => chronicList.removeAt(i)),
-              ),
-              _buildChipsField(
-                label: _t('Current Medications', 'الأدوية الحالية'),
-                items: medicationsList,
-                icon: Icons.medication_outlined,
-                onAdd: () => _showAddChipSheet(
-                  _t('Medication', 'دواء'),
-                  medicationsList,
-                ),
-                onRemove: (i) => setState(() => medicationsList.removeAt(i)),
-                last: true,
-              ),
-            ],
-          ),
-
-        // 4 · Address / Location
-        _buildSectionCard(
-          p,
-          title: _t('Location', 'الموقع'),
-          icon: Icons.edit_location_alt_outlined,
-          children: [
-            _buildPickerInput(
-              label: _t('Edit Location', 'تعديل الموقع'),
-              value: addressController.text,
-              placeholder: _t(
-                'Choose your location on the map',
-                'اختر موقعك على الخريطة',
-              ),
-              icon: Icons.map_outlined,
-              onTap: _pickLocation,
-              last: true,
-            ),
-          ],
-        ),
+        // 3 · Address / Location
+        _buildLocationCard(p),
       ],
     );
   }
@@ -998,85 +807,79 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Widget _buildProfileHeader(CarelinkPalette p) {
     final scheme = Theme.of(context).colorScheme;
-    final name = fullNameController.text.trim();
-    return Center(
-      child: Column(
-        children: [
-          GestureDetector(
-            onTap: _showImageSourceSheet,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 112,
-                  height: 112,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: p.surfaceSoft,
-                    border: Border.all(color: scheme.primary, width: 2.5),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(3),
-                    child: ClipOval(child: _avatarImage(scheme)),
-                  ),
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: _showImageSourceSheet,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: p.surfaceSoft,
+                  border: Border.all(color: p.surface, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                PositionedDirectional(
-                  end: 0,
-                  bottom: 0,
-                  child: Material(
-                    color: scheme.primary,
-                    shape: const CircleBorder(),
-                    elevation: 2,
-                    child: InkWell(
-                      onTap: _showImageSourceSheet,
-                      customBorder: const CircleBorder(),
-                      child: const SizedBox(
-                        width: 36,
-                        height: 36,
-                        child: Icon(
-                          Icons.camera_alt_rounded,
-                          size: 18,
-                          color: Colors.white,
-                        ),
+                child: ClipOval(child: _avatarImage(scheme, size: 90)),
+              ),
+              PositionedDirectional(
+                end: 0,
+                bottom: 0,
+                child: Material(
+                  color: const Color(0xFF16A085),
+                  shape: const CircleBorder(),
+                  elevation: 1,
+                  child: InkWell(
+                    onTap: _showImageSourceSheet,
+                    customBorder: const CircleBorder(),
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: p.surface, width: 2),
+                      ),
+                      child: const Icon(
+                        Icons.camera_alt_rounded,
+                        size: 14,
+                        color: Colors.white,
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(height: 14),
-          Text(
-            name.isEmpty ? _t('Your Profile', 'ملفك الشخصي') : name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: p.inkDark,
-              fontSize: 19,
-              fontWeight: FontWeight.w900,
-            ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          _t('Tap to change photo', 'اضغط لتغيير الصورة'),
+          style: TextStyle(
+            color: p.inkMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: 2),
-          Text(
-            _t('Personal & Health Information', 'المعلومات الشخصية والصحية'),
-            style: TextStyle(
-              color: p.inkMuted,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _avatarImage(ColorScheme scheme) {
+  Widget _avatarImage(ColorScheme scheme, {double size = 96}) {
     final pickedImageBytes = _pickedImageBytes;
     if (pickedImageBytes != null && pickedImageBytes.isNotEmpty) {
       return Image.memory(
         pickedImageBytes,
-        width: 106,
-        height: 106,
+        width: size,
+        height: size,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stack) => _defaultAvatar(scheme),
       );
@@ -1085,8 +888,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (imageUrl != null) {
       return Image.network(
         imageUrl,
-        width: 106,
-        height: 106,
+        width: size,
+        height: size,
         fit: BoxFit.cover,
         headers: const {'Accept': 'image/*'},
         loadingBuilder: (context, child, progress) {
@@ -1110,8 +913,37 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Widget _defaultAvatar(ColorScheme scheme) {
     return ColoredBox(
-      color: scheme.primary.withValues(alpha: 0.10),
-      child: Icon(Icons.person_rounded, size: 54, color: scheme.primary),
+      color: scheme.primary.withValues(alpha: 0.05),
+      child: Icon(Icons.person_rounded, size: 48, color: scheme.primary),
+    );
+  }
+
+  Widget _buildDateAndGenderFields() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: _buildPickerInput(
+            label: _t('Gender', 'الجنس'),
+            value: _formatGenderForDisplay(),
+            placeholder: _t('Select', 'اختر'),
+            icon: Icons.wc_outlined,
+            onTap: _showGenderSheet,
+            last: true,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildPickerInput(
+            label: _t('Date of Birth', 'تاريخ الميلاد'),
+            value: _formatDateOfBirthForDisplay(),
+            placeholder: _t('Select date', 'اختر التاريخ'),
+            icon: Icons.calendar_today_outlined,
+            onTap: _pickDateOfBirth,
+            last: true,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1120,52 +952,35 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget _buildSectionCard(
     CarelinkPalette p, {
     required String title,
-    required IconData icon,
     required List<Widget> children,
   }) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: p.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.stroke),
+        borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: p.isDark ? 0.16 : 0.035),
-            blurRadius: 12,
-            offset: const Offset(0, 5),
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: scheme.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, size: 18, color: scheme.primary),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w900,
-                  color: p.inkDark,
-                ),
-              ),
-            ],
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: p.inkDark,
+            ),
           ),
-          const SizedBox(height: 14),
-          ...children,
+          const SizedBox(height: 12),
+          Column(children: children),
         ],
       ),
     );
@@ -1173,12 +988,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Widget _fieldLabel(String label, CarelinkPalette p) {
     return Padding(
-      padding: const EdgeInsetsDirectional.only(start: 2, bottom: 6),
+      padding: const EdgeInsetsDirectional.only(start: 4, bottom: 6),
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 12.5,
-          fontWeight: FontWeight.w800,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
           color: p.inkMuted,
         ),
       ),
@@ -1195,47 +1010,40 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     bool last = false,
   }) {
     final p = CarelinkPalette.of(context);
-    final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: EdgeInsets.only(bottom: last ? 8 : 14),
+      padding: EdgeInsets.only(bottom: last ? 0 : 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _fieldLabel(label, p),
-          TextField(
-            controller: controller,
-            keyboardType: keyboardType,
-            maxLines: maxLines,
-            onChanged: (_) {
-              // keep header name live
-              if (controller == fullNameController) setState(() {});
-            },
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: p.inkDark,
-            ),
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: placeholder,
-              hintStyle: TextStyle(
-                color: p.inkMuted.withValues(alpha: 0.55),
+          SizedBox(
+            height: 52,
+            child: TextField(
+              controller: controller,
+              keyboardType: keyboardType,
+              maxLines: maxLines,
+              onChanged: (_) {
+                if (controller == fullNameController) setState(() {});
+              },
+              style: TextStyle(
                 fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: p.inkDark,
               ),
-              prefixIcon: Icon(icon, color: scheme.primary, size: 20),
-              prefixIconConstraints: const BoxConstraints(
-                minWidth: 44,
-                minHeight: 44,
+              decoration: InputDecoration(
+                hintText: placeholder,
+                hintStyle: TextStyle(
+                  color: p.inkMuted.withValues(alpha: 0.5),
+                  fontSize: 14,
+                ),
+                suffixIcon: Icon(icon, color: const Color(0xFF16A085), size: 20),
+                filled: true,
+                fillColor: p.surface,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                border: _border(p.surfaceSoft),
+                enabledBorder: _border(p.surfaceSoft),
+                focusedBorder: _border(const Color(0xFF16A085), width: 1.5),
               ),
-              filled: true,
-              fillColor: p.pageBg,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 14,
-              ),
-              border: _border(p.stroke),
-              enabledBorder: _border(p.stroke),
-              focusedBorder: _border(scheme.primary, width: 1.6),
             ),
           ),
         ],
@@ -1245,7 +1053,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   OutlineInputBorder _border(Color color, {double width = 1}) {
     return OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       borderSide: BorderSide(color: color, width: width),
     );
   }
@@ -1259,48 +1067,44 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     bool last = false,
   }) {
     final p = CarelinkPalette.of(context);
-    final scheme = Theme.of(context).colorScheme;
     final hasValue = value.isNotEmpty;
     return Padding(
-      padding: EdgeInsets.only(bottom: last ? 8 : 14),
+      padding: EdgeInsets.only(bottom: last ? 0 : 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _fieldLabel(label, p),
           Material(
-            color: p.pageBg,
-            borderRadius: BorderRadius.circular(14),
+            color: p.surface,
+            borderRadius: BorderRadius.circular(16),
             child: InkWell(
               onTap: onTap,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(16),
               child: Container(
-                constraints: const BoxConstraints(minHeight: 50),
-                padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 0),
+                height: 52,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: p.stroke),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: p.surfaceSoft),
                 ),
                 child: Row(
                   children: [
-                    Icon(icon, color: scheme.primary, size: 20),
-                    const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         hasValue ? value : (placeholder ?? ''),
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: hasValue
-                              ? p.inkDark
-                              : p.inkMuted.withValues(alpha: 0.55),
+                          color: hasValue ? p.inkDark : p.inkMuted.withValues(alpha: 0.5),
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    Icon(
-                      Icons.expand_more_rounded,
-                      color: scheme.primary,
-                      size: 22,
-                    ),
+                    const SizedBox(width: 8),
+                    Icon(icon, color: const Color(0xFF16A085), size: 20),
+                    const SizedBox(width: 8),
+                    Icon(Icons.keyboard_arrow_down_rounded, color: p.inkMuted, size: 20),
                   ],
                 ),
               ),
@@ -1311,214 +1115,59 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  Widget _buildChipsField({
-    required String label,
-    required List<String> items,
-    required IconData icon,
-    required VoidCallback onAdd,
-    required void Function(int) onRemove,
-    bool last = false,
-  }) {
-    final p = CarelinkPalette.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.only(bottom: last ? 8 : 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 16, color: scheme.primary),
-              const SizedBox(width: 6),
-              Expanded(child: _fieldLabel(label, p)),
-            ],
-          ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              ...items.asMap().entries.map((e) {
-                return Container(
-                  padding: const EdgeInsetsDirectional.fromSTEB(12, 7, 6, 7),
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(
-                      alpha: p.isDark ? 0.18 : 0.1,
-                    ),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: scheme.primary.withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        e.value,
-                        style: TextStyle(
-                          color: scheme.primary,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      InkWell(
-                        onTap: () => onRemove(e.key),
-                        customBorder: const CircleBorder(),
-                        child: Icon(
-                          Icons.close_rounded,
-                          size: 15,
-                          color: scheme.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-              // Add button (chip style).
-              InkWell(
-                onTap: onAdd,
-                borderRadius: BorderRadius.circular(999),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: scheme.primary, width: 1.3),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.add_rounded, size: 16, color: scheme.primary),
-                      const SizedBox(width: 3),
-                      Text(
-                        _t('Add', 'إضافة'),
-                        style: TextStyle(
-                          color: scheme.primary,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ───────────────────────────── Skeleton ────────────────────────────
-
-  Widget _buildSkeleton(CarelinkPalette p) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildLocationCard(CarelinkPalette p) {
+    return _buildSectionCard(
+      p,
+      title: _t('Location', 'الموقع'),
       children: [
-        const SizedBox(height: 8),
-        _Skeleton(width: 160, height: 26, radius: 8),
-        const SizedBox(height: 18),
-        Center(
-          child: Column(
-            children: [
-              _Skeleton(width: 112, height: 112, radius: 56),
-              const SizedBox(height: 14),
-              _Skeleton(width: 140, height: 18, radius: 6),
-              const SizedBox(height: 8),
-              _Skeleton(width: 200, height: 12, radius: 6),
-            ],
-          ),
-        ),
-        const SizedBox(height: 22),
-        for (int s = 0; s < 3; s++) ...[
-          Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _fieldLabel(_t('Edit Location', 'تعديل الموقع'), p),
+            Material(
               color: p.surface,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: p.stroke),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _Skeleton(width: 32, height: 32, radius: 10),
-                    const SizedBox(width: 10),
-                    _Skeleton(width: 140, height: 14, radius: 6),
-                  ],
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                onTap: _pickLocation,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  height: 52,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: p.surfaceSoft),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          addressController.text.isNotEmpty
+                              ? addressController.text
+                              : _t('Choose your location', 'اختر موقعك'),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: addressController.text.isNotEmpty ? p.inkDark : p.inkMuted,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Icon(Icons.map_outlined, color: Color(0xFF16A085), size: 22),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                for (int f = 0; f < 2; f++) ...[
-                  _Skeleton(width: 90, height: 11, radius: 4),
-                  const SizedBox(height: 7),
-                  _Skeleton(width: double.infinity, height: 48, radius: 14),
-                  const SizedBox(height: 14),
-                ],
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ],
     );
   }
 }
 
 // ───────────────────────────── Widgets ───────────────────────────────
-
-class _Skeleton extends StatefulWidget {
-  const _Skeleton({this.width, required this.height, this.radius = 8});
-
-  final double? width;
-  final double height;
-  final double radius;
-
-  @override
-  State<_Skeleton> createState() => _SkeletonState();
-}
-
-class _SkeletonState extends State<_Skeleton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c;
-
-  @override
-  void initState() {
-    super.initState();
-    _c = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1100),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final p = CarelinkPalette.of(context);
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (context, _) {
-        final base = p.isDark ? Colors.white : Colors.black;
-        return Container(
-          width: widget.width,
-          height: widget.height,
-          decoration: BoxDecoration(
-            color: base.withValues(alpha: 0.05 + 0.05 * _c.value),
-            borderRadius: BorderRadius.circular(widget.radius),
-          ),
-        );
-      },
-    );
-  }
-}
 
 class _AnimatedCheckmark extends StatefulWidget {
   const _AnimatedCheckmark({required this.color});

@@ -28,6 +28,49 @@ class CarelinkL10n {
     }
     return value;
   }
+
+  /// Converts service/backend failures into safe, localized copy for UI
+  /// surfaces. Technical exception text must never be rendered directly.
+  String userMessage(Object error, {String fallbackKey = 'common.error.generic'}) {
+    final raw = error
+        .toString()
+        .replaceFirst(RegExp(r'^Exception:\s*'), '')
+        .trim();
+    if (!isArabic) return raw.isEmpty ? t(fallbackKey) : raw;
+
+    final value = raw.toLowerCase();
+    if (value.contains('socketexception') ||
+        value.contains('network') ||
+        value.contains('internet') ||
+        value.contains('connection refused') ||
+        value.contains('failed host lookup') ||
+        value.contains('clientexception')) {
+      return t('common.error.noInternet');
+    }
+    if (value.contains('no available') ||
+        value.contains('no slots') ||
+        value.contains('not available')) {
+      return t('common.error.noAppointments');
+    }
+    if (value.contains('already have') ||
+        value.contains('duplicate') ||
+        value.contains('already exists')) {
+      return t('common.error.duplicateBooking');
+    }
+    if (value.contains('location services') ||
+        value.contains('location permission') ||
+        value.contains('permission denied')) {
+      return t('common.error.locationPermission');
+    }
+    if (value.contains('payment') &&
+        (value.contains('failed') || value.contains('missing'))) {
+      return t('common.error.paymentFailed');
+    }
+    if (value.contains('unauthorized') || value.contains('forbidden')) {
+      return t('common.error.unauthorized');
+    }
+    return t(fallbackKey);
+  }
 }
 
 extension CarelinkL10nX on BuildContext {
@@ -44,6 +87,64 @@ extension CarelinkL10nX on BuildContext {
 }
 
 const Map<String, String> _en = {
+  'common.error.generic': 'Something went wrong. Please try again.',
+  'common.error.noInternet': 'No internet connection.',
+  'common.error.noAppointments':
+      'This provider has no available appointments right now.',
+  'common.error.duplicateBooking':
+      'You already have a booking request for this appointment.',
+  'common.error.locationPermission':
+      'Please enable location services and allow location access.',
+  'common.error.paymentFailed': 'Payment could not be completed. Please try again.',
+  'common.error.unauthorized': 'You are not authorized to perform this action.',
+  'common.dateUnavailable': 'Date unavailable',
+  'common.timeUnavailable': 'Time unavailable',
+  'common.notAvailable': 'Not available',
+  'common.retry': 'Try again',
+  'patient.appointments.title': 'Appointments',
+  'patient.appointments.upcoming': 'Upcoming',
+  'patient.appointments.history': 'History',
+  'patient.appointments.empty': 'No appointments available.',
+  'patient.appointments.dateUnavailable': 'Date unavailable',
+  'patient.payment.appointment': 'Appointment',
+  'patient.payment.total': 'Total',
+  'patient.payment.bookAndPay': 'Book & pay',
+  'patient.payment.generalConsultation': 'General consultation',
+  'patient.payment.generalCare': 'General Medical Care',
+  'patient.payment.homeNursing': 'Home Nursing Care',
+  'patient.report.title': 'Visit report',
+  'patient.report.patient': 'Patient',
+  'patient.report.appointment': 'Appointment',
+  'patient.report.visitDate': 'Visit date',
+  'patient.report.medications': 'Medications prescribed (optional)',
+  'patient.report.allergies': 'Allergies noted this visit (optional)',
+  'patient.report.vitals': 'Vital signs (JSON)',
+  'patient.report.diagnosis': 'Diagnosis',
+  'patient.report.treatment': 'Treatment plan',
+  'patient.report.recommendations': 'Recommendations',
+  'patient.report.followRequired': 'Follow-up required',
+  'patient.report.followDate': 'Follow-up date',
+  'patient.report.submit': 'Submit report',
+  'patient.report.requireClinicalNote': 'Add diagnosis or treatment plan.',
+  'patient.report.invalidVitals': 'Vital signs must be valid JSON.',
+  'patient.provider.unavailable': 'This provider is currently unavailable.',
+  'patient.provider.firstVisitDoctor':
+      'For your first appointment, you must book with a doctor for an initial assessment.',
+  'patient.careService': 'Care Service',
+  'patient.availableDates': 'Available dates',
+  'patient.rating.thanks':
+      'Thanks! Your rating helps improve recommendations for everyone.',
+  'booking.success.provider': 'Provider',
+  'booking.success.service': 'Service',
+  'booking.success.date': 'Date',
+  'booking.success.time': 'Time',
+  'booking.success.timelinePaidDescription': 'Your payment was successful.',
+  'booking.success.timelineSentDescription':
+      'Your request has been sent to the provider.',
+  'booking.success.timelineWaitingDescription':
+      'The provider will review your request.',
+  'booking.success.timelineConfirmedDescription':
+      'We will notify you once it is confirmed.',
   'booking.step.provider': 'Provider',
   'booking.step.service': 'Service',
   'booking.step.dateTime': 'Date & Time',
@@ -349,10 +450,6 @@ const Map<String, String> _en = {
   'auth.nurseDesc':
       'Provide home care support, coordinate visits, and track services.',
   'auth.personalInfo': 'Account Details',
-  'auth.chronicDiseases': 'Chronic conditions (optional)',
-  'auth.allergies': 'Allergies (optional)',
-  'auth.currentMedications': 'Current medications (optional)',
-  'auth.emergencyContact': 'Emergency contact (optional)',
   'auth.specialization': 'Medical Specialty',
   'auth.licenseNumber': 'License number',
   'auth.experienceYears': 'Years of experience',
@@ -592,9 +689,158 @@ const Map<String, String> _en = {
   'providers.noMatch': 'No providers match your search and filters.',
   'providers.aiReasonFallback': 'Recommended based on your care needs.',
   'specialty.endocrinology': 'Endocrinology',
+  'patient.home.locationNotSet': 'Location not set',
+  'patient.home.endocrinology': 'Endocrinology',
+  'patient.home.cardiology': 'Cardiology',
+  'patient.home.homeNursing': 'Home Nursing',
+  'patient.home.postsurgeryCare': 'Post-Surgery Care',
+  'patient.home.elderlyCare': 'Elderly Care',
+  'patient.home.medicalRecord': 'Medical record',
+  'patient.home.completedVisit': 'Completed visit',
+  'patient.home.careVisit': 'Care visit',
+  'patient.home.careProvider': 'Care Provider',
+  'patient.home.later': 'Later',
+  'patient.home.submitRating': 'Submit Rating',
+  'patient.home.howWasYourExperience': 'How was your experience?',
+  'patient.home.patient': 'Patient',
+  'patient.home.needsFollowup': 'Needs Follow-up',
+  'patient.home.onTrack': 'On Track',
+  'patient.home.underReview': 'Under Review',
+  'patient.home.addYourRecords': 'Add your records',
+  'patient.home.book': 'Book',
+  'patient.home.searchProviders': 'Search Providers',
+  'patient.home.records': 'Records',
+  'patient.home.aiAssistant': 'AI Assistant',
+  'patient.home.appointments': 'Appointments',
+  'patient.home.processed': 'Processed',
+  'patient.home.favorites': 'Favorites',
+  'patient.home.myCareOverview': 'My care overview',
+  'patient.home.recommendedProvider': 'Recommended provider',
+  'patient.home.bookAppointment': 'Book Appointment',
+  'patient.home.availableToday': 'Available today',
+  'patient.home.matchesYourCareNeeds': 'Matches your care needs',
+  'patient.home.availableCarelinkProvider': 'Available CareLink provider',
+  'patient.home.generalMedicine': 'General medicine',
+  'patient.home.recommendedForYou': 'Recommended for you',
+  'patient.home.basedOnYourRecords': 'Based on your records',
+
+  'patient.home.uploadRecord': 'Upload Record',
+  'patient.home.viewProvider': 'View Provider',
+  'patient.home.drAhmadAli': 'Dr. Ahmad Ali',
+  'patient.home.generalDoctor': 'General doctor',
+  'patient.home.upcomingAppointment': 'Upcoming Appointment',
+  'patient.home.bookCare': 'Book Care',
+  'patient.home.reschedule': 'Reschedule',
+  'patient.home.joinCall': 'Join Call',
+  'patient.home.ai': 'AI',
+  'patient.home.diabetesFollowup': 'Diabetes follow-up',
+  'patient.home.bloodPressureCare': 'Blood pressure care',
+  'patient.home.cholesterol': 'Cholesterol',
+  'patient.home.healthInsights': 'Health Insights',
+  'patient.home.latestRecord': 'Latest Record',
+  'patient.home.viewAll': 'View all',
+  'patient.home.recommendedSpecialists': 'Recommended specialists',
+  'patient.home.requestCareNow': 'Request care now',
+  'patient.home.askAiAssistant': 'Ask AI assistant',
+  'patient.home.quickServices': 'Quick services',
+  'patient.home.bestMatchForYou': 'Best Match For You',
+  'patient.home.available': 'Available',
+  'patient.home.medical': 'Medical',
+  'patient.home.overall': 'Overall',
+  'patient.home.viewDetails': 'View Details',
+  'patient.home.healthOverview': 'Health Overview',
+  'patient.home.recentRecords': 'Recent records',
+  'patient.home.lastUpload': 'Last upload',
+  'patient.home.viewRecord': 'View Record',
+  'patient.home.ready': 'Ready',
+  'patient.home.needsReview': 'Needs review',
+  'patient.home.processing': 'Processing',
+  'patient.home.favoriteProviders': 'Favorite Providers',
+  'patient.home.noFavoritesYet': 'No favorites yet',
+  'patient.home.notifications': 'Notifications',
+  'patient.home.notification': 'Notification',
+  'patient.home.justNow': 'Just now',
+
+  'patient.home.may': 'May',
+  'patient.home.0330Pm': '03:30 PM',
+  'patient.home.today': 'Today',
+  'patient.home.date': 'Date',
+  'patient.home.homeVisit': 'Home visit',
+  'patient.home.remote': 'Remote',
+  'patient.home.myNextAppointment': 'My next appointment',
+  'patient.home.contact': 'Contact',
+  'patient.home.recommended': 'Recommended',
+  'patient.home.upcomingCareTitle': 'Upcoming Care',
+  'patient.home.currentCarePlan': 'Current Care Plan',
+  'patient.home.tasks': 'Tasks',
+  'patient.home.medications': 'Medications',
+  'patient.home.instructions': 'Instructions',
+  'patient.home.goals': 'Goals',
+  'patient.home.viewPlan': 'View Plan',
+  'patient.home.recentCareActivities': 'Recent Care Activities',
+  'patient.home.visitCompleted': 'Visit completed',
+  'patient.home.statusUpdate': 'Status update',
+  'patient.home.newNote': 'New note',
 };
 
 const Map<String, String> _ar = {
+  'common.error.generic': 'حدث خطأ، يرجى المحاولة مرة أخرى.',
+  'common.error.noInternet': 'لا يوجد اتصال بالإنترنت.',
+  'common.error.noAppointments':
+      'لا توجد مواعيد متاحة لهذا مقدم الرعاية حالياً.',
+  'common.error.duplicateBooking': 'لديك طلب حجز موجود بالفعل لهذا الموعد.',
+  'common.error.locationPermission':
+      'يرجى تفعيل خدمة الموقع والسماح بالوصول إلى موقعك.',
+  'common.error.paymentFailed': 'تعذر إتمام الدفع، يرجى المحاولة مرة أخرى.',
+  'common.error.unauthorized': 'غير مسموح لك بتنفيذ هذا الإجراء.',
+  'common.dateUnavailable': 'التاريخ غير متوفر',
+  'common.timeUnavailable': 'الوقت غير متوفر',
+  'common.notAvailable': 'غير متوفر',
+  'common.retry': 'إعادة المحاولة',
+  'patient.appointments.title': 'المواعيد',
+  'patient.appointments.upcoming': 'القادمة',
+  'patient.appointments.history': 'السجل',
+  'patient.appointments.empty': 'لا توجد مواعيد متاحة.',
+  'patient.appointments.dateUnavailable': 'التاريخ غير متوفر',
+  'patient.payment.appointment': 'الموعد',
+  'patient.payment.total': 'المجموع',
+  'patient.payment.bookAndPay': 'احجز وادفع',
+  'patient.payment.generalConsultation': 'استشارة عامة',
+  'patient.payment.generalCare': 'رعاية طبية عامة',
+  'patient.payment.homeNursing': 'رعاية تمريضية منزلية',
+  'patient.report.title': 'تقرير الزيارة',
+  'patient.report.patient': 'المريض',
+  'patient.report.appointment': 'الموعد',
+  'patient.report.visitDate': 'تاريخ الزيارة',
+  'patient.report.medications': 'الأدوية الموصوفة (اختياري)',
+  'patient.report.allergies': 'الحساسيات المسجلة في الزيارة (اختياري)',
+  'patient.report.vitals': 'العلامات الحيوية (JSON)',
+  'patient.report.diagnosis': 'التشخيص',
+  'patient.report.treatment': 'خطة العلاج',
+  'patient.report.recommendations': 'التوصيات',
+  'patient.report.followRequired': 'تتطلب متابعة',
+  'patient.report.followDate': 'تاريخ المتابعة',
+  'patient.report.submit': 'إرسال التقرير',
+  'patient.report.requireClinicalNote': 'أضف التشخيص أو خطة العلاج.',
+  'patient.report.invalidVitals': 'يجب إدخال العلامات الحيوية بصيغة JSON صحيحة.',
+  'patient.provider.unavailable': 'مقدم الرعاية هذا غير متاح حالياً.',
+  'patient.provider.firstVisitDoctor':
+      'يجب أن يكون موعدك الأول مع طبيب لإجراء التقييم الأولي.',
+  'patient.careService': 'خدمة رعاية',
+  'patient.availableDates': 'التواريخ المتاحة',
+  'patient.rating.thanks':
+      'شكراً لك، يساعد تقييمك في تحسين التوصيات للجميع.',
+  'booking.success.provider': 'مقدم الرعاية',
+  'booking.success.service': 'الخدمة',
+  'booking.success.date': 'التاريخ',
+  'booking.success.time': 'الوقت',
+  'booking.success.timelinePaidDescription': 'تمت عملية الدفع بنجاح.',
+  'booking.success.timelineSentDescription':
+      'تم إرسال طلبك إلى مقدم الرعاية.',
+  'booking.success.timelineWaitingDescription':
+      'سيقوم مقدم الرعاية بمراجعة طلبك.',
+  'booking.success.timelineConfirmedDescription':
+      'سنرسل إليك إشعاراً عند تأكيد الموعد.',
   'doctor.dashboard.defaultDoctorName': 'طبيب',
   'doctor.dashboard.doctorPrefix': 'د. {name}',
   'doctor.dashboard.actionRequests': 'الطلبات',
@@ -885,10 +1131,6 @@ const Map<String, String> _ar = {
   'auth.nurseDesc':
       'تقديم خدمات التمريض المنزلي، تنسيق الزيارات، ومتابعة الأداء.',
   'auth.personalInfo': 'تفاصيل الحساب',
-  'auth.chronicDiseases': 'الأمراض المزمنة (اختياري)',
-  'auth.allergies': 'الحساسية (اختياري)',
-  'auth.currentMedications': 'الأدوية الحالية (اختياري)',
-  'auth.emergencyContact': 'جهة اتصال الطوارئ (اختياري)',
   'auth.specialization': 'التخصص الطبي',
   'auth.licenseNumber': 'رقم الترخيص',
   'auth.experienceYears': 'سنوات الخبرة',
@@ -905,7 +1147,7 @@ const Map<String, String> _ar = {
   'auth.confirmPassword': 'تأكيد كلمة المرور',
   'auth.dateOfBirth': 'تاريخ الميلاد',
   'auth.locationVerifiedSuccess': 'تم التحقق من الموقع بنجاح',
-  'auth.placeholder.fullName':"اسم المستخدم",
+  'auth.placeholder.fullName': "اسم المستخدم",
   'auth.placeholder.phone': '599000000',
   'auth.placeholder.email': 'name@example.com',
   'auth.placeholder.password': 'أدخل كلمة المرور',
@@ -1510,4 +1752,96 @@ const Map<String, String> _ar = {
   'booking.success.viewBookings': 'عرض طلباتي',
   'booking.success.backHome': 'العودة للرئيسية',
   'specialty.endocrinology': 'طب الغدد الصماء',
+  'patient.home.locationNotSet': 'لم يتم تحديد الموقع',
+  'patient.home.endocrinology': 'الغدد الصماء',
+  'patient.home.cardiology': 'أمراض القلب',
+  'patient.home.homeNursing': 'تمريض منزلي',
+  'patient.home.postsurgeryCare': 'رعاية ما بعد الجراحة',
+  'patient.home.elderlyCare': 'رعاية كبار السن',
+  'patient.home.medicalRecord': 'سجل طبي',
+  'patient.home.completedVisit': 'زيارة مكتملة',
+  'patient.home.careVisit': 'زيارة رعاية',
+  'patient.home.careProvider': 'مقدم الرعاية',
+  'patient.home.later': 'لاحقًا',
+  'patient.home.submitRating': 'إرسال التقييم',
+  'patient.home.howWasYourExperience': 'كيف كانت تجربتك؟',
+  'patient.home.patient': 'مريض',
+  'patient.home.needsFollowup': 'يحتاج متابعة',
+  'patient.home.onTrack': 'بحالة جيدة',
+  'patient.home.underReview': 'قيد المراجعة',
+  'patient.home.addYourRecords': 'أضف سجلاتك',
+  'patient.home.book': 'احجز',
+  'patient.home.searchProviders': 'ابحث عن مقدم رعاية',
+  'patient.home.records': 'السجل',
+  'patient.home.aiAssistant': 'المساعد',
+  'patient.home.appointments': 'المواعيد',
+  'patient.home.processed': 'تمت المعالجة',
+  'patient.home.favorites': 'المفضلة',
+  'patient.home.myCareOverview': 'نظرة عامة على رعايتي',
+  'patient.home.recommendedProvider': 'مقدم رعاية موصى به',
+  'patient.home.bookAppointment': 'احجز موعد',
+  'patient.home.availableToday': 'متاح اليوم',
+  'patient.home.matchesYourCareNeeds': 'يناسب احتياجاتك الصحية',
+  'patient.home.availableCarelinkProvider': 'مقدم رعاية متاح',
+  'patient.home.generalMedicine': 'General medicine',
+  'patient.home.recommendedForYou': 'موصى به لك',
+  'patient.home.basedOnYourRecords': 'بناءً على سجلاتك',
+
+  'patient.home.uploadRecord': 'رفع سجل',
+  'patient.home.viewProvider': 'عرض المزود',
+  'patient.home.drAhmadAli': 'د. أحمد علي',
+  'patient.home.generalDoctor': 'طبيب عام',
+  'patient.home.upcomingAppointment': 'الموعد القادم',
+  'patient.home.bookCare': 'احجز',
+  'patient.home.reschedule': 'إعادة جدولة',
+  'patient.home.joinCall': 'انضمام للمكالمة',
+  'patient.home.ai': 'المساعد',
+  'patient.home.diabetesFollowup': 'متابعة السكري',
+  'patient.home.bloodPressureCare': 'إدارة ضغط الدم',
+  'patient.home.cholesterol': 'الكوليسترول',
+  'patient.home.healthInsights': 'رؤى صحية',
+  'patient.home.latestRecord': 'آخر سجل',
+  'patient.home.viewAll': 'عرض الكل',
+  'patient.home.recommendedSpecialists': 'التخصصات الموصى بها',
+  'patient.home.requestCareNow': 'اطلب رعاية الآن',
+  'patient.home.askAiAssistant': 'اسأل المساعد الذكي',
+  'patient.home.quickServices': 'الخدمات السريعة',
+  'patient.home.bestMatchForYou': 'الأفضل لك',
+  'patient.home.available': 'متاح',
+  'patient.home.medical': 'طبي',
+  'patient.home.overall': 'إجمالي',
+  'patient.home.viewDetails': 'عرض التفاصيل',
+  'patient.home.healthOverview': 'نظرة صحية',
+  'patient.home.recentRecords': 'أحدث السجلات',
+  'patient.home.lastUpload': 'آخر رفع',
+  'patient.home.viewRecord': 'عرض السجل',
+  'patient.home.ready': 'جاهز',
+  'patient.home.needsReview': 'يحتاج مراجعة',
+  'patient.home.processing': 'قيد المعالجة',
+  'patient.home.favoriteProviders': 'مقدمو الرعاية المفضلون',
+  'patient.home.noFavoritesYet': 'لا يوجد مفضلون بعد',
+  'patient.home.notifications': 'الإشعارات',
+  'patient.home.notification': 'إشعار',
+  'patient.home.justNow': 'الآن',
+
+  'patient.home.may': 'مايو',
+  'patient.home.0330Pm': '03:30 مساءً',
+  'patient.home.today': 'اليوم',
+  'patient.home.date': 'التاريخ',
+  'patient.home.homeVisit': 'زيارة منزلية',
+  'patient.home.remote': 'استشارة عن بعد',
+  'patient.home.myNextAppointment': 'موعدي القادم',
+  'patient.home.contact': 'تواصل',
+  'patient.home.recommended': 'مقترح',
+  'patient.home.upcomingCareTitle': 'الموعد القادم',
+  'patient.home.currentCarePlan': 'خطة الرعاية الحالية',
+  'patient.home.tasks': 'المهام',
+  'patient.home.medications': 'الأدوية',
+  'patient.home.instructions': 'التعليمات',
+  'patient.home.goals': 'الأهداف',
+  'patient.home.viewPlan': 'عرض الخطة',
+  'patient.home.recentCareActivities': 'آخر أنشطة الرعاية',
+  'patient.home.visitCompleted': 'زيارة تم تنفيذها',
+  'patient.home.statusUpdate': 'تحديث حالة',
+  'patient.home.newNote': 'ملاحظة جديدة',
 };

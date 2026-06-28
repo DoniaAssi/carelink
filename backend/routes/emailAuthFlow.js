@@ -45,8 +45,9 @@ function issueOptionalJwt(user) {
 /**
  * POST /register
  * Body: fullName, email, phone, password, role (patient|nurse|doctor),
- *       + patient: addressText, optional gpsLat/Lng, dateOfBirth, gender, chronicDiseases, allergies, currentMedications, profileImageUrl
- *       + nurse/doctor: specialization, optional licenseNumber, serviceType, experienceYears, addressText (clinic/affiliation), gpsLat/Lng, profileImageUrl
+ *       + patient: addressText, optional gpsLat/Lng, dateOfBirth, gender, profileImageUrl
+ *       + doctor: specialization, optional licenseNumber, serviceType, experienceYears, addressText (clinic/affiliation), gpsLat/Lng, profileImageUrl
+ *       + nurse: optional licenseNumber, serviceType, experienceYears, addressText (service area), gpsLat/Lng, profileImageUrl
  */
 router.post('/register', async (req, res) => {
   const parsed = validateUnifiedSignupBody(req.body);

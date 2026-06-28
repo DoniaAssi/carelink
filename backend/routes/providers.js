@@ -2,7 +2,8 @@ const express = require('express');
 const { randomUUID } = require('crypto');
 const db = require('../db');
 const { insertNotification } = require('../notifications');
-const { recommendProviders, inferKeyword } = require('../services/aiRecommendation/engine');
+const { recommendProviders } = require('../services/aiRecommendation/engine');
+const { analyzeIntent } = require('../services/aiRecommendation/intentAnalyzer');
 const {
   BLOCKING_BOOKING_STATUSES,
   NON_BLOCKING_BOOKING_STATUSES,
@@ -665,62 +666,43 @@ router.get('/recommendations/:patientId', async (req, res) => {
 
     const isNew = await isNewPatient(req.params.patientId, db);
     if (isNew) {
-      providers = providers.filter((p) => (p.role || '').toString().toLowerCase() === 'doctor');
+      // We rely on cold start weights rather than aggressively filtering out nurses.
     }
 
     const rawQuery = req.query.q?.toString() || '';
-    const requestedIntent = detectSupportedRecommendationIntent(
-      rawQuery,
-      req.query.specialty?.toString() || '',
-    );
-    if (rawQuery.trim().length > 0 && !requestedIntent) {
-      return res.json({
-        aiAnalysis: null,
-        recommendations: [],
-      });
+    const intent = analyzeIntent(rawQuery, req.query.specialty?.toString());
+
+    if (rawQuery.trim().length > 0 && intent.serviceCategory === 'General' && !intent.isEmergency) {
+      // Very basic sanity check, if it's completely gibberish and not an emergency we might return empty.
+      // But intentAnalyzer defaults to 'General' and 'General Consultation', so we should still process it.
     }
 
     let recommendationProviders = providers;
-    if (requestedIntent === 'neurosurgery') {
-      recommendationProviders = providers.filter((provider) => {
-        const blob = `${provider.specialization || ''} ${provider.serviceType || ''}`.toLowerCase();
-        return blob.includes('neuro') || blob.includes('brain');
-      });
-      if (recommendationProviders.length === 0) {
-        return res.json({
-          aiAnalysis: null,
-          recommendations: [],
-        });
-      }
-    }
-
-    const isUrgentParams = req.query.urgent === '1' || req.query.urgent === 'true';
-    const isComplexParams = req.query.complex === '1' || req.query.complex === 'true';
-
-    const lowerQ = rawQuery.toLowerCase();
-    const isUrgent = isUrgentParams || ['urgent', 'emergency', 'severe', 'pain', 'immediate', 'bleeding'].some(w => lowerQ.includes(w));
-    const isComplexCase = isComplexParams || ['chronic', 'complex', 'post surgery', 'post-surgery', 'multiple', 'cancer'].some(w => lowerQ.includes(w));
 
     const request = {
       rawQuery: rawQuery,
-      requestedServiceKeyword: requestedIntent,
+      requestedServiceKeyword: intent.possibleSpecialty || intent.serviceCategory,
       requestedDateTime: null,
-      isUrgent,
-      isComplexCase,
+      isUrgent: intent.urgency === 'urgent' || intent.urgency === 'emergency',
+      isComplexCase: false, // Could be enhanced in intentAnalyzer later
+      isEmergency: intent.isEmergency,
     };
+    
+    // recommendProviders handles emergency filtering internally if isEmergency is true
     const ranked = recommendProviders(patient, request, recommendationProviders, Number(req.query.top) || 50);
-    const medicalTags = [...new Set(patient.analysisTags || [])].map(titleTag);
-    const medicalReasons = medicalReasonsFromTags(patient.analysisTags || []);
-
-    const inferredService = (request.requestedServiceKeyword || inferKeyword(request, recommendationProviders)).trim();
-    const serviceName = inferredService.length > 0 ? inferredService.charAt(0).toUpperCase() + inferredService.slice(1) : null;
 
     let aiAnalysis = null;
-    if (rawQuery.trim().length > 0 && serviceName) {
+    if (rawQuery.trim().length > 0) {
       aiAnalysis = {
-        service: serviceName,
-        need: isComplexCase ? 'Complex Care' : null,
-        priority: isUrgent ? 'Urgent / Emergency' : null
+        service: intent.serviceCategory,
+        need: intent.detectedNeeds.join(', '),
+        priority: intent.priority,
+        isEmergency: intent.isEmergency,
+        detectedNeeds: intent.detectedNeeds,
+        detectedSymptoms: intent.detectedSymptoms,
+        recommendedProviderType: intent.providerType,
+        recommendedService: intent.serviceCategory,
+        matchedKeywords: intent.matchedKeywords
       };
       if (isNew) {
         aiAnalysis.note = 'Since this is your first appointment, we recommend a doctor first. Nursing follow-up can be booked after assessment.';
@@ -730,7 +712,7 @@ router.get('/recommendations/:patientId', async (req, res) => {
       patientUserId: req.params.patientId,
       queryText: rawQuery,
       aiAnalysis,
-      isUrgent,
+      isUrgent: request.isUrgent,
       ranked,
     });
 
@@ -745,7 +727,9 @@ router.get('/recommendations/:patientId', async (req, res) => {
         providerId: r.providerId || r.provider?.userId || r.provider?.id || '',
         finalScore: r.finalScore,
         matchPercentage: r.matchPercentage,
-        matchedSpecialization: requestedIntent || r.provider?.specialization || null,
+        confidenceScore: r.confidenceScore,
+        recommendationReasons: r.recommendationReasons,
+        matchedSpecialization: intent.possibleSpecialty || r.provider?.specialization || null,
         specializationScore: r.scoreBreakdown?.specialization ?? null,
         distanceScore: r.scoreBreakdown?.location ?? null,
         ratingScore: r.scoreBreakdown?.rating ?? null,
@@ -754,8 +738,6 @@ router.get('/recommendations/:patientId', async (req, res) => {
         medicalMatchScore: r.scoreBreakdown?.medicalCompatibility ?? null,
         scoreBreakdown: r.scoreBreakdown,
         weights: r.weights,
-        medicalTags,
-        medicalReasons,
         matchedTags: r.matchedTags || [],
         matchedTagLabels: r.matchedTags || [],
         recommendationReason: r.aiMatchReason || r.recommendationReasons?.[0] || '',

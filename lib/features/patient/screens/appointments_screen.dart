@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
@@ -59,7 +60,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        errorMessage = e.toString().replaceFirst('Exception: ', '');
+        errorMessage = context.l10n.userMessage(e);
         isLoading = false;
       });
     }
@@ -89,22 +90,18 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       currentTab == 0 ? upcoming : history;
 
   String _formatDate(DateTime? date) {
-    if (date == null) return 'Date unavailable';
-    final month = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    final suffix = date.hour >= 12 ? 'PM' : 'AM';
+    if (date == null) return context.tr('patient.appointments.dateUnavailable');
+    final isAr = context.l10n.isArabic;
+    final month = isAr
+        ? const [
+            'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+            'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+          ]
+        : const [
+            'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+          ];
+    final suffix = date.hour >= 12 ? (isAr ? 'م' : 'PM') : (isAr ? 'ص' : 'AM');
     final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
     final minute = date.minute.toString().padLeft(2, '0');
     return '${date.day} ${month[date.month - 1]} ${date.year} - $hour:$minute $suffix';
@@ -155,19 +152,25 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         return isAr ? 'ملغي' : 'Cancelled';
       case 'in_progress':
         return isAr ? 'قيد التنفيذ' : 'In Progress';
+      case 'request_expired':
+      case 'expired':
+        return isAr ? 'انتهت صلاحية الطلب' : 'Request Expired';
+      case 'missed':
+      case 'no_show':
+        return isAr ? 'موعد فائت' : 'Missed Appointment';
+      case 'pending_completion':
+        return isAr ? 'بانتظار تأكيد الإتمام' : 'Pending Completion';
       default:
-        return appointment.status.isNotEmpty
-            ? appointment.status.toUpperCase()
-            : (isAr ? 'غير معروف' : 'Unknown');
+        return isAr ? 'غير معروف' : 'Unknown';
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
-    return Scaffold(
+    return PatientScaffold(
       backgroundColor: p.pageBg,
-      appBar: const PatientAppBar(title: 'Appointments'),
+      appBar: PatientAppBar(title: context.tr('patient.appointments.title')),
       body: RefreshIndicator(
         onRefresh: _loadAppointments,
         color: AppColors.primary,
@@ -178,9 +181,19 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
             children: [
               Row(
                 children: [
-                  Expanded(child: _tabButton('Upcoming', 0)),
+                  Expanded(
+                    child: _tabButton(
+                      context.tr('patient.appointments.upcoming'),
+                      0,
+                    ),
+                  ),
                   const SizedBox(width: 10),
-                  Expanded(child: _tabButton('History', 1)),
+                  Expanded(
+                    child: _tabButton(
+                      context.tr('patient.appointments.history'),
+                      1,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -192,7 +205,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
               else if (errorMessage != null)
                 _emptyCard(errorMessage!)
               else if (_activeList.isEmpty)
-                _emptyCard('No appointments available.')
+                _emptyCard(context.tr('patient.appointments.empty'))
               else
                 Column(
                   children: _activeList.map((item) {
@@ -241,7 +254,9 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                                 children: [
                                   Text(
                                     item.providerName.isEmpty
-                                        ? (context.l10n.isArabic ? 'مقدم رعاية' : 'Provider')
+                                        ? (context.l10n.isArabic
+                                              ? 'مقدم رعاية'
+                                              : 'Provider')
                                         : item.providerName,
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,

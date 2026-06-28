@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/core/app_localizations.dart';
 
 import 'package:carelink/features/patient/screens/provider_details_screen.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
@@ -17,7 +18,7 @@ class RebookFlowHelper {
   }) async {
     final providerId = appointment.providerUserId.trim();
     if (providerId.isEmpty) {
-      _showSnack(context, 'This provider is currently unavailable.');
+      _showSnack(context, context.tr('patient.provider.unavailable'));
       return;
     }
 
@@ -28,7 +29,7 @@ class RebookFlowHelper {
       final profile = await ApiService().getPatientProfile(patientUserId);
       if (!context.mounted) return;
       if (profile['isNewPatient'] == true && provider.role.toLowerCase() != 'doctor') {
-        _showSnack(context, 'For your first appointment, you must book with a doctor for an initial assessment.');
+        _showSnack(context, context.tr('patient.provider.firstVisitDoctor'));
         return;
       }
       final request = _requestFromAppointment(
@@ -36,6 +37,7 @@ class RebookFlowHelper {
         patientUserId: patientUserId,
         provider: provider,
         priceHint: priceHint,
+        careServiceLabel: context.tr('patient.careService'),
       );
       _openProviderDetails(
         context: context,
@@ -46,7 +48,7 @@ class RebookFlowHelper {
       );
     } catch (error) {
       if (context.mounted) {
-        _showSnack(context, error.toString().replaceFirst('Exception: ', ''));
+        _showSnack(context, context.l10n.userMessage(error));
       }
     }
   }
@@ -60,7 +62,7 @@ class RebookFlowHelper {
         .toString()
         .trim();
     if (providerId.isEmpty) {
-      _showSnack(context, 'This provider is currently unavailable.');
+      _showSnack(context, context.tr('patient.provider.unavailable'));
       return;
     }
 
@@ -71,13 +73,14 @@ class RebookFlowHelper {
       final profile = await ApiService().getPatientProfile(patientUserId);
       if (!context.mounted) return;
       if (profile['isNewPatient'] == true && provider.role.toLowerCase() != 'doctor') {
-        _showSnack(context, 'For your first appointment, you must book with a doctor for an initial assessment.');
+        _showSnack(context, context.tr('patient.provider.firstVisitDoctor'));
         return;
       }
       final request = _requestFromRow(
         row: row,
         patientUserId: patientUserId,
         provider: provider,
+        careServiceLabel: context.tr('patient.careService'),
       );
       _openProviderDetails(
         context: context,
@@ -88,7 +91,7 @@ class RebookFlowHelper {
       );
     } catch (error) {
       if (context.mounted) {
-        _showSnack(context, error.toString().replaceFirst('Exception: ', ''));
+        _showSnack(context, context.l10n.userMessage(error));
       }
     }
   }
@@ -119,13 +122,14 @@ class RebookFlowHelper {
     required String patientUserId,
     required ProviderModel provider,
     double? priceHint,
+    required String careServiceLabel,
   }) {
     final parsed = _parseNotes(appointment.notes);
     final service = _firstNonEmpty([
       parsed['service'],
       provider.serviceType,
       appointment.providerRole,
-      'Care Service',
+      careServiceLabel,
     ]);
     final reason = _firstNonEmpty([
       parsed['reason'],
@@ -174,6 +178,7 @@ class RebookFlowHelper {
     required Map<String, dynamic> row,
     required String patientUserId,
     required ProviderModel provider,
+    required String careServiceLabel,
   }) {
     final notes = (row['notes'] ?? '').toString();
     final parsed = _parseNotes(notes);
@@ -184,7 +189,7 @@ class RebookFlowHelper {
       row['serviceType'],
       parsed['service'],
       provider.serviceType,
-      'Care Service',
+      careServiceLabel,
     ]);
     final reason = _firstNonEmpty([
       row['reasonForVisit'],

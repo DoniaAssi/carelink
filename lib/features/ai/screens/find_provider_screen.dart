@@ -44,6 +44,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
   Map<String, dynamic>? _aiAnalysis;
   bool _showResults = false;
   bool _listening = false;
+  String _speechPrefix = '';
   double? _patLat;
   double? _patLng;
   String? _activeUserId;
@@ -160,6 +161,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
       return;
     }
 
+    _speechPrefix = _caseController.text.trimRight();
     setState(() => _listening = true);
     await _speech.listen(
       localeId: _ar ? 'ar' : 'en_US',
@@ -168,13 +170,22 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
         partialResults: true,
       ),
       onResult: (result) {
-        _caseController.text = result.recognizedWords;
-        _caseController.selection = TextSelection.fromPosition(
-          TextPosition(offset: _caseController.text.length),
-        );
-        if (result.finalResult && mounted) {
-          setState(() => _listening = false);
-        }
+        if (!mounted) return;
+        final recognized = result.recognizedWords.trim();
+        final separator = _speechPrefix.isEmpty || recognized.isEmpty
+            ? ''
+            : ' ';
+        final combined = '$_speechPrefix$separator$recognized';
+        final text = combined.length > 500
+            ? combined.substring(0, 500)
+            : combined;
+        setState(() {
+          _caseController.text = text;
+          _caseController.selection = TextSelection.collapsed(
+            offset: _caseController.text.length,
+          );
+          if (result.finalResult) _listening = false;
+        });
       },
     );
   }
@@ -429,8 +440,6 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.cloud_off_rounded, size: 64, color: Colors.red),
-            const SizedBox(height: 16),
             Text(
               _t('providersLoadError'),
               textAlign: TextAlign.center,
@@ -505,12 +514,6 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.people_outline_rounded,
-              size: 64,
-              color: AppColors.primary,
-            ),
-            const SizedBox(height: 16),
             Text(
               _t('providersEmptyText'),
               textAlign: TextAlign.center,
@@ -652,6 +655,67 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
     );
   }
 
+  PreferredSizeWidget _buildResultsAppBar() {
+    final p = CarelinkPalette.of(context);
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(64),
+      child: ColoredBox(
+        color: p.pageBg,
+        child: SafeArea(
+          bottom: false,
+          child: SizedBox(
+            height: 64,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned.fill(
+                  child: PatientTopActions(showBack: true, onBack: _handleBack),
+                ),
+                IgnorePointer(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 96),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _ar
+                              ? 'الذكاء الاصطناعي للرعاية'
+                              : 'AI Care Assistant',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _ar
+                              ? 'نوصي لك بأفضل مقدم رعاية بناءً على حالتك واحتياجاتك الطبية'
+                              : 'Care recommendations based on your medical needs',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: p.inkMuted,
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _speech.cancel();
@@ -676,7 +740,9 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                 : TextDirection.ltr,
             child: Scaffold(
               backgroundColor: p.pageBg,
-              appBar: PatientTopActions(showBack: true, onBack: _handleBack),
+              appBar: _showResults
+                  ? _buildResultsAppBar()
+                  : PatientTopActions(showBack: true, onBack: _handleBack),
               body: SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -688,12 +754,6 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(
-                                Icons.error_outline_rounded,
-                                size: 64,
-                                color: Colors.red,
-                              ),
-                              const SizedBox(height: 16),
                               Text(
                                 _t('sessionMissing'),
                                 textAlign: TextAlign.center,
@@ -778,7 +838,9 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
             },
             child: Scaffold(
               backgroundColor: p.pageBg,
-              appBar: PatientTopActions(showBack: true, onBack: _handleBack),
+              appBar: _showResults
+                  ? _buildResultsAppBar()
+                  : PatientTopActions(showBack: true, onBack: _handleBack),
               bottomNavigationBar: _buildBottomNav(),
               body: SafeArea(
                 child: Column(
@@ -809,497 +871,612 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
 
   Widget _inputBody() {
     final p = CarelinkPalette.of(context);
-    final dark = p.isDark;
-    final themeColor = p.inkDark;
-    final helperColor = p.inkMuted;
 
-    return ListView(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        8,
-        20,
-        38 + MediaQuery.paddingOf(context).bottom,
-      ),
-      children: [
-        _robotHero(p),
-        const SizedBox(height: 14),
-        Text(
-          _t('headline'),
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: dark ? Colors.blue[300] : AppColors.primary,
-            fontSize: 22,
-            fontWeight: FontWeight.w900,
-            height: 1.15,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _t('subtitle'),
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: themeColor,
-            fontSize: 16,
-            height: 1.45,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 18),
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 14, 10, 10),
-          decoration: BoxDecoration(
-            color: p.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: p.stroke),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: p.isDark ? 0.18 : 0.05),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Hero Robot
+          Center(
+            child: SizedBox(
+              height: 160,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 140,
+                    height: 140,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.primary.withValues(alpha: 0.05),
+                    ),
+                  ),
+                  Image.asset(
+                    'assets/images/ai_robot_illustration.png',
+                    height: 120,
+                    errorBuilder: (_, error, stackTrace) =>
+                        const SizedBox.shrink(),
+                  ),
+                ],
               ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Greeting
+          Text(
+            _ar
+                ? 'مرحباً، كيف أقدر أساعدك اليوم؟'
+                : 'Hello, how can I help you today?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: p.inkDark,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _ar
+                ? 'اكتبي حالتك أو اختاري مثال سريع وسنرشح لك أفضل مقدم رعاية مناسب.'
+                : 'Type your case or pick a quick example and we will recommend the best care provider.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: p.inkMuted,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // Input Card
+          Container(
+            decoration: BoxDecoration(
+              color: p.surface,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _caseController,
+                    onChanged: (_) => setState(() {}),
+                    maxLines: 4,
+                    minLines: 3,
+                    style: TextStyle(
+                      color: p.inkDark,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: _ar
+                          ? 'اكتبي حالتك هنا...'
+                          : 'Type your case here...',
+                      hintStyle: TextStyle(color: p.inkMuted, fontSize: 15),
+                      border: InputBorder.none,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _VoiceInputButton(
+                        listening: _listening,
+                        onPressed: _toggleVoice,
+                        semanticLabel: _listening
+                            ? (_ar ? 'إيقاف التسجيل' : 'Stop recording')
+                            : (_ar
+                                  ? 'بدء الإدخال الصوتي'
+                                  : 'Start voice input'),
+                      ),
+                      Expanded(
+                        child: Text(
+                          '${_caseController.text.length}/500',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: p.inkMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Semantics(
+                        button: true,
+                        label: _ar ? 'تحليل الحالة' : 'Analyze case',
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _analyzeCase,
+                            customBorder: const CircleBorder(),
+                            child: Ink(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.primary.withValues(
+                                      alpha: 0.24,
+                                    ),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.arrow_upward_rounded,
+                                color: Colors.white,
+                                size: 21,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // Quick Suggestions
+          Text(
+            _ar ? 'أمثلة سريعة' : 'Quick Examples',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: p.inkDark,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 12,
+            alignment: WrapAlignment.center,
+            children: [
+              _buildSuggestionChip('رعاية جروح'),
+              _buildSuggestionChip('حقن منزلية'),
+              _buildSuggestionChip('كبار السن'),
+              _buildSuggestionChip('القلب'),
+              _buildSuggestionChip('حرارة'),
+              _buildSuggestionChip('إعطاء أدوية'),
             ],
           ),
-          child: TextField(
-            controller: _caseController,
-            minLines: 4,
-            maxLines: 6,
-            textInputAction: TextInputAction.newline,
+          const SizedBox(height: 40),
+
+          // Privacy
+          Text(
+            _ar
+                ? 'الذكاء الاصطناعي يحلل حالتك بدقة لاختيار أفضل مقدم رعاية لك'
+                : 'AI accurately analyzes your case to select the best care provider',
             style: TextStyle(
-              color: themeColor,
-              fontSize: 14.5,
-              height: 1.35,
+              color: p.inkMuted,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
             ),
-            decoration: InputDecoration(
-              hintText: _t('hint'),
-              hintStyle: TextStyle(
-                color: helperColor,
-                fontSize: 14,
-                height: 1.35,
-                fontWeight: FontWeight.w500,
-              ),
-              suffixIcon: _voiceInputButton(p),
-              suffixIconConstraints: const BoxConstraints(
-                minWidth: 68,
-                minHeight: 64,
-              ),
-              filled: false,
-              contentPadding: EdgeInsets.zero,
-              border: InputBorder.none,
-            ),
-          ),
-        ),
-        const SizedBox(height: 7),
-        Padding(
-          padding: const EdgeInsetsDirectional.only(start: 12),
-          child: Text(
-            _listening ? _t('listening') : _t('example'),
-            style: TextStyle(
-              color: _listening ? AppColors.primary : helperColor,
-              fontSize: 11.5,
-              fontWeight: _listening ? FontWeight.w800 : FontWeight.w500,
-            ),
-          ),
-        ),
-        const SizedBox(height: 18),
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 340, minWidth: 240),
-            child: SizedBox(
-              height: 46,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  iconSize: 18,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onPressed: _aiRunning ? null : _analyzeCase,
-                icon: const Icon(Icons.psychology_alt_rounded),
-                label: Text(
-                  _t('analyze'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15.5,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _robotHero(CarelinkPalette p) {
-    final robot = Image.asset(
-      'assets/images/ai_robot_illustration.png',
-      fit: BoxFit.contain,
-      filterQuality: FilterQuality.high,
-      errorBuilder: (context, error, stackTrace) {
-        debugPrint(
-          'Warning: Could not load assets/images/ai_robot_illustration.png',
-        );
-        return const Icon(
-          Icons.smart_toy_outlined,
-          size: 90,
-          color: AppColors.primary,
-        );
-      },
-    );
-
-    return Container(
-      height: 194,
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: p.isDark ? 0.08 : 0.045),
-        borderRadius: BorderRadius.circular(32),
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: p.isDark ? 0.18 : 0.07),
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          PositionedDirectional(
-            top: -38,
-            end: -28,
-            child: Container(
-              width: 118,
-              height: 118,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.primary.withValues(alpha: 0.06),
-              ),
-            ),
-          ),
-          PositionedDirectional(
-            bottom: -42,
-            start: -20,
-            child: Container(
-              width: 126,
-              height: 126,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.primary.withValues(alpha: 0.045),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 38, vertical: 2),
-            child: robot,
+            textAlign: TextAlign.center,
           ),
         ],
       ),
     );
   }
 
-  Widget _voiceInputButton(CarelinkPalette p) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(width: 1, height: 48, color: p.stroke.withValues(alpha: 0.9)),
-        const SizedBox(width: 10),
-        Padding(
-          padding: const EdgeInsetsDirectional.only(end: 8),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _listening
-                  ? AppColors.primary
-                  : AppColors.primary.withValues(alpha: 0.1),
-              boxShadow: _listening
-                  ? [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.25),
-                        blurRadius: 12,
-                      ),
-                    ]
-                  : null,
-            ),
-            child: IconButton(
-              tooltip: _listening ? _t('listening') : _t('tapToSpeak'),
-              onPressed: _toggleVoice,
-              padding: EdgeInsets.zero,
-              icon: Icon(
-                _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                color: _listening ? Colors.white : AppColors.primary,
-                size: 22,
-              ),
-            ),
-          ),
+  Widget _buildSuggestionChip(String label) {
+    return ActionChip(
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      side: BorderSide(color: AppColors.primary.withValues(alpha: 0.2)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      label: Text(
+        label,
+        style: const TextStyle(
+          color: AppColors.primary,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
         ),
-      ],
+      ),
+      onPressed: () {
+        _caseController.text = label;
+        _analyzeCase();
+      },
     );
   }
 
   Widget _resultsBody() {
     final p = CarelinkPalette.of(context);
-    final dark = p.isDark;
-    final helperColor = p.inkMuted;
+    final isEmergency = _analysisValue('isEmergency') == 'true';
+    final service =
+        _analysisValue('serviceCategory') ??
+        _analysisValue('service') ??
+        (_ar ? 'رعاية منزلية' : 'Home care');
+    final need =
+        _analysisValue('need') ??
+        _analysisValue('possibleSpecialty') ??
+        (_ar ? 'رعاية صحية' : 'Healthcare');
+    final priority = isEmergency
+        ? (_ar ? 'طارئة' : 'Emergency')
+        : (_analysisValue('priority') ?? (_ar ? 'عادية' : 'Normal'));
+    final confidence =
+        _analysisValue('confidence') ??
+        (_results.isNotEmpty && _results.first.matchPercentage >= 80
+            ? (_ar ? 'مرتفعة' : 'High')
+            : (_ar ? 'جيدة' : 'Good'));
+    final displayedService = _localizeAnalysisValue(service);
+    final displayedNeed = _localizeAnalysisValue(need);
+    final displayedPriority = _localizeAnalysisValue(priority);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return CustomScrollView(
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-              sliver: SliverToBoxAdapter(
-                child: Column(
-                  children: [
-                    Text(
-                      _t('resultsHeadline'),
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: dark ? p.inkDark : AppColors.primary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        height: 1.2,
-                      ),
+    return CustomScrollView(
+      slivers: [
+        if (isEmergency)
+          SliverToBoxAdapter(
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: p.isDark ? 0.14 : 0.08),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.32)),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 1),
+                    child: Icon(
+                      Icons.emergency_rounded,
+                      color: Colors.red,
+                      size: 20,
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _t('resultsSubtitle'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: helperColor,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _ar
+                          ? 'يبدو أن هذه حالة طارئة. ننصح بالاتصال بالإسعاف فوراً.'
+                          : 'This appears to be an emergency. Please call emergency services immediately.',
+                      style: const TextStyle(
+                        color: Colors.red,
                         fontSize: 12.5,
-                        height: 1.35,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w800,
+                        height: 1.45,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                  ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        if (_hasAnalysis() || _results.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+              child: _buildAnalysisSummary(
+                service: displayedService,
+                need: displayedNeed,
+                priority: displayedPriority,
+                confidence: confidence,
+                isEmergency: isEmergency,
+              ),
+            ),
+          ),
+
+        if (_results.isEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                32,
+                48,
+                32,
+                120 + MediaQuery.paddingOf(context).bottom,
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 72,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    _ar
+                        ? 'لم نجد مقدم رعاية مناسباً لحالتك حالياً.'
+                        : 'We could not find a suitable care provider right now.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: p.inkDark,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton(
+                      onPressed: _handleBack,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: BorderSide(
+                          color: AppColors.primary.withValues(alpha: 0.45),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: Text(
+                        _ar
+                            ? 'عرض جميع مقدمي الرعاية'
+                            : 'View all care providers',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else ...[
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 2, 20, 8),
+              child: Row(
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: isEmergency ? Colors.red : AppColors.primary,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.star_rounded,
+                      color: Colors.white,
+                      size: 15,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _ar ? 'أفضل تطابق' : 'Best Match',
+                    style: TextStyle(
+                      color: isEmergency ? Colors.red : AppColors.primary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Best Provider
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
+              child: AiProviderRecommendationCard(
+                rank: 1,
+                result: _results[0],
+                highlighted: true,
+                distanceKm: AiProviderRecommendationCard.distanceFrom(
+                  _patLat,
+                  _patLng,
+                  _results[0].provider,
+                ),
+                onTap: () => _openDetails(_results[0]),
+                isArabic: _ar,
+                emergency: isEmergency,
+              ),
+            ),
+          ),
+
+          // Other Providers
+          if (_results.length > 1)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                child: Text(
+                  _ar ? 'مقدمو رعاية آخرون' : 'Other Care Providers',
+                  style: TextStyle(
+                    color: p.inkDark,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
             ),
-            if (_hasVisibleAiAnalysis)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: dark
-                          ? AppColors.primary.withValues(alpha: 0.12)
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: dark
-                            ? AppColors.primary.withValues(alpha: 0.3)
-                            : AppColors.primary.withValues(alpha: 0.16),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(
-                            alpha: dark ? 0.22 : 0.055,
-                          ),
-                          blurRadius: 18,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.analytics_rounded,
-                              color: AppColors.primary,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'AI Analysis',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
-                                color: dark ? Colors.white : p.inkDark,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (_analysisValue('service') != null) ...[
-                          const SizedBox(height: 12),
-                          _analysisRow(
-                            'Detected Service:',
-                            _analysisValue('service')!,
-                          ),
-                        ],
-                        if (_analysisValue('need') != null) ...[
-                          const SizedBox(height: 4),
-                          _analysisRow('Care Need:', _analysisValue('need')!),
-                        ],
-                        if (_analysisValue('priority') != null) ...[
-                          const SizedBox(height: 4),
-                          _analysisRow(
-                            'Priority:',
-                            _analysisValue('priority')!,
-                          ),
-                        ],
-                        if (_analysisValue('note') != null) ...[
-                          const SizedBox(height: 8),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(Icons.info_outline, color: AppColors.primary, size: 16),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  _analysisValue('note')!,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
+
+          if (_results.length > 1)
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                0,
+                20,
+                120 + MediaQuery.paddingOf(context).bottom,
               ),
-            if (_results.isEmpty)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 42, 24, 24),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 74,
-                        height: 74,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(
-                            alpha: p.isDark ? 0.16 : 0.08,
-                          ),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.manage_search_rounded,
-                          color: AppColors.primary,
-                          size: 36,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _t('emptyTitle'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: p.inkDark,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _t('empty'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: p.inkMuted,
-                          fontSize: 13.5,
-                          height: 1.45,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  0,
-                  16,
-                  148 + MediaQuery.paddingOf(context).bottom,
-                ),
-                sliver: SliverList.separated(
-                  itemBuilder: (context, index) {
-                    final result = _results[index];
-                    return AiProviderRecommendationCard(
-                      rank: index + 1,
-                      result: result,
-                      highlighted: index == 0,
-                      distanceKm: AiProviderRecommendationCard.distanceFrom(
-                        _patLat,
-                        _patLng,
-                        result.provider,
-                      ),
-                      onTap: () => _openDetails(result),
-                      isArabic: _ar,
-                    );
-                  },
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemCount: _results.length,
-                ),
+              sliver: SliverList.separated(
+                itemBuilder: (context, index) {
+                  final result = _results[index + 1];
+                  return AiProviderRecommendationCard(
+                    rank: index + 2,
+                    result: result,
+                    highlighted: false,
+                    distanceKm: AiProviderRecommendationCard.distanceFrom(
+                      _patLat,
+                      _patLng,
+                      result.provider,
+                    ),
+                    onTap: () => _openDetails(result),
+                    isArabic: _ar,
+                  );
+                },
+                separatorBuilder: (_, _) => const SizedBox(height: 12),
+                itemCount: _results.length - 1,
               ),
-          ],
-        );
-      },
+            ),
+          if (_results.length == 1)
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 108 + MediaQuery.paddingOf(context).bottom,
+              ),
+            ),
+        ],
+      ],
     );
   }
 
-  Widget _analysisRow(String label, String value) {
-    final dark = CarelinkPalette.of(context).isDark;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 118,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: dark ? Colors.white70 : Colors.black54,
-            ),
+  Widget _buildAnalysisSummary({
+    required String service,
+    required String need,
+    required String priority,
+    required String confidence,
+    required bool isEmergency,
+  }) {
+    final p = CarelinkPalette.of(context);
+    final score = _results.isEmpty ? null : _results.first.matchPercentage;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      decoration: BoxDecoration(
+        color: p.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: p.stroke),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: p.isDark ? 0.16 : 0.035),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
           ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: dark ? Colors.white : Colors.black87,
-            ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: const Icon(
+                  Icons.analytics_rounded,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _ar ? 'تحليل الذكاء الاصطناعي' : 'AI Analysis',
+                style: TextStyle(
+                  color: p.inkDark,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
           ),
-        ),
-      ],
+          const SizedBox(height: 10),
+          _analysisRow(
+            icon: Icons.home_rounded,
+            label: _ar ? 'الخدمة المكتشفة' : 'Detected service',
+            value: service,
+          ),
+          _analysisRow(
+            icon: Icons.medical_services_outlined,
+            label: _ar ? 'الاحتياج الطبي' : 'Medical need',
+            value: need,
+          ),
+          _analysisRow(
+            icon: Icons.flag_rounded,
+            label: _ar ? 'الأولوية' : 'Priority',
+            value: priority,
+            color: isEmergency ? Colors.red : AppColors.primary,
+          ),
+          _analysisRow(
+            icon: Icons.verified_user_rounded,
+            label: _ar ? 'نسبة الثقة' : 'Confidence',
+            value: score == null ? confidence : '$score% ($confidence)',
+            isLast: true,
+          ),
+        ],
+      ),
     );
+  }
+
+  Widget _analysisRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color color = AppColors.primary,
+    bool isLast = false,
+  }) {
+    final p = CarelinkPalette.of(context);
+    return Container(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 8, top: 4),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 9),
+          SizedBox(
+            width: _ar ? 104 : 112,
+            child: Text(
+              '$label:',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: p.inkMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _hasAnalysis() {
+    return [
+      'serviceCategory',
+      'possibleSpecialty',
+      'need',
+      'priority',
+      'note',
+      'isEmergency',
+    ].any((key) => _analysisValue(key) != null);
   }
 
   String _t(String key) {
     final strings = _ar ? _arStrings : _enStrings;
     return strings[key] ?? _enStrings[key] ?? key;
-  }
-
-  bool get _hasVisibleAiAnalysis {
-    final analysis = _aiAnalysis;
-    if (analysis == null || _results.isEmpty) return false;
-    return [
-      'service',
-      'need',
-      'priority',
-      'note',
-    ].any((key) => _analysisValue(key) != null);
   }
 
   String? _analysisValue(String key) {
@@ -1308,6 +1485,159 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
       return null;
     }
     return value;
+  }
+
+  String _localizeAnalysisValue(String value) {
+    if (!_ar) return value;
+    const values = <String, String>{
+      'general': 'رعاية عامة',
+      'general medicine': 'طب عام',
+      'home care': 'رعاية منزلية',
+      'home nursing': 'تمريض منزلي',
+      'nursing': 'تمريض',
+      'wound care': 'رعاية جروح',
+      'cardiology': 'أمراض القلب',
+      'elderly care': 'رعاية كبار السن',
+      'physiotherapy': 'علاج طبيعي',
+      'doctor': 'طبيب',
+      'nurse': 'ممرض/ة',
+      'normal': 'عادية',
+      'urgent': 'عاجلة',
+      'emergency': 'طارئة',
+      'high': 'مرتفعة',
+      'good': 'جيدة',
+    };
+    return values[value.trim().toLowerCase()] ?? value;
+  }
+}
+
+class _VoiceInputButton extends StatefulWidget {
+  const _VoiceInputButton({
+    required this.listening,
+    required this.onPressed,
+    required this.semanticLabel,
+  });
+
+  final bool listening;
+  final VoidCallback onPressed;
+  final String semanticLabel;
+
+  @override
+  State<_VoiceInputButton> createState() => _VoiceInputButtonState();
+}
+
+class _VoiceInputButtonState extends State<_VoiceInputButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 880),
+    );
+    if (widget.listening) _controller.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VoiceInputButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.listening == oldWidget.listening) return;
+    if (widget.listening) {
+      _controller.repeat();
+    } else {
+      _controller
+        ..stop()
+        ..value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: widget.semanticLabel,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onPressed,
+          customBorder: const CircleBorder(),
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              final phase = _controller.value;
+              final pulse = widget.listening
+                  ? 1 + (0.055 * (1 - ((phase * 2) - 1).abs()))
+                  : 1.0;
+              return Transform.scale(
+                scale: pulse,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(
+                      alpha: widget.listening ? 1 : 0.86,
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(
+                          alpha: widget.listening ? 0.34 : 0.18,
+                        ),
+                        blurRadius: widget.listening ? 16 : 10,
+                        spreadRadius: widget.listening ? 2 : 0,
+                      ),
+                    ],
+                  ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    switchInCurve: Curves.easeOutBack,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: widget.listening
+                        ? _buildWaveform(phase)
+                        : const Icon(
+                            Icons.mic_rounded,
+                            key: ValueKey('microphone'),
+                            color: Colors.white,
+                            size: 21,
+                          ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWaveform(double phase) {
+    return Row(
+      key: const ValueKey('waveform'),
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(4, (index) {
+        final shifted = (phase + (index * 0.17)) % 1;
+        final amplitude = 1 - ((shifted * 2) - 1).abs();
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 70),
+          width: 2.5,
+          height: 7 + (amplitude * 13),
+          margin: const EdgeInsets.symmetric(horizontal: 1.25),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(99),
+          ),
+        );
+      }),
+    );
   }
 }
 

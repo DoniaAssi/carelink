@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/locale_controller.dart';
@@ -104,7 +105,7 @@ class _PatientFavoritesScreenState extends State<PatientFavoritesScreen>
 
     return Directionality(
       textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
+      child: PatientScaffold(
         backgroundColor: p.pageBg,
         appBar: PatientAppBar(title: _t('Favorites', 'المفضلة')),
         body: SafeArea(
@@ -345,11 +346,7 @@ class _PatientFavoritesScreenState extends State<PatientFavoritesScreen>
 
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => BookingScreen(
-          request: request,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => BookingScreen(request: request)),
     );
   }
 }

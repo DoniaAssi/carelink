@@ -2,262 +2,366 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
-import 'package:carelink/core/carelink_palette.dart';
 
-/// Full-screen analysis state reused while the hybrid scorer ranks providers.
 class AiRecommendationLoader extends StatefulWidget {
   const AiRecommendationLoader({super.key, this.isArabic = false});
-
   final bool isArabic;
 
   @override
   State<AiRecommendationLoader> createState() => _AiRecommendationLoaderState();
 }
 
-class _AiRecommendationLoaderState extends State<AiRecommendationLoader> {
-  double _progress = 0.18;
-  Timer? _timer;
+class _AiRecommendationLoaderState extends State<AiRecommendationLoader>
+    with TickerProviderStateMixin {
+  double _progress = 0.0;
+  int _currentStepIndex = 0;
+
+  late AnimationController _robotBreathing;
+  late AnimationController _robotFloating;
+  Timer? _masterTimer;
+
+  final List<Map<String, String>> _arSteps = [
+    {'title': 'فهم الحالة', 'subtitle': 'تم فهم تفاصيل الحالة بنجاح'},
+    {'title': 'استخراج الاحتياج', 'subtitle': 'تم تحديد الاحتياج بدقة'},
+    {'title': 'تحديد الخدمة المناسبة', 'subtitle': 'جاري تحديد أفضل خدمة لك'},
+    {
+      'title': 'مطابقة مقدمي الرعاية',
+      'subtitle': 'جاري البحث بين مقدمي الرعاية',
+    },
+    {'title': 'ترتيب النتائج', 'subtitle': 'جاري ترتيب النتائج حسب التوافق'},
+  ];
+
+  final List<Map<String, String>> _enSteps = [
+    {
+      'title': 'Understanding Case',
+      'subtitle': 'Case details successfully understood',
+    },
+    {
+      'title': 'Extracting Needs',
+      'subtitle': 'Care needs precisely identified',
+    },
+    {
+      'title': 'Determining Service',
+      'subtitle': 'Identifying the best service',
+    },
+    {
+      'title': 'Matching Providers',
+      'subtitle': 'Searching among care providers',
+    },
+    {
+      'title': 'Ranking Results',
+      'subtitle': 'Ranking results by compatibility',
+    },
+  ];
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(milliseconds: 150), (_) {
+    _robotBreathing = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+    _robotFloating = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2500),
+    )..repeat(reverse: true);
+
+    const totalDuration = 4500; // 4.5 seconds for analysis
+    const tick = 50;
+    int elapsed = 0;
+
+    _masterTimer = Timer.periodic(const Duration(milliseconds: tick), (timer) {
       if (!mounted) return;
+      elapsed += tick;
       setState(() {
-        _progress = (_progress + 0.08).clamp(0.18, 1.0);
+        _progress = (elapsed / totalDuration).clamp(0.0, 1.0);
+
+        if (_progress < 0.2) {
+          _currentStepIndex = 0;
+        } else if (_progress < 0.4) {
+          _currentStepIndex = 1;
+        } else if (_progress < 0.6) {
+          _currentStepIndex = 2;
+        } else if (_progress < 0.8) {
+          _currentStepIndex = 3;
+        } else {
+          _currentStepIndex = 4;
+        }
       });
+
+      if (elapsed >= totalDuration) {
+        timer.cancel();
+      }
     });
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _robotBreathing.dispose();
+    _robotFloating.dispose();
+    _masterTimer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final p = CarelinkPalette.of(context);
-    final dark = p.isDark;
-    final themeColor = p.inkDark;
-    final loaderBg = p.pageBg;
+    final scheme = Theme.of(context).colorScheme;
+    final steps = widget.isArabic ? _arSteps : _enSteps;
 
-    final steps = widget.isArabic
-        ? const [
-            'استقبل الطلب',
-            'تحليل الحالة الصحية',
-            'تحديد التخصص المطلوب',
-            'مطابقة مقدمي الرعاية',
-            'حساب نسبة التوافق',
-            'ترتيب مقدمي الرعاية',
-          ]
-        : const [
-            'Receiving Request',
-            'Analyzing Health Condition',
-            'Determining Required Specialization',
-            'Matching Care Providers',
-            'Calculating Compatibility Score',
-            'Ranking Providers',
-          ];
-
-    return ColoredBox(
-      color: loaderBg,
-      child: SafeArea(
-        top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(28, 18, 28, 28),
-          children: [
-            _robotHero(p),
-            const SizedBox(height: 18),
-            Text(
-              widget.isArabic
-                  ? 'نقارن حالتك مع مقدمي الرعاية المتاحين لاختيار الأنسب لك'
-                  : 'We compare your case with available care providers to choose the best match.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: dark ? Colors.blue[300] : AppColors.primary,
-                fontSize: 21,
-                fontWeight: FontWeight.w900,
-                height: 1.35,
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Thinking Robot
+          Center(
+            child: SizedBox(
+              height: 160,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  AnimatedBuilder(
+                    animation: _robotBreathing,
+                    builder: (context, child) {
+                      return Container(
+                        width: 140 + (_robotBreathing.value * 10),
+                        height: 140 + (_robotBreathing.value * 10),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.primary.withValues(alpha: 0.05),
+                        ),
+                      );
+                    },
+                  ),
+                  AnimatedBuilder(
+                    animation: _robotFloating,
+                    builder: (context, child) {
+                      return Transform.translate(
+                        offset: Offset(0, -5 + (_robotFloating.value * 10)),
+                        child: Image.asset(
+                          'assets/images/ai_robot_illustration.png',
+                          height: 120,
+                          errorBuilder: (_, error, stackTrace) =>
+                              const SizedBox.shrink(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
-            ...steps.asMap().entries.map((entry) {
-              final idx = entry.key;
-              final step = entry.value;
-              final isDone = _progress >= (idx + 1) / 6.0;
-              final isActive =
-                  _progress >= idx / 6.0 && _progress < (idx + 1) / 6.0;
+          ),
+          const SizedBox(height: 24),
 
-              final Color iconBgColor = isDone
-                  ? AppColors.primary.withValues(alpha: 0.12)
-                  : (isActive
-                        ? AppColors.primary.withValues(alpha: 0.15)
-                        : Colors.transparent);
-              final Widget leadingWidget = Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: iconBgColor,
-                  shape: BoxShape.circle,
-                  border: isDone ? null : Border.all(color: p.stroke),
+          // Header
+          Text(
+            widget.isArabic ? 'جاري تحليل حالتك...' : 'Analyzing your case...',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: scheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            widget.isArabic
+                ? 'الذكاء الاصطناعي يعمل على فهم احتياجك واختيار أفضل مقدم رعاية مناسب.'
+                : 'AI is working to understand your needs and choose the best care provider.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurfaceVariant,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // Progress Card
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
                 ),
-                child: isDone
-                    ? const Icon(
-                        Icons.check_rounded,
-                        size: 18,
-                        color: AppColors.primary,
-                      )
-                    : (isActive
-                          ? const Center(
-                              child: SizedBox(
-                                width: 12,
-                                height: 12,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation(
-                                    AppColors.primary,
-                                  ),
-                                ),
-                              ),
-                            )
-                          : const SizedBox()),
-              );
-
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: Opacity(
-                  opacity: isDone || isActive ? 1.0 : 0.5,
-                  child: Row(
-                    children: [
-                      leadingWidget,
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          step,
-                          style: TextStyle(
-                            color: isActive ? AppColors.primary : themeColor,
-                            fontSize: 15,
-                            fontWeight: isActive || isDone
-                                ? FontWeight.w800
-                                : FontWeight.w600,
-                          ),
-                        ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      widget.isArabic ? 'التقدم الكلي' : 'Overall Progress',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onSurface,
                       ),
-                      if (isDone)
-                        const Icon(
-                          Icons.check_circle_rounded,
-                          color: AppColors.primary,
-                          size: 20,
-                        ),
-                    ],
+                    ),
+                    Text(
+                      '${(_progress * 100).toInt()}%',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: _progress,
+                    minHeight: 8,
+                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      AppColors.primary,
+                    ),
                   ),
                 ),
-              );
-            }),
-            const SizedBox(height: 18),
-            Text(
-              widget.isArabic ? 'جاري التحليل...' : 'Analyzing...',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: dark ? Colors.blue[300] : AppColors.primary,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-              ),
+              ],
             ),
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(99),
-              child: LinearProgressIndicator(
-                minHeight: 14,
-                value: _progress,
-                backgroundColor: p.stroke,
-                color: AppColors.primary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              widget.isArabic
-                  ? 'قد يستغرق الأمر من 1 إلى 2 ثانية'
-                  : 'This may take 1 to 2 seconds',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: p.inkMuted,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _robotHero(CarelinkPalette p) {
-    final robot = Image.asset(
-      'assets/images/ai_robot_illustration.png',
-      fit: BoxFit.contain,
-      filterQuality: FilterQuality.high,
-      errorBuilder: (context, error, stackTrace) {
-        debugPrint(
-          'Warning: Could not load assets/images/ai_robot_illustration.png',
-        );
-        return const Icon(
-          Icons.smart_toy_outlined,
-          size: 96,
-          color: AppColors.primary,
-        );
-      },
-    );
-
-    return Container(
-      height: 220,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.primary.withValues(alpha: p.isDark ? 0.13 : 0.07),
-            p.pageBg,
-            AppColors.primary.withValues(alpha: p.isDark ? 0.08 : 0.035),
-          ],
-        ),
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: p.isDark ? 0.2 : 0.09),
-        ),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          PositionedDirectional(
-            top: -48,
-            end: -35,
-            child: _heroGlow(150, 0.055),
           ),
-          PositionedDirectional(
-            bottom: -60,
-            start: -42,
-            child: _heroGlow(170, 0.045),
-          ),
+          const SizedBox(height: 32),
+
+          // Timeline Stepper
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-            child: robot,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: List.generate(steps.length, (index) {
+                return _buildTimelineStep(
+                  title: steps[index]['title']!,
+                  subtitle: steps[index]['subtitle']!,
+                  isActive: _currentStepIndex == index,
+                  isCompleted: _currentStepIndex > index,
+                  isLast: index == steps.length - 1,
+                  scheme: scheme,
+                );
+              }),
+            ),
           ),
+          const SizedBox(height: 40),
+
+          // Footer Time
+          Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                widget.isArabic
+                    ? 'الوقت المتوقع للانتهاء: 10 - 15 ثانية'
+                    : 'Estimated time: 10 - 15 seconds',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
         ],
       ),
     );
   }
 
-  Widget _heroGlow(double size, double alpha) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppColors.primary.withValues(alpha: alpha),
-      ),
+  Widget _buildTimelineStep({
+    required String title,
+    required String subtitle,
+    required bool isActive,
+    required bool isCompleted,
+    required bool isLast,
+    required ColorScheme scheme,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Column(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isCompleted
+                    ? AppColors.primary
+                    : (isActive
+                          ? AppColors.primary.withValues(alpha: 0.1)
+                          : scheme.surfaceContainerHighest),
+                border: isActive
+                    ? Border.all(color: AppColors.primary, width: 2)
+                    : null,
+              ),
+              child: isActive
+                  ? const Padding(
+                      padding: EdgeInsets.all(4.0),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.primary,
+                      ),
+                    )
+                  : null,
+            ),
+            if (!isLast)
+              Container(
+                width: 2,
+                height: 32,
+                color: isCompleted
+                    ? AppColors.primary
+                    : scheme.surfaceContainerHighest,
+              ),
+          ],
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 300),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: isActive || isCompleted
+                        ? FontWeight.w900
+                        : FontWeight.w600,
+                    color: isActive || isCompleted
+                        ? scheme.onSurface
+                        : scheme.onSurfaceVariant,
+                  ),
+                  child: Text(title),
+                ),
+                const SizedBox(height: 2),
+                AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 300),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isActive
+                        ? AppColors.primary
+                        : scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                  ),
+                  child: Text(subtitle),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

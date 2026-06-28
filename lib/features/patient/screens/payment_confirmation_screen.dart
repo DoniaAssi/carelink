@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/widgets/secure_payment_notice.dart';
 import 'package:carelink/features/patient/payment/payment_screen.dart';
@@ -53,7 +55,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   bool isLoading = false;
 
   String get _displayReason => widget.notes.trim().isEmpty
-      ? 'General consultation'
+      ? context.tr('patient.payment.generalConsultation')
       : widget.notes.trim();
 
   Future<void> _confirm() async {
@@ -96,7 +98,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(content: Text(context.l10n.userMessage(e))),
       );
     } finally {
       if (mounted) setState(() => isLoading = false);
@@ -108,13 +110,13 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     final p = CarelinkPalette.of(context);
     final specialization = widget.provider.specialization.trim().isEmpty
         ? (widget.provider.role.toLowerCase() == 'doctor'
-              ? 'General Medical Care'
-              : 'Home Nursing Care')
+              ? context.tr('patient.payment.generalCare')
+              : context.tr('patient.payment.homeNursing'))
         : widget.provider.specialization;
 
-    return Scaffold(
+    return PatientScaffold(
       backgroundColor: p.pageBg,
-      appBar: const PatientAppBar(title: 'Appointment'),
+      appBar: PatientAppBar(title: context.tr('patient.payment.appointment')),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(
@@ -123,7 +125,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             children: [
               Expanded(
                 child: Text(
-                  'Total\n${widget.amount.toStringAsFixed(2)} ILS',
+                  '${context.tr('patient.payment.total')}\n${widget.amount.toStringAsFixed(2)} ILS',
                   style: TextStyle(
                     color: p.inkDark,
                     fontWeight: FontWeight.w700,
@@ -154,9 +156,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                               color: Colors.white,
                             ),
                           )
-                        : const Text(
-                            'Book & pay',
-                            style: TextStyle(
+                        : Text(
+                            context.tr('patient.payment.bookAndPay'),
+                            style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
                               fontSize: 15,

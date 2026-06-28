@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
@@ -57,7 +58,6 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
   double _reviewAverage = 0;
   int _reviewCount = 0;
   List<Map<String, dynamic>> _reviews = const [];
-  bool _showAllServices = false;
 
   bool get _isArabic => context.l10n.isArabic;
   String _t(String en, String ar) => _isArabic ? ar : en;
@@ -230,63 +230,99 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
-    return Scaffold(
+    return PatientScaffold(
       backgroundColor: p.pageBg,
       appBar: _appBar(),
+      bottomNavigationBar: widget.isRebook || widget.draftBookingRequest != null
+          ? null
+          : _stickyBookingBar(p),
       body: SafeArea(
         top: false,
         child: ListView(
-          padding: EdgeInsets.fromLTRB(16, 10, 16, widget.isRebook ? 14 : 24),
+          padding: EdgeInsets.fromLTRB(16, 10, 16, widget.isRebook ? 14 : 40),
           children: widget.isRebook && widget.draftBookingRequest != null
               ? _quickRebookExperience(p)
-              : [
-                  _heroSection(p),
-                  const SizedBox(height: 12),
-                  _actionRow(p),
-                  const SizedBox(height: 14),
-                  _servicesSection(p),
-                  const SizedBox(height: 18),
-                  _bookingBar(p),
-                  if (_aboutText != null) ...[
-                    const SizedBox(height: 18),
-                    _aboutSection(p),
-                  ],
-                  if (_reviewCount > 0 || _reviews.isNotEmpty) ...[
-                    const SizedBox(height: 18),
-                    _privateReviewsSection(p),
-                  ],
-                  if (_loadingDetails) ...[
-                    const SizedBox(height: 14),
-                    const LinearProgressIndicator(
-                      color: AppColors.primary,
-                      minHeight: 2,
-                    ),
-                  ],
-                ],
+              : _normalProviderExperience(p),
         ),
       ),
+    );
+  }
+
+  List<Widget> _normalProviderExperience(CarelinkPalette p) {
+    return [
+      _entrance(_heroSection(p), 0),
+      const SizedBox(height: 16),
+      _entrance(_actionRow(p), 1),
+      if (_aboutText != null) ...[
+        const SizedBox(height: 20),
+        _entrance(_aboutSection(p), 2),
+      ],
+      const SizedBox(height: 20),
+      _entrance(_trustSection(p), 3),
+      if (_reviewCount > 0 || _reviews.isNotEmpty) ...[
+        const SizedBox(height: 20),
+        _entrance(_privateReviewsSection(p), 4),
+      ],
+      if (_loadingDetails) ...[
+        const SizedBox(height: 16),
+        const LinearProgressIndicator(color: AppColors.primary, minHeight: 2),
+      ],
+    ];
+  }
+
+  Widget _entrance(Widget child, int index) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Duration(milliseconds: 240 + (index * 35)),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) => Opacity(
+        opacity: value,
+        child: Transform.translate(
+          offset: Offset(0, 14 * (1 - value)),
+          child: Transform.scale(
+            scale: 0.985 + (0.015 * value),
+            alignment: Alignment.topCenter,
+            child: child,
+          ),
+        ),
+      ),
+      child: child,
     );
   }
 
   List<Widget> _quickRebookExperience(CarelinkPalette p) {
     return [
       _rebookProviderHeader(p),
-      const SizedBox(height: 12),
-      Text(
-        _t('Previous Appointment', 'Previous Appointment'),
-        style: TextStyle(
-          color: p.inkDark,
-          fontSize: 18,
-          height: 1.08,
-          fontWeight: FontWeight.w900,
-        ),
+      const SizedBox(height: 20),
+      Row(
+        children: [
+          Icon(
+            Icons.calendar_today_outlined,
+            color: AppColors.primary,
+            size: 19,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _t('Previous Appointment', 'الموعد السابق'),
+              style: TextStyle(
+                color: p.inkDark,
+                fontSize: 16,
+                height: 1.1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
       ),
-      const SizedBox(height: 8),
+      const SizedBox(height: 10),
       _previousAppointmentCard(p),
-      const SizedBox(height: 14),
+      const SizedBox(height: 18),
       _rebookPrimaryActions(p),
-      const SizedBox(height: 12),
+      const SizedBox(height: 16),
       _reviewsLink(p),
+      const SizedBox(height: 24),
+      _rebookReassurance(p),
       if (_loadingDetails) ...[
         const SizedBox(height: 14),
         const LinearProgressIndicator(color: AppColors.primary, minHeight: 2),
@@ -296,23 +332,23 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
 
   Widget _rebookProviderHeader(CarelinkPalette p) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: p.surface,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: p.stroke.withValues(alpha: 0.68)),
         boxShadow: [
           BoxShadow(
             color: p.cardShadowColor(p.isDark ? 0.12 : 0.03),
-            blurRadius: 12,
-            offset: const Offset(0, 5),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Row(
         children: [
           _compactAvatar(p),
-          const SizedBox(width: 11),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -327,17 +363,17 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: p.inkDark,
-                          fontSize: 16,
+                          fontSize: 17,
                           height: 1.15,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 5),
                     const Icon(
                       Icons.verified_rounded,
                       color: AppColors.primary,
-                      size: 17,
+                      size: 18,
                     ),
                   ],
                 ),
@@ -348,7 +384,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: p.inkMuted,
-                    fontSize: 12.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -362,41 +398,11 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFB020).withValues(alpha: 0.13),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.star_rounded,
-                            color: Color(0xFFFFB020),
-                            size: 14,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _ratingValue,
-                            style: TextStyle(
-                              color: p.inkDark,
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
                         color: AppColors.primary.withValues(alpha: 0.09),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        _t('Verified', 'Verified'),
+                        _t('Verified', 'موثّق'),
                         style: const TextStyle(
                           color: AppColors.primary,
                           fontSize: 11,
@@ -404,6 +410,32 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.star_rounded,
+                      color: Color(0xFFFFB020),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      _ratingValue,
+                      style: TextStyle(
+                        color: p.inkDark,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (_reviewCount > 0) ...[
+                      const SizedBox(width: 3),
+                      Text(
+                        '($_reviewCount)',
+                        style: TextStyle(
+                          color: p.inkMuted,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -421,17 +453,17 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
         : _specialtyLabel;
     final date = request.appointmentDate.trim().isNotEmpty
         ? _formatRebookDate(request.appointmentDate)
-        : _t('Date unavailable', 'Date unavailable');
+        : _t('Date unavailable', 'التاريخ غير متوفر');
     final time = request.appointmentTime.trim().isNotEmpty
         ? _formatRebookTime(request.appointmentTime)
-        : _t('Time unavailable', 'Time unavailable');
+        : _t('Time unavailable', 'الوقت غير متوفر');
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       decoration: BoxDecoration(
         color: p.isDark ? const Color(0xFF0E2C29) : const Color(0xFFEFFBF8),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: AppColors.primary.withValues(alpha: p.isDark ? 0.34 : 0.18),
         ),
@@ -469,13 +501,13 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 10),
           Row(
             children: [
               const Icon(
                 Icons.calendar_today_rounded,
                 color: AppColors.primary,
-                size: 16,
+                size: 15,
               ),
               const SizedBox(width: 7),
               Flexible(
@@ -485,7 +517,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: p.inkMuted,
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -554,22 +586,47 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
         ),
       ),
     );
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: p.surfaceSoft,
-        border: Border.all(color: p.stroke.withValues(alpha: 0.72), width: 1),
-      ),
-      child: ClipOval(
-        child: url == null
-            ? fallback
-            : Image.network(
-                url,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => fallback,
+    return SizedBox(
+      width: 72,
+      height: 72,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: p.surfaceSoft,
+                border: Border.all(
+                  color: p.stroke.withValues(alpha: 0.72),
+                  width: 1,
+                ),
               ),
+              child: ClipOval(
+                child: url == null
+                    ? fallback
+                    : Image.network(
+                        url,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => fallback,
+                      ),
+              ),
+            ),
+          ),
+          PositionedDirectional(
+            end: 1,
+            bottom: 2,
+            child: Container(
+              width: 15,
+              height: 15,
+              decoration: BoxDecoration(
+                color: const Color(0xFF16A34A),
+                shape: BoxShape.circle,
+                border: Border.all(color: p.surface, width: 2.2),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -591,7 +648,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
             children: [
               Expanded(
                 child: Text(
-                  _t('Reviews ($_reviewCount)', 'Reviews ($_reviewCount)'),
+                  _t('Reviews ($_reviewCount)', 'التقييمات ($_reviewCount)'),
                   style: TextStyle(
                     color: p.inkDark,
                     fontSize: 14,
@@ -669,7 +726,12 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _MobileRebookButton(
-          label: _t('Rebook Same Appointment', 'Rebook Same Appointment'),
+          label: _t('Rebook Same Appointment', 'إعادة حجز نفس الموعد'),
+          subtitle: _t(
+            'Book again with the previous appointment details',
+            'احجز مرة أخرى بنفس تفاصيل الموعد السابق',
+          ),
+          icon: Icons.event_repeat_rounded,
           onPressed: hasOriginalSlot && !_rebookChecking
               ? _bookSameAppointmentDetails
               : null,
@@ -684,7 +746,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
-                _t('OR', 'OR'),
+                _t('OR', 'أو'),
                 style: TextStyle(
                   color: p.inkMuted,
                   fontSize: 11,
@@ -697,7 +759,12 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
         ),
         const SizedBox(height: 10),
         _MobileRebookButton(
-          label: _t('Choose Different Time', 'Choose Different Time'),
+          label: _t('Choose Different Time', 'اختر وقتاً مختلفاً'),
+          subtitle: _t(
+            'Pick a new date and time',
+            'اختر تاريخاً ووقتاً جديدين',
+          ),
+          icon: Icons.schedule_rounded,
           onPressed: !_rebookChecking && providerHasSlots
               ? _changeRebookTime
               : null,
@@ -708,10 +775,78 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
     );
   }
 
+  Widget _rebookReassurance(CarelinkPalette p) {
+    return Column(
+      children: [
+        Container(
+          width: 92,
+          height: 60,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: p.isDark ? 0.12 : 0.06),
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(46),
+              bottom: Radius.circular(18),
+            ),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                Icons.calendar_month_rounded,
+                size: 38,
+                color: AppColors.primary.withValues(alpha: 0.38),
+              ),
+              PositionedDirectional(
+                end: 17,
+                bottom: 7,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: p.surface,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.42),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.schedule_rounded,
+                    size: 17,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _t('We are here to care for you', 'نحن هنا لرعايتك'),
+          style: TextStyle(
+            color: p.inkMuted,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Icon(
+          Icons.favorite_border_rounded,
+          color: AppColors.primary.withValues(alpha: 0.65),
+          size: 15,
+        ),
+      ],
+    );
+  }
+
   PreferredSizeWidget _appBar() {
+    final role = _provider.role.trim().toLowerCase();
+    final title = role == 'doctor'
+        ? _t('Doctor', 'طبيب')
+        : role == 'nurse'
+        ? _t('Nurse', 'ممرض')
+        : _displayName;
     return PatientAppBar(
       titleWidget: Text(
-        _displayName,
+        title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: context.patientTx.headline.copyWith(color: AppColors.primary),
@@ -723,21 +858,51 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
 
   Widget _heroSection(CarelinkPalette p) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: p.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: p.stroke.withValues(alpha: 0.72)),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: p.stroke.withValues(alpha: 0.58)),
         boxShadow: [
           BoxShadow(
-            color: p.cardShadowColor(p.isDark ? 0.20 : 0.06),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
+            color: p.cardShadowColor(p.isDark ? 0.18 : 0.055),
+            blurRadius: 26,
+            offset: const Offset(0, 11),
           ),
         ],
       ),
       child: Column(
         children: [
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.09),
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.verified_rounded,
+                    color: AppColors.primary,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    _t('Verified', 'موثّق'),
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -757,17 +922,11 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: p.inkDark,
-                              fontSize: 21,
+                              fontSize: 19,
                               height: 1.15,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        const Icon(
-                          Icons.verified_rounded,
-                          color: AppColors.primary,
-                          size: 19,
                         ),
                       ],
                     ),
@@ -778,11 +937,11 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: p.inkMuted,
-                        fontSize: 14,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 9),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
@@ -792,15 +951,28 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                         color: AppColors.primary.withValues(alpha: 0.09),
                         borderRadius: BorderRadius.circular(999),
                       ),
-                      child: Text(
-                        _t('CareLink verified', 'موثّق من كيرلينك'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.primary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.shield_outlined,
+                            color: AppColors.primary,
+                            size: 15,
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              _t('Verified by CareLink', 'موثّق من CareLink'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -808,7 +980,9 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
+          Divider(height: 1, color: p.stroke.withValues(alpha: 0.65)),
+          const SizedBox(height: 16),
           _essentialStatsRow(p),
         ],
       ),
@@ -845,22 +1019,25 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
         ),
       ),
     );
-    return Container(
-      width: 104,
-      height: 104,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: p.surfaceSoft,
-        border: Border.all(color: p.stroke.withValues(alpha: 0.72), width: 1),
-      ),
-      child: ClipOval(
-        child: url == null
-            ? fallback
-            : Image.network(
-                url,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => fallback,
-              ),
+    return Hero(
+      tag: 'provider-avatar-${_provider.userId}',
+      child: Container(
+        width: 90,
+        height: 90,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: p.surfaceSoft,
+          border: Border.all(color: p.stroke.withValues(alpha: 0.72), width: 1),
+        ),
+        child: ClipOval(
+          child: url == null
+              ? fallback
+              : Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => fallback,
+                ),
+        ),
       ),
     );
   }
@@ -904,7 +1081,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
     final color = accentColor ?? AppColors.primary;
     return _PressableScale(
       child: Material(
-        color: active ? color.withValues(alpha: 0.13) : p.surfaceSoft,
+        color: active ? color.withValues(alpha: 0.12) : p.surface,
         borderRadius: BorderRadius.circular(24),
         child: InkWell(
           onTap: onPressed,
@@ -918,8 +1095,8 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: active
-                    ? color.withValues(alpha: 0.45)
-                    : p.stroke.withValues(alpha: 0.7),
+                    ? color.withValues(alpha: 0.5)
+                    : color.withValues(alpha: 0.75),
               ),
             ),
             child: Row(
@@ -932,24 +1109,18 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                     height: 14,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        active ? color : AppColors.primary,
-                      ),
+                      valueColor: AlwaysStoppedAnimation<Color>(color),
                     ),
                   )
                 else
-                  Icon(
-                    icon,
-                    size: 17,
-                    color: active ? color : AppColors.primary,
-                  ),
+                  Icon(icon, size: 17, color: color),
                 const SizedBox(width: 6),
                 Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: active ? color : p.inkDark,
+                    color: color,
                     fontSize: 11.5,
                     fontWeight: FontWeight.w800,
                   ),
@@ -963,14 +1134,18 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
   }
 
   Widget _essentialStatsRow(CarelinkPalette p) {
+    final serviceArea = _cleanDisplay(_profile?.serviceAreas);
     return Row(
       children: [
         Expanded(
           child: _statTile(
             p,
             Icons.star_rounded,
+            _t('Rating', 'التقييم'),
             _ratingValue,
-            _t('Rating', 'Rating'),
+            _reviewCount > 0
+                ? _t('$_reviewCount reviews', '$_reviewCount تقييم')
+                : _t('Patient rating', 'تقييم المرضى'),
           ),
         ),
         _statDivider(p),
@@ -978,12 +1153,15 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
           child: _statTile(
             p,
             Icons.location_on_outlined,
+            _t('Distance', 'المسافة'),
             _resolvingDistance
                 ? '...'
                 : _distance.isEmpty
-                ? _t('Not set', 'Not set')
-                : _distance,
-            _t('Away', 'Away'),
+                ? _t('Not set', 'غير محدد')
+                : _localizedDistance,
+            serviceArea.isEmpty
+                ? _t('Location unavailable', 'الموقع غير محدد')
+                : serviceArea,
           ),
         ),
         _statDivider(p),
@@ -991,8 +1169,11 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
           child: _statTile(
             p,
             Icons.schedule_rounded,
+            _t('Availability', 'التوفر'),
             _availabilityShortLabel,
-            _availabilityHintLabel,
+            ProviderBookingEligibility.canBook(_provider)
+                ? _t('Ready to book', 'جاهز للحجز')
+                : _availabilityHintLabel,
           ),
         ),
       ],
@@ -1002,7 +1183,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
   Widget _statDivider(CarelinkPalette p) {
     return Container(
       width: 1,
-      height: 38,
+      height: 64,
       margin: const EdgeInsets.symmetric(horizontal: 8),
       color: p.stroke.withValues(alpha: 0.8),
     );
@@ -1011,42 +1192,48 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
   Widget _statTile(
     CarelinkPalette p,
     IconData icon,
+    String title,
     String value,
-    String label,
+    String subtitle,
   ) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.start,
       children: [
-        Icon(icon, color: AppColors.primary, size: 21),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: p.inkDark,
-                  fontSize: 13.5,
-                  height: 1.15,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: p.inkMuted,
-                  fontSize: 11.5,
-                  height: 1.15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+        Icon(icon, color: AppColors.primary, size: 20),
+        const SizedBox(height: 5),
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: p.inkMuted,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: p.inkDark,
+            fontSize: 13,
+            height: 1.15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: p.inkMuted,
+            fontSize: 9.5,
+            height: 1.15,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],
@@ -1140,7 +1327,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _t('Book Again', 'Book Again'),
+                    _t('Book Again', 'احجز مرة أخرى'),
                     style: TextStyle(
                       color: p.inkDark,
                       fontSize: 24,
@@ -1151,7 +1338,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                   const SizedBox(height: 8),
                   Text(
                     _t(
-                      'Quickly create a new appointment with the same provider.',
+                      'أنشئ موعداً جديداً بسرعة مع مقدم الرعاية نفسه.',
                       'Quickly create a new appointment with the same provider.',
                     ),
                     maxLines: 2,
@@ -1174,7 +1361,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                _t('Rebook', 'Rebook'),
+                _t('Rebook', 'إعادة الحجز'),
                 style: const TextStyle(
                   color: AppColors.primary,
                   fontSize: 13,
@@ -1189,9 +1376,9 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
           palette: p,
           highlighted: true,
           enabled: hasOriginalSlot,
-          title: _t('Book with same appointment', 'Book with same appointment'),
+          title: _t('Book with same appointment', 'الحجز بنفس تفاصيل الموعد'),
           description: _t(
-            'Use your previous appointment details.',
+            'استخدم تفاصيل موعدك السابق.',
             'Use your previous appointment details.',
           ),
           facts: [
@@ -1199,31 +1386,31 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
               icon: Icons.calendar_today_rounded,
               text: hasOriginalSlot
                   ? _formatRebookDate(request.appointmentDate)
-                  : _t('Date unavailable', 'Date unavailable'),
+                  : _t('Date unavailable', 'التاريخ غير متوفر'),
             ),
             _RebookCardFact(
               icon: Icons.schedule_rounded,
               text: hasOriginalSlot
                   ? _formatRebookTime(request.appointmentTime)
-                  : _t('Time unavailable', 'Time unavailable'),
+                  : _t('Time unavailable', 'الوقت غير متوفر'),
             ),
             _RebookCardFact(icon: Icons.local_offer_outlined, text: service),
           ],
-          buttonLabel: _t('Continue', 'Continue'),
+          buttonLabel: _t('Continue', 'متابعة'),
           onPressed: hasOriginalSlot ? _bookSameAppointmentDetails : null,
         ),
         const SizedBox(height: 14),
         _RebookOptionCard(
           palette: p,
-          title: _t('Change appointment time', 'Change appointment time'),
+          title: _t('Change appointment time', 'تغيير وقت الموعد'),
           description: _t(
-            'Keep the same provider and service.',
+            'احتفظ بمقدم الرعاية والخدمة نفسيهما.',
             'Keep the same provider and service.',
           ),
           facts: [
             _RebookCardFact(icon: Icons.local_offer_outlined, text: service),
           ],
-          buttonLabel: _t('Choose New Time', 'Choose New Time'),
+          buttonLabel: _t('Choose New Time', 'اختيار وقت جديد'),
           outlinedButton: true,
           onPressed: _changeRebookTime,
         ),
@@ -1246,7 +1433,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
               Expanded(
                 child: Text(
                   _t(
-                    'We keep your data private and secure.',
+                    'نحافظ على خصوصية بياناتك وأمانها.',
                     'We keep your data private and secure.',
                   ),
                   style: TextStyle(
@@ -1725,63 +1912,107 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
     return '$hour12:${minute.toString().padLeft(2, '0')} $suffix';
   }
 
-  Widget _servicesSection(CarelinkPalette p) {
-    final services = _services;
-    final visibleServices = _showAllServices
-        ? services
-        : services.take(3).toList();
-    return _section(
-      p,
-      title: _t('Services', 'الخدمات'),
-      showDivider: false,
-      trailing: services.length > 3
-          ? TextButton(
-              onPressed: () {
-                setState(() => _showAllServices = !_showAllServices);
-              },
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 0),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(
-                _showAllServices
-                    ? _t('Show less', 'عرض أقل')
-                    : _t('View all', 'عرض الكل'),
-              ),
-            )
-          : null,
-      child: services.isEmpty
-          ? Text(
-              _t('General care service', 'خدمة رعاية عامة'),
-              style: TextStyle(color: p.inkMuted, fontWeight: FontWeight.w600),
-            )
-          : Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ...visibleServices.map(
-                  (service) => Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      service,
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+  Widget _trustSection(CarelinkPalette p) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
+      decoration: BoxDecoration(
+        color: p.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: p.stroke.withValues(alpha: 0.58)),
+        boxShadow: [
+          BoxShadow(
+            color: p.cardShadowColor(p.isDark ? 0.15 : 0.045),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: _trustItem(
+              p,
+              Icons.shield_outlined,
+              _t('Verified', 'موثّق'),
+              _t('Identity verified', 'تم التحقق من الهوية'),
             ),
+          ),
+          _trustDivider(p),
+          Expanded(
+            child: _trustItem(
+              p,
+              Icons.schedule_rounded,
+              _t('Responsive', 'سريع الاستجابة'),
+              _t('Responds quickly', 'يرد خلال دقائق'),
+            ),
+          ),
+          _trustDivider(p),
+          Expanded(
+            child: _trustItem(
+              p,
+              Icons.star_outline_rounded,
+              _t('Excellent rating', 'تقييم ممتاز'),
+              _ratingValue == '—'
+                  ? _t('Not rated yet', 'لم يُقيّم بعد')
+                  : _t('$_ratingValue out of 5', '$_ratingValue من 5'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _trustDivider(CarelinkPalette p) => Container(
+    width: 1,
+    height: 82,
+    margin: const EdgeInsets.symmetric(horizontal: 7),
+    color: p.stroke.withValues(alpha: 0.7),
+  );
+
+  Widget _trustItem(
+    CarelinkPalette p,
+    IconData icon,
+    String title,
+    String subtitle,
+  ) {
+    return Column(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.09),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: AppColors.primary, size: 21),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: p.inkDark,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          subtitle,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: p.inkMuted,
+            fontSize: 9.5,
+            height: 1.25,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1789,41 +2020,70 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          _t('Reviews', 'Reviews'),
-          style: TextStyle(
-            color: p.inkDark,
-            fontSize: 22,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 10),
         Row(
           children: [
-            const Icon(Icons.star_rounded, color: Color(0xFFFFB020), size: 25),
-            const SizedBox(width: 6),
-            Text(
-              _reviewAverage.toStringAsFixed(1),
-              style: TextStyle(
-                color: p.inkDark,
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
+            Expanded(
+              child: Text(
+                _t('Latest reviews', 'آخر التقييمات'),
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
-            const SizedBox(width: 8),
-            Text(
-              _t('($_reviewCount reviews)', '($_reviewCount reviews)'),
-              style: TextStyle(
-                color: p.inkMuted,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFB020).withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.star_rounded,
+                    color: Color(0xFFFFB020),
+                    size: 15,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$_ratingValue ($_reviewCount)',
+                    style: TextStyle(
+                      color: p.inkDark,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
         if (_reviews.isNotEmpty) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           ..._reviews.map((review) => _privateReviewTile(p, review)),
+          const SizedBox(height: 2),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: OutlinedButton(
+              onPressed: _openProviderReviews,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: Text(
+                _t('View all reviews', 'عرض جميع التقييمات'),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
         ],
       ],
     );
@@ -1835,11 +2095,11 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
     final dateLabel = _formatReviewDate(review);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      constraints: const BoxConstraints(maxHeight: 118),
+      padding: const EdgeInsets.all(13),
+      constraints: const BoxConstraints(maxHeight: 112),
       decoration: BoxDecoration(
         color: p.surface,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: p.stroke.withValues(alpha: 0.78)),
         boxShadow: [
           BoxShadow(
@@ -2108,6 +2368,29 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
     );
   }
 
+  Widget _stickyBookingBar(CarelinkPalette p) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        10 + MediaQuery.paddingOf(context).bottom,
+      ),
+      decoration: BoxDecoration(
+        color: p.surface.withValues(alpha: 0.97),
+        border: Border(top: BorderSide(color: p.stroke.withValues(alpha: 0.6))),
+        boxShadow: [
+          BoxShadow(
+            color: p.cardShadowColor(p.isDark ? 0.25 : 0.09),
+            blurRadius: 24,
+            offset: const Offset(0, -8),
+          ),
+        ],
+      ),
+      child: _bookingBar(p),
+    );
+  }
+
   Widget _bookingBar(CarelinkPalette p) {
     final patientId = widget.patientUserId?.trim() ?? '';
     final hasSlots = ProviderBookingEligibility.canBook(_provider);
@@ -2117,90 +2400,96 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
         : !hasSlots
         ? _t('No available slots', 'لا توجد مواعيد متاحة')
         : _t('Book Now', 'احجز الآن');
-    return Padding(
-      padding: const EdgeInsets.only(top: 2, bottom: 2),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (patientId.isNotEmpty && !hasSlots) ...[
-            Text(
-              _t(
-                'This provider has no available appointments right now.',
-                'لا توجد مواعيد متاحة لهذا مقدم الرعاية حالياً.',
-              ),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: p.inkMuted,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-              ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (patientId.isNotEmpty && !hasSlots) ...[
+          Text(
+            _t(
+              'This provider has no available appointments right now.',
+              'لا توجد مواعيد متاحة لهذا مقدم الرعاية حالياً.',
             ),
-            const SizedBox(height: 8),
-          ],
-          SizedBox(
-            height: 52,
-            width: double.infinity,
-            child: Align(
-              alignment: Alignment.center,
-              child: _PressableScale(
-                enabled: enabled,
-                child: Material(
-                  color: enabled
-                      ? AppColors.primary
-                      : AppColors.primary.withValues(alpha: 0.44),
-                  borderRadius: BorderRadius.circular(28),
-                  elevation: enabled ? 8 : 0,
-                  shadowColor: AppColors.primary.withValues(alpha: 0.28),
-                  child: InkWell(
-                    onTap: enabled ? _book : null,
-                    borderRadius: BorderRadius.circular(28),
-                    splashColor: Colors.white.withValues(alpha: 0.16),
-                    highlightColor: Colors.white.withValues(alpha: 0.08),
-                    child: Container(
-                      height: 52,
-                      constraints: const BoxConstraints(
-                        minWidth: 154,
-                        maxWidth: 260,
-                      ),
-                      padding: const EdgeInsetsDirectional.fromSTEB(
-                        18,
-                        0,
-                        16,
-                        0,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Icon(
-                            Icons.arrow_forward_rounded,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: p.inkMuted,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        SizedBox(
+          height: 56,
+          width: double.infinity,
+          child: _PressableScale(
+            enabled: enabled,
+            child: Material(
+              color: enabled
+                  ? AppColors.primary
+                  : AppColors.primary.withValues(alpha: 0.44),
+              borderRadius: BorderRadius.circular(28),
+              elevation: enabled ? 10 : 0,
+              shadowColor: AppColors.primary.withValues(alpha: 0.28),
+              child: InkWell(
+                onTap: enabled ? _book : null,
+                borderRadius: BorderRadius.circular(28),
+                splashColor: Colors.white.withValues(alpha: 0.16),
+                highlightColor: Colors.white.withValues(alpha: 0.08),
+                child: Container(
+                  height: 56,
+                  width: double.infinity,
+                  padding: const EdgeInsetsDirectional.fromSTEB(18, 0, 16, 0),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
                             color: Colors.white,
-                            size: 18,
-                            textDirection: Directionality.of(context),
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w900,
                           ),
-                        ],
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.arrow_forward_rounded,
+                        color: Colors.white,
+                        size: 18,
+                        textDirection: Directionality.of(context),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 7),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.shield_outlined,
+              color: AppColors.primary,
+              size: 15,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              _t('Secure and fast booking', 'حجز آمن وسريع'),
+              style: TextStyle(
+                color: p.inkMuted,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -2228,8 +2517,11 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
           request: widget.isRebook && widget.existingBooking != null
               ? request.copyWith(
                   isRebook: true,
-                  previousAppointmentId: widget.existingBooking!['requestId']?.toString() ?? '',
-                  serviceType: widget.existingBooking!['serviceType']?.toString() ?? request.serviceType,
+                  previousAppointmentId:
+                      widget.existingBooking!['requestId']?.toString() ?? '',
+                  serviceType:
+                      widget.existingBooking!['serviceType']?.toString() ??
+                      request.serviceType,
                 )
               : request,
         ),
@@ -2330,6 +2622,11 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
     return value > 0 ? value.toStringAsFixed(1) : '—';
   }
 
+  String get _localizedDistance {
+    if (!_isArabic) return _distance;
+    return _distance.replaceAll(RegExp(r'\s*km$', caseSensitive: false), ' كم');
+  }
+
   String get _availabilityLabel {
     if (!ProviderBookingEligibility.canBook(_provider)) {
       return _t('Availability not set', 'التوفر غير محدد');
@@ -2341,31 +2638,24 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
 
   String get _availabilityShortLabel {
     if (!ProviderBookingEligibility.canBook(_provider)) {
-      return _t('Not set', 'Not set');
+      return _t('Not set', 'غير محدد');
     }
-    return _t('Available', 'Available');
+    return _t('Available', 'متاح');
   }
 
   String get _availabilityHintLabel {
     if (!ProviderBookingEligibility.canBook(_provider)) {
-      return _t('No slots', 'No slots');
+      return _t('No slots', 'لا توجد مواعيد');
     }
     return _availableDayLabel.toLowerCase().contains('today')
-        ? _t('Today', 'Today')
-        : _t('Now', 'Now');
+        ? _t('Today', 'اليوم')
+        : _t('Now', 'الآن');
   }
 
   String? get _aboutText {
     final bio = _clean(_profile?.bio);
     return bio.isEmpty ? null : bio;
   }
-
-  List<String> get _services => _clean(_provider.serviceType)
-      .split(RegExp(r'[,;]'))
-      .map(_cleanDisplay)
-      .where((e) => e.isNotEmpty)
-      .toSet()
-      .toList();
 
   List<AvailabilitySlot> get _todayOrNextSlots {
     final slots = _orderedSlots;
@@ -2434,6 +2724,8 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
 class _MobileRebookButton extends StatefulWidget {
   const _MobileRebookButton({
     required this.label,
+    required this.subtitle,
+    required this.icon,
     required this.palette,
     required this.primary,
     this.onPressed,
@@ -2441,6 +2733,8 @@ class _MobileRebookButton extends StatefulWidget {
   });
 
   final String label;
+  final String subtitle;
+  final IconData icon;
   final CarelinkPalette palette;
   final bool? primary;
   final VoidCallback? onPressed;
@@ -2488,7 +2782,7 @@ class _MobileRebookButtonState extends State<_MobileRebookButton> {
             highlightColor: (primary ? Colors.white : AppColors.primary)
                 .withValues(alpha: 0.08),
             child: Container(
-              height: 50,
+              height: 62,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
@@ -2513,15 +2807,60 @@ class _MobileRebookButtonState extends State<_MobileRebookButton> {
                           valueColor: AlwaysStoppedAnimation<Color>(fg),
                         ),
                       )
-                    : Text(
-                        widget.label,
+                    : Padding(
                         key: ValueKey(widget.label),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: enabled ? fg : widget.palette.inkMuted,
-                          fontSize: primary ? 15 : 14,
-                          fontWeight: FontWeight.w900,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: [
+                            Icon(
+                              widget.icon,
+                              color: enabled ? fg : widget.palette.inkMuted,
+                              size: 23,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    widget.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: enabled
+                                          ? fg
+                                          : widget.palette.inkMuted,
+                                      fontSize: primary ? 14.5 : 14,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    widget.subtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: enabled
+                                          ? fg.withValues(
+                                              alpha: primary ? 0.82 : 0.72,
+                                            )
+                                          : widget.palette.inkMuted,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Directionality.of(context) == TextDirection.rtl
+                                  ? Icons.chevron_left_rounded
+                                  : Icons.chevron_right_rounded,
+                              color: enabled ? fg : widget.palette.inkMuted,
+                              size: 21,
+                            ),
+                          ],
                         ),
                       ),
               ),
@@ -2549,7 +2888,7 @@ class _ProviderReviewsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
-    return Scaffold(
+    return PatientScaffold(
       backgroundColor: p.pageBg,
       appBar: PatientAppBar(
         titleWidget: Text(

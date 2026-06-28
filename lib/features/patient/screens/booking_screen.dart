@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:intl/intl.dart' as intl;
 
 import 'package:carelink/core/app_colors.dart';
@@ -247,7 +248,7 @@ class _BookingScreenState extends State<BookingScreen> {
       setState(() => _isChecking = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          content: Text(context.l10n.userMessage(e)),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -261,7 +262,7 @@ class _BookingScreenState extends State<BookingScreen> {
         _selectedTimeLabel != null && options.contains(_selectedTimeLabel);
 
     final p = CarelinkPalette.of(context);
-    return Scaffold(
+    return PatientScaffold(
       backgroundColor: p.pageBg,
       appBar: PatientAppBar(
         title: context.l10n.isArabic
@@ -447,7 +448,10 @@ class _BookingScreenState extends State<BookingScreen> {
                 ),
                 const SizedBox(height: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
@@ -579,8 +583,8 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   Widget _horizontalDateCard(CarelinkPalette p, DateTime date) {
-    final selected = _isSameDay(date, _selectedDate);
     final available = !_isDateDisabled(date);
+    final selected = available && _isSameDay(date, _selectedDate);
     return PatientPressable(
       enabled: available,
       onTap: available ? () => _selectDate(date) : null,
@@ -599,7 +603,9 @@ class _BookingScreenState extends State<BookingScreen> {
                 ? AppColors.primary
                 : available
                 ? p.surface
-                : p.surfaceSoft.withValues(alpha: 0.4),
+                : p.isDark
+                ? p.surfaceSoft.withValues(alpha: 0.5)
+                : const Color(0xFFF1F5F4),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: selected
@@ -1097,7 +1103,7 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
               const SizedBox(width: 7),
               Text(
-                context.l10n.isArabic ? 'Available dates' : 'Available dates',
+                context.tr('patient.availableDates'),
                 style: TextStyle(
                   color: p.inkMuted,
                   fontSize: 11.5,
@@ -1398,7 +1404,8 @@ class _BookingScreenState extends State<BookingScreen> {
     VoidCallback? onSelected,
   }) {
     final available = !_isDateDisabled(date);
-    final selected = _isSameDay(date, selectedDate ?? _selectedDate);
+    final selected =
+        available && _isSameDay(date, selectedDate ?? _selectedDate);
     final muted = date.isBefore(_today) || !available;
 
     return PatientPressable(
@@ -1417,7 +1424,9 @@ class _BookingScreenState extends State<BookingScreen> {
                   ? AppColors.primary
                   : available
                   ? AppColors.primary.withValues(alpha: p.isDark ? 0.15 : 0.10)
-                  : p.surface,
+                  : p.isDark
+                  ? p.surfaceSoft
+                  : const Color(0xFFF1F5F4),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: selected

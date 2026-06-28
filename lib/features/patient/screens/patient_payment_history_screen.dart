@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
@@ -45,7 +46,7 @@ class _PatientPaymentHistoryScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
+        _error = context.l10n.userMessage(e);
         _loading = false;
       });
     }
@@ -79,7 +80,7 @@ class _PatientPaymentHistoryScreenState
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
     final isAr = context.l10n.isArabic;
-    return Scaffold(
+    return PatientScaffold(
       backgroundColor: p.pageBg,
       appBar: PatientAppBar(title: isAr ? 'سجل الدفع' : 'Payment history'),
       body: _loading

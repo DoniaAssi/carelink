@@ -37,6 +37,20 @@ async function listVisitReportsForPatient(patientId) {
   const hasVisitDate = await hasColumn('visit_reports', 'visit_date');
   const hasMed = await hasColumn('visit_reports', 'medications_prescribed');
   const hasAll = await hasColumn('visit_reports', 'allergies_noted');
+  const hasReportKind = await hasColumn('visit_reports', 'report_kind');
+  const hasSymptoms = await hasColumn('visit_reports', 'symptoms');
+  const hasChiefComplaint = await hasColumn(
+    'visit_reports',
+    'chief_complaint'
+  );
+  const hasMedicalHistory = await hasColumn(
+    'visit_reports',
+    'medical_history'
+  );
+  const hasRequiredVisits = await hasColumn(
+    'visit_reports',
+    'required_visits'
+  );
 
   const visitDateExpr = hasVisitDate
     ? 'COALESCE(vr.visit_date, DATE(vr.created_at))'
@@ -76,7 +90,8 @@ async function listVisitReportsForPatient(patientId) {
        vr.appointment_id,
        ${visitDateExpr} AS visit_date,
        vr.created_at,
-       u.fullName AS providerName
+       u.fullName AS providerName,
+       u.role AS providerRole
      FROM visit_reports vr
      LEFT JOIN user u ON BINARY u.userId = BINARY vr.provider_id
      WHERE BINARY vr.patient_id = BINARY ?
@@ -287,6 +302,259 @@ async function listPatientMedicalRecordsForPatient(patientId) {
   });
 }
 
+function cleanText(value) {
+  if (value === null || value === undefined) return '';
+  const text = value.toString().trim();
+  return text.toLowerCase() === 'null' ? '' : text;
+}
+
+function creatorRole(value, fallback = 'doctor') {
+  const role = cleanText(value).toLowerCase();
+  if (role === 'nurse') return 'nurse';
+  if (role === 'patient') return 'patient';
+  return fallback;
+}
+
+function descriptionFromSections(sections) {
+  return sections
+    .map(([label, value]) => [label, cleanText(value)])
+    .filter(([, value]) => value.length > 0)
+    .map(([label, value]) => `${label}:\n${value}`)
+    .join('\n\n');
+}
+
+function normalizedRecord({
+  id,
+  recordType,
+  title,
+  description,
+  role,
+  name,
+  source,
+  createdAt,
+  appointmentId,
+  fileUrl,
+  aiSummary,
+}) {
+  return {
+    id: cleanText(id),
+    recordType: cleanText(recordType) || 'medical_record',
+    title: cleanText(title) || 'Medical record',
+    description: cleanText(description),
+    creatorRole: creatorRole(role),
+    creatorName: cleanText(name),
+    source: cleanText(source),
+    createdAt: createdAt || null,
+    appointmentId: cleanText(appointmentId) || null,
+    fileUrl: cleanText(fileUrl) || null,
+    aiSummary: cleanText(aiSummary) || null,
+  };
+}
+
+async function listNormalizedVisitReportsForPatient(patientId) {
+  const rows = await listVisitReportsForPatient(patientId);
+  return rows.map((row) => {
+    const recordType = cleanText(row.record_type) || 'visit_report';
+    const isInitial = recordType === 'initial_diagnosis';
+    return normalizedRecord({
+      id: row.id,
+      recordType,
+      title: isInitial
+        ? 'Initial Diagnosis Report'
+        : cleanText(row.title) || 'Visit report',
+      description: descriptionFromSections([
+        ['Chief complaint', row.chiefComplaint],
+        ['Symptoms', row.symptoms],
+        ['Medical history', row.medicalHistory],
+        ['Diagnosis', row.diagnosis],
+        ['Treatment plan', row.treatment_plan],
+        ['Recommendations', row.recommendations],
+        ['Medications', row.medications],
+        ['Allergies noted', row.allergies],
+        ['Vital signs', row.vital_signs],
+        ['Required visits', row.requiredVisits],
+      ]),
+      role: row.providerRole,
+      name: row.providerName,
+      source: 'visit_reports',
+      createdAt: row.created_at || row.visit_date,
+      appointmentId: row.appointment_id,
+      fileUrl: null,
+      aiSummary: null,
+    });
+  });
+}
+
+async function listInitialDiagnosisReportsForPatient(patientId) {
+  if (!(await tableExists('initial_diagnosis_report'))) return [];
+  const [rows] = await db.query(
+    `SELECT idr.*, sr.patientUserId, sr.scheduledAt, sr.completedAt,
+            u.fullName AS creatorName
+     FROM initial_diagnosis_report idr
+     JOIN servicerequest sr
+       ON BINARY sr.requestId = BINARY idr.serviceRequestId
+     LEFT JOIN user u
+       ON BINARY u.userId = BINARY idr.doctorUserId
+     WHERE BINARY sr.patientUserId = BINARY ?
+     ORDER BY COALESCE(idr.createdAt, sr.completedAt, sr.scheduledAt) DESC`,
+    [patientId]
+  );
+  return rows.map((row) => normalizedRecord({
+    id: row.reportId,
+    recordType: 'initial_diagnosis',
+    title: 'Initial Diagnosis Report',
+    description: descriptionFromSections([
+      ['Chief complaint', row.chiefComplaint],
+      ['Symptoms', row.symptoms],
+      ['Diagnosis', row.diagnosis],
+      ['Treatment plan', row.treatmentPlan],
+      ['Nursing instructions', row.nursingInstructions],
+      ['Required visits', row.requiredVisits],
+    ]),
+    role: 'doctor',
+    name: row.creatorName,
+    source: 'initial_diagnosis_report',
+    createdAt: row.createdAt || row.completedAt || row.scheduledAt,
+    appointmentId: row.serviceRequestId,
+    fileUrl: null,
+    aiSummary: null,
+  }));
+}
+
+async function listLegacyVisitReportsForPatient(patientId) {
+  const requiredTables = ['visitreport', 'visit', 'servicerequest'];
+  for (const table of requiredTables) {
+    if (!(await tableExists(table))) return [];
+  }
+  const [rows] = await db.query(
+    `SELECT r.reportId, r.notes, r.diagnosis,
+            sr.requestId, sr.patientUserId, sr.scheduledAt, sr.completedAt,
+            u.fullName AS creatorName, u.role AS creatorRole
+     FROM visitreport r
+     JOIN visit v ON BINARY v.visitId = BINARY r.visitId
+     JOIN servicerequest sr ON BINARY sr.requestId = BINARY v.requestId
+     LEFT JOIN user u ON BINARY u.userId = BINARY sr.providerUserId
+     WHERE BINARY sr.patientUserId = BINARY ?
+     ORDER BY COALESCE(sr.completedAt, sr.scheduledAt) DESC`,
+    [patientId]
+  );
+  return rows.map((row) => normalizedRecord({
+    id: row.reportId,
+    recordType: 'visit_report',
+    title: cleanText(row.diagnosis) || 'Visit report',
+    description: descriptionFromSections([
+      ['Diagnosis', row.diagnosis],
+      ['Notes', row.notes],
+    ]),
+    role: row.creatorRole,
+    name: row.creatorName,
+    source: 'legacy_visitreport',
+    createdAt: row.completedAt || row.scheduledAt,
+    appointmentId: row.requestId,
+    fileUrl: null,
+    aiSummary: null,
+  }));
+}
+
+async function listNormalizedUploadsForPatient(patientId) {
+  const rows = await listPatientMedicalRecordsForPatient(patientId);
+  return rows.map((row) => normalizedRecord({
+    id: row.id,
+    recordType: row.category || 'patient_upload',
+    title: row.title || row.file_name || 'Patient upload',
+    description: row.description,
+    role: 'patient',
+    name: 'Patient',
+    source: 'patientmedicalfile',
+    createdAt: row.created_at || row.createdAt,
+    appointmentId: null,
+    fileUrl: row.file_url,
+    aiSummary: row.aiSummary || row.medical_summary,
+  }));
+}
+
+async function listPatientVisibleRecords(patientId) {
+  const [structured, initial, legacy, uploads] = await Promise.all([
+    listNormalizedVisitReportsForPatient(patientId),
+    listInitialDiagnosisReportsForPatient(patientId),
+    listLegacyVisitReportsForPatient(patientId),
+    listNormalizedUploadsForPatient(patientId),
+  ]);
+
+  const structuredAppointments = new Set(
+    structured
+      .filter((record) => record.appointmentId)
+      .map((record) => record.appointmentId)
+  );
+  const structuredInitialAppointments = new Set(
+    structured
+      .filter(
+        (record) =>
+          record.appointmentId && record.recordType === 'initial_diagnosis'
+      )
+      .map((record) => record.appointmentId)
+  );
+  const compatibleInitial = initial.filter(
+    (record) => !structuredInitialAppointments.has(record.appointmentId)
+  );
+  const compatibleLegacy = legacy.filter(
+    (record) => !structuredAppointments.has(record.appointmentId)
+  );
+
+  return [...structured, ...compatibleInitial, ...compatibleLegacy, ...uploads]
+    .sort((a, b) => {
+      const aTime = new Date(a.createdAt || 0).getTime();
+      const bTime = new Date(b.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
+}
+
+async function getPatientVisibleRecordById(recordId) {
+  let patientId = '';
+  if (await tableExists('visit_reports')) {
+    const [rows] = await db.query(
+      'SELECT patient_id AS patientId FROM visit_reports WHERE BINARY id = BINARY ? LIMIT 1',
+      [recordId]
+    );
+    patientId = cleanText(rows[0]?.patientId);
+  }
+  if (!patientId && (await tableExists('initial_diagnosis_report'))) {
+    const [rows] = await db.query(
+      `SELECT sr.patientUserId AS patientId
+       FROM initial_diagnosis_report idr
+       JOIN servicerequest sr
+         ON BINARY sr.requestId = BINARY idr.serviceRequestId
+       WHERE BINARY idr.reportId = BINARY ? LIMIT 1`,
+      [recordId]
+    );
+    patientId = cleanText(rows[0]?.patientId);
+  }
+  if (!patientId && (await tableExists('visitreport'))) {
+    const [rows] = await db.query(
+      `SELECT sr.patientUserId AS patientId
+       FROM visitreport r
+       JOIN visit v ON BINARY v.visitId = BINARY r.visitId
+       JOIN servicerequest sr ON BINARY sr.requestId = BINARY v.requestId
+       WHERE BINARY r.reportId = BINARY ? LIMIT 1`,
+      [recordId]
+    );
+    patientId = cleanText(rows[0]?.patientId);
+  }
+  if (!patientId && (await tableExists('patientmedicalfile'))) {
+    const [rows] = await db.query(
+      `SELECT patientUserId AS patientId
+       FROM patientmedicalfile
+       WHERE BINARY id = BINARY ? LIMIT 1`,
+      [recordId]
+    );
+    patientId = cleanText(rows[0]?.patientId);
+  }
+  if (!patientId) return null;
+  const records = await listPatientVisibleRecords(patientId);
+  const record = records.find((item) => item.id === recordId);
+  return record ? { patientId, record } : null;
+}
+
 async function getPatientMedicalRecordById(recordId) {
   if (!(await tableExists('patientmedicalfile'))) return null;
   const [rows] = await db.query(
@@ -431,6 +699,8 @@ module.exports = {
   getVisitReportById,
   insertVisitReport,
   listPatientMedicalRecordsForPatient,
+  listPatientVisibleRecords,
+  getPatientVisibleRecordById,
   getPatientMedicalRecordById,
   insertPatientMedicalRecord,
   deletePatientMedicalRecord,

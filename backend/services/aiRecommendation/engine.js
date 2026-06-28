@@ -54,14 +54,25 @@ function calculateDistance(patient, provider) {
   return haversineKm(patient.lat, patient.lng, provider.lat, provider.lng);
 }
 
-/**
- * @param {string} requestedService
- * @param {string} providerSpecialty
- * @param {string} patientBlob lowercased clinical text
- */
-function calculateSpecializationScore(requestedService, providerSpecialty, patientBlob, hasRawQuery = false) {
+function calculateSpecializationScore(requestedService, provider, patientBlob, hasRawQuery = false) {
   const req = (requestedService || '').trim().toLowerCase();
-  const spec = (providerSpecialty || '').trim().toLowerCase();
+  const spec = (provider.specialization || '').trim().toLowerCase();
+  const role = String(provider.role || '').trim().toLowerCase();
+
+  if (role === 'nurse') {
+    const combinedText = `${role} ${provider.serviceType || ''} ${provider.specialization || ''}`.toLowerCase();
+    if (!req && !hasRawQuery) return combinedText.length > 0 ? 0.55 : 0.35;
+    if (!req && hasRawQuery) return 0;
+    
+    // Explicit nurse matching
+    if (req.includes('nurse') || req.includes('home nursing')) return 1;
+    if (combinedText.includes(req) || req.split(/\\s+/).some(w => w.length >= 4 && combinedText.includes(w))) return 0.9;
+    if (weakSpecialtyMatch(req, combinedText)) return 0.5;
+    if (patientBlob.includes('wound') || patientBlob.includes('post surgery')) return 0.8;
+    return 0.3; // Base score for nurses when not explicitly matched but requested something
+  }
+
+  // Doctor logic
   if (!req && !hasRawQuery) return spec ? 0.55 : 0.35;
   if (!req && hasRawQuery) return 0;
   if (!spec) return 0;
@@ -167,54 +178,52 @@ function calculateAvailabilityScore(requestedDateTime, slots) {
  * @param {string} blob  lowercased clinical text + tags
  * @param {import('./types').Provider} provider
  */
-function calculateMedicalCompatibilityScore(blob, provider) {
-  const p = blob || '';
-  if (!p.trim()) return 0.45;
+function calculateMedicalCompatibilityScore(blob, provider, isEmergency, rawQueryStr) {
+  const p = ((blob || '') + ' ' + (rawQueryStr || '')).toLowerCase();
   const spec = `${provider.specialization || ''} ${provider.serviceType || ''} ${provider.role || ''}`.toLowerCase();
-  let score = 0.45;
+  let score = 0.25;
 
   function any(blobText, terms) {
     return terms.some((t) => blobText.includes(t));
   }
 
-  // Endocrinology match: diabetes, HbA1c, glucose → endocrinology (highest priority for metabolic)
-  if (any(p, ['diabet', 'hba1c', 'insulin', 'glucose', 'blood sugar', 'endocrin']) && any(spec, ['endocrin']))
-    score = Math.max(score, 0.95);
-
-  // Endocrinology fallback to internal/family medicine
-  if (any(p, ['diabet', 'hba1c', 'insulin', 'glucose', 'blood sugar']) && any(spec, ['internal', 'general', 'family']))
-    score = Math.max(score, 0.82);
-
-  // Cardiology match: hypertension, cholesterol, cardiovascular risk → cardiology / internal medicine
-  if (any(p, ['heart', 'cardiac', 'angina', 'chest pain', 'hypertens', 'cholesterol', 'ldl', 'cardiovascular', 'blood pressure']) && any(spec, ['cardio', 'heart', 'internal', 'cardiovascular']))
-    score = Math.max(score, 0.92);
-
-  // Home nursing / nursing match: monitoring, medication adherence, wound, elderly
-  if (
-    any(p, ['blood pressure monitoring', 'glucose monitoring', 'medication adherence', 'home nursing', 'wound', 'elderly', 'post surgery', 'post-operative', 'home_nursing', 'wound_care', 'post_surgery_care', 'elderly_care']) &&
-    (any(spec, ['nurs', 'home', 'wound', 'home care', 'home nursing']) || String(provider.role || '').toLowerCase() === 'nurse')
-  )
-    score = Math.max(score, 0.92);
-
-  // Post-surgery / wound care
-  if (any(p, ['post surgery', 'surgery', 'wound', 'stitch', 'post_surgery_care', 'wound_care']) && any(spec, ['nurs', 'wound', 'surgery', 'home', 'post']))
-    score = Math.max(score, 0.92);
-
-  // Pulmonology
-  if (any(p, ['asthma', 'copd', 'lung', 'respir']) && any(spec, ['pulmon', 'lung', 'chest', 'respir']))
-    score = Math.max(score, 0.9);
-
-  // Dental
-  if (any(p, ['dental', 'tooth', 'teeth']) && any(spec, ['dent']))
-    score = Math.max(score, 0.93);
-
-  // Mental health
-  if (any(p, ['anxiety', 'depression', 'psych']) && any(spec, ['psych', 'mental']))
-    score = Math.max(score, 0.9);
-
-  // Family / general medicine: broad boost for common chronic conditions
-  if (any(p, ['diabet', 'hypertens', 'cholesterol']) && any(spec, ['family', 'general', 'gp']))
-    score = Math.max(score, 0.75);
+  if (isEmergency) {
+    if (String(provider.role || '').toLowerCase() === 'doctor') {
+      if (any(p, ['heart', 'cardiac', 'chest pain', 'breathe', 'stroke'])) {
+        if (any(spec, ['cardio', 'pulmon', 'emergency'])) score = Math.max(score, 1.0);
+        else if (any(spec, ['internal', 'general', 'family'])) score = Math.max(score, 0.85);
+        else score = Math.max(score, 0.6);
+      } else {
+        if (any(spec, ['general', 'family', 'internal', 'emergency'])) score = Math.max(score, 0.9);
+        else score = Math.max(score, 0.7);
+      }
+    } else {
+      score = Math.max(score, 0.2); // Nurses are low priority for emergency unless specifically requested
+    }
+  } else {
+    if (any(p, ['diabet', 'hba1c', 'insulin', 'glucose', 'blood sugar', 'endocrin'])) {
+      if (any(spec, ['endocrin'])) score = Math.max(score, 1.0);
+      else if (any(spec, ['internal', 'general', 'family'])) score = Math.max(score, 0.8);
+    }
+    if (any(p, ['heart', 'cardiac', 'angina', 'chest pain', 'hypertens', 'cholesterol', 'ldl', 'cardiovascular', 'blood pressure'])) {
+      if (any(spec, ['cardio', 'heart', 'internal', 'cardiovascular'])) score = Math.max(score, 1.0);
+    }
+    if (any(p, ['fever', 'sick', 'temperature'])) {
+      if (any(spec, ['general', 'family', 'gp', 'internal'])) score = Math.max(score, 0.95);
+    }
+    if (any(p, ['blood pressure monitoring', 'glucose monitoring', 'medication adherence', 'home nursing', 'wound', 'elderly', 'post surgery', 'post-operative', 'home_nursing', 'wound_care', 'post_surgery_care', 'elderly_care', 'stitch', 'cut', 'dressing', 'injection'])) {
+      if (any(spec, ['nurs', 'home', 'wound', 'home care', 'home nursing', 'injection']) || String(provider.role || '').toLowerCase() === 'nurse') {
+        score = Math.max(score, 1.0);
+      }
+    }
+    if (any(p, ['asthma', 'copd', 'lung', 'respir', 'cough'])) {
+      if (any(spec, ['pulmon', 'lung', 'chest', 'respir'])) score = Math.max(score, 1.0);
+      else if (any(spec, ['internal', 'general', 'family'])) score = Math.max(score, 0.8);
+    }
+    if (any(p, ['dental', 'tooth', 'teeth']) && any(spec, ['dent'])) score = Math.max(score, 1.0);
+    if (any(p, ['anxiety', 'depression', 'psych']) && any(spec, ['psych', 'mental'])) score = Math.max(score, 1.0);
+    if (any(p, ['diabet', 'hypertens', 'cholesterol']) && any(spec, ['family', 'general', 'gp'])) score = Math.max(score, 0.8);
+  }
 
   return Math.min(1, Math.max(0, score));
 }
@@ -253,27 +262,17 @@ function calculateHistoryScore(patient, provider) {
 
 /** @type {Weights} */
 const COLD_START_WEIGHTS = normalizeWeights({
-  locationWeight: 0.2,
-  specializationWeight: 0.25,
-  availabilityWeight: 0.2,
-  ratingWeight: 0.15,
-  experienceWeight: 0.1,
-  medicalCompatibilityWeight: 0.1,
+  locationWeight: 0.1,
+  specializationWeight: 0.2,
+  availabilityWeight: 0.1,
+  ratingWeight: 0.1,
+  experienceWeight: 0,
+  medicalCompatibilityWeight: 0.5,
   historyWeight: 0,
 });
 
 function withHistoryWeights(base) {
-  const h = 0.15;
-  const scale = 1 - h;
-  return normalizeWeights({
-    locationWeight: base.locationWeight * scale,
-    specializationWeight: base.specializationWeight * scale,
-    availabilityWeight: base.availabilityWeight * scale,
-    ratingWeight: base.ratingWeight * scale,
-    experienceWeight: base.experienceWeight * scale,
-    medicalCompatibilityWeight: base.medicalCompatibilityWeight * scale,
-    historyWeight: h,
-  });
+  return normalizeWeights(base);
 }
 
 function normalizeWeights(w) {
@@ -297,40 +296,8 @@ function normalizeWeights(w) {
   };
 }
 
-/**
- * @param {import('./types').RecommendationRequest} request
- * @param {import('./types').PatientProfile} patient
- */
 function getDynamicWeights(request, patient) {
-  let w = patient.hasHistoryForWeighting ? withHistoryWeights(COLD_START_WEIGHTS) : { ...COLD_START_WEIGHTS };
-
-  if (request.isUrgent) {
-    w = normalizeWeights({
-      locationWeight: w.locationWeight * 1.55,
-      specializationWeight: w.specializationWeight * 0.95,
-      availabilityWeight: w.availabilityWeight * 1.55,
-      ratingWeight: w.ratingWeight * 0.9,
-      experienceWeight: w.experienceWeight * 0.9,
-      medicalCompatibilityWeight: w.medicalCompatibilityWeight * 1.05,
-      historyWeight: w.historyWeight * 0.85,
-    });
-  } else if (request.isComplexCase) {
-    w = normalizeWeights({
-      locationWeight: w.locationWeight * 0.9,
-      specializationWeight: w.specializationWeight * 1.35,
-      availabilityWeight: w.availabilityWeight * 0.9,
-      ratingWeight: w.ratingWeight * 0.92,
-      experienceWeight: w.experienceWeight * 1.35,
-      medicalCompatibilityWeight: w.medicalCompatibilityWeight * 1.4,
-      historyWeight: w.historyWeight * 1.05,
-    });
-  } else {
-    w = normalizeWeights({
-      ...w,
-      ratingWeight: w.ratingWeight * 1.18,
-    });
-  }
-  return w;
+  return { ...COLD_START_WEIGHTS };
 }
 
 /**
@@ -387,39 +354,22 @@ function buildTagMatchedReasonLines(provider, patientTags) {
   return labels;
 }
 
-function buildReasonLines(provider, breakdown, distanceKm, patientTags) {
+function buildReasonLines(provider, breakdown, distanceKm, patientTags, isEmergency) {
   const lines = [];
-
-  // Tag-based reason (highest priority — directly from medical records)
-  const tagReasons = buildTagMatchedReasonLines(provider, patientTags || []);
-  if (tagReasons.length > 0) {
-    lines.push(`Recommended based on your medical records: ${tagReasons.join(', ')}.`);
-    lines.push(...tagReasons);
-  } else {
-    if (provider.specialization && provider.specialization.trim()) {
-      lines.push(`Matches specialty "${provider.specialization}".`);
-    }
+  if (isEmergency) {
+    if (String(provider.role || '').toLowerCase() === 'doctor') lines.push('Emergency-capable physician.');
   }
 
-  if (distanceKm <= 10) {
-    lines.push(`Within ${Math.round(distanceKm * 1000)} m — strong proximity score.`);
-  }
-  if (breakdown.availability >= 0.85) lines.push('Available around your requested time window.');
-  else if (breakdown.availability >= 0.55) lines.push('Partial availability alignment.');
-  if (provider.rating >= 4.2) lines.push(`Highly rated (${provider.rating.toFixed(1)}/5).`);
-  if ((provider.experienceYears ?? 0) >= 8) lines.push(`Experienced clinician (~${provider.experienceYears} yrs).`);
-  if (breakdown.medicalCompatibility >= 0.85 && tagReasons.length === 0) lines.push('Strong medical-profile compatibility.');
-  if (breakdown.history >= 0.55) lines.push('Boosted by prior visits / follow-up plan.');
-
-  const body = [];
-  if (provider.specialization) body.push(`they are a ${provider.specialization}`);
-  if (breakdown.availability >= 0.69) body.push('fit your requested schedule');
-  if (distanceKm < 1) body.push(`are only ${Math.round(distanceKm * 1000)} m away`);
-  if (provider.rating > 0) body.push(`have a ${provider.rating.toFixed(1)} patient rating`);
-  if (body.length && tagReasons.length === 0)
-    lines.unshift(`${provider.fullName} is recommended because ${body.join(', ')}.`);
-
-  return lines;
+  if (breakdown.medicalCompatibility >= 0.8) lines.push('Best medical match.');
+  else if (breakdown.medicalCompatibility >= 0.5) lines.push('Strong medical match.');
+  
+  if (breakdown.specialization >= 0.8) lines.push('Service matches your request.');
+  if (breakdown.availability >= 0.85) lines.push('Available for booking.');
+  if (provider.rating >= 4.2) lines.push('Highly rated.');
+  if (distanceKm <= 5) lines.push('Nearby location.');
+  
+  // Dedup and limit to top 4
+  return [...new Set(lines)].slice(0, 4);
 }
 
 /**
@@ -439,7 +389,7 @@ function recommendProviders(patient, request, providers, top = 12) {
   const rawQueryStr = (request.rawQuery || '').trim();
   const hasRawQuery = rawQueryStr.length > 0;
   const blob = patientCareBlob(patient);
-  const keyword = (request.requestedServiceKeyword || inferKeyword(request, providers)).trim();
+  const keyword = (request.requestedServiceKeyword || '').trim();
 
   /** @type {import('./types').AIRecommendationResult[]} */
   const out = [];
@@ -453,8 +403,7 @@ function recommendProviders(patient, request, providers, top = 12) {
     const dist = calculateDistance(patientPoint, { lat: pLat, lng: pLng });
     const ls = calculateLocationScore(dist);
 
-    const combinedSpecialty = `${provider.specialization || ''} ${provider.serviceType || ''} ${provider.role || ''}`.trim();
-    const ss = calculateSpecializationScore(keyword, combinedSpecialty, blob, hasRawQuery);
+    const ss = calculateSpecializationScore(keyword, provider, blob, hasRawQuery);
 
     // STRICT REJECTION: Do not return generic providers for unsupported/random queries
     if (hasRawQuery && ss === 0) {
@@ -463,20 +412,15 @@ function recommendProviders(patient, request, providers, top = 12) {
     const as = calculateAvailabilityScore(request.requestedDateTime ?? null, provider.availableSlots || []);
     const rs = calculateRatingScore(provider.rating);
     const es = calculateExperienceScore(provider.experienceYears);
-    const ms = calculateMedicalCompatibilityScore(blob, provider);
-    const hs = calculateHistoryScore(patient, provider);
+    const ms = calculateMedicalCompatibilityScore(blob, provider, request.isEmergency, rawQueryStr);
+    const hs = 0; // History score unused based on new weights
 
-    const breakdown = {
-      location: ls,
-      specialization: ss,
-      availability: as,
-      rating: rs,
-      experience: es,
-      medicalCompatibility: ms,
-      history: hs,
-    };
+    // ENFORCE MEDICAL MINIMUM THRESHOLD (Medical logic)
+    if (ms < 0.3) {
+      continue;
+    }
 
-    const finalScore =
+    const finalScoreVal =
       ls * weights.locationWeight +
       ss * weights.specializationWeight +
       as * weights.availabilityWeight +
@@ -485,40 +429,45 @@ function recommendProviders(patient, request, providers, top = 12) {
       ms * weights.medicalCompatibilityWeight +
       hs * weights.historyWeight;
 
-    const matchPct = Math.min(99, Math.max(0, Math.round(finalScore * 100)));
-    const patientTagList = patient.analysisTags || [];
-    const reasons = buildReasonLines(provider, breakdown, dist, patientTagList);
+    const matchPercentage = Math.round(finalScoreVal * 100);
 
-    // Build per-provider matched tags for UI display
-    const matchedTags = buildTagMatchedReasonLines(provider, patientTagList);
+    const reasons = buildReasonLines(
+      provider,
+      {
+        location: ls,
+        specialization: ss,
+        availability: as,
+        rating: rs,
+        experience: es,
+        medicalCompatibility: ms,
+        history: hs,
+      },
+      dist,
+      patient.analysisTags,
+      request.isEmergency
+    );
 
-    let aiMatchReason = null;
-    if (matchedTags.length > 0) {
-      aiMatchReason = `Your uploaded records mention ${matchedTags.slice(0, 3).join(', ')}.`;
-    } else {
-      const aiBlob = [...(patient.aiSummaries || []), ...(patient.analysisTags || []), ...(patient.ocrTexts || [])].join(' ').toLowerCase();
-      if (aiBlob.length > 0 && provider.specialization) {
-        const spec = provider.specialization.toLowerCase();
-        if (aiBlob.includes(spec) || aiBlob.includes(spec.substring(0, 4)) ||
-            (spec.includes('cardio') && (aiBlob.includes('heart') || aiBlob.includes('blood pressure') || aiBlob.includes('hypertension'))) ||
-            (spec.includes('endo') && (aiBlob.includes('sugar') || aiBlob.includes('diabetes') || aiBlob.includes('thyroid'))) ||
-            (spec.includes('ortho') && (aiBlob.includes('bone') || aiBlob.includes('fracture') || aiBlob.includes('joint')))
-        ) {
-          aiMatchReason = `Your uploaded records contain findings related to ${provider.specialization}.`;
-        }
-      }
-    }
+    const aiMatchReason = reasons[0] || '';
 
     out.push({
       providerId: provider.id,
       provider,
-      finalScore,
-      matchPercentage: matchPct,
-      scoreBreakdown: breakdown,
+      finalScore: Number(finalScoreVal.toFixed(3)),
+      matchPercentage,
+      scoreBreakdown: {
+        location: ls,
+        specialization: ss,
+        availability: as,
+        rating: rs,
+        experience: es,
+        medicalCompatibility: ms,
+        history: hs,
+      },
       weights,
       recommendationReasons: reasons,
-      matchedTags,
+      matchedTags: buildTagMatchedReasonLines(provider, patient.analysisTags || []),
       aiMatchReason,
+      confidenceScore: matchPercentage,
     });
   }
 
@@ -593,7 +542,6 @@ module.exports = {
   calculateHistoryScore,
   getDynamicWeights,
   recommendProviders,
-  inferKeyword,
   normalizeWeights,
   COLD_START_WEIGHTS,
   TAG_LABELS,

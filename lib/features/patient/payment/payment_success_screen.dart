@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
@@ -38,7 +39,7 @@ class PaymentSuccessScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
 
-    return Scaffold(
+    return PatientScaffold(
       backgroundColor: p.pageBg,
       appBar: PatientAppBar(
         title: context.tr('payment.success'),

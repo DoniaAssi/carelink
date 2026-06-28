@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
@@ -37,8 +38,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
   Timer? _searchDebounce;
   final List<_PlaceSearchResult> _searchResults = [];
 
-  bool get _canContinue =>
-      _addressController.text.trim().isNotEmpty;
+  bool get _canContinue => _addressController.text.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -149,7 +149,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(content: Text(context.l10n.userMessage(e))),
       );
     }
   }
@@ -263,9 +263,13 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
-    return Scaffold(
+    return PatientScaffold(
       backgroundColor: p.pageBg,
-      appBar: PatientAppBar(title: context.l10n.isArabic ? 'اختر الموقع' : context.tr('booking.location.title')),
+      appBar: PatientAppBar(
+        title: context.l10n.isArabic
+            ? 'اختر الموقع'
+            : context.tr('booking.location.title'),
+      ),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
@@ -419,7 +423,7 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                   decoration: InputDecoration(
-                    hintText: context.l10n.isArabic 
+                    hintText: context.l10n.isArabic
                         ? 'اختر موقع الزيارة أو ابحث عن عنوان'
                         : 'Select a location or search address',
                     hintStyle: TextStyle(color: p.inkMuted),
@@ -535,7 +539,9 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
               Icon(Icons.lock_outline_rounded, color: p.inkMuted, size: 14),
               const SizedBox(width: 6),
               Text(
-                context.l10n.isArabic ? 'يتم استخدام موقعك لهذا الحجز فقط' : 'Your location is used for this booking only',
+                context.l10n.isArabic
+                    ? 'يتم استخدام موقعك لهذا الحجز فقط'
+                    : 'Your location is used for this booking only',
                 style: TextStyle(color: p.inkMuted, fontSize: 11),
               ),
             ],

@@ -46,6 +46,7 @@ const DISALLOWED_KEY_NORM = new Set([
 ]);
 
 const columnCache = new Map();
+const tableCache = new Map();
 
 function httpError(status, message) {
   const e = new Error(message);
@@ -66,6 +67,25 @@ async function hasColumn(tableName, columnName) {
     return exists;
   } catch (_) {
     columnCache.set(key, false);
+    return false;
+  }
+}
+
+async function hasTable(tableName) {
+  if (tableCache.has(tableName)) return tableCache.get(tableName);
+  try {
+    const [rows] = await db.query(
+      `SELECT 1
+       FROM information_schema.tables
+       WHERE table_schema = DATABASE() AND table_name = ?
+       LIMIT 1`,
+      [tableName],
+    );
+    const exists = rows.length > 0;
+    tableCache.set(tableName, exists);
+    return exists;
+  } catch (_) {
+    tableCache.set(tableName, false);
     return false;
   }
 }
@@ -572,7 +592,10 @@ async function getAppointmentPayment(appointmentId, patientUserId) {
 
   const [payRows] = await db.query(
     `SELECT paymentId, requestId AS appointmentId, patientUserId, providerUserId,
-            amount, paymentMethod, paymentStatus, transactionId, paidAt, createdAt, updatedAt
+            amount, final_amount AS finalAmount,
+            provider_amount AS providerAmount, admin_amount AS adminAmount,
+            status AS escrowStatus, paymentMethod, paymentStatus,
+            transactionId, paidAt, createdAt, updatedAt
      FROM payment WHERE requestId = ?`,
     [appointmentId],
   );
@@ -597,6 +620,16 @@ async function getAppointmentPayment(appointmentId, patientUserId) {
 
   const pr = payRows[0];
   const paid = String(pr.paymentStatus || '').toLowerCase() === 'paid';
+  const totalAmount = Number(pr.finalAmount ?? pr.amount ?? 0);
+  const providerShare = Number(pr.providerAmount || 0);
+  const adminShare = Number(pr.adminAmount || 0);
+  const refunded = String(pr.paymentStatus || '').toLowerCase() === 'refunded';
+  const refundAmount = refunded
+    ? Math.max(
+        0,
+        Math.round((totalAmount - providerShare - adminShare) * 100) / 100,
+      )
+    : 0;
 
   return {
     demo: true,
@@ -607,6 +640,11 @@ async function getAppointmentPayment(appointmentId, patientUserId) {
     patientUserId: pr.patientUserId,
     providerUserId: pr.providerUserId,
     amount: Number(pr.amount),
+    finalAmount: totalAmount,
+    providerAmount: providerShare,
+    adminAmount: adminShare,
+    refundAmount,
+    escrowStatus: pr.escrowStatus,
     currency: cur,
     paymentMethod: pr.paymentMethod,
     paymentStatus: pr.paymentStatus,
@@ -635,6 +673,9 @@ async function listPatientPayments(patientUserId) {
         p.requestId AS bookingId,
         ? AS currency,
         p.amount,
+        p.final_amount AS finalAmount,
+        p.provider_amount AS providerAmount,
+        p.admin_amount AS adminAmount,
         p.paymentMethod,
         p.paymentStatus,
         p.transactionId,
@@ -649,7 +690,24 @@ async function listPatientPayments(patientUserId) {
      ORDER BY p.createdAt DESC`,
     [cur, patientUserId],
   );
-  return rows;
+  return rows.map((row) => {
+    const totalAmount = Number(row.finalAmount ?? row.amount ?? 0);
+    const providerShare = Number(row.providerAmount || 0);
+    const adminShare = Number(row.adminAmount || 0);
+    const refunded = String(row.paymentStatus || '').toLowerCase() === 'refunded';
+    return {
+      ...row,
+      finalAmount: totalAmount,
+      providerAmount: providerShare,
+      adminAmount: adminShare,
+      refundAmount: refunded
+        ? Math.max(
+            0,
+            Math.round((totalAmount - providerShare - adminShare) * 100) / 100,
+          )
+        : 0,
+    };
+  });
 }
 
 /** Mirrors legacy `POST /patient/payments` behaviour (existing mobile clients). */

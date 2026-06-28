@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 
 import 'package:carelink/core/app_colors.dart';
-import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
@@ -92,125 +93,129 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
-    final isArabic = context.l10n.isArabic;
 
-    return Scaffold(
-      backgroundColor: p.isDark ? p.pageBg : const Color(0xFFF0FAF7),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
-          child: AnimatedSlide(
-            duration: const Duration(milliseconds: 450),
-            curve: Curves.easeOutCubic,
-            offset: _visible ? Offset.zero : const Offset(0, 0.04),
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 380),
-              opacity: _visible ? 1 : 0,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(20, 28, 20, 18),
-                decoration: BoxDecoration(
-                  color: p.surface,
-                  borderRadius: BorderRadius.circular(26),
-                  border: Border.all(color: p.stroke),
-                  boxShadow: [
-                    BoxShadow(
-                      color: p.cardShadowColor(0.08),
-                      blurRadius: 28,
-                      offset: const Offset(0, 12),
+    return Directionality(
+      textDirection: context.l10n.isArabic
+          ? TextDirection.rtl
+          : TextDirection.ltr,
+      child: PatientScaffold(
+        backgroundColor: p.isDark ? p.pageBg : const Color(0xFFF0FAF7),
+        appBar: PatientAppBar(
+          title: context.tr('payment.title'),
+          showBack: true,
+          showLanguage: true,
+          showTheme: true,
+        ),
+        body: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+            child: AnimatedSlide(
+              duration: const Duration(milliseconds: 450),
+              curve: Curves.easeOutCubic,
+              offset: _visible ? Offset.zero : const Offset(0, 0.04),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 380),
+                opacity: _visible ? 1 : 0,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                  decoration: BoxDecoration(
+                    color: p.isDark ? p.surface : Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: p.isDark ? p.stroke : const Color(0xFFE5EEEC),
                     ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    _SuccessMark(visible: _visible),
-                    const SizedBox(height: 22),
-                    Text(
-                      isArabic ? 'تم إرسال طلب الحجز' : 'Booking request sent',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: p.inkDark,
-                        fontSize: 25,
-                        fontWeight: FontWeight.w900,
-                        height: 1.22,
+                    boxShadow: [
+                      BoxShadow(
+                        color: p.cardShadowColor(0.08),
+                        blurRadius: 28,
+                        offset: const Offset(0, 12),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      isArabic
-                          ? 'تم الدفع بنجاح وتم إرسال طلبك إلى مقدم الرعاية.'
-                          : 'Payment succeeded and your request was sent to the care provider.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: p.inkMuted,
-                        fontSize: 14.5,
-                        height: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    _StatusBadge(
-                      label: isArabic
-                          ? 'بانتظار موافقة مقدم الرعاية'
-                          : 'Waiting for provider approval',
-                      palette: p,
-                    ),
-                    const SizedBox(height: 22),
-                    _BookingSummary(
-                      palette: p,
-                      providerName: _displayText(
-                        _verifiedProviderName ?? widget.providerName,
-                      ),
-                      serviceType: _displayText(
-                        _verifiedServiceType ?? widget.serviceType,
-                      ),
-                      appointmentDate: _displayText(
-                        _verifiedAppointmentDate ?? widget.appointmentDate,
-                      ),
-                      appointmentTime: _displayText(
-                        _verifiedAppointmentTime ?? widget.appointmentTime,
-                      ),
-                      amountPaid: _verifiedAmountPaid ?? widget.amountPaid ?? 0,
-                    ),
-                    const SizedBox(height: 16),
-                    _BookingTimeline(palette: p),
-                    const SizedBox(height: 24),
-                    PatientPrimaryButton(
-                      height: 56,
-                      onPressed: () => _openTab(1),
-                      label: isArabic
-                          ? 'عرض حجوزاتي'
-                          : context.tr('booking.success.followRequest'),
-                      icon: Icons.calendar_month_rounded,
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: OutlinedButton.icon(
-                        onPressed: () => _openTab(0),
-                        icon: const Icon(Icons.home_outlined, size: 20),
-                        label: Text(
-                          isArabic
-                              ? 'العودة للرئيسية'
-                              : context.tr('booking.success.backHome'),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: const BorderSide(
-                            color: AppColors.primary,
-                            width: 1.2,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                          ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      _SuccessMark(visible: _visible),
+                      const SizedBox(height: 18),
+                      Text(
+                        context.tr('booking.success.title'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: p.isDark
+                              ? p.inkDark
+                              : const Color(0xFF0F172A),
+                          fontSize: 25,
+                          fontWeight: FontWeight.w900,
+                          height: 1.22,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 10),
+                      Text(
+                        context.tr('booking.success.subtitle'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: p.isDark
+                              ? p.inkMuted
+                              : const Color(0xFF64748B),
+                          fontSize: 14,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _StatusBadge(
+                        label: context.tr('booking.success.pendingProvider'),
+                        palette: p,
+                      ),
+                      const SizedBox(height: 22),
+                      _BookingSummary(
+                        palette: p,
+                        providerName: _displayText(
+                          _verifiedProviderName ?? widget.providerName,
+                        ),
+                        serviceType: _displayText(
+                          _verifiedServiceType ?? widget.serviceType,
+                        ),
+                        appointmentDate: _displayText(
+                          _verifiedAppointmentDate ?? widget.appointmentDate,
+                        ),
+                        appointmentTime: _displayText(
+                          _verifiedAppointmentTime ?? widget.appointmentTime,
+                        ),
+                        amountPaid:
+                            _verifiedAmountPaid ?? widget.amountPaid ?? 0,
+                      ),
+                      const SizedBox(height: 16),
+                      _BookingTimeline(palette: p),
+                      const SizedBox(height: 22),
+                      _TrackBookingButton(onPressed: () => _openTab(1)),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _openTab(0),
+                          icon: const Icon(Icons.home_outlined, size: 20),
+                          label: Text(context.tr('booking.success.backHome')),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF0F766E),
+                            backgroundColor: Colors.white,
+                            side: const BorderSide(
+                              color: Color(0xFF0F766E),
+                              width: 1.2,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -235,7 +240,7 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
 
   String _displayText(String? value) {
     final text = value?.trim() ?? '';
-    return text.isEmpty ? context.tr('booking.success.notAvailable') : text;
+    return text.isEmpty ? context.tr('common.notAvailable') : text;
   }
 
   String _formatDate(DateTime date) {
@@ -244,8 +249,11 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
   }
 
   String _formatTime(DateTime date) {
-    return '${date.hour.toString().padLeft(2, '0')}:'
-        '${date.minute.toString().padLeft(2, '0')}';
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final isAr = context.l10n.isArabic;
+    final suffix = date.hour >= 12 ? (isAr ? 'م' : 'PM') : (isAr ? 'ص' : 'AM');
+    return '$hour:$minute $suffix';
   }
 }
 
@@ -384,6 +392,74 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
+class _TrackBookingButton extends StatelessWidget {
+  const _TrackBookingButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          width: double.infinity,
+          height: 56,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF0F766E), Color(0xFF14B8A6)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0F766E).withValues(alpha: 0.22),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.calendar_month_rounded,
+                  color: Colors.white,
+                  size: 21,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    context.tr('booking.success.followRequest'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Icon(
+                  Directionality.of(context) == TextDirection.rtl
+                      ? Icons.arrow_back_ios_new_rounded
+                      : Icons.arrow_forward_ios_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _BookingSummary extends StatelessWidget {
   const _BookingSummary({
     required this.palette,
@@ -403,14 +479,15 @@ class _BookingSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isArabic = context.l10n.isArabic;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: palette.surface,
+        color: palette.isDark ? palette.surface : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: palette.stroke.withValues(alpha: 0.9)),
+        border: Border.all(
+          color: palette.isDark ? palette.stroke : const Color(0xFFE5EEEC),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(
@@ -423,39 +500,84 @@ class _BookingSummary extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _SummaryRow(
-            palette: palette,
-            icon: Icons.medical_services_outlined,
-            label: isArabic ? 'مقدم الرعاية' : 'Provider',
-            value: providerName,
-            emphasized: true,
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _SummaryRow(
+                    palette: palette,
+                    icon: Icons.person_outline_rounded,
+                    label: context.tr('booking.success.provider'),
+                    value: providerName,
+                    emphasized: true,
+                  ),
+                ),
+                VerticalDivider(
+                  width: 22,
+                  thickness: 1,
+                  color: palette.stroke.withValues(alpha: 0.7),
+                ),
+                Expanded(
+                  child: _SummaryRow(
+                    palette: palette,
+                    icon: Icons.medical_services_outlined,
+                    label: context.tr('booking.success.service'),
+                    value: serviceType,
+                    emphasized: true,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 11),
-          _SummaryRow(
-            palette: palette,
-            icon: Icons.local_hospital_outlined,
-            label: isArabic ? 'الخدمة' : 'Service',
-            value: serviceType,
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Divider(
+              height: 1,
+              color: palette.stroke.withValues(alpha: 0.7),
+            ),
           ),
-          const SizedBox(height: 11),
-          _SummaryRow(
-            palette: palette,
-            icon: Icons.calendar_today_outlined,
-            label: isArabic ? 'التاريخ' : 'Date',
-            value: appointmentDate,
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _SummaryRow(
+                    palette: palette,
+                    icon: Icons.calendar_today_outlined,
+                    label: context.tr('booking.success.date'),
+                    value: appointmentDate,
+                    emphasized: true,
+                  ),
+                ),
+                VerticalDivider(
+                  width: 22,
+                  thickness: 1,
+                  color: palette.stroke.withValues(alpha: 0.7),
+                ),
+                Expanded(
+                  child: _SummaryRow(
+                    palette: palette,
+                    icon: Icons.schedule_rounded,
+                    label: context.tr('booking.success.time'),
+                    value: appointmentTime,
+                    emphasized: true,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 11),
-          _SummaryRow(
-            palette: palette,
-            icon: Icons.schedule_rounded,
-            label: isArabic ? 'الوقت' : 'Time',
-            value: appointmentTime,
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Divider(
+              height: 1,
+              color: palette.stroke.withValues(alpha: 0.7),
+            ),
           ),
-          const SizedBox(height: 11),
           _SummaryRow(
             palette: palette,
             icon: Icons.payments_outlined,
-            label: isArabic ? 'المبلغ المدفوع' : 'Amount paid',
+            label: context.tr('booking.success.amountPaid'),
             value: '${amountPaid.toStringAsFixed(2)} ILS',
             valueColor: AppColors.primary,
             textDirection: TextDirection.ltr,
@@ -544,51 +666,56 @@ class _BookingTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isArabic = context.l10n.isArabic;
     final steps = [
       (
-        isArabic
-            ? 'تم الدفع بنجاح'
-            : context.tr('booking.success.timelinePaid'),
-        true,
+        title: context.tr('booking.success.timelinePaid'),
+        description: context.tr('booking.success.timelinePaidDescription'),
+        completed: true,
       ),
       (
-        isArabic
-            ? 'تم إرسال الطلب'
-            : context.tr('booking.success.timelineSent'),
-        true,
+        title: context.tr('booking.success.timelineSent'),
+        description: context.tr('booking.success.timelineSentDescription'),
+        completed: true,
       ),
       (
-        isArabic
-            ? 'بانتظار موافقة مقدم الرعاية'
-            : context.tr('booking.success.timelineWaiting'),
-        false,
+        title: context.tr('booking.success.timelineWaiting'),
+        description: context.tr('booking.success.timelineWaitingDescription'),
+        completed: false,
       ),
       (
-        isArabic
-            ? 'تم تأكيد الموعد'
-            : context.tr('booking.success.timelineConfirmed'),
-        false,
+        title: context.tr('booking.success.timelineConfirmed'),
+        description: context.tr('booking.success.timelineConfirmedDescription'),
+        completed: false,
       ),
     ];
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
       decoration: BoxDecoration(
-        color: palette.isDark
-            ? palette.surfaceSoft
-            : AppColors.primary.withValues(alpha: 0.05),
+        color: palette.isDark ? palette.surfaceSoft : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: palette.stroke.withValues(alpha: 0.55)),
+        border: Border.all(
+          color: palette.isDark ? palette.stroke : const Color(0xFFE5EEEC),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: palette.isDark ? 0.14 : 0.035,
+            ),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Column(
         children: [
           for (var index = 0; index < steps.length; index++)
             _TimelineStep(
               palette: palette,
-              label: steps[index].$1,
-              completed: steps[index].$2,
+              title: steps[index].title,
+              description: steps[index].description,
+              completed: steps[index].completed,
               showLine: index < steps.length - 1,
             ),
         ],
@@ -600,13 +727,15 @@ class _BookingTimeline extends StatelessWidget {
 class _TimelineStep extends StatelessWidget {
   const _TimelineStep({
     required this.palette,
-    required this.label,
+    required this.title,
+    required this.description,
     required this.completed,
     required this.showLine,
   });
 
   final CarelinkPalette palette;
-  final String label;
+  final String title;
+  final String description;
   final bool completed;
   final bool showLine;
 
@@ -652,14 +781,29 @@ class _TimelineStep extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 13),
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: completed ? palette.inkDark : palette.inkMuted,
-                  fontSize: 12.5,
-                  fontWeight: completed ? FontWeight.w800 : FontWeight.w600,
-                ),
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: palette.inkDark,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      color: palette.inkMuted,
+                      fontSize: 12,
+                      height: 1.35,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

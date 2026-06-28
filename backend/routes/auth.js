@@ -361,9 +361,6 @@ router.post('/register', async (req, res) => {
     idCardUrl,
     homeCareAvailability,
     homeCareAvailable,
-    chronicDiseases,
-    allergies,
-    currentMedications,
     phoneVerificationToken,
     emailVerificationToken,
     cvFileName,
@@ -524,9 +521,9 @@ router.post('/register', async (req, res) => {
       }
     }
   } else if (normalizedRole === 'nurse' || normalizedRole === 'doctor') {
-    if (!normalizedSpecialization) {
+    if (normalizedRole === 'doctor' && !normalizedSpecialization) {
       return res.status(400).json({
-        error: 'Nurses and providers must provide specialization'
+        error: 'Doctors must provide specialization'
       });
     }
     if (parsedExperience != null && (parsedExperience < 0 || parsedExperience > 80)) {
@@ -649,9 +646,6 @@ router.post('/register', async (req, res) => {
     if (normalizedRole === 'patient') {
       const hasPatientDob = await hasColumn('patient', 'dateOfBirth');
       const hasPatientGender = await hasColumn('patient', 'gender');
-      const hasChronic = await hasColumn('patient', 'chronicDiseases');
-      const hasAllergies = await hasColumn('patient', 'allergies');
-      const hasMeds = await hasColumn('patient', 'currentMedications');
 
       const patientColumns = ['userId', 'gpsLat', 'gpsLng', 'addressText'];
       const patientValues = [
@@ -668,29 +662,6 @@ router.post('/register', async (req, res) => {
       if (hasPatientGender) {
         patientColumns.push('gender');
         patientValues.push(normalizedGender || null);
-      }
-      if (hasChronic) {
-        patientColumns.push('chronicDiseases');
-        patientValues.push(
-          (chronicDiseases ?? '').toString().trim() || null
-        );
-      }
-      if (hasAllergies) {
-        patientColumns.push('allergies');
-        patientValues.push((allergies ?? '').toString().trim() || null);
-      }
-      if (hasMeds) {
-        patientColumns.push('currentMedications');
-        patientValues.push(
-          (currentMedications ?? '').toString().trim() || null
-        );
-      }
-      const hasEmergency = await hasColumn('patient', 'emergencyContact');
-      if (hasEmergency) {
-        patientColumns.push('emergencyContact');
-        patientValues.push(
-          (req.body.emergencyContact ?? '').toString().trim() || null
-        );
       }
 
       await connection.query(
@@ -725,7 +696,7 @@ router.post('/register', async (req, res) => {
       ];
       const providerValues = [
         userId,
-        normalizedSpecialization,
+        normalizedRole === 'doctor' ? normalizedSpecialization : null,
         0.0,
         1,
         Number.isFinite(parsedGpsLat) ? parsedGpsLat : null,

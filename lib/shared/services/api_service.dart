@@ -17,11 +17,14 @@ class ApiServiceException implements Exception {
 
 class ApiService {
   // غيّري هذا الـ IP إلى IPv4 تبع جهازك إذا كنتِ تشغلين التطبيق على هاتف حقيقي
-  static const String _machineIp = '192.168.1.5';
+  // static const String _machineIp = '192.168.1.5';
+
+  static const String _machineIp = '192.168.0.101';
 
   // إذا كنتِ تستخدمين Android Emulator خليها true.
   // إذا كنتِ تستخدمين جهاز حقيقي، ضعيها false وحددي عنوان IP صحيح في _machineIp.
-  static const bool _useAndroidEmulator = true;
+  //static const bool _useAndroidEmulator = true;
+   static const bool _useAndroidEmulator = false;
 
   static const String _androidEmulatorBase = 'http://10.0.2.2:3000';
   static const String _webBase = 'http://localhost:3000';
@@ -41,7 +44,8 @@ class ApiService {
     if (_envBaseUrl.isNotEmpty) {
       rawUrl = _envBaseUrl;
     } else if (kIsWeb) {
-      rawUrl = _webBase;
+      // rawUrl = _webBase;
+        rawUrl = _realDeviceBase;
     } else {
       switch (defaultTargetPlatform) {
         case TargetPlatform.android:
@@ -513,9 +517,6 @@ class ApiService {
     String? nursingLicense,
     String? idCard,
     bool? homeCareAvailability,
-    String? chronicDiseases,
-    String? allergies,
-    String? currentMedications,
     String? phoneVerificationToken,
     String? emailVerificationToken,
     String? cvFileName,
@@ -564,17 +565,13 @@ class ApiService {
       if (gender != null && gender.trim().isNotEmpty) {
         body['gender'] = gender.trim();
       }
-      final c = chronicDiseases?.trim();
-      if (c != null && c.isNotEmpty) body['chronicDiseases'] = c;
-      final a = allergies?.trim();
-      if (a != null && a.isNotEmpty) body['allergies'] = a;
-      final m = currentMedications?.trim();
-      if (m != null && m.isNotEmpty) body['currentMedications'] = m;
     } else if (role == 'doctor' || role == 'nurse') {
-      if (specialization == null || specialization.trim().isEmpty) {
-        throw Exception('Doctor/Nurse registration requires specialization');
+      if (role == 'doctor') {
+        if (specialization == null || specialization.trim().isEmpty) {
+          throw Exception('Doctor registration requires specialization');
+        }
+        body['specialization'] = specialization.trim();
       }
-      body['specialization'] = specialization.trim();
       body['gpsLat'] = gpsLat;
       body['gpsLng'] = gpsLng;
       body['addressText'] = addressText?.trim();
@@ -855,10 +852,15 @@ class ApiService {
     String userId,
     String doctorId, {
     String? viewerId,
+    String? requestId,
   }) async {
-    final query = viewerId == null || viewerId.isEmpty
+    final queryParameters = <String, String>{
+      if (viewerId != null && viewerId.isNotEmpty) 'viewerId': viewerId,
+      if (requestId != null && requestId.isNotEmpty) 'requestId': requestId,
+    };
+    final query = queryParameters.isEmpty
         ? ''
-        : '?viewerId=${Uri.encodeQueryComponent(viewerId)}';
+        : '?${Uri(queryParameters: queryParameters).query}';
     final response = await _sendRequest(
       http.get(
         _endpoint('/patient/chat/$userId/$doctorId$query'),
@@ -903,6 +905,7 @@ class ApiService {
     List<int>? fileBytes,
     String message = '',
     int? voiceDurationSeconds,
+    String? requestId,
   }) async {
     final request = http.MultipartRequest(
       'POST',
@@ -912,6 +915,7 @@ class ApiService {
       'senderId': senderId,
       'receiverId': receiverId,
       'message': message,
+      if (requestId != null && requestId.isNotEmpty) 'requestId': requestId,
       if (voiceDurationSeconds != null)
         'voiceDurationSeconds': voiceDurationSeconds.toString(),
     });

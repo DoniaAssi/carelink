@@ -563,27 +563,6 @@ class _PatientSignupFields extends StatelessWidget {
           },
           onChanged: controller.setGender,
         ),
-        const SizedBox(height: 14),
-        CustomTextField(
-          controller: controller.chronicDiseases,
-          hintText: 'Chronic diseases (optional)',
-          icon: Icons.medical_information_outlined,
-          textInputAction: TextInputAction.next,
-        ),
-        const SizedBox(height: 14),
-        CustomTextField(
-          controller: controller.allergies,
-          hintText: 'Allergies (optional)',
-          icon: Icons.warning_amber_rounded,
-          textInputAction: TextInputAction.next,
-        ),
-        const SizedBox(height: 14),
-        CustomTextField(
-          controller: controller.currentMedications,
-          hintText: 'Current medications (optional)',
-          icon: Icons.medication_outlined,
-          textInputAction: TextInputAction.next,
-        ),
       ],
     );
   }
@@ -600,21 +579,21 @@ class _ProfessionalSignupFields extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        CustomTextField(
-          controller: controller.specialization,
-          hintText: isNurse
-              ? 'Nursing specialization'
-              : 'Medical specialization',
-          icon: Icons.health_and_safety_outlined,
-          textInputAction: TextInputAction.next,
-          validator: (v) {
-            if ((v ?? '').trim().length < 2) {
-              return 'Specialization is required';
-            }
-            return null;
-          },
-        ),
-        const SizedBox(height: 14),
+        if (!isNurse) ...[
+          CustomTextField(
+            controller: controller.specialization,
+            hintText: 'Medical specialization',
+            icon: Icons.health_and_safety_outlined,
+            textInputAction: TextInputAction.next,
+            validator: (v) {
+              if ((v ?? '').trim().length < 2) {
+                return 'Specialization is required';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 14),
+        ],
         CustomTextField(
           controller: controller.licenseNumber,
           hintText: 'License number',

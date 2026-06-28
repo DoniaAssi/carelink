@@ -1,20 +1,24 @@
 import 'dart:async';
-import 'dart:convert';
-
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/locale_controller.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/theme_controller.dart';
-import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
+import 'package:carelink/features/patient/screens/medical_record_details_screen.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
-import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' as intl;
+import 'package:url_launcher/url_launcher.dart' as url_launcher;
+
+enum _RecordsFilter { all, doctors, nurses, uploads }
+
+enum _RecordStatus { ready, processing, failed, archived }
 
 class MedicalRecordsScreen extends StatefulWidget {
   const MedicalRecordsScreen({
@@ -23,60 +27,95 @@ class MedicalRecordsScreen extends StatefulWidget {
     this.userId,
     this.initialTab = 0,
   });
+
   final String? patientId;
   final String? userId;
   final int initialTab;
+
   @override
   State<MedicalRecordsScreen> createState() => _MedicalRecordsScreenState();
 }
 
 class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
   final MedicalRecordService _service = MedicalRecordService();
-  List<MedicalRecordEntry> _records = [];
+  final TextEditingController _searchController = TextEditingController();
+
+  List<_PatientRecord> _records = const [];
+  _RecordsFilter _filter = _RecordsFilter.all;
   bool _loading = true;
+  bool _uploading = false;
   String? _error;
+  String _query = '';
   String? _patientId;
-  bool _resolved = false;
-  Timer? _refreshTimer;
+  bool _resolvedPatient = false;
+  Timer? _processingRefresh;
 
   bool get _isArabic => localeController.isArabic;
-  String _t(String en, String ar) => _isArabic ? ar : en;
-  int get _processingCount => _records
-      .where(
-        (r) =>
-            r.extractedTextStatus == 'pending' ||
-            r.extractedTextStatus == 'processing',
-      )
-      .length;
-  int get _readyCount =>
-      _records.where((r) => r.extractedTextStatus == 'processed').length;
-  int get _failedCount =>
-      _records.where((r) => r.extractedTextStatus == 'failed').length;
+  String _t(String english, String arabic) => _isArabic ? arabic : english;
+
+  List<_PatientRecord> get _visibleRecords {
+    final query = _query.trim().toLowerCase();
+    return _records.where((record) {
+      final matchesFilter = switch (_filter) {
+        _RecordsFilter.all => true,
+        _RecordsFilter.doctors => record.creatorRole == 'doctor',
+        _RecordsFilter.nurses => record.creatorRole == 'nurse',
+        _RecordsFilter.uploads => record.isPatientUpload,
+      };
+      if (!matchesFilter) return false;
+      if (query.isEmpty) return true;
+      final searchableDate = intl.DateFormat(
+        'yyyy-MM-dd MMM d yyyy',
+      ).format(record.createdAt).toLowerCase();
+      return record.title.toLowerCase().contains(query) ||
+          record.category.toLowerCase().contains(query) ||
+          record.creatorName.toLowerCase().contains(query) ||
+          searchableDate.contains(query);
+    }).toList();
+  }
+
+  int _count(_RecordsFilter filter) => _records.where((record) {
+    return switch (filter) {
+      _RecordsFilter.all => true,
+      _RecordsFilter.doctors => record.creatorRole == 'doctor',
+      _RecordsFilter.nurses => record.creatorRole == 'nurse',
+      _RecordsFilter.uploads => record.isPatientUpload,
+    };
+  }).length;
+
+  @override
+  void initState() {
+    super.initState();
+    _filter = _RecordsFilter
+        .values[widget.initialTab.clamp(0, _RecordsFilter.values.length - 1)];
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_resolved) return;
-    final args = ModalRoute.of(context)?.settings.arguments;
-    final map = args is Map<String, dynamic> ? args : null;
+    if (_resolvedPatient) return;
+    final arguments = ModalRoute.of(context)?.settings.arguments;
+    final map = arguments is Map ? arguments : null;
     _patientId =
         widget.patientId ??
         widget.userId ??
         map?['patientId']?.toString() ??
         map?['userId']?.toString();
-    _resolved = true;
+    _resolvedPatient = true;
     _loadRecords();
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    _processingRefresh?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadRecords() async {
+  Future<void> _loadRecords({bool silent = false}) async {
     final patientId = _patientId?.trim() ?? '';
     if (patientId.isEmpty) {
+      if (!mounted) return;
       setState(() {
         _loading = false;
         _error = _t(
@@ -86,233 +125,79 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
       });
       return;
     }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+
+    if (!silent && mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+
     try {
       final rows = await _service.listForPatient(
         patientId,
         requesterUserId: patientId,
         requesterRole: 'patient',
       );
-      final parsed = rows.map((row) => _entryFromRow(row, patientId)).toList()
+      final records = rows.map(_PatientRecord.fromApi).toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (!mounted) return;
       setState(() {
-        _records = parsed;
+        _records = records;
         _loading = false;
+        _error = null;
       });
-      _syncRefreshTimer();
-    } catch (e) {
-      if (!mounted) return;
+      _syncProcessingRefresh();
+    } catch (error) {
+      if (!mounted || silent) return;
       setState(() {
         _loading = false;
-        _error = _cleanError(e);
+        _error = _cleanError(error);
       });
     }
   }
 
-  Future<void> _silentLoadRecords() async {
-    final patientId = _patientId?.trim() ?? '';
-    if (patientId.isEmpty) return;
-    try {
-      final rows = await _service.listForPatient(
-        patientId,
-        requesterUserId: patientId,
-        requesterRole: 'patient',
-      );
-      final parsed = rows.map((row) => _entryFromRow(row, patientId)).toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      if (!mounted) return;
-      setState(() => _records = parsed);
-      _syncRefreshTimer();
-    } catch (_) {}
-  }
-
-  void _syncRefreshTimer() {
-    if (_processingCount > 0) {
-      _refreshTimer ??= Timer.periodic(
-        const Duration(seconds: 3),
-        (_) => _silentLoadRecords(),
-      );
-      return;
-    }
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
-  }
-
-  MedicalRecordEntry _entryFromRow(Map<String, dynamic> row, String patientId) {
-    final uploadedBy = (row['uploaded_by'] ?? row['uploadedBy'] ?? 'doctor')
-        .toString();
-    if (uploadedBy == 'patient') {
-      return MedicalRecordEntry(
-        id: (row['id'] ?? row['recordId'] ?? '').toString(),
-        patientId: patientId,
-        uploadedBy: 'patient',
-        type: _typeFrom(
-          (row['record_type'] ?? row['recordType'] ?? 'attachment').toString(),
-        ),
-        title:
-            (row['title'] ??
-                    row['file_name'] ??
-                    row['fileName'] ??
-                    _t('Medical record', 'سجل طبي'))
-                .toString(),
-        description: (row['description'] ?? row['notes'] ?? '').toString(),
-        notes: (row['notes'] ?? row['description'] ?? '').toString(),
-        attachments: _stringList(row['attachments']),
-        createdAt:
-            DateTime.tryParse(
-              (row['created_at'] ?? row['createdAt'] ?? '').toString(),
-            ) ??
-            DateTime.now(),
-        usedByAi: true,
-        privateLabel: row['private_label'] != false,
-        uploadedAfterVisit: _bool(
-          row['uploaded_after_visit'] ?? row['uploadedAfterVisit'],
-        ),
-        category: (row['category'] ?? '').toString(),
-        fileUrl: row['file_url']?.toString() ?? row['fileUrl']?.toString(),
-        fileName: row['file_name']?.toString() ?? row['fileName']?.toString(),
-        fileExtension:
-            row['file_extension']?.toString() ??
-            row['fileExtension']?.toString(),
-        fileSize: row['file_size'] != null
-            ? int.tryParse(row['file_size'].toString())
-            : null,
-        aiReady: _bool(row['ai_ready'] ?? row['aiReady']),
-        extractedTextStatus:
-            (row['extracted_text_status'] ??
-                    row['extractedTextStatus'] ??
-                    'pending')
-                .toString(),
-        extractedText:
-            row['extracted_text']?.toString() ??
-            row['extractedText']?.toString(),
-        medicalSummary:
-            row['medical_summary']?.toString() ??
-            row['medicalSummary']?.toString(),
-        detectedCategory:
-            row['detected_category']?.toString() ??
-            row['detectedCategory']?.toString(),
-        tags: _stringList(row['tags']),
-        usedForAiMatching: true,
-        source: (row['source'] ?? 'patient_upload').toString(),
-      );
-    }
-    final diagnosis = (row['diagnosis'] ?? '').toString();
-    return MedicalRecordEntry(
-      id: (row['id'] ?? row['recordId'] ?? '').toString(),
-      patientId: patientId,
-      appointmentId:
-          row['appointment_id']?.toString() ?? row['appointmentId']?.toString(),
-      uploadedBy: uploadedBy,
-      type: MedicalRecordEntryType.visitReport,
-      title:
-          (row['title'] ??
-                  (diagnosis.isNotEmpty
-                      ? diagnosis
-                      : _t('Visit report', 'تقرير زيارة')))
-              .toString(),
-      description: (row['notes'] ?? '').toString(),
-      notes: (row['notes'] ?? '').toString(),
-      diagnosis: diagnosis,
-      createdAt:
-          DateTime.tryParse(
-            (row['visit_date'] ?? row['created_at'] ?? row['createdAt'] ?? '')
-                .toString(),
-          ) ??
-          DateTime.now(),
-      usedByAi: true,
-      aiReady: true,
-      extractedTextStatus: 'processed',
-      usedForAiMatching: true,
-      uploadedAfterVisit: true,
+  void _syncProcessingRefresh() {
+    final needsRefresh = _records.any(
+      (record) => record.status == _RecordStatus.processing,
     );
-  }
-
-  List<String> _stringList(Object? value) {
-    if (value is List) {
-      return value
-          .map((e) => e.toString())
-          .where((e) => e.trim().isNotEmpty)
-          .toList();
-    }
-    if (value is String && value.trim().isNotEmpty) {
-      try {
-        final decoded = jsonDecode(value);
-        if (decoded is List) {
-          return decoded
-              .map((e) => e.toString())
-              .where((e) => e.trim().isNotEmpty)
-              .toList();
-        }
-      } catch (_) {
-        return [value];
-      }
-    }
-    return const [];
-  }
-
-  bool _bool(Object? value) =>
-      value == true || value == 1 || value?.toString().toLowerCase() == 'true';
-
-  MedicalRecordEntryType _typeFrom(String raw) {
-    switch (raw) {
-      case 'visit_report':
-        return MedicalRecordEntryType.visitReport;
-      case 'lab_result':
-        return MedicalRecordEntryType.labResult;
-      case 'prescription':
-        return MedicalRecordEntryType.prescription;
-      case 'diagnosis':
-        return MedicalRecordEntryType.diagnosis;
-      case 'old_report':
-        return MedicalRecordEntryType.oldReport;
-      default:
-        return MedicalRecordEntryType.attachment;
+    if (needsRefresh) {
+      _processingRefresh ??= Timer.periodic(
+        const Duration(seconds: 4),
+        (_) => _loadRecords(silent: true),
+      );
+    } else {
+      _processingRefresh?.cancel();
+      _processingRefresh = null;
     }
   }
 
   String _cleanError(Object error) {
-    final raw = error.toString().replaceFirst('Exception: ', '').trim();
-    final lower = raw.toLowerCase();
-    if (raw.isEmpty ||
-        raw.length > 170 ||
-        lower.contains('<html') ||
-        lower.contains('<!doctype')) {
+    final message = error.toString().replaceFirst('Exception: ', '').trim();
+    if (message.isEmpty || message.length > 160 || message.contains('<html')) {
       return _t(
-        'Something went wrong. Please try again.',
-        'حدث خطأ. يرجى المحاولة مرة أخرى.',
+        'Could not load medical records. Please try again.',
+        'تعذر تحميل السجلات الطبية. يرجى المحاولة مرة أخرى.',
       );
     }
-    return raw;
+    return _isArabic ? context.l10n.userMessage(error) : message;
   }
 
-  void _showSnack(String message, {bool error = false}) {
-    final scheme = Theme.of(context).colorScheme;
+  void _showMessage(String message, {bool error = false}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: error ? scheme.error : scheme.primary,
+        backgroundColor: error ? const Color(0xFFDC2626) : AppColors.primary,
         content: Text(message),
       ),
     );
   }
 
-  Future<void> _openUploadFlow() async {
+  Future<void> _uploadRecord() async {
+    if (_uploading) return;
     final patientId = _patientId?.trim() ?? '';
-    if (patientId.isEmpty) {
-      _showSnack(
-        _t(
-          'Session expired. Please sign in again.',
-          'انتهت الجلسة. يرجى تسجيل الدخول مرة أخرى.',
-        ),
-        error: true,
-      );
-      return;
-    }
+    if (patientId.isEmpty) return;
 
     try {
       final picked = await FilePicker.pickFiles(
@@ -323,49 +208,72 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
       if (picked == null || picked.files.isEmpty) return;
       final file = picked.files.first;
       if (file.size > 12 * 1024 * 1024) {
-        _showSnack(
+        _showMessage(
           _t(
-            'File is too large. Maximum size is 12MB.',
-            'حجم الملف كبير جدا. الحد الأقصى 12 ميغابايت.',
+            'Maximum file size is 12 MB.',
+            'الحد الأقصى لحجم الملف هو 12 ميغابايت.',
           ),
           error: true,
         );
         return;
       }
 
-      final titleController = TextEditingController(
-        text: file.name.split('.').first,
+      final details = await _askUploadDetails(file);
+      if (details == null || !mounted) return;
+      setState(() => _uploading = true);
+      await _service.uploadPatientRecord(
+        patientId: patientId,
+        title: details.$1,
+        category: details.$2,
+        notes: details.$3,
+        usedForAiMatching: true,
+        aiReady: false,
+        filePath: kIsWeb ? null : file.path,
+        fileBytes: file.bytes,
+        fileName: file.name,
       );
-      final notesController = TextEditingController();
-      const categories = [
-        'Radiology',
-        'Lab Test',
-        'Prescription',
-        'Diagnosis',
-        'Surgery Report',
-        'Discharge Summary',
-        'Other',
-      ];
-      String selectedCategory = 'Lab Test';
+      await _loadRecords(silent: true);
+      _showMessage(
+        _t(
+          'Medical record uploaded successfully.',
+          'تم رفع السجل الطبي بنجاح.',
+        ),
+      );
+    } catch (error) {
+      _showMessage(_cleanError(error), error: true);
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
 
-      if (!mounted) return;
-      final save = await showModalBottomSheet<bool>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        backgroundColor: Colors.transparent,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setModalState) {
+  Future<(String, String, String)?> _askUploadDetails(PlatformFile file) async {
+    final title = TextEditingController(text: file.name.split('.').first);
+    final notes = TextEditingController();
+    const categories = [
+      'Medical Report',
+      'Lab Result',
+      'Prescription',
+      'Radiology',
+      'Insurance',
+      'Vaccination',
+      'Other',
+    ];
+    var category = categories.first;
+    final result = await showModalBottomSheet<(String, String, String)>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
             final p = CarelinkPalette.of(context);
-            final scheme = Theme.of(context).colorScheme;
             return Padding(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
+                bottom: MediaQuery.viewInsetsOf(context).bottom,
               ),
               child: Container(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.9,
-                ),
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
                 decoration: BoxDecoration(
                   color: p.surface,
                   borderRadius: const BorderRadius.vertical(
@@ -373,14 +281,13 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
                   ),
                 ),
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Center(
                         child: Container(
-                          width: 44,
+                          width: 42,
                           height: 5,
                           decoration: BoxDecoration(
                             color: p.stroke,
@@ -388,110 +295,73 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 18),
                       Text(
                         _t('Upload Medical Record', 'رفع سجل طبي'),
-                        textAlign: TextAlign.center,
                         style: TextStyle(
                           color: p.inkDark,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      _pickedFileTile(file, p),
-                      const SizedBox(height: 18),
-                      _sheetTextField(
-                        p: p,
-                        controller: titleController,
-                        label: _t('Title *', 'العنوان *'),
-                        hint: _t('Record title', 'عنوان السجل'),
+                      const SizedBox(height: 16),
+                      _uploadField(
+                        p,
+                        controller: title,
+                        label: _t('Title', 'العنوان'),
                       ),
-                      const SizedBox(height: 14),
-                      _sheetLabel(p, _t('Category *', 'التصنيف *')),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        initialValue: selectedCategory,
+                        initialValue: category,
                         dropdownColor: p.surface,
-                        decoration: _sheetDecoration(p),
+                        decoration: _inputDecoration(
+                          p,
+                          _t('Category', 'التصنيف'),
+                        ),
                         items: categories
                             .map(
-                              (c) => DropdownMenuItem(
-                                value: c,
-                                child: Text(_categoryText(c)),
+                              (value) => DropdownMenuItem(
+                                value: value,
+                                child: Text(value),
                               ),
                             )
                             .toList(),
                         onChanged: (value) {
-                          if (value == null) return;
-                          setModalState(() => selectedCategory = value);
+                          if (value != null) {
+                            setSheetState(() => category = value);
+                          }
                         },
                       ),
-                      const SizedBox(height: 14),
-                      _sheetTextField(
-                        p: p,
-                        controller: notesController,
+                      const SizedBox(height: 12),
+                      _uploadField(
+                        p,
+                        controller: notes,
                         label: _t('Notes (optional)', 'ملاحظات (اختياري)'),
-                        hint: _t(
-                          'Add context for this file',
-                          'أضف ملاحظات لهذا الملف',
-                        ),
                         maxLines: 3,
                       ),
-                      const SizedBox(height: 24),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                side: BorderSide(color: p.stroke),
-                              ),
-                              onPressed: () => Navigator.pop(context, false),
-                              child: Text(_t('Cancel', 'إلغاء')),
-                            ),
+                      const SizedBox(height: 18),
+                      FilledButton(
+                        onPressed: () {
+                          final value = title.text.trim();
+                          if (value.isEmpty) return;
+                          Navigator.pop(context, (
+                            value,
+                            category,
+                            notes.text.trim(),
+                          ));
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
-                            child: FilledButton(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: scheme.primary,
-                                foregroundColor: scheme.onPrimary,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                              ),
-                              onPressed: () {
-                                if (titleController.text.trim().isEmpty) {
-                                  _showSnack(
-                                    _t(
-                                      'Please enter a valid title.',
-                                      'يرجى إدخال عنوان صحيح.',
-                                    ),
-                                    error: true,
-                                  );
-                                  return;
-                                }
-                                Navigator.pop(context, true);
-                              },
-                              child: Text(
-                                _t('Upload', 'رفع الملف'),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
+                        child: Text(
+                          _t('Upload', 'رفع'),
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
                       ),
                     ],
                   ),
@@ -499,331 +369,97 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
               ),
             );
           },
-        ),
-      );
-
-      if (save != true) return;
-      setState(() => _loading = true);
-      await _service.uploadPatientRecord(
-        patientId: patientId,
-        title: titleController.text.trim(),
-        category: selectedCategory,
-        notes: notesController.text.trim(),
-        usedForAiMatching: true,
-        aiReady: false,
-        filePath: kIsWeb ? null : file.path,
-        fileBytes: file.bytes,
-        fileName: file.name,
-      );
-      await _loadRecords();
-      if (mounted) {
-        _showSnack(
-          _t(
-            'Medical record uploaded. Processing has started.',
-            'تم رفع السجل الطبي وبدأت المعالجة.',
-          ),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      _showSnack(_t('Upload failed: $e', 'فشل الرفع: $e'), error: true);
-    }
-  }
-
-  Future<void> _deleteRecord(MedicalRecordEntry record) async {
-    final patientId = _patientId?.trim() ?? '';
-    if (record.uploadedBy != 'patient') return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        final p = CarelinkPalette.of(context);
-        final scheme = Theme.of(context).colorScheme;
-        return AlertDialog(
-          backgroundColor: p.surface,
-          title: Text(
-            _t('Delete Record', 'حذف السجل'),
-            style: TextStyle(color: p.inkDark),
-          ),
-          content: Text(
-            _t(
-              'Are you sure you want to delete this record?',
-              'هل أنت متأكد أنك تريد حذف هذا السجل؟',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(_t('Cancel', 'إلغاء')),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: TextButton.styleFrom(foregroundColor: scheme.error),
-              child: Text(_t('Delete', 'حذف')),
-            ),
-          ],
         );
       },
     );
-    if (confirmed != true) return;
-    try {
-      setState(() => _loading = true);
-      await _service.deletePatientRecord(
-        recordId: record.id,
-        patientId: patientId,
-      );
-      await _loadRecords();
-      if (mounted) _showSnack(_t('Record deleted.', 'تم حذف السجل.'));
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      _showSnack(
-        _t(
-          'Delete failed. Please try again.',
-          'فشل الحذف. يرجى المحاولة مرة أخرى.',
-        ),
-        error: true,
-      );
-    }
+    title.dispose();
+    notes.dispose();
+    return result;
   }
 
-  Future<void> _viewFile(MedicalRecordEntry record) async {
-    final url = _fileUrl(record);
-    if (url == null) {
-      _showSnack(_t('No file is attached.', 'لا يوجد ملف مرفق.'), error: true);
-      return;
-    }
-    final ext = _extension(record, fallbackUrl: url);
-    if (_isImageExt(ext)) {
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => _ImageViewerScreen(title: record.title, fileUrl: url),
-        ),
-      );
-      return;
-    }
-    final uri = Uri.tryParse(url);
-    if (uri != null && await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-      return;
-    }
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) =>
-            _UnsupportedFileViewerScreen(entry: record, fileUrl: url),
+  Widget _uploadField(
+    CarelinkPalette p, {
+    required TextEditingController controller,
+    required String label,
+    int maxLines = 1,
+  }) {
+    return TextField(
+      controller: controller,
+      maxLines: maxLines,
+      style: TextStyle(color: p.inkDark, fontSize: 14),
+      decoration: _inputDecoration(p, label),
+    );
+  }
+
+  InputDecoration _inputDecoration(CarelinkPalette p, String label) {
+    return InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: p.surfaceSoft,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: p.stroke),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: p.stroke),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: AppColors.primary),
       ),
     );
   }
 
-  // Tag label lookup (human-readable)
-  String _tagLabel(String tag) {
-    const labels = {
-      'diabetes': 'Diabetes',
-      'hypertension': 'Hypertension',
-      'cholesterol': 'Cholesterol',
-      'cardiovascular_risk': 'Cardiovascular Risk',
-      'cardiology': 'Cardiology',
-      'endocrinology': 'Endocrinology',
-      'blood_pressure_monitoring': 'BP Monitoring',
-      'home_nursing': 'Home Nursing',
-      'wound_care': 'Wound Care',
-      'post_surgery_care': 'Post-Surgery',
-      'elderly_care': 'Elderly Care',
-      'medication_followup': 'Medication Follow-up',
-    };
-    return labels[tag.toLowerCase()] ??
-        tag
-            .replaceAll('_', ' ')
-            .split(' ')
-            .map(
-              (w) =>
-                  w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : w,
-            )
-            .join(' ');
+  Future<void> _openRecord(_PatientRecord record) async {
+    if (record.isPatientUpload) {
+      _showFileActions(record);
+    } else {
+      final changed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => MedicalRecordDetailsScreen(
+            recordId: record.id,
+            patientUserId: _patientId ?? '',
+          ),
+        ),
+      );
+      if (changed == true) await _loadRecords(silent: true);
+    }
   }
 
-  // Tag → condition / care-need / specialty bucket
-  static const _conditionTags = {
-    'diabetes',
-    'hypertension',
-    'cholesterol',
-    'cardiovascular_risk',
-  };
-  static const _careNeedTags = {
-    'blood_pressure_monitoring',
-    'home_nursing',
-    'wound_care',
-    'post_surgery_care',
-    'elderly_care',
-    'medication_followup',
-  };
-  static const _specialtyTags = {'cardiology', 'endocrinology'};
-
-  String _specialtyLabel(String tag) {
-    const labels = {
-      'cardiology': 'Cardiologist',
-      'endocrinology': 'Endocrinologist',
-    };
-    return labels[tag] ?? _tagLabel(tag);
-  }
-
-  // P3: Redesigned summary modal
-  void _viewSummary(MedicalRecordEntry record) {
-    final summary = record.medicalSummary?.trim() ?? '';
-    final hasSummary = summary.isNotEmpty;
-    final ocrText = record.extractedText?.trim() ?? '';
-    final hasOcr = ocrText.isNotEmpty;
-
-    final conditions = record.tags
-        .where((t) => _conditionTags.contains(t))
-        .toList();
-    final careNeeds = record.tags
-        .where((t) => _careNeedTags.contains(t))
-        .toList();
-    final specialties = record.tags
-        .where((t) => _specialtyTags.contains(t))
-        .toList();
-    // Infer home nursing provider if home_nursing tag is present
-    final showHomeNursing = record.tags.contains('home_nursing');
-
-    showModalBottomSheet<void>(
+  void _showFileActions(_PatientRecord record) {
+    showModalBottomSheet(
       context: context,
-      useSafeArea: true,
-      showDragHandle: true,
-      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         final p = CarelinkPalette.of(ctx);
-        final scheme = Theme.of(ctx).colorScheme;
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.6,
-          maxChildSize: 0.92,
-          minChildSize: 0.35,
-          builder: (ctx, scrollCtrl) => Container(
-            decoration: BoxDecoration(
-              color: p.surface,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(24),
-              ),
-            ),
-            child: SingleChildScrollView(
-              controller: scrollCtrl,
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // drag handle
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 5,
-                      margin: const EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(
-                        color: p.stroke,
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: p.isDark ? const Color(0xFF08242D) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: p.stroke, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 20),
+                Text(record.title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: p.inkDark)),
+                const SizedBox(height: 24),
+                if (record.fileUrl != null && record.fileUrl!.isNotEmpty) ...[
+                  _actionTile(ctx, p, Icons.visibility_outlined, _t('View / Open File', 'عرض / فتح الملف'), () => _launch(record.fileUrl!)),
+                  const SizedBox(height: 12),
+                  _actionTile(ctx, p, Icons.download_outlined, _t('Download', 'تنزيل'), () => _launch(record.fileUrl!)),
+                  const SizedBox(height: 12),
+                  _actionTile(ctx, p, Icons.share_outlined, _t('Share', 'مشاركة'), () => _launch(record.fileUrl!)),
+                ] else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Text(_t('File is not available.', 'الملف غير متاح.'), style: TextStyle(color: p.inkMuted)),
                   ),
-                  Text(
-                    _t('Medical Summary', 'الملخص الطبي'),
-                    style: TextStyle(
-                      color: p.inkDark,
-                      fontSize: 19,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  // AI Summary text
-                  if (hasSummary) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: scheme.primary.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: scheme.primary.withValues(alpha: 0.12),
-                        ),
-                      ),
-                      child: Text(
-                        summary,
-                        style: TextStyle(
-                          color: p.inkDark,
-                          fontSize: 13.5,
-                          height: 1.55,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                  ] else ...[
-                    Text(
-                      _t(
-                        'No AI summary available yet.',
-                        'لا يوجد ملخص ذكاء اصطناعي بعد.',
-                      ),
-                      style: TextStyle(color: p.inkMuted, fontSize: 13),
-                    ),
-                    const SizedBox(height: 18),
-                  ],
-                  // Detected Conditions
-                  if (conditions.isNotEmpty) ...[
-                    _summarySection(
-                      ctx,
-                      p,
-                      scheme,
-                      _t('Detected Conditions', 'الحالات المكتشفة'),
-                      Icons.monitor_heart_outlined,
-                      Colors.red.shade700,
-                      conditions.map(_tagLabel).toList(),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  // Detected Care Needs
-                  if (careNeeds.isNotEmpty) ...[
-                    _summarySection(
-                      ctx,
-                      p,
-                      scheme,
-                      _t('Detected Care Needs', 'احتياجات الرعاية المكتشفة'),
-                      Icons.medical_services_outlined,
-                      Colors.teal,
-                      careNeeds.map(_tagLabel).toList(),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  // Recommended Specialists
-                  if (specialties.isNotEmpty || showHomeNursing) ...[
-                    _summarySection(
-                      ctx,
-                      p,
-                      scheme,
-                      _t('Recommended Specialists', 'التخصصات الموصى بها'),
-                      Icons.person_search_outlined,
-                      const Color(0xFF7C5CE7),
-                      [
-                        ...specialties.map(_specialtyLabel),
-                        if (showHomeNursing &&
-                            !specialties.contains('home_nursing'))
-                          _t(
-                            'Home Nursing Provider',
-                            'مزود رعاية تمريضية منزلية',
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  // Advanced: OCR text (collapsed by default)
-                  if (hasOcr)
-                    _OcrExpandableSection(
-                      ocrText: ocrText,
-                      p: p,
-                      scheme: scheme,
-                      isArabic: _isArabic,
-                    ),
-                ],
-              ),
+              ],
             ),
           ),
         );
@@ -831,141 +467,39 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
     );
   }
 
-  Widget _summarySection(
-    BuildContext ctx,
-    CarelinkPalette p,
-    ColorScheme scheme,
-    String title,
-    IconData icon,
-    Color color,
-    List<String> items,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+  Widget _actionTile(BuildContext context, CarelinkPalette p, IconData icon, String title, VoidCallback onTap) {
+    return InkWell(
+      onTap: () {
+        Navigator.pop(context);
+        onTap();
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: p.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: p.stroke.withValues(alpha: 0.5)),
+        ),
+        child: Row(
           children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 7),
-            Text(
-              title,
-              style: TextStyle(
-                color: p.inkDark,
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
+            Icon(icon, color: AppColors.primary, size: 22),
+            const SizedBox(width: 12),
+            Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: p.inkDark)),
           ],
         ),
-        const SizedBox(height: 8),
-        ...items.map(
-          (item) => Padding(
-            padding: const EdgeInsets.only(bottom: 5),
-            child: Row(
-              children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  margin: const EdgeInsets.only(top: 1),
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: Text(
-                    item,
-                    style: TextStyle(
-                      color: p.inkMuted,
-                      fontSize: 13,
-                      height: 1.3,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
-  String? _fileUrl(MedicalRecordEntry record) {
-    final url = record.fileUrl?.trim();
-    if (url != null && url.isNotEmpty) return _normalizeFileUrl(url);
-    if (record.attachments.isNotEmpty) {
-      return _normalizeFileUrl(record.attachments.first);
+  Future<void> _launch(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri != null && await url_launcher.canLaunchUrl(uri)) {
+      await url_launcher.launchUrl(uri, mode: url_launcher.LaunchMode.externalApplication);
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_t('Could not open file.', 'تعذر فتح الملف.'))));
     }
-    return null;
-  }
-
-  String _normalizeFileUrl(String raw) {
-    final value = raw.trim();
-    if (value.startsWith('http://') || value.startsWith('https://')) {
-      return Uri.encodeFull(value);
-    }
-    if (value.startsWith('/uploads/')) {
-      return Uri.encodeFull('${ApiService.baseUrl}$value');
-    }
-    if (value.startsWith('uploads/')) {
-      return Uri.encodeFull('${ApiService.baseUrl}/$value');
-    }
-    return Uri.encodeFull('${ApiService.baseUrl}/uploads/$value');
-  }
-
-  String _extension(MedicalRecordEntry record, {String? fallbackUrl}) {
-    final raw = record.fileExtension?.trim().toLowerCase() ?? '';
-    if (raw.contains('/')) return raw.split('/').last;
-    if (raw.isNotEmpty) return raw.replaceFirst('.', '');
-    final url = fallbackUrl ?? record.fileUrl ?? record.fileName ?? '';
-    final clean = url.split('?').first;
-    final index = clean.lastIndexOf('.');
-    return index == -1 ? '' : clean.substring(index + 1).toLowerCase();
-  }
-
-  bool _isImageExt(String ext) =>
-      const {'jpg', 'jpeg', 'png', 'webp', 'gif'}.contains(ext.toLowerCase());
-
-  String _formatDate(DateTime date) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
-
-  String _categoryText(String category) {
-    if (!_isArabic) return category;
-    const labels = {
-      'Radiology': 'أشعة',
-      'Lab Test': 'تحاليل',
-      'Prescription': 'وصفة طبية',
-      'Diagnosis': 'تشخيص',
-      'Surgery Report': 'تقرير عملية',
-      'Discharge Summary': 'تقرير خروج',
-      'Other': 'أخرى',
-    };
-    return labels[category] ?? category;
-  }
-
-  String _categoryLabel(MedicalRecordEntry record) {
-    final category = record.category?.trim();
-    if (category != null && category.isNotEmpty) return _categoryText(category);
-    if (record.uploadedBy != 'patient') {
-      return _t('Visit report', 'تقرير زيارة');
-    }
-    return _t('Medical file', 'ملف طبي');
   }
 
   @override
@@ -976,44 +510,71 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
         final p = CarelinkPalette.of(context);
         return Directionality(
           textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-          child: Scaffold(
-            backgroundColor: p.pageBg,
+          child: PatientScaffold(
+            enabled: false,
+            backgroundColor: p.isDark ? p.pageBg : const Color(0xFFF8FAFA),
             appBar: AppBar(
-              backgroundColor: p.pageBg,
+              toolbarHeight: 70,
               elevation: 0,
-              actions: [
+              backgroundColor: Colors.transparent,
+              surfaceTintColor: Colors.transparent,
+              titleSpacing: 16,
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _t('My Medical Records', 'سجلاتي الطبية'),
+                    style: TextStyle(
+                      color: p.inkDark,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _t(
+                      'Reports, diagnoses, prescriptions and uploads',
+                      'التقارير والتشخيصات والوصفات والملفات',
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: p.inkMuted,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+              actions: const [
                 PatientHeaderActions(
                   showLanguage: true,
                   showTheme: true,
-                  color: AppColors.primary,
+                  color: Color(0xFF0F766E),
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
               ],
             ),
             body: SafeArea(
+              top: false,
               child: RefreshIndicator(
-                onRefresh: _loadRecords,
+                onRefresh: () => _loadRecords(silent: true),
+                color: AppColors.primary,
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                   children: [
-                    _buildSummaryRow(p),
+                    _summaryRow(p),
                     const SizedBox(height: 12),
-                    _buildUploadCard(p),
-                    const SizedBox(height: 18),
-                    _recordsHeader(p),
-                    const SizedBox(height: 8),
-                    if (_loading)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 80),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else if (_error != null)
-                      _buildErrorState(p)
-                    else if (_records.isEmpty)
-                      _buildEmptyState(p)
-                    else
-                      ..._records.map((record) => _recordTile(p, record)),
+                    _uploadCard(p),
+                    const SizedBox(height: 12),
+                    _searchBar(p),
+                    const SizedBox(height: 12),
+                    _filterChips(p),
+                    const SizedBox(height: 12),
+                    _recordsBody(p),
+                    const SizedBox(height: 12),
+                    _securityCard(p),
                   ],
                 ),
               ),
@@ -1024,372 +585,357 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
     );
   }
 
-  Widget _buildSummaryRow(CarelinkPalette p) {
-    final scheme = Theme.of(context).colorScheme;
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      childAspectRatio: 2.35,
-      padding: const EdgeInsets.only(bottom: 6),
-      children: [
-        _summaryPill(
-          p,
-          _t('Total', 'الإجمالي'),
-          '${_records.length}',
-          Icons.folder_copy_outlined,
-          scheme.primary,
-        ),
-        _summaryPill(
-          p,
-          _t('Ready', 'جاهز'),
-          '$_readyCount',
-          Icons.check_circle_outline_rounded,
-          Colors.green,
-        ),
-        _summaryPill(
-          p,
-          _t('Processing', 'قيد المعالجة'),
-          '$_processingCount',
-          Icons.sync_rounded,
-          Colors.blue,
-        ),
-        _summaryPill(
-          p,
-          _t('Failed', 'فشل'),
-          '$_failedCount',
-          Icons.error_outline_rounded,
-          scheme.error,
-        ),
-      ],
-    );
-  }
-
-  Widget _summaryPill(
-    CarelinkPalette p,
-    String label,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
+  Widget _summaryRow(CarelinkPalette p) {
+    final items = <(_RecordsFilter, String)>[
+      (_RecordsFilter.all, _t('All', 'الكل')),
+      (_RecordsFilter.doctors, _t('Doctors', 'الأطباء')),
+      (_RecordsFilter.nurses, _t('Nurses', 'الممرضين')),
+      (_RecordsFilter.uploads, _t('Uploads', 'ملفاتي')),
+    ];
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.stroke),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 20, color: color),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: TextStyle(
-                    color: p.inkDark,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: p.inkMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUploadCard(CarelinkPalette p) {
-    final scheme = Theme.of(context).colorScheme;
-    return PatientPressable(
-      onTap: _openUploadFlow,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        decoration: BoxDecoration(
-          color: p.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: p.stroke),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: scheme.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  Icons.upload_file_rounded,
-                  color: scheme.primary,
-                  size: 26,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      decoration: _cardDecoration(p, 16),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (var i = 0; i < items.length; i++) ...[
+              SizedBox(
+                width: 76,
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      _t('Upload Medical Record', 'رفع سجل طبي'),
+                      '${_count(items[i].$1)}',
                       style: TextStyle(
                         color: p.inkDark,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 4),
                     Text(
-                      _t(
-                        'Reports, scans, prescriptions, images',
-                        'تقارير، صور أشعة، وصفات طبية',
-                      ),
+                      items[i].$2,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: p.inkMuted,
-                        fontSize: 13,
-                        height: 1.3,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
               ),
-              FilledButton(
-                onPressed: _openUploadFlow,
-                child: Text(_t('Upload', 'رفع')),
-              ),
+              if (i < items.length - 1)
+                Container(
+                  width: 1,
+                  height: 24,
+                  color: p.stroke.withValues(alpha: 0.75),
+                ),
             ],
-          ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _recordsHeader(CarelinkPalette p) {
-    return Row(
-      children: [
-        Text(
-          _t('Records', 'السجلات'),
-          style: TextStyle(
-            color: p.inkDark,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-          ),
+  Widget _uploadCard(CarelinkPalette p) {
+    return PatientPressable(
+      onTap: _uploading ? null : _uploadRecord,
+      enabled: !_uploading,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: _cardDecoration(p, 16),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.upload_file_rounded,
+                color: AppColors.primary,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    _t('Upload Medical Record', 'رفع سجل طبي'),
+                    style: TextStyle(
+                      color: p.inkDark,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    _t('PDF, images, reports', 'PDF، صور، تقارير'),
+                    style: TextStyle(
+                      color: p.inkMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (_uploading)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              const Icon(
+                Icons.add_circle_rounded,
+                color: AppColors.primary,
+                size: 24,
+              ),
+          ],
         ),
-        const Spacer(),
-        if (!_loading && _error == null)
-          Text(
-            '${_records.length}',
-            style: TextStyle(
-              color: p.inkMuted,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+
+  Widget _searchBar(CarelinkPalette p) {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: _cardDecoration(p, 16, shadow: false),
+      child: Row(
+        children: [
+          Icon(Icons.search_rounded, color: p.inkMuted, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) => setState(() => _query = value),
+              style: TextStyle(color: p.inkDark, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: _t(
+                  'Search medical records...',
+                  'ابحث في السجلات الطبية...',
+                ),
+                hintStyle: TextStyle(
+                  color: p.inkMuted,
+                  fontSize: 13,
+                ),
+                border: InputBorder.none,
+                isDense: true,
+              ),
             ),
           ),
+          if (_query.isNotEmpty)
+            IconButton(
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () {
+                _searchController.clear();
+                setState(() => _query = '');
+              },
+              icon: const Icon(Icons.close_rounded, size: 16),
+              color: p.inkMuted,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChips(CarelinkPalette p) {
+    final items = <(_RecordsFilter, String)>[
+      (_RecordsFilter.all, _t('All', 'الكل')),
+      (_RecordsFilter.doctors, _t('Doctors', 'الأطباء')),
+      (_RecordsFilter.nurses, _t('Nurses', 'الممرضون')),
+      (_RecordsFilter.uploads, _t('My Uploads', 'ملفاتي')),
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            SizedBox(
+              height: 36,
+              child: ChoiceChip(
+                label: Text(items[i].$2),
+                selected: _filter == items[i].$1,
+                onSelected: (_) => setState(() => _filter = items[i].$1),
+                selectedColor: AppColors.primary,
+                backgroundColor: p.surface,
+                side: BorderSide(
+                  color: _filter == items[i].$1 ? AppColors.primary : p.stroke,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                labelStyle: TextStyle(
+                  color: _filter == items[i].$1 ? Colors.white : p.inkDark,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+                showCheckmark: false,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+              ),
+            ),
+            if (i < items.length - 1) const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _recordsBody(CarelinkPalette p) {
+    if (_loading) {
+      return Column(
+        children: [
+          _skeletonBox(p, height: 70),
+          const SizedBox(height: 8),
+          _skeletonBox(p, height: 70),
+          const SizedBox(height: 8),
+          _skeletonBox(p, height: 70),
+          const SizedBox(height: 8),
+          _skeletonBox(p, height: 70),
+        ],
+      );
+    }
+    if (_error != null) return _errorState(p);
+    if (_records.isNotEmpty && _visibleRecords.isEmpty) {
+      return _noMatchesState(p);
+    }
+    if (_visibleRecords.isEmpty) return _emptyState(p);
+    return Column(
+      children: [
+        for (final record in _visibleRecords) ...[
+          _recordCard(p, record),
+          const SizedBox(height: 8),
+        ],
       ],
     );
   }
 
-  Widget _recordTile(CarelinkPalette p, MedicalRecordEntry record) {
-    final scheme = Theme.of(context).colorScheme;
-    final status = _statusStyle(record, scheme);
-    final canShowSummary = record.extractedTextStatus == 'processed';
-    final isPatientUpload = record.uploadedBy == 'patient';
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.stroke),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _recordThumb(p, record),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _recordCard(CarelinkPalette p, _PatientRecord record) {
+    final status = _statusStyle(record.status);
+    final bool isUpload = record.isPatientUpload;
+    return PatientPressable(
+      onTap: () => _openRecord(record),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 76),
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+        decoration: _cardDecoration(p, 16, shadow: false),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: _recordColor(record).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                _recordIcon(record),
+                color: _recordColor(record),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _recordTitle(record),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: p.inkDark,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    _recordCategory(record),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: p.inkMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Icon(
+                        isUpload ? Icons.cloud_upload_outlined : Icons.person_outline_rounded,
+                        size: 12,
+                        color: p.inkMuted,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          isUpload ? _t('Uploaded by you', 'تم الرفع بواسطتك') : _creatorText(record),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: p.inkMuted,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  record.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: p.inkDark,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    height: 1.2,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: status.color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    status.label,
+                    style: TextStyle(
+                      color: status.color,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      _categoryLabel(record),
-                      style: TextStyle(
-                        color: p.inkMuted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text('-', style: TextStyle(color: p.inkMuted)),
-                    Text(
-                      _formatDate(record.createdAt),
-                      style: TextStyle(color: p.inkMuted, fontSize: 12),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _badge(status.label, status.color, status.icon),
-                // P5: Medical tags chips
-                if (record.tags.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 5,
-                    runSpacing: 5,
-                    children: record.tags.take(5).map((tag) {
-                      final label = _tagLabel(tag);
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: scheme.primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: scheme.primary.withValues(alpha: 0.18),
-                          ),
-                        ),
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            color: scheme.primary,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                Text(
+                  intl.DateFormat('d MMM y').format(record.createdAt),
+                  maxLines: 1,
+                  textDirection: TextDirection.ltr,
+                  style: TextStyle(
+                    color: p.inkMuted,
+                    fontSize: 10,
                   ),
-                ],
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  children: [
-                    _actionButton(
-                      _t('View', 'عرض'),
-                      Icons.visibility_outlined,
-                      scheme.primary,
-                      () => _viewFile(record),
-                    ),
-                    if (canShowSummary)
-                      _actionButton(
-                        _t('Summary', 'الملخص'),
-                        Icons.notes_rounded,
-                        Colors.green,
-                        () => _viewSummary(record),
-                      ),
-                    if (isPatientUpload)
-                      _actionButton(
-                        _t('Delete', 'حذف'),
-                        Icons.delete_outline_rounded,
-                        scheme.error,
-                        () => _deleteRecord(record),
-                      ),
-                  ],
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  ({String label, Color color, IconData icon}) _statusStyle(
-    MedicalRecordEntry record,
-    ColorScheme scheme,
-  ) {
-    switch (record.extractedTextStatus) {
-      case 'failed':
-        return (
-          label: _t('Failed', 'فشل'),
-          color: scheme.error,
-          icon: Icons.error_outline_rounded,
-        );
-      case 'processed':
-        return (
-          label: _t('Ready', 'جاهز'),
-          color: Colors.green,
-          icon: Icons.check_circle_outline_rounded,
-        );
-      case 'pending':
-      case 'processing':
-      default:
-        return (
-          label: _t('Processing', 'قيد المعالجة'),
-          color: Colors.blue,
-          icon: Icons.sync_rounded,
-        );
-    }
-  }
-
-  Widget _actionButton(
-    String label,
-    IconData icon,
-    Color color,
-    VoidCallback onTap,
-  ) {
-    return PatientPressable(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: color),
             const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-              ),
+            Icon(
+              isUpload ? Icons.more_vert_rounded : (_isArabic ? Icons.chevron_left_rounded : Icons.chevron_right_rounded),
+              color: p.inkMuted,
+              size: 20,
             ),
           ],
         ),
@@ -1397,167 +943,138 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
     );
   }
 
-  Widget _badge(String label, Color color, IconData icon) {
+  Widget _emptyState(CarelinkPalette p) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _recordThumb(CarelinkPalette p, MedicalRecordEntry record) {
-    final scheme = Theme.of(context).colorScheme;
-    final url = _fileUrl(record);
-    final ext = _extension(record, fallbackUrl: url);
-    if (url != null && _isImageExt(ext)) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.network(
-          url,
-          width: 48,
-          height: 48,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => _fileIconBox(p, record),
-        ),
-      );
-    }
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Icon(_fileIcon(record), color: scheme.primary, size: 23),
-    );
-  }
-
-  Widget _fileIconBox(CarelinkPalette p, MedicalRecordEntry record) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 48,
-      height: 48,
-      color: scheme.primary.withValues(alpha: 0.1),
-      child: Icon(_fileIcon(record), color: scheme.primary, size: 23),
-    );
-  }
-
-  IconData _fileIcon(MedicalRecordEntry record) {
-    final ext = _extension(record);
-    if (ext == 'pdf') return Icons.picture_as_pdf_rounded;
-    if (_isImageExt(ext)) return Icons.image_rounded;
-    if (record.uploadedBy != 'patient') return Icons.assignment_outlined;
-    return Icons.insert_drive_file_outlined;
-  }
-
-  Widget _buildEmptyState(CarelinkPalette p) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 54),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 26),
+      decoration: _cardDecoration(p, 19, shadow: false),
       child: Column(
         children: [
-          Icon(Icons.folder_open_rounded, size: 50, color: scheme.primary),
-          const SizedBox(height: 12),
-          Text(
-            _t('No records yet', 'لا توجد سجلات بعد'),
-            style: TextStyle(
-              color: p.inkDark,
-              fontSize: 17,
-              fontWeight: FontWeight.w900,
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.09),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.folder_open_outlined,
+              color: AppColors.primary,
+              size: 29,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
           Text(
-            _t('Upload your first medical record.', 'ارفع أول سجل طبي لك.'),
+            _t('No medical records yet', 'لا توجد سجلات طبية بعد'),
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _t(
+              'Your reports from doctors and nurses will appear here.',
+              'ستظهر تقارير الأطباء والممرضين هنا.',
+            ),
             textAlign: TextAlign.center,
-            style: TextStyle(color: p.inkMuted, fontSize: 13),
+            style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
           ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _openUploadFlow,
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _uploadRecord,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: const BorderSide(color: AppColors.primary),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
             icon: const Icon(Icons.upload_file_rounded, size: 18),
-            label: Text(_t('Upload First Record', 'ارفع أول سجل')),
+            label: Text(_t('Upload', 'رفع ملف')),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildErrorState(CarelinkPalette p) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 54),
+  Widget _noMatchesState(CarelinkPalette p) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+      decoration: _cardDecoration(p, 19, shadow: false),
       child: Column(
         children: [
-          Icon(Icons.error_outline_rounded, size: 48, color: scheme.error),
-          const SizedBox(height: 12),
+          const Icon(
+            Icons.search_off_rounded,
+            color: Color(0xFF64748B),
+            size: 32,
+          ),
+          const SizedBox(height: 8),
           Text(
-            _t('Failed to load records', 'فشل تحميل السجلات'),
-            style: TextStyle(
-              color: p.inkDark,
-              fontSize: 17,
-              fontWeight: FontWeight.w900,
+            _t('No matching records', 'لا توجد نتائج مطابقة'),
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () {
+              _searchController.clear();
+              setState(() {
+                _query = '';
+                _filter = _RecordsFilter.all;
+              });
+            },
+            child: Text(_t('Clear filters', 'مسح عوامل التصفية')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _errorState(CarelinkPalette p) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 18),
+      decoration: _cardDecoration(p, 19, shadow: false),
+      child: Column(
+        children: [
+          const Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626)),
+          const SizedBox(height: 7),
           Text(
             _error ?? '',
             textAlign: TextAlign.center,
-            style: TextStyle(color: p.inkMuted, fontSize: 13),
+            style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
           ),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
+          const SizedBox(height: 9),
+          TextButton.icon(
             onPressed: _loadRecords,
             icon: const Icon(Icons.refresh_rounded, size: 18),
-            label: Text(_t('Retry', 'إعادة المحاولة')),
+            label: Text(_t('Try again', 'إعادة المحاولة')),
           ),
         ],
       ),
     );
   }
 
-  Widget _pickedFileTile(PlatformFile file, CarelinkPalette p) {
-    final scheme = Theme.of(context).colorScheme;
-    final ext = (file.extension ?? '').toLowerCase();
-    final sizeText = file.size > 1024 * 1024
-        ? '${(file.size / (1024 * 1024)).toStringAsFixed(1)} MB'
-        : '${(file.size / 1024).toStringAsFixed(0)} KB';
+  Widget _securityCard(CarelinkPalette p) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: scheme.primary.withValues(alpha: 0.15)),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: _cardDecoration(p, 16, shadow: false),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
-              color: scheme.primary.withValues(alpha: 0.15),
+              color: AppColors.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(
-              ext == 'pdf' ? Icons.picture_as_pdf_rounded : Icons.image_rounded,
-              color: scheme.primary,
-              size: 24,
+            child: const Icon(
+              Icons.lock_outline_rounded,
+              color: AppColors.primary,
+              size: 18,
             ),
           ),
           const SizedBox(width: 12),
@@ -1566,289 +1083,284 @@ class _MedicalRecordsScreenState extends State<MedicalRecordsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  file.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  _t('Your records are private', 'سجلاتك خاصة وآمنة'),
                   style: TextStyle(
                     color: p.inkDark,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  sizeText,
-                  style: TextStyle(
-                    color: p.inkMuted,
                     fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Icon(Icons.check_circle_rounded, color: Colors.green, size: 20),
-        ],
-      ),
-    );
-  }
-
-  Widget _sheetTextField({
-    required CarelinkPalette p,
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    int maxLines = 1,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sheetLabel(p, label),
-        const SizedBox(height: 6),
-        TextField(
-          controller: controller,
-          maxLines: maxLines,
-          style: TextStyle(color: p.inkDark, fontWeight: FontWeight.w600),
-          decoration: _sheetDecoration(p, hint),
-        ),
-      ],
-    );
-  }
-
-  Widget _sheetLabel(CarelinkPalette p, String label) {
-    return Text(
-      label,
-      style: TextStyle(
-        color: p.inkMuted,
-        fontSize: 12.5,
-        fontWeight: FontWeight.w900,
-      ),
-    );
-  }
-
-  InputDecoration _sheetDecoration(CarelinkPalette p, [String? hint]) {
-    final scheme = Theme.of(context).colorScheme;
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: TextStyle(color: p.inkMuted.withValues(alpha: 0.55)),
-      filled: true,
-      fillColor: p.pageBg,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: p.stroke),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: p.stroke),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: scheme.primary, width: 1.5),
-      ),
-    );
-  }
-}
-
-// P3: Expandable OCR section for the summary modal
-class _OcrExpandableSection extends StatefulWidget {
-  const _OcrExpandableSection({
-    required this.ocrText,
-    required this.p,
-    required this.scheme,
-    required this.isArabic,
-  });
-  final String ocrText;
-  final CarelinkPalette p;
-  final ColorScheme scheme;
-  final bool isArabic;
-
-  @override
-  State<_OcrExpandableSection> createState() => _OcrExpandableSectionState();
-}
-
-class _OcrExpandableSectionState extends State<_OcrExpandableSection> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = widget.isArabic ? 'تفاصيل متقدمة' : 'Advanced Details';
-    final sublabel = widget.isArabic ? 'نص OCR المستخرج' : 'Extracted OCR Text';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        PatientPressable(
-          onTap: () => setState(() => _expanded = !_expanded),
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: widget.p.pageBg,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: widget.p.stroke),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  _expanded
-                      ? Icons.expand_less_rounded
-                      : Icons.expand_more_rounded,
-                  color: widget.p.inkMuted,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: widget.p.inkMuted,
-                    fontSize: 13,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+                Text(
+                  _t(
+                    'Only you and authorized care providers can access them.',
+                    'يمكنك أنت ومقدمو الرعاية المصرح لهم فقط الوصول إليها.',
+                  ),
+                  style: TextStyle(
+                    color: p.inkMuted,
+                    fontSize: 11,
+                  ),
+                ),
               ],
             ),
           ),
-        ),
-        if (_expanded) ...[
-          const SizedBox(height: 10),
-          Text(
-            sublabel,
-            style: TextStyle(
-              color: widget.p.inkMuted,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: widget.p.pageBg,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: widget.p.stroke),
-            ),
-            child: Text(
-              widget.ocrText,
-              style: TextStyle(
-                color: widget.p.inkMuted,
-                fontSize: 12,
-                height: 1.5,
-                fontFamily: 'monospace',
-              ),
-            ),
-          ),
         ],
-      ],
+      ),
+    );
+  }
+
+  BoxDecoration _cardDecoration(
+    CarelinkPalette p,
+    double radius, {
+    bool shadow = true,
+  }) {
+    return BoxDecoration(
+      color: p.surface,
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(color: p.stroke.withValues(alpha: 0.72)),
+      boxShadow: shadow
+          ? [
+              BoxShadow(
+                color: p.cardShadowColor(0.04),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+              ),
+            ]
+          : null,
+    );
+  }
+
+  String _creatorText(_PatientRecord record) {
+    if (record.isPatientUpload) return _t('You', 'أنت');
+    if (record.creatorName.isNotEmpty) return record.creatorName;
+    return record.creatorRole == 'nurse'
+        ? _t('Nurse', 'ممرض')
+        : _t('Doctor', 'طبيب');
+  }
+
+  String _recordTitle(_PatientRecord record) {
+    if (!_isArabic) return record.title;
+    return _localizedMedicalTerm(record.title);
+  }
+
+  String _recordCategory(_PatientRecord record) {
+    if (!_isArabic) return record.category;
+    return _localizedMedicalTerm(record.category);
+  }
+
+  String _localizedMedicalTerm(String value) {
+    final normalized = value.trim().toLowerCase();
+    const terms = <String, String>{
+      'medical record': 'سجل طبي',
+      'medical report': 'تقرير طبي',
+      'visit report': 'تقرير زيارة',
+      'nursing report': 'تقرير تمريضي',
+      'diagnosis': 'تشخيص',
+      'prescription': 'وصفة طبية',
+      'lab result': 'نتيجة مختبر',
+      'lab results': 'نتائج مختبر',
+      'x-ray report': 'تقرير أشعة سينية',
+      'mri report': 'تقرير رنين مغناطيسي',
+      'ct scan': 'تصوير مقطعي',
+      'insurance document': 'وثيقة تأمين',
+      'vaccination record': 'سجل تطعيمات',
+    };
+    return terms[normalized] ?? value;
+  }
+
+  IconData _recordIcon(_PatientRecord record) {
+    final value = '${record.title} ${record.category}'.toLowerCase();
+    if (value.contains('lab') || value.contains('blood')) {
+      return Icons.science_outlined;
+    }
+    if (value.contains('prescription') || value.contains('medication')) {
+      return Icons.medication_outlined;
+    }
+    if (value.contains('x-ray') ||
+        value.contains('radiology') ||
+        value.contains('scan') ||
+        value.contains('mri')) {
+      return Icons.document_scanner_outlined;
+    }
+    if (record.isPatientUpload) return Icons.upload_file_outlined;
+    if (record.creatorRole == 'nurse') return Icons.description_outlined;
+    return Icons.medical_services_outlined;
+  }
+
+  Color _recordColor(_PatientRecord record) {
+    if (record.status == _RecordStatus.failed) return const Color(0xFFDC2626);
+    if (record.creatorRole == 'nurse') return const Color(0xFF2563EB);
+    if (record.isPatientUpload) return const Color(0xFF7C3AED);
+    return AppColors.primary;
+  }
+
+  _StatusView _statusStyle(_RecordStatus status) {
+    return switch (status) {
+      _RecordStatus.ready => _StatusView(
+        _t('Ready', 'جاهز'),
+        const Color(0xFF15803D),
+      ),
+      _RecordStatus.processing => _StatusView(
+        _t('Processing', 'قيد المعالجة'),
+        const Color(0xFF2563EB),
+      ),
+      _RecordStatus.failed => _StatusView(
+        _t('Failed', 'فشل'),
+        const Color(0xFFDC2626),
+      ),
+      _RecordStatus.archived => _StatusView(
+        _t('Archived', 'مؤرشف'),
+        const Color(0xFF64748B),
+      ),
+    };
+  }
+  Widget _skeletonBox(CarelinkPalette p, {required double height}) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: p.stroke.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(16),
+      ),
     );
   }
 }
 
-class _ImageViewerScreen extends StatelessWidget {
-  const _ImageViewerScreen({required this.title, required this.fileUrl});
-  final String title;
-  final String fileUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = CarelinkPalette.of(context);
-
-    return Scaffold(
-      backgroundColor: p.pageBg,
-      appBar: AppBar(
-        backgroundColor: p.pageBg,
-        foregroundColor: AppColors.primary,
-        elevation: 0,
-        title: Text(
-          title,
-          style: TextStyle(
-            color: AppColors.primary,
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
-      body: Center(
-        child: InteractiveViewer(
-          child: Image.network(
-            fileUrl,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) =>
-                Icon(Icons.broken_image_outlined, size: 64, color: p.inkMuted),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _UnsupportedFileViewerScreen extends StatelessWidget {
-  const _UnsupportedFileViewerScreen({
-    required this.entry,
-    required this.fileUrl,
+class _PatientRecord {
+  const _PatientRecord({
+    required this.id,
+    required this.title,
+    required this.category,
+    required this.creatorRole,
+    required this.creatorName,
+    required this.createdAt,
+    required this.status,
+    required this.isPatientUpload,
+    required this.raw,
+    this.fileUrl,
   });
-  final MedicalRecordEntry entry;
-  final String fileUrl;
-  bool get _isArabic => localeController.isArabic;
-  String _t(String en, String ar) => _isArabic ? ar : en;
 
-  @override
-  Widget build(BuildContext context) {
-    final p = CarelinkPalette.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      backgroundColor: p.pageBg,
-      appBar: AppBar(
-        backgroundColor: p.pageBg,
-        foregroundColor: p.inkDark,
-        elevation: 0,
-        title: Text(
-          entry.title,
-          style: TextStyle(
-            color: p.inkDark,
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              Icon(
-                Icons.insert_drive_file_outlined,
-                size: 58,
-                color: scheme.primary,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _t('File Details', 'تفاصيل الملف'),
-                style: TextStyle(
-                  color: p.inkDark,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                entry.fileName ?? entry.title,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: p.inkMuted),
-              ),
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: () => launchUrl(
-                  Uri.parse(fileUrl),
-                  mode: LaunchMode.externalApplication,
-                ),
-                icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                label: Text(_t('Open / Download', 'فتح / تحميل')),
-              ),
-            ],
-          ),
-        ),
-      ),
+  final String id;
+  final String title;
+  final String category;
+  final String creatorRole;
+  final String creatorName;
+  final DateTime createdAt;
+  final _RecordStatus status;
+  final bool isPatientUpload;
+  final String? fileUrl;
+  final Map<String, dynamic> raw;
+
+  factory _PatientRecord.fromApi(Map<String, dynamic> raw) {
+    String text(List<String> keys) {
+      for (final key in keys) {
+        final value = raw[key]?.toString().trim() ?? '';
+        if (value.isNotEmpty && value.toLowerCase() != 'null') return value;
+      }
+      return '';
+    }
+
+    final source = text(['source']).toLowerCase();
+    final normalizedRole = text([
+      'creatorRole',
+      'providerRole',
+      'provider_role',
+      'createdByRole',
+      'role',
+    ]).toLowerCase();
+    final normalizedRecordType = text([
+      'recordType',
+      'record_type',
+      'report_kind',
+    ]).toLowerCase();
+    final uploadedBy = text([
+      'uploaded_by',
+      'uploadedBy',
+      'uploadedByRole',
+    ]).toLowerCase();
+    final isPatientUpload =
+        normalizedRole == 'patient' ||
+        uploadedBy == 'patient' ||
+        source == 'patient_upload' ||
+        source == 'patientmedicalfile' ||
+        normalizedRecordType == 'patient_upload';
+    final title = text(['title', 'diagnosis', 'file_name', 'fileName']);
+    final category = text([
+      'category',
+      'record_type',
+      'recordType',
+      'report_kind',
+    ]);
+    final providerName = text([
+      'creatorName',
+      'providerName',
+      'provider_name',
+      'createdByName',
+      'uploaderName',
+    ]);
+    final explicitRole = normalizedRole;
+    final roleClues = '$title $category $providerName'.toLowerCase();
+    final creatorRole = isPatientUpload
+        ? 'patient'
+        : explicitRole.contains('nurse') ||
+              roleClues.contains('nurse') ||
+              roleClues.contains('nursing') ||
+              roleClues.contains('wound care') ||
+              roleClues.contains('vital signs')
+        ? 'nurse'
+        : 'doctor';
+    final createdAt = DateTime.tryParse(
+      text([
+        'created_at',
+        'createdAt',
+        'visit_date',
+        'uploadDate',
+      ]).replaceFirst(' ', 'T'),
+    );
+    final rawStatus = text([
+      'extracted_text_status',
+      'extractedTextStatus',
+      'aiStatus',
+      'status',
+    ]).toLowerCase();
+    final status = switch (rawStatus) {
+      'failed' || 'error' => _RecordStatus.failed,
+      'archived' => _RecordStatus.archived,
+      'pending' || 'processing' || 'queued' => _RecordStatus.processing,
+      _ => _RecordStatus.ready,
+    };
+
+    return _PatientRecord(
+      id: text(['id', 'recordId']),
+      title: title.isEmpty ? 'Medical record' : title,
+      category: category.isEmpty
+          ? 'Medical record'
+          : _displayCategory(category),
+      creatorRole: creatorRole,
+      creatorName: isPatientUpload ? '' : providerName,
+      createdAt: createdAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+      status: isPatientUpload ? status : _RecordStatus.ready,
+      isPatientUpload: isPatientUpload,
+      fileUrl: text(['fileUrl', 'file_url']),
+      raw: raw,
     );
   }
+
+  static String _displayCategory(String value) {
+    final normalized = value.replaceAll('_', ' ').trim();
+    if (normalized.isEmpty) return 'Medical record';
+    return normalized
+        .split(RegExp(r'\s+'))
+        .map(
+          (word) => word.isEmpty
+              ? word
+              : '${word[0].toUpperCase()}${word.substring(1)}',
+        )
+        .join(' ');
+  }
+}
+
+class _StatusView {
+  const _StatusView(this.label, this.color);
+
+  final String label;
+  final Color color;
 }

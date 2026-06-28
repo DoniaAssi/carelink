@@ -97,7 +97,11 @@ class AuthService {
         headers: _jsonHeaders,
         body: jsonEncode({'phone': phoneDigits, 'purpose': 'signup'}),
       );
-      _logAuthRequest(url: url, method: 'POST', statusCode: response.statusCode);
+      _logAuthRequest(
+        url: url,
+        method: 'POST',
+        statusCode: response.statusCode,
+      );
 
       final body = response.body;
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -106,12 +110,18 @@ class AuthService {
           final d = jsonDecode(body);
           if (d is Map<String, dynamic>) map = d;
         } catch (_) {}
-        final note = map?['smsDeliveryNote']?.toString() ?? map?['message']?.toString();
+        final note =
+            map?['smsDeliveryNote']?.toString() ?? map?['message']?.toString();
         return SendOtpResult(note: note);
       }
 
       final message = _extractError(body, response.statusCode);
-      _logAuthRequest(url: url, method: 'POST', statusCode: response.statusCode, error: message);
+      _logAuthRequest(
+        url: url,
+        method: 'POST',
+        statusCode: response.statusCode,
+        error: message,
+      );
       throw AuthApiException(message, statusCode: response.statusCode);
     } on AuthApiException {
       rethrow;
@@ -137,9 +147,6 @@ class AuthService {
     String? addressText,
     String? dateOfBirth,
     String? gender,
-    String? chronicDiseases,
-    String? allergies,
-    String? currentMedications,
     String? specialization,
     String? licenseNumber,
     String? experienceYears,
@@ -167,9 +174,6 @@ class AuthService {
     addIfNotEmpty('addressText', addressText);
     addIfNotEmpty('dateOfBirth', dateOfBirth);
     addIfNotEmpty('gender', gender);
-    addIfNotEmpty('chronicDiseases', chronicDiseases);
-    addIfNotEmpty('allergies', allergies);
-    addIfNotEmpty('currentMedications', currentMedications);
     addIfNotEmpty('specialization', specialization);
     addIfNotEmpty('licenseNumber', licenseNumber);
     addIfNotEmpty('experienceYears', experienceYears);
@@ -184,7 +188,11 @@ class AuthService {
         headers: _jsonHeaders,
         body: jsonEncode(payload),
       );
-      _logAuthRequest(url: url, method: 'POST', statusCode: response.statusCode);
+      _logAuthRequest(
+        url: url,
+        method: 'POST',
+        statusCode: response.statusCode,
+      );
 
       final body = response.body;
       Map<String, dynamic>? decoded;
@@ -200,7 +208,12 @@ class AuthService {
       final message = decoded != null
           ? _extractError(body, response.statusCode)
           : 'Registration failed';
-      _logAuthRequest(url: url, method: 'POST', statusCode: response.statusCode, error: message);
+      _logAuthRequest(
+        url: url,
+        method: 'POST',
+        statusCode: response.statusCode,
+        error: message,
+      );
       throw AuthApiException(message, statusCode: response.statusCode);
     } on AuthApiException {
       rethrow;

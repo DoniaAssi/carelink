@@ -9,6 +9,7 @@ class RecommendationRequest {
     this.requestedDateTime,
     this.isUrgent = false,
     this.isComplexCase = false,
+    this.isEmergency = false,
     this.requestedServiceKeyword = '',
   });
 
@@ -19,6 +20,7 @@ class RecommendationRequest {
   final DateTime? requestedDateTime;
   final bool isUrgent;
   final bool isComplexCase;
+  final bool isEmergency;
 
   /// Normalised token for specialization matching (filled by parser).
   final String requestedServiceKeyword;
@@ -163,6 +165,7 @@ class AIRecommendationResult {
     required this.provider,
     required this.finalScore,
     required this.matchPercentage,
+    this.confidenceScore = 0,
     required this.breakdown,
     required this.weights,
     required this.recommendationReasons,
@@ -175,6 +178,7 @@ class AIRecommendationResult {
   final ProviderModel provider;
   final double finalScore;
   final int matchPercentage;
+  final int confidenceScore;
   final ScoreBreakdown breakdown;
   final RecommendationWeights weights;
   final List<String> recommendationReasons;

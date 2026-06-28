@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
@@ -48,13 +50,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> _pay() async {
+    if (_submitting) return;
     if (!_formKey.currentState!.validate()) return;
     setState(() => _submitting = true);
     try {
       // 1. Simulate mock card payment success locally
       await Future<void>.delayed(const Duration(milliseconds: 800));
 
-      // 2. Create the real booking now that payment is approved
+      // 2. Create the booking, or reuse the matching existing booking.
       final api = ApiService();
       final booking = await api.createBooking(
         patientId: widget.request.patientId,
@@ -113,11 +116,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
 
       if (!mounted) return;
+      _toast(
+        context.l10n.isArabic
+            ? 'تم الدفع بنجاح'
+            : 'Payment completed successfully',
+      );
       Navigator.pop(context, {'success': true, 'appointmentId': appointmentId});
     } catch (e) {
       if (!mounted) return;
-      final msg = e.toString().replaceFirst('Exception: ', '');
-      _toast(msg.isEmpty ? 'Something went wrong.' : msg);
+      _toast(context.l10n.userMessage(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -141,80 +148,104 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final p = CarelinkPalette.of(context);
     final isArabic = context.l10n.isArabic;
 
-    return Scaffold(
-      backgroundColor: p.isDark ? p.pageBg : const Color(0xFFF2FAF8),
-      appBar: PatientAppBar(
-        title: context.tr('payment.title'),
-        showLanguage: true,
-        showTheme: true,
-      ),
-      body: Stack(
-        children: [
-          ListView(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              12,
-              16,
-              24 + MediaQuery.paddingOf(context).bottom,
+    final baseTheme = Theme.of(context);
+    final paymentTheme = isArabic
+        ? baseTheme.copyWith(
+            textTheme: GoogleFonts.cairoTextTheme(baseTheme.textTheme),
+            primaryTextTheme: GoogleFonts.cairoTextTheme(
+              baseTheme.primaryTextTheme,
             ),
-            children: [
-              _AmountSummaryCard(
-                palette: p,
-                providerName: widget.request.providerName,
-                serviceName: (widget.request.serviceType).trim().isNotEmpty
-                    ? widget.request.serviceType.trim()
-                    : widget.request.providerRole,
-                amount: widget.request.totalAmount,
-              ),
-              const SizedBox(height: 16),
-              AnimatedBuilder(
-                animation: Listenable.merge([
-                  _nameController,
-                  _cardController,
-                  _expiryController,
-                ]),
-                builder: (context, _) => _CreditCardPreview(
-                  cardNumber: _cardController.text,
-                  cardHolder: _nameController.text,
-                  expiryDate: _expiryController.text,
-                ),
-              ),
-              const SizedBox(height: 18),
-              _CardForm(
-                palette: p,
-                formKey: _formKey,
-                isArabic: isArabic,
-                nameController: _nameController,
-                cardController: _cardController,
-                expiryController: _expiryController,
-                cvvController: _cvvController,
-                submitting: _submitting,
-                onPay: _pay,
-              ),
-            ],
+          )
+        : baseTheme;
+
+    return Directionality(
+      textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
+      child: Theme(
+        data: paymentTheme,
+        child: PatientScaffold(
+          backgroundColor: p.isDark ? p.pageBg : const Color(0xFFF2FAF8),
+          appBar: PatientAppBar(
+            title: isArabic ? 'الدفع' : context.tr('payment.title'),
+            showLanguage: true,
+            showTheme: true,
           ),
-          if (_submitting)
-            Container(
-              color: Colors.black26,
-              child: Center(
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const CircularProgressIndicator(
-                          color: AppColors.primary,
+          body: Stack(
+            children: [
+              SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _AmountSummaryCard(
+                        palette: p,
+                        providerName: widget.request.providerName,
+                        serviceName:
+                            widget.request.serviceType.trim().isNotEmpty
+                            ? widget.request.serviceType.trim()
+                            : widget.request.providerRole,
+                        amount: widget.request.totalAmount,
+                      ),
+                      const SizedBox(height: 20),
+                      AnimatedBuilder(
+                        animation: Listenable.merge([
+                          _nameController,
+                          _cardController,
+                          _expiryController,
+                        ]),
+                        builder: (context, _) => _CreditCardPreview(
+                          cardNumber: _cardController.text,
+                          cardHolder: _nameController.text,
+                          expiryDate: _expiryController.text,
                         ),
-                        const SizedBox(height: 14),
-                        Text(context.tr('payment.processing')),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 24),
+                      _CardForm(
+                        palette: p,
+                        formKey: _formKey,
+                        isArabic: isArabic,
+                        nameController: _nameController,
+                        cardController: _cardController,
+                        expiryController: _expiryController,
+                        cvvController: _cvvController,
+                        submitting: _submitting,
+                        onPay: _pay,
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ),
-        ],
+              if (_submitting)
+                Positioned.fill(
+                  child: ColoredBox(
+                    color: Colors.black26,
+                    child: Center(
+                      child: Card(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const CircularProgressIndicator(
+                                color: AppColors.primary,
+                              ),
+                              const SizedBox(height: 14),
+                              Text(context.tr('payment.processing')),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -235,88 +266,112 @@ class _AmountSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isArabic = context.l10n.isArabic;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.stroke.withValues(alpha: 0.85)),
+        color: palette.isDark ? palette.surface : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: palette.isDark ? palette.stroke : const Color(0xFFE5EEEC),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: palette.isDark ? 0.18 : 0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+            color: Colors.black.withValues(
+              alpha: palette.isDark ? 0.18 : 0.055,
+            ),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(
-                alpha: palette.isDark ? 0.18 : 0.10,
-              ),
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.medical_services_outlined,
-              color: AppColors.primary,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  providerName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.inkDark,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(
+                    0xFF0F766E,
+                  ).withValues(alpha: palette.isDark ? 0.20 : 0.09),
+                  borderRadius: BorderRadius.circular(15),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  serviceName,
+                child: const Icon(
+                  Icons.medical_services_outlined,
+                  color: Color(0xFF0F766E),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      providerName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: palette.inkDark,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      serviceName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: palette.inkMuted,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Divider(height: 1, color: palette.stroke.withValues(alpha: 0.75)),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  isArabic ? 'المبلغ الإجمالي' : 'Total amount',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: palette.inkMuted,
-                    fontSize: 12.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '${amount.toStringAsFixed(2)} ${context.tr('payment.currencySymbol')}',
-                style: const TextStyle(
-                  color: AppColors.primary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                context.l10n.isArabic
-                    ? 'ط·آ§ط¸â€‍ط¸â€¦ط·آ¨ط¸â€‍ط·ط› ط·آ§ط¸â€‍ط·آ¥ط·آ¬ط¸â€¦ط·آ§ط¸â€‍ط¸ظ¹'
-                    : 'Total Amount',
-                style: TextStyle(
-                  color: palette.inkMuted,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
+              const SizedBox(width: 12),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Text(
+                      'ILS ${amount.toStringAsFixed(2)}',
+                      maxLines: 1,
+                      style: const TextStyle(
+                        color: Color(0xFF0F766E),
+                        fontSize: 21,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -372,16 +427,20 @@ class _CardForm extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: palette.stroke.withValues(alpha: 0.8)),
+        color: palette.isDark ? palette.surface : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: palette.isDark ? palette.stroke : const Color(0xFFE5EEEC),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: palette.isDark ? 0.18 : 0.04),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
+            color: Colors.black.withValues(
+              alpha: palette.isDark ? 0.18 : 0.055,
+            ),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -391,13 +450,29 @@ class _CardForm extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _SectionTitle(
-              title: context.tr('payment.cardDetails'),
+              title: isArabic
+                  ? 'بيانات البطاقة'
+                  : context.tr('payment.cardDetails'),
               palette: palette,
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 6),
+            Text(
+              isArabic
+                  ? 'أدخل بيانات البطاقة لإتمام عملية الدفع بأمان.'
+                  : 'Enter your card details to complete payment securely.',
+              style: TextStyle(
+                color: palette.inkMuted,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 20),
             _LabeledField(
               palette: palette,
-              label: context.tr('payment.cardHolderName'),
+              label: isArabic
+                  ? 'اسم حامل البطاقة'
+                  : context.tr('payment.cardHolderName'),
               controller: nameController,
               hint: context.tr('payment.cardHolderHint'),
               icon: Icons.person_outline_rounded,
@@ -406,10 +481,12 @@ class _CardForm extends StatelessWidget {
               validator: (value) =>
                   value!.trim().isEmpty ? context.tr('payment.required') : null,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             _LabeledField(
               palette: palette,
-              label: context.tr('payment.cardNumber'),
+              label: isArabic
+                  ? 'رقم البطاقة'
+                  : context.tr('payment.cardNumber'),
               controller: cardController,
               hint: '0000 0000 0000 0000',
               icon: Icons.credit_card_rounded,
@@ -434,14 +511,16 @@ class _CardForm extends StatelessWidget {
                   ? context.tr('payment.invalidCard')
                   : null,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: _LabeledField(
                     palette: palette,
-                    label: context.tr('payment.expiry'),
+                    label: isArabic
+                        ? 'تاريخ الانتهاء'
+                        : context.tr('payment.expiry'),
                     controller: expiryController,
                     hint: 'MM/YY',
                     icon: Icons.calendar_month_outlined,
@@ -464,11 +543,6 @@ class _CardForm extends StatelessWidget {
                     controller: cvvController,
                     hint: 'CVV',
                     icon: Icons.lock_outline_rounded,
-                    suffix: Icon(
-                      Icons.help_outline_rounded,
-                      color: palette.inkMuted,
-                      size: 20,
-                    ),
                     keyboardType: TextInputType.number,
                     textDirection: TextDirection.ltr,
                     obscureText: true,
@@ -483,17 +557,91 @@ class _CardForm extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 20),
             const _CompactSecurityNote(),
-            const SizedBox(height: 14),
-            PatientPrimaryButton(
-              height: 58,
+            const SizedBox(height: 16),
+            _GradientPaymentButton(
               onPressed: submitting ? null : onPay,
               isLoading: submitting,
-              icon: Icons.lock_rounded,
               label: isArabic ? 'تأكيد الدفع' : 'Confirm Payment',
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GradientPaymentButton extends StatelessWidget {
+  const _GradientPaymentButton({
+    required this.onPressed,
+    required this.isLoading,
+    required this.label,
+  });
+
+  final VoidCallback? onPressed;
+  final bool isLoading;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    return Opacity(
+      opacity: enabled ? 1 : 0.62,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(18),
+          child: Ink(
+            height: 56,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF0F766E), Color(0xFF14B8A6)],
+                begin: AlignmentDirectional.centerStart,
+                end: AlignmentDirectional.centerEnd,
+              ),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0F766E).withValues(alpha: 0.22),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Center(
+              child: isLoading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.lock_rounded,
+                          color: Colors.white,
+                          size: 19,
+                        ),
+                        const SizedBox(width: 9),
+                        Text(
+                          label,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
         ),
       ),
     );
@@ -536,10 +684,13 @@ class _LabeledField extends StatelessWidget {
       children: [
         Text(
           label,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: palette.inkDark,
             fontSize: 13,
             fontWeight: FontWeight.w700,
+            height: 1.35,
           ),
         ),
         const SizedBox(height: 8),
@@ -555,9 +706,9 @@ class _LabeledField extends StatelessWidget {
             hintText: hint,
             hintStyle: TextStyle(
               color: palette.inkMuted.withValues(alpha: 0.65),
-              fontSize: 14,
+              fontSize: 13,
             ),
-            prefixIcon: Icon(icon, color: AppColors.primary, size: 20),
+            prefixIcon: Icon(icon, color: const Color(0xFF0F766E), size: 20),
             suffixIcon: suffix == null
                 ? null
                 : Padding(
@@ -567,7 +718,7 @@ class _LabeledField extends StatelessWidget {
             filled: true,
             fillColor: palette.isDark
                 ? palette.surfaceSoft
-                : const Color(0xFFF7FAF9),
+                : const Color(0xFFF8FAFA),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 14,
               vertical: 15,
@@ -586,7 +737,7 @@ class _LabeledField extends StatelessWidget {
 
   OutlineInputBorder _border(Color color, {double width = 1}) {
     return OutlineInputBorder(
-      borderRadius: BorderRadius.circular(13),
+      borderRadius: BorderRadius.circular(16),
       borderSide: BorderSide(color: color, width: width),
     );
   }
@@ -632,18 +783,23 @@ class _CreditCardPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
-    final number = cardNumber.trim().isEmpty
-        ? 'â€¢â€¢â€¢â€¢ â€¢â€¢â€¢â€¢ â€¢â€¢â€¢â€¢ â€¢â€¢â€¢â€¢'
-        : cardNumber.trim();
+    final isArabic = context.l10n.isArabic;
+    final cleanNumber = cardNumber.replaceAll(RegExp(r'\D'), '');
+    final lastFour = cleanNumber.isEmpty
+        ? ''
+        : cleanNumber
+              .substring(cleanNumber.length > 4 ? cleanNumber.length - 4 : 0)
+              .padLeft(4, '0');
+    final number = cleanNumber.isEmpty
+        ? '0000 0000 0000 0000'
+        : '•••• •••• •••• $lastFour';
     final holder = cardHolder.trim().isEmpty
-        ? 'CARD HOLDER'
+        ? (isArabic ? 'حامل البطاقة' : 'CARD HOLDER')
         : cardHolder.trim().toUpperCase();
     final expiry = expiryDate.trim().isEmpty ? 'MM/YY' : expiryDate.trim();
-    final cleanNumber = cardNumber.replaceAll(' ', '');
-    final brand = cleanNumber.startsWith('5') ? 'Mastercard' : 'VISA';
 
-    return AspectRatio(
-      aspectRatio: 1.586,
+    return SizedBox(
+      height: 220,
       child: Directionality(
         textDirection: TextDirection.ltr,
         child: Container(
@@ -669,9 +825,9 @@ class _CreditCardPreview extends StatelessWidget {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          Color(0xFF17B7A3),
-                          Color(0xFF0B8275),
-                          Color(0xFF07564F),
+                          Color(0xFF14B8A6),
+                          Color(0xFF0F766E),
+                          Color(0xFF0B5F59),
                         ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
@@ -712,14 +868,12 @@ class _CreditCardPreview extends StatelessWidget {
                             ),
                             const Spacer(),
                             Text(
-                              brand,
+                              'VISA',
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.96),
                                 fontWeight: FontWeight.w900,
-                                fontSize: brand == 'VISA' ? 22 : 17,
-                                fontStyle: brand == 'VISA'
-                                    ? FontStyle.italic
-                                    : FontStyle.normal,
+                                fontSize: 22,
+                                fontStyle: FontStyle.italic,
                               ),
                             ),
                           ],
@@ -747,7 +901,7 @@ class _CreditCardPreview extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             _CardMetaBlock(
-                              label: 'EXPIRY',
+                              label: isArabic ? 'الانتهاء' : 'EXPIRY',
                               value: expiry,
                               alignEnd: false,
                             ),
@@ -755,7 +909,9 @@ class _CreditCardPreview extends StatelessWidget {
                             Flexible(
                               flex: 2,
                               child: _CardMetaBlock(
-                                label: 'CARD HOLDER',
+                                label: isArabic
+                                    ? 'حامل البطاقة'
+                                    : 'CARD HOLDER',
                                 value: holder,
                                 alignEnd: true,
                               ),
@@ -889,14 +1045,18 @@ class _CompactSecurityNote extends StatelessWidget {
           size: 16,
         ),
         const SizedBox(width: 6),
-        Text(
-          context.l10n.isArabic
-              ? 'الدفع آمن ومشفر'
-              : 'Payment is safe and encrypted',
-          style: const TextStyle(
-            color: AppColors.primary,
-            fontWeight: FontWeight.w600,
-            fontSize: 12.5,
+        Flexible(
+          child: Text(
+            context.l10n.isArabic
+                ? 'الدفع آمن ومشفّر'
+                : 'Payment is safe and encrypted',
+            maxLines: 2,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontWeight: FontWeight.w600,
+              fontSize: 12.5,
+            ),
           ),
         ),
       ],

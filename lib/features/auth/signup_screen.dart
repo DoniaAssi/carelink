@@ -210,13 +210,6 @@ class _SignupScreenState extends State<SignupScreen> {
   // Role specific controllers
   final TextEditingController dateOfBirthController = TextEditingController();
   final TextEditingController addressController = TextEditingController();
-  final TextEditingController chronicDiseasesController =
-      TextEditingController();
-  final TextEditingController allergiesController = TextEditingController();
-  final TextEditingController currentMedicationsController =
-      TextEditingController();
-  final TextEditingController emergencyContactController =
-      TextEditingController();
 
   // Doctor/Nurse specific controllers
   final TextEditingController specialtyController = TextEditingController();
@@ -640,10 +633,6 @@ class _SignupScreenState extends State<SignupScreen> {
     confirmPasswordController.dispose();
     dateOfBirthController.dispose();
     addressController.dispose();
-    chronicDiseasesController.dispose();
-    allergiesController.dispose();
-    currentMedicationsController.dispose();
-    emergencyContactController.dispose();
     specialtyController.dispose();
     customSpecialtyController.dispose();
     licenseController.dispose();
@@ -1116,11 +1105,9 @@ class _SignupScreenState extends State<SignupScreen> {
         passwordController.text,
         _selectedRole,
         confirmPassword: confirmPasswordController.text,
-        specialization: _selectedRole == 'patient'
-            ? null
-            : _selectedRole == 'doctor'
+        specialization: _selectedRole == 'doctor'
             ? _doctorSpecializationValue()
-            : specialtyController.text.trim(),
+            : null,
         addressText: addressController.text.trim().isEmpty
             ? null
             : addressController.text.trim(),
@@ -1130,15 +1117,6 @@ class _SignupScreenState extends State<SignupScreen> {
             ? dateOfBirthController.text.trim()
             : null,
         gender: _selectedRole == 'patient' ? _selectedGender : null,
-        chronicDiseases: _selectedRole == 'patient'
-            ? chronicDiseasesController.text.trim()
-            : null,
-        allergies: _selectedRole == 'patient'
-            ? allergiesController.text.trim()
-            : null,
-        currentMedications: _selectedRole == 'patient'
-            ? currentMedicationsController.text.trim()
-            : null,
         experienceYears: _selectedRole == 'patient'
             ? null
             : int.tryParse(experienceController.text.trim()),
@@ -1184,20 +1162,6 @@ class _SignupScreenState extends State<SignupScreen> {
         cvFileSize: _selectedRole == 'doctor' ? cvFile?.size : null,
         certificates: doctorCertificates,
       );
-
-      // Add emergency contact if it was entered and table supports it
-      final newUserId = response['userId']?.toString();
-      if (newUserId != null &&
-          _selectedRole == 'patient' &&
-          emergencyContactController.text.trim().isNotEmpty) {
-        try {
-          await ApiService().updatePatientProfile(newUserId, {
-            'emergencyContact': emergencyContactController.text.trim(),
-          });
-        } catch (e) {
-          debugPrint('Could not save emergency contact: $e');
-        }
-      }
 
       _showMessage(
         response['message']?.toString() ?? 'Account created successfully',
@@ -2024,44 +1988,6 @@ class _SignupScreenState extends State<SignupScreen> {
               return null;
             },
           ),
-
-          // Role specific Patient fields
-          if (_selectedRole == 'patient') ...[
-            _buildTextField(
-              p,
-              label: context.tr('auth.chronicDiseases'),
-              hint: isAr
-                  ? 'مثال: السكري، ضغط الدم'
-                  : 'e.g. Diabetes, Hypertension',
-              icon: Icons.medical_information_outlined,
-              controller: chronicDiseasesController,
-            ),
-            _buildTextField(
-              p,
-              label: context.tr('auth.allergies'),
-              hint: isAr
-                  ? 'مثال: البنسلين، الفول السوداني'
-                  : 'e.g. Penicillin, Peanuts',
-              icon: Icons.warning_amber_rounded,
-              controller: allergiesController,
-            ),
-            _buildTextField(
-              p,
-              label: context.tr('auth.currentMedications'),
-              hint: isAr ? 'مثال: ميتفورمين 500 ملغ' : 'e.g. Metformin 500mg',
-              icon: Icons.medication_outlined,
-              controller: currentMedicationsController,
-            ),
-            _buildTextField(
-              p,
-              label: context.tr('auth.emergencyContact'),
-              hint: isAr
-                  ? 'مثال: الأخ: +970599000000'
-                  : 'e.g. Brother: +970599000000',
-              icon: Icons.contact_phone_outlined,
-              controller: emergencyContactController,
-            ),
-          ],
 
           // Role specific Doctor fields
           if (_selectedRole == 'doctor') ...[
@@ -2944,4 +2870,9 @@ class _SignupScreenState extends State<SignupScreen> {
       ),
     );
   }
+  // _doctorSpecializationValue() {}
+
+  // _buildDoctorSpecialtyDropdown(CarelinkPalette p) {}
+
+  _buildDoctorCvUpload(CarelinkPalette p) {}
 }

@@ -113,7 +113,7 @@ class _SmartRebookModalState extends State<SmartRebookModal> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        _errorMessage = context.l10n.userMessage(e);
         _isLoading = false;
       });
     }
@@ -229,7 +229,7 @@ class _SmartRebookModalState extends State<SmartRebookModal> {
       setState(() => _isSaving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          content: Text(context.l10n.userMessage(e)),
           backgroundColor: Colors.redAccent,
         ),
       );

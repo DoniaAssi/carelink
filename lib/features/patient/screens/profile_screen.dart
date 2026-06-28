@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:carelink/core/app_colors.dart';
@@ -128,7 +129,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'تعذر تحميل ملفك الشخصي الآن. يرجى المحاولة مرة أخرى.',
       );
     }
-    return raw;
+    return context.l10n.isArabic ? context.l10n.userMessage(error) : raw;
   }
 
   Future<void> _confirmAndLogout() async {
@@ -221,10 +222,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
+    final bgColor = p.isDark ? p.pageBg : const Color(0xFFF8FAFA);
 
-    return Scaffold(
-      backgroundColor: p.pageBg,
-      appBar: const PatientTopActions(showBack: false),
+    return PatientScaffold(
+      enabled: false,
+      backgroundColor: bgColor,
+      appBar: PatientTopActions(
+        showBack: true,
+        onBack: () => PatientNavigationShell.switchTab(context, 0),
+      ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : errorMessage != null
@@ -233,18 +239,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: SingleChildScrollView(
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 500),
+                    constraints: const BoxConstraints(maxWidth: 600),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           _buildHeroSection(p),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 16),
                           _buildProfileDetailsCard(p),
-                          const SizedBox(height: 12),
-                          _buildMedicalSummaryCard(p),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 16),
                           _buildActionList(p),
                         ],
                       ),
@@ -265,26 +269,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Column(
       children: [
         Center(
-          child: Container(
-            width: 104,
-            height: 104,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: p.surfaceSoft,
-              border: Border.all(color: p.stroke, width: 2),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(2),
-              child: ClipOval(
-                child: profileAvatarOrPlaceholder(
-                  imageUrl: profileImageUrl,
-                  size: 100,
-                  placeholderColor: AppColors.primaryDark,
-                  placeholderIcon: Icons.person,
-                  iconSize: 50,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: p.surfaceSoft,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: profileAvatarOrPlaceholder(
+                    imageUrl: profileImageUrl,
+                    size: 90,
+                    placeholderColor: const Color(0xFF16A085),
+                    placeholderIcon: Icons.person,
+                    iconSize: 42,
+                  ),
                 ),
               ),
-            ),
+              PositionedDirectional(
+                end: 0,
+                bottom: 0,
+                child: Material(
+                  color: const Color(0xFF16A085),
+                  shape: const CircleBorder(),
+                  elevation: 1,
+                  child: InkWell(
+                    onTap: () => handleItemTap('editProfile'),
+                    customBorder: const CircleBorder(),
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: const Icon(
+                        Icons.camera_alt_rounded,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 12),
@@ -292,18 +331,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Text(
             name,
             style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
               color: p.inkDark,
             ),
             textAlign: TextAlign.center,
           ),
-        if (role.isNotEmpty) ...[const SizedBox(height: 6), _profileChip(role)],
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (role.isNotEmpty) _profileChip(role),
+            if (role.isNotEmpty) const SizedBox(width: 8),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _t('Verified', 'موثق'),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF16A085),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.verified_user_outlined,
+                  size: 14,
+                  color: Color(0xFF16A085),
+                ),
+              ],
+            ),
+          ],
+        ),
         if (email.isNotEmpty) ...[
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text(
             email,
-            style: TextStyle(color: p.inkMuted, fontSize: 14),
+            style: TextStyle(color: p.inkMuted, fontSize: 13, fontWeight: FontWeight.w500),
             textAlign: TextAlign.center,
           ),
         ],
@@ -318,77 +383,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (text.isNotEmpty) rows.add(_ProfileRow(icon, label, text));
     }
 
-    add(
-      Icons.badge_outlined,
-      _t('Full name', 'الاسم الكامل'),
-      _value(['fullName', 'name']),
-    );
-    add(
-      Icons.email_outlined,
-      context.tr('patient.emailLabel'),
-      _value(['email']),
-    );
-    add(
-      Icons.phone_outlined,
-      context.tr('patient.phoneLabel'),
-      _value(['phone']),
-    );
-    add(
-      Icons.location_on_outlined,
-      context.tr('patient.addressLabel'),
-      _value(['addressText', 'address']),
-    );
-    add(
-      Icons.verified_user_outlined,
-      _t('Account type', 'نوع الحساب'),
-      _displayWord(_value(['role'])),
-    );
-    add(
-      Icons.cake_outlined,
-      _t('Date of birth', 'تاريخ الميلاد'),
-      _displayDate(_value(['dateOfBirth'])),
-    );
-    add(
-      Icons.wc_outlined,
-      _t('Gender', 'الجنس'),
-      _displayWord(_value(['gender'])),
-    );
+    add(Icons.badge_outlined, _t('Full name', 'الاسم الكامل'), _value(['fullName', 'name']));
+    add(Icons.email_outlined, context.tr('patient.emailLabel'), _value(['email']));
+    add(Icons.phone_outlined, context.tr('patient.phoneLabel'), _value(['phone']));
+    add(Icons.location_on_outlined, context.tr('patient.addressLabel'), _value(['addressText', 'address']));
+    add(Icons.cake_outlined, _t('Date of birth', 'تاريخ الميلاد'), _displayDate(_value(['dateOfBirth'])));
+    add(Icons.wc_outlined, _t('Gender', 'الجنس'), _displayWord(_value(['gender'])));
 
     if (rows.isEmpty) return const SizedBox.shrink();
     return _sectionCard(
       p: p,
-      title: _t('Profile details', 'تفاصيل الملف الشخصي'),
-      rows: rows,
-    );
-  }
-
-  Widget _buildMedicalSummaryCard(CarelinkPalette p) {
-    final rows = <_ProfileRow>[];
-    void add(IconData icon, String label, List<String> keys) {
-      final text = _value(keys);
-      if (text.isNotEmpty) rows.add(_ProfileRow(icon, label, text));
-    }
-
-    add(Icons.bloodtype_outlined, _t('Blood type', 'فصيلة الدم'), [
-      'bloodType',
-    ]);
-    add(Icons.medical_information_outlined, _t('Allergies', 'الحساسية'), [
-      'allergies',
-    ]);
-    add(Icons.healing_outlined, _t('Chronic conditions', 'الأمراض المزمنة'), [
-      'chronicDiseases',
-      'chronicConditions',
-    ]);
-    add(
-      Icons.medication_outlined,
-      _t('Current medications', 'الأدوية الحالية'),
-      ['currentMedications'],
-    );
-
-    if (rows.isEmpty) return const SizedBox.shrink();
-    return _sectionCard(
-      p: p,
-      title: _t('Medical summary', 'الملخص الطبي'),
+      title: _t('Personal Information', 'المعلومات الشخصية'),
       rows: rows,
     );
   }
@@ -400,15 +405,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
       decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.stroke),
+        color: p.isDark ? const Color(0xFF08242D) : Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: p.isDark ? const Color(0xFF25505A) : Colors.transparent),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: p.isDark ? 0.15 : 0.03),
-            blurRadius: 10,
+            color: p.cardShadowColor(0.03),
+            blurRadius: 16,
             offset: const Offset(0, 4),
           ),
         ],
@@ -419,51 +424,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Text(
             title,
             style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
               color: p.inkDark,
             ),
           ),
           const SizedBox(height: 16),
-          for (var i = 0; i < rows.length; i++) ...[
-            _detailRow(rows[i], p),
-            if (i != rows.length - 1) _thinDivider(p),
-          ],
+          for (int i = 0; i < rows.length; i++)
+            _detailRow(rows[i], p, isLast: i == rows.length - 1),
         ],
       ),
     );
   }
 
-  Widget _detailRow(_ProfileRow row, CarelinkPalette p) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _detailRow(_ProfileRow row, CarelinkPalette p, {bool isLast = false}) {
+    return Column(
       children: [
-        Icon(row.icon, size: 20, color: AppColors.primary),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                row.label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: p.inkMuted,
-                ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    row.label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: p.inkMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    row.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: p.inkDark,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 3),
-              Text(
-                row.value,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: p.inkDark,
-                ),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 12),
+            Icon(row.icon, size: 20, color: const Color(0xFF16A085)),
+          ],
         ),
+        if (!isLast)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Divider(height: 1, thickness: 1, color: p.stroke.withValues(alpha: 0.4)),
+          ),
       ],
     );
   }
@@ -473,72 +487,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          padding: const EdgeInsets.only(bottom: 12, left: 4, right: 4),
           child: Text(
-            _t('Account & Settings', 'إعدادات الحساب'),
+            _t('Account Settings', 'إعدادات الحساب'),
             style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: p.inkMuted,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: p.inkDark,
             ),
           ),
         ),
         Container(
+          padding: const EdgeInsets.symmetric(vertical: 4),
           decoration: BoxDecoration(
-            color: p.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: p.stroke),
+            color: p.isDark ? const Color(0xFF08242D) : Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: p.isDark ? const Color(0xFF25505A) : Colors.transparent),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: p.isDark ? 0.15 : 0.03),
-                blurRadius: 10,
+                color: p.cardShadowColor(0.03),
+                blurRadius: 16,
                 offset: const Offset(0, 4),
               ),
             ],
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: Column(
-              children: [
-                _actionTile(
-                  icon: Icons.person_outline_rounded,
-                  title: context.tr('patient.editProfile'),
-                  onTap: () => handleItemTap('editProfile'),
-                  p: p,
-                ),
-                _listDivider(p),
-                _actionTile(
-                  icon: Icons.folder_open_outlined,
-                  title: context.tr('patient.medicalRecords'),
-                  onTap: () => handleItemTap('medicalRecords'),
-                  p: p,
-                ),
-                _listDivider(p),
-                _actionTile(
-                  icon: Icons.favorite_border_rounded,
-                  title: _t('Favorites', 'المفضلة'),
-                  onTap: () => handleItemTap('favorites'),
-                  p: p,
-                ),
-                _listDivider(p),
-                _actionTile(
-                  icon: Icons.notifications_none_rounded,
-                  title: context.tr('patient.notifications'),
-                  onTap: () => handleItemTap('notifications'),
-                  p: p,
-                ),
-                _listDivider(p),
-                _actionTile(
-                  icon: Icons.logout_rounded,
-                  title: context.tr('patient.logout'),
-                  onTap: () => handleItemTap('logout'),
-                  iconColor: Colors.red.shade400,
-                  textColor: Colors.red.shade400,
-                  showChevron: false,
-                  p: p,
-                ),
-              ],
-            ),
+          child: Column(
+            children: [
+              _actionTile(
+                icon: Icons.person_outline_rounded,
+                title: context.tr('patient.editProfile'),
+                onTap: () => handleItemTap('editProfile'),
+                p: p,
+              ),
+              _listDivider(p),
+              _actionTile(
+                icon: Icons.folder_open_outlined,
+                title: context.tr('patient.medicalRecords'),
+                onTap: () => handleItemTap('medicalRecords'),
+                p: p,
+              ),
+              _listDivider(p),
+              _actionTile(
+                icon: Icons.favorite_border_rounded,
+                title: _t('Favorites', 'المفضلة'),
+                onTap: () => handleItemTap('favorites'),
+                p: p,
+              ),
+              _listDivider(p),
+              _actionTile(
+                icon: Icons.notifications_none_rounded,
+                title: context.tr('patient.notifications'),
+                onTap: () => handleItemTap('notifications'),
+                p: p,
+              ),
+              _listDivider(p),
+              _actionTile(
+                icon: Icons.logout_rounded,
+                title: context.tr('patient.logout'),
+                onTap: () => handleItemTap('logout'),
+                iconColor: Colors.red.shade400,
+                textColor: Colors.red.shade500,
+                showChevron: false,
+                p: p,
+              ),
+            ],
           ),
         ),
       ],
@@ -556,39 +568,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }) {
     return PatientPressable(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(0),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         child: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: (iconColor ?? AppColors.primary).withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                color: iconColor ?? AppColors.primary,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 14),
+            Icon(icon, color: iconColor ?? const Color(0xFF16A085), size: 20),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 title,
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
                   color: textColor ?? p.inkDark,
                 ),
               ),
             ),
             if (showChevron)
               Icon(
-                Icons.arrow_forward_ios_rounded,
+                _isArabic ? Icons.arrow_back_ios_new_rounded : Icons.arrow_forward_ios_rounded,
                 size: 14,
-                color: p.inkMuted.withValues(alpha: 0.6),
+                color: p.inkMuted.withValues(alpha: 0.8),
               ),
           ],
         ),
@@ -596,30 +597,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _thinDivider(CarelinkPalette p) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Divider(height: 1, thickness: 1, color: p.stroke, indent: 32),
-    );
-  }
-
   Widget _listDivider(CarelinkPalette p) {
-    return Divider(height: 1, thickness: 1, color: p.stroke, indent: 52);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Divider(height: 1, thickness: 1, color: p.stroke.withValues(alpha: 0.4)),
+    );
   }
 
   Widget _profileChip(String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.10),
+        color: const Color(0xFFE5EFEA),
         borderRadius: BorderRadius.circular(99),
       ),
       child: Text(
         text,
         style: const TextStyle(
-          color: AppColors.primaryDark,
-          fontWeight: FontWeight.w800,
-          fontSize: 12,
+          color: Color(0xFF16A085),
+          fontWeight: FontWeight.bold,
+          fontSize: 11,
         ),
       ),
     );

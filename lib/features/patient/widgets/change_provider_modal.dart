@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/features/ai/provider_booking_eligibility.dart';
@@ -105,7 +106,7 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = 'Failed to load providers';
+        _errorMessage = context.l10n.userMessage(e);
         _isLoadingProviders = false;
       });
     }
@@ -202,7 +203,7 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          content: Text(context.l10n.userMessage(e)),
           backgroundColor: Colors.redAccent,
         ),
       );

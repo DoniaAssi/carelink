@@ -4,6 +4,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
@@ -20,7 +21,6 @@ import 'package:carelink/features/patient/utils/booking_service_helper.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
 
-
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
@@ -30,6 +30,10 @@ class ChatScreen extends StatefulWidget {
     this.currentUserId,
     this.isDoctorView = false,
     this.peerImageUrl,
+    this.requestId,
+    this.requestIds = const [],
+    this.patientUserId,
+    this.providerUserId,
   });
 
   final String name;
@@ -38,6 +42,10 @@ class ChatScreen extends StatefulWidget {
   final String? currentUserId;
   final bool isDoctorView;
   final String? peerImageUrl;
+  final String? requestId;
+  final List<String> requestIds;
+  final String? patientUserId;
+  final String? providerUserId;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -180,19 +188,42 @@ class _ChatScreenState extends State<ChatScreen> {
       });
     }
     try {
-      final rows = await _api.getChatMessages(
-        widget.userId,
-        widget.doctorId,
-        viewerId: _currentUserId,
-      );
-      final loaded =
-          rows
-              .whereType<Map>()
-              .map(
-                (row) => ChatMessage.fromJson(Map<String, dynamic>.from(row)),
-              )
-              .toList()
-            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      final requestIds = <String>{
+        ...widget.requestIds.map((value) => value.trim()),
+        if (widget.requestId?.trim().isNotEmpty == true)
+          widget.requestId!.trim(),
+      }..removeWhere((value) => value.isEmpty);
+      final histories = requestIds.isEmpty
+          ? [
+              await _api.getChatMessages(
+                widget.userId,
+                widget.doctorId,
+                viewerId: _currentUserId,
+              ),
+            ]
+          : await Future.wait(
+              requestIds.map(
+                (requestId) => _api.getChatMessages(
+                  widget.userId,
+                  widget.doctorId,
+                  viewerId: _currentUserId,
+                  requestId: requestId,
+                ),
+              ),
+            );
+      final byId = <String, ChatMessage>{};
+      var anonymousIndex = 0;
+      for (final rows in histories) {
+        for (final row in rows.whereType<Map>()) {
+          final message = ChatMessage.fromJson(Map<String, dynamic>.from(row));
+          final key = message.messageId.trim().isEmpty
+              ? 'anonymous-${anonymousIndex++}'
+              : message.messageId;
+          byId[key] = message;
+        }
+      }
+      final loaded = byId.values.toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
       if (!mounted) return;
       final wasNearBottom =
           !_scrollController.hasClients ||
@@ -297,6 +328,7 @@ class _ChatScreenState extends State<ChatScreen> {
         'receiverId': _otherUserId,
         'message': text,
         'messageType': 'text',
+        if (widget.requestId != null) 'requestId': widget.requestId,
       });
       if (!mounted) return;
       setState(() {
@@ -364,6 +396,7 @@ class _ChatScreenState extends State<ChatScreen> {
         filePath: filePath,
         fileBytes: fileBytes,
         voiceDurationSeconds: voiceDurationSeconds,
+        requestId: widget.requestId,
       );
       await _loadConversation(showLoader: false);
       _scrollToBottom();
@@ -476,6 +509,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         'messageType': 'medical_record',
         'medicalRecordId': (selected['id'] ?? selected['recordId']).toString(),
+        if (widget.requestId != null) 'requestId': widget.requestId,
       });
       await _loadConversation(showLoader: false);
       _scrollToBottom();
@@ -614,13 +648,9 @@ class _ChatScreenState extends State<ChatScreen> {
             bookingStatus: 'pending',
           );
 
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => BookingScreen(
-          request: request,
-        ),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => BookingScreen(request: request)));
   }
 
   void _prefill(String text) {
@@ -704,7 +734,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = CarelinkPalette.of(context);
-    return Scaffold(
+    return PatientScaffold(
+      enabled: !widget.isDoctorView,
       resizeToAvoidBottomInset: true,
       backgroundColor: palette.pageBg,
       appBar: _buildHeader(palette),

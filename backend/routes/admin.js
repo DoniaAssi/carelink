@@ -854,66 +854,108 @@ async function syncFinanceLedger() {
       (payment.specialization || payment.requestServiceType || 'Home Nursing Care')
         .toString()
         .trim();
-    const total = Math.max(0, Number(payment.totalAmount || 0));
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [[lockedPayment]] = await connection.query(
+        `SELECT paymentStatus, status, amount, final_amount,
+                provider_amount, admin_amount
+         FROM payment
+         WHERE BINARY paymentId = BINARY ?
+         FOR UPDATE`,
+        [payment.paymentId],
+      );
+      const stillPaid =
+        (lockedPayment?.paymentStatus || '').toString().toLowerCase() === 'paid';
+      const stillNeedsSync =
+        lockedPayment &&
+        (lockedPayment.provider_amount == null ||
+          lockedPayment.admin_amount == null ||
+          lockedPayment.final_amount == null ||
+          (lockedPayment.status || 'pending').toString().toLowerCase() === 'pending');
+      if (!stillPaid || !stillNeedsSync) {
+        await connection.rollback();
+        continue;
+      }
 
-    const [[rateRow]] = await db.query(
-      `SELECT provider_hour_rate
-       FROM provider_rates
-       WHERE BINARY providerId = BINARY ?
-       ORDER BY id DESC
-       LIMIT 1`,
-      [providerId],
-    );
-    const [[commissionRow]] = await db.query(
-      `SELECT commission_amount
-       FROM admin_commission
-       WHERE CONVERT(specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci =
-             CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
-         AND BINARY CAST(serviceType AS CHAR) = BINARY ?
-       ORDER BY id DESC
-       LIMIT 1`,
-      [specialization, role],
-    );
-    const commission = Math.max(0, Number(commissionRow?.commission_amount || 0));
-    let providerShare = Number(rateRow?.provider_hour_rate || 0);
-    if (!Number.isFinite(providerShare) || providerShare <= 0) {
-      providerShare = Math.max(0, total - commission);
+      const total = Math.max(
+        0,
+        Number(lockedPayment.final_amount ?? lockedPayment.amount ?? 0),
+      );
+      const [[rateRow]] = await connection.query(
+        `SELECT provider_hour_rate
+         FROM provider_rates
+         WHERE BINARY providerId = BINARY ?
+         ORDER BY id DESC
+         LIMIT 1`,
+        [providerId],
+      );
+      const [[commissionRow]] = await connection.query(
+        `SELECT commission_amount
+         FROM admin_commission
+         WHERE CONVERT(specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+               CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
+           AND BINARY CAST(serviceType AS CHAR) = BINARY ?
+         ORDER BY id DESC
+         LIMIT 1`,
+        [specialization, role],
+      );
+      const commission = Math.max(
+        0,
+        Number(commissionRow?.commission_amount || 0),
+      );
+      let providerShare = Number(rateRow?.provider_hour_rate || 0);
+      if (!Number.isFinite(providerShare) || providerShare <= 0) {
+        providerShare = Math.max(0, total - commission);
+      }
+      if (providerShare > total) {
+        providerShare = Math.max(0, total - commission);
+      }
+      const adminShare = Math.max(0, total - providerShare);
+
+      await connection.query(
+        `UPDATE payment
+         SET provider_amount = ?, admin_amount = ?, final_amount = ?,
+             status = 'paid_to_admin', updatedAt = NOW()
+         WHERE BINARY paymentId = BINARY ?`,
+        [providerShare, adminShare, total, payment.paymentId],
+      );
+      await connection.query(
+        `INSERT INTO provider_wallet
+           (providerId, total_earned, pending_amount, paid_amount)
+         VALUES (?, ?, ?, 0)
+         ON DUPLICATE KEY UPDATE
+           total_earned = total_earned + VALUES(total_earned),
+           pending_amount = pending_amount + VALUES(pending_amount)`,
+        [providerId, providerShare, providerShare],
+      );
+      await connection.query(
+        `UPDATE admin_wallet SET total_income = total_income + ? WHERE id = 1`,
+        [adminShare],
+      );
+      await connection.query(
+        `INSERT IGNORE INTO transaction_log
+         (transactionId, providerId, patientId, total_amount,
+          admin_share, provider_share, type, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, 'payment', NOW())`,
+        [
+          payment.paymentId,
+          providerId,
+          payment.patientUserId,
+          total,
+          adminShare,
+          providerShare,
+        ],
+      );
+      await connection.commit();
+    } catch (err) {
+      try {
+        await connection.rollback();
+      } catch (_) {}
+      throw err;
+    } finally {
+      connection.release();
     }
-    if (providerShare > total) providerShare = Math.max(0, total - commission);
-    const adminShare = Math.max(0, total - providerShare);
-
-    await db.query(
-      `UPDATE payment
-       SET provider_amount = ?, admin_amount = ?, final_amount = ?,
-           status = 'paid_to_admin', updatedAt = NOW()
-       WHERE BINARY paymentId = BINARY ?`,
-      [providerShare, adminShare, total, payment.paymentId],
-    );
-    await db.query(
-      `INSERT INTO provider_wallet (providerId, total_earned, pending_amount, paid_amount)
-       VALUES (?, ?, ?, 0)
-       ON DUPLICATE KEY UPDATE
-         total_earned = total_earned + VALUES(total_earned),
-         pending_amount = pending_amount + VALUES(pending_amount)`,
-      [providerId, providerShare, providerShare],
-    );
-    await db.query(
-      `UPDATE admin_wallet SET total_income = total_income + ? WHERE id = 1`,
-      [adminShare],
-    );
-    await db.query(
-      `INSERT IGNORE INTO transaction_log
-       (transactionId, providerId, patientId, total_amount, admin_share, provider_share, type, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, 'payment', NOW())`,
-      [
-        payment.paymentId,
-        providerId,
-        payment.patientUserId,
-        total,
-        adminShare,
-        providerShare,
-      ],
-    );
   }
 }
 

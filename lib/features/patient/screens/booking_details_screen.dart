@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/core/theme_controller.dart';
@@ -109,7 +111,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        errorMessage = e.toString().replaceFirst('Exception: ', '');
+        errorMessage = context.l10n.userMessage(e);
         isLoading = false;
       });
     }
@@ -150,30 +152,60 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   bool get _canCancel {
-    final status = appointment?.status.toLowerCase();
-    return status == 'pending_provider_approval' ||
-        status == 'pending' ||
-        status == 'confirmed' ||
-        status == 'accepted';
+    final status = appointment?.status.toLowerCase().trim() ?? '';
+    final scheduledAt = appointment?.scheduledAt;
+    if (scheduledAt == null || !scheduledAt.isAfter(DateTime.now())) {
+      return false;
+    }
+    return const {
+      'pending_provider_approval',
+      'waiting',
+      'pending',
+      'awaiting_provider_approval',
+      'waiting_provider_response',
+      'waiting response',
+      'requested',
+      'request_sent',
+      'new',
+      'pending_payment',
+      'payment_pending',
+      'accepted',
+      'confirmed',
+      'paid',
+      'in_progress',
+      'provider_approved',
+      'approved',
+      'scheduled',
+    }.contains(status);
   }
 
   Future<void> _cancel() async {
     setState(() => isCancelling = true);
     try {
-      await _api.cancelAppointment(
+      final result = await _api.cancelAppointment(
         appointmentId: widget.appointmentId,
         patientUserId: widget.patientUserId,
         reason: 'Cancelled from mobile app',
       );
       if (!mounted) return;
+      final refundApplied = result['refundApplied'] == true;
+      final refundAmount = double.tryParse(
+        (result['refundAmount'] ?? '').toString(),
+      );
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Appointment cancelled successfully')),
+        SnackBar(
+          content: Text(
+            refundApplied && refundAmount != null
+                ? 'Booking cancelled. Refund: ${refundAmount.toStringAsFixed(2)} ILS.'
+                : 'Appointment cancelled successfully',
+          ),
+        ),
       );
       await _load();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(content: Text(context.l10n.userMessage(e))),
       );
     } finally {
       if (mounted) setState(() => isCancelling = false);
@@ -403,7 +435,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         final isAr = localeController.isArabic;
         return Directionality(
           textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-          child: Scaffold(
+          child: PatientScaffold(
             backgroundColor: p.pageBg,
             appBar: PatientAppBar(
               title: isAr ? 'تفاصيل الحجز' : 'Booking Details',
@@ -444,19 +476,16 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                             padding: const EdgeInsets.all(16),
                             child: Column(
                               children: [
-                                _buildStatusBannerSection(p),
-                                const SizedBox(height: 12),
-
                                 if (_showLiveMap)
                                   _buildMapCard(p, appointment!),
 
                                 _buildNurseProviderCard(p),
+                                const SizedBox(height: 16),
+
+                                _buildReferenceAppointmentInfoCard(p),
                                 const SizedBox(height: 12),
 
-                                _buildAppointmentInfoCard(p),
-                                const SizedBox(height: 12),
-
-                                _buildPaymentInfoCard(p),
+                                _buildStatusBannerSection(p),
                                 const SizedBox(height: 12),
 
                                 _buildVisitRatingSection(p, appointment!),
@@ -475,7 +504,30 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   Widget _buildStatusBannerSection(CarelinkPalette p) {
-    final status = appointment!.status.toLowerCase();
+    var status = appointment!.status.toLowerCase().trim();
+    final scheduledAt = appointment!.scheduledAt;
+    if (scheduledAt != null && scheduledAt.isBefore(DateTime.now())) {
+      if (status == 'in_progress' || status == 'waiting_report') {
+        status = 'pending_completion';
+      } else if (const {
+        'pending_provider_approval',
+        'pending',
+        'waiting',
+        'requested',
+        'request_sent',
+      }.contains(status)) {
+        status = 'expired';
+      } else if (const {
+        'pending_payment',
+        'payment_pending',
+        'confirmed',
+        'accepted',
+        'approved',
+        'scheduled',
+      }.contains(status)) {
+        status = 'missed';
+      }
+    }
     final subStatus = appointment!.subStatus.toLowerCase().trim();
     final isAr = localeController.isArabic;
 
@@ -531,6 +583,27 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       subtitle = isAr
           ? 'سنخبرك عند قبول أو رفض الطلب'
           : 'The provider can accept or decline. We will notify you here.';
+    } else if (status == 'expired' || status == 'request_expired') {
+      bg = const Color(0xFF64748B).withValues(alpha: 0.1);
+      textCol = const Color(0xFF64748B);
+      title = isAr ? 'انتهت صلاحية الطلب' : 'Request Expired';
+      subtitle = isAr
+          ? 'لم يوافق مقدم الخدمة قبل وقت الموعد، وسيُسترد المبلغ كاملاً.'
+          : 'The provider did not approve in time. A full refund applies.';
+    } else if (status == 'missed' || status == 'no_show') {
+      bg = const Color(0xFF9A5B45).withValues(alpha: 0.1);
+      textCol = const Color(0xFF9A5B45);
+      title = isAr ? 'موعد فائت' : 'Missed Appointment';
+      subtitle = isAr
+          ? 'لا يمكن إلغاء الموعد الآن. يبقى الدفع قيد المراجعة دون استرداد تلقائي.'
+          : 'This can no longer be cancelled. Payment remains held for review.';
+    } else if (status == 'pending_completion') {
+      bg = const Color(0xFF7C6FA8).withValues(alpha: 0.1);
+      textCol = const Color(0xFF7C6FA8);
+      title = isAr ? 'بانتظار تأكيد الإتمام' : 'Pending Completion';
+      subtitle = isAr
+          ? 'بدأت الخدمة ولم يتم تأكيد اكتمالها بعد.'
+          : 'The service started but completion has not been confirmed yet.';
     } else if (status == 'completed') {
       bg = p.isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
       textCol = p.inkMuted;
@@ -550,9 +623,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     } else {
       bg = p.surfaceSoft;
       textCol = p.inkDark;
-      title = status.isNotEmpty
-          ? status.toUpperCase()
-          : (isAr ? 'غير معروف' : 'Unknown');
+      title = isAr ? 'غير معروف' : 'Unknown';
       subtitle = '';
     }
 
@@ -600,8 +671,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   Widget _buildNurseProviderCard(CarelinkPalette p) {
-    final overallRating = provider?.overallRating ?? 4.8;
-    final experience = provider?.experienceYears ?? 3;
+    final overallRating = provider?.overallRating;
+    final experience = provider?.experienceYears;
     final role = appointment!.providerRole.isNotEmpty
         ? appointment!.providerRole
         : 'Nurse';
@@ -609,10 +680,10 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: p.surface,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(color: p.stroke),
         boxShadow: [
           BoxShadow(
@@ -626,8 +697,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 64,
-            height: 64,
+            width: 86,
+            height: 86,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
@@ -643,14 +714,14 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                   color: p.surfaceSoft,
                   child: Icon(
                     Icons.person_rounded,
-                    size: 32,
+                    size: 38,
                     color: p.inkMuted,
                   ),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -658,8 +729,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                 Text(
                   appointment!.providerName,
                   style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
                     color: p.inkDark,
                   ),
                 ),
@@ -674,38 +745,73 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 6),
-                Row(
+                const SizedBox(height: 7),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.star_rounded,
-                      color: Colors.amber,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      overallRating.toStringAsFixed(1),
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                        color: p.inkDark,
+                    if (overallRating != null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.star_rounded,
+                            color: Colors.amber,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            overallRating.toStringAsFixed(1),
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              color: p.inkDark,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Icon(
-                      Icons.work_history_rounded,
-                      color: p.inkMuted,
-                      size: 14,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      isAr ? '$experience سنوات خبرة' : '$experience yrs exp',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: p.inkMuted,
+                    if (experience != null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.work_history_rounded,
+                            color: p.inkMuted,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            isAr
+                                ? '$experience سنوات خبرة'
+                                : '$experience yrs exp',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: p.inkMuted,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
+                    if (provider?.isAvailable == true)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF16A34A).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          isAr ? 'متاح اليوم' : 'Available today',
+                          style: const TextStyle(
+                            color: Color(0xFF15803D),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
                 if (provider != null) ...[
@@ -768,8 +874,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
-                    height: 50,
-                    child: FilledButton.icon(
+                    height: 44,
+                    child: OutlinedButton.icon(
                       onPressed: () {
                         PatientRecentChatsService.logChat({
                           'providerId': provider!.userId,
@@ -797,10 +903,10 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                         isAr ? 'مراسلة مقدم الرعاية' : 'Message Provider',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      style: FilledButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        backgroundColor: AppColors.primary,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
                         elevation: 0,
+                        side: const BorderSide(color: AppColors.primary),
                         padding: const EdgeInsets.symmetric(horizontal: 18),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
@@ -817,6 +923,217 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     );
   }
 
+  Widget _buildReferenceAppointmentInfoCard(CarelinkPalette p) {
+    final isAr = localeController.isArabic;
+    final notes = _parseNotes(appointment!.notes);
+    final service =
+        notes['service'] ??
+        (provider?.serviceType.isNotEmpty == true
+            ? provider!.serviceType
+            : appointment!.providerRole);
+    final address = _shortenAddress(
+      notes['address'] ??
+          (appointment!.visitAddress.isNotEmpty
+              ? appointment!.visitAddress
+              : appointment!.location),
+    );
+    final payment = _ledgerPaymentStatus(appointment!).toLowerCase();
+    final paymentText = switch (payment) {
+      'paid' => isAr ? 'مدفوع' : 'Paid',
+      'refunded' => isAr ? 'مسترد' : 'Refunded',
+      'pending' => isAr ? 'قيد المعالجة' : 'Pending',
+      _ => isAr ? 'غير مدفوع' : 'Unpaid',
+    };
+    final paymentColor = switch (payment) {
+      'paid' => const Color(0xFF15803D),
+      'refunded' => const Color(0xFF2563EB),
+      'pending' => const Color(0xFFD97706),
+      _ => const Color(0xFFDC2626),
+    };
+    final status = appointment!.status.toLowerCase().trim();
+    final statusText = switch (status) {
+      'pending' || 'pending_provider_approval' =>
+        isAr ? 'بانتظار الرد' : 'Waiting for approval',
+      'confirmed' || 'accepted' => isAr ? 'مؤكد' : 'Confirmed',
+      'in_progress' => isAr ? 'قيد التنفيذ' : 'In progress',
+      'completed' => isAr ? 'مكتمل' : 'Completed',
+      'cancelled' || 'rejected' => isAr ? 'ملغي' : 'Cancelled',
+      'expired' => isAr ? 'انتهت صلاحية الطلب' : 'Request expired',
+      'missed' => isAr ? 'موعد فائت' : 'Missed appointment',
+      _ => appointment!.status,
+    };
+    final statusColor = switch (status) {
+      'confirmed' || 'accepted' => const Color(0xFF2563EB),
+      'in_progress' => AppColors.primary,
+      'completed' => const Color(0xFF15803D),
+      'cancelled' || 'rejected' || 'missed' => const Color(0xFFDC2626),
+      _ => const Color(0xFFD97706),
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.calendar_month_outlined,
+              color: AppColors.primary,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              isAr ? 'معلومات الموعد' : 'Appointment Information',
+              style: TextStyle(
+                color: p.inkDark,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: p.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: p.stroke),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: p.isDark ? 0.14 : 0.035),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              _referenceInfoRow(
+                p,
+                label: isAr ? 'التاريخ' : 'Date',
+                value: _formatDateOnly(appointment!.scheduledAt),
+                icon: Icons.calendar_today_outlined,
+              ),
+              _referenceDivider(p),
+              _referenceInfoRow(
+                p,
+                label: isAr ? 'الوقت' : 'Time',
+                value: _formatTimeOnly(appointment!.scheduledAt),
+                icon: Icons.access_time_rounded,
+                ltrValue: true,
+              ),
+              _referenceDivider(p),
+              _referenceInfoRow(
+                p,
+                label: isAr ? 'الموقع' : 'Location',
+                value: address.isEmpty ? '—' : address,
+                icon: Icons.location_on_outlined,
+              ),
+              _referenceDivider(p),
+              _referenceInfoRow(
+                p,
+                label: isAr ? 'حالة الدفع' : 'Payment status',
+                value: paymentText,
+                icon: Icons.credit_card_outlined,
+                badgeColor: paymentColor,
+              ),
+              _referenceDivider(p),
+              _referenceInfoRow(
+                p,
+                label: isAr ? 'حالة الموعد' : 'Appointment status',
+                value: statusText,
+                icon: Icons.schedule_rounded,
+                badgeColor: statusColor,
+              ),
+              _referenceDivider(p),
+              _referenceInfoRow(
+                p,
+                label: isAr ? 'نوع الخدمة' : 'Service type',
+                value: service.isEmpty
+                    ? (isAr ? 'زيارة منزلية' : 'Home visit')
+                    : service,
+                icon: Icons.local_offer_outlined,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _referenceInfoRow(
+    CarelinkPalette p, {
+    required String label,
+    required String value,
+    required IconData icon,
+    Color? badgeColor,
+    bool ltrValue = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.primary, size: 19),
+          const SizedBox(width: 9),
+          Text(
+            label,
+            style: TextStyle(
+              color: p.inkMuted,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: badgeColor == null
+                  ? Text(
+                      value,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textDirection: ltrValue ? TextDirection.ltr : null,
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        color: p.inkDark,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    )
+                  : Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: badgeColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: badgeColor,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _referenceDivider(CarelinkPalette p) => Divider(
+    height: 1,
+    thickness: 0.8,
+    color: p.stroke.withValues(alpha: 0.75),
+  );
+
+  // ignore: unused_element
   Widget _buildAppointmentInfoCard(CarelinkPalette p) {
     final isAr = localeController.isArabic;
     final parsedNotes = _parseNotes(appointment!.notes);
@@ -1003,6 +1320,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildPaymentInfoCard(CarelinkPalette p) {
     final isAr = localeController.isArabic;
     final hint = _hintAmountFromOverview();
@@ -1015,10 +1333,11 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         ? '${hint.toStringAsFixed(2)}$cSymbol'
         : (isAr ? 'يحدد عند إتمام الدفع' : 'Amount set at checkout');
 
-    // Extract additional details from _paymentOverview if available (or use defaults/placeholders for now)
-    final platformFee = _paymentOverview?['platformFee'] != null
-        ? double.tryParse(_paymentOverview!['platformFee'].toString())
-        : (hint != null ? hint * 0.05 : 0.0); // Assuming 5% fee or from API
+    final platformFeeValue =
+        _paymentOverview?['adminAmount'] ?? _paymentOverview?['platformFee'];
+    final platformFee = platformFeeValue != null
+        ? double.tryParse(platformFeeValue.toString())
+        : null;
     final platformFeeLabel = platformFee != null && platformFee > 0
         ? '${platformFee.toStringAsFixed(2)}$cSymbol'
         : '—';
@@ -1029,6 +1348,40 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     final refundLabel = refundAmount != null && refundAmount > 0
         ? '${refundAmount.toStringAsFixed(2)}$cSymbol'
         : null;
+    final providerShare = double.tryParse(
+      (_paymentOverview?['providerAmount'] ?? '0').toString(),
+    );
+    final hasRetainedCancellationShares =
+        (providerShare ?? 0) > 0 || (platformFee ?? 0) > 0;
+    final hasRefundedPayment =
+        (_paymentOverview?['paymentStatus'] ?? '')
+            .toString()
+            .toLowerCase()
+            .trim() ==
+        'refunded';
+    final isExpiredRequest = const {
+      'expired',
+      'request_expired',
+    }.contains(appointment!.status.toLowerCase().trim());
+    final isMissedAppointment = const {
+      'missed',
+      'no_show',
+    }.contains(appointment!.status.toLowerCase().trim());
+    final refundPolicyText = isMissedAppointment
+        ? (isAr
+              ? 'لا يوجد استرداد تلقائي للموعد الفائت؛ يبقى الدفع قيد مراجعة الإدارة.'
+              : 'No automatic refund applies to a missed appointment; payment remains held for admin review.')
+        : hasRetainedCancellationShares
+        ? (isAr
+              ? 'سياسة الاسترجاع: استرداد 80٪، و10٪ لمقدم الخدمة، و10٪ للمنصة.'
+              : 'Refund Policy: 80% refund, 10% to the provider, and 10% to the platform.')
+        : hasRefundedPayment && isExpiredRequest
+        ? (isAr
+              ? 'سياسة الاسترجاع: استرداد كامل لانتهاء الطلب دون موافقة مقدم الخدمة.'
+              : 'Refund Policy: Full refund because the request expired without provider approval.')
+        : (isAr
+              ? 'سياسة الاسترجاع: استرداد 80٪، و10٪ لمقدم الخدمة، و10٪ للمنصة.'
+              : 'Refund Policy: 80% refund, 10% to the provider, and 10% to the platform.');
 
     final st = _ledgerPaymentStatus(appointment!);
 
@@ -1182,9 +1535,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    isAr
-                        ? 'سياسة الاسترجاع: يمكنك استرداد المبلغ كاملاً في حال الإلغاء قبل 24 ساعة من الموعد.'
-                        : 'Refund Policy: Full refund available if cancelled 24 hours prior to appointment.',
+                    refundPolicyText,
                     style: TextStyle(
                       fontSize: 12,
                       color: p.inkMuted,
@@ -1616,6 +1967,9 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   Future<void> _showCancelConfirmationDialog() async {
     final isAr = localeController.isArabic;
     final p = CarelinkPalette.of(context);
+    final refundPolicy = isAr
+        ? 'ستحصل على استرداد بنسبة 80٪. تذهب 10٪ لمقدم الخدمة و10٪ للمنصة.'
+        : 'You will receive an 80% refund. 10% goes to the provider and 10% to the platform.';
     return showDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -1634,10 +1988,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             ),
           ),
           content: Text(
-            isAr
-                ? 'هل أنت متأكد من أنك تريد إلغاء هذا الحجز؟ لا يمكن التراجع عن هذا الإجراء.'
-                : 'Are you sure you want to cancel this booking? This action cannot be undone.',
-            style: TextStyle(color: p.inkMuted, fontSize: 14),
+            '${isAr ? 'هل أنت متأكد من أنك تريد إلغاء هذا الحجز؟ لا يمكن التراجع عن هذا الإجراء.' : 'Are you sure you want to cancel this booking? This action cannot be undone.'}\n\n$refundPolicy',
+            style: TextStyle(color: p.inkMuted, fontSize: 14, height: 1.4),
           ),
           actions: <Widget>[
             OutlinedButton(
@@ -1694,7 +2046,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   String _formatDateOnly(DateTime? date) {
-    if (date == null) return 'Date unavailable';
+    if (date == null) return context.tr('common.dateUnavailable');
     final months = [
       'Jan',
       'Feb',
@@ -1729,7 +2081,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   String _formatTimeOnly(DateTime? date) {
-    if (date == null) return 'Time unavailable';
+    if (date == null) return context.tr('common.timeUnavailable');
     final isAr = localeController.isArabic;
     final suffixEn = date.hour >= 12 ? 'PM' : 'AM';
     final suffixAr = date.hour >= 12 ? 'م' : 'ص';
@@ -1754,17 +2106,15 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Thanks! Your rating helps improve recommendations for everyone.',
-          ),
+        SnackBar(
+          content: Text(context.tr('patient.rating.thanks')),
         ),
       );
       await _load();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+          SnackBar(content: Text(context.l10n.userMessage(e))),
         );
       }
     } finally {

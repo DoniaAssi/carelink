@@ -1,4 +1,4 @@
-﻿const medicalRecordService = require('../services/medicalRecordService');
+const medicalRecordService = require('../services/medicalRecordService');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -109,25 +109,16 @@ exports.listForPatient = async (req, res) => {
       return forbid(res, 'You can only view your own medical records.');
     }
 
-    const visitReports = await medicalRecordService.listVisitReportsForPatient(
-      patientId
-    );
     const baseUrl = process.env.BACKEND_URL || (req.protocol + '://' + req.get('host'));
-    const patientUploads = await medicalRecordService.listPatientMedicalRecordsForPatient(
+    const records = await medicalRecordService.listPatientVisibleRecords(
       patientId
     );
-    patientUploads.forEach(u => {
-      u.file_url = resolveUploadUrl(u.file_url, u.file_name, baseUrl);
+    records.forEach((record) => {
+      if (record.source === 'patientmedicalfile') {
+        record.fileUrl = resolveUploadUrl(record.fileUrl, '', baseUrl);
+      }
     });
-
-    const combined = [...visitReports, ...patientUploads];
-    combined.sort((a, b) => {
-      const aTime = new Date(a.created_at || a.visit_date || '').getTime();
-      const bTime = new Date(b.created_at || b.visit_date || '').getTime();
-      return bTime - aTime;
-    });
-
-    res.json(combined);
+    res.json(records);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -136,15 +127,25 @@ exports.listForPatient = async (req, res) => {
 /** GET /medical-records/visit-report/:recordId */
 exports.getVisitReport = async (req, res) => {
   try {
-    if (!(await assertVisitReportsTable(res))) return;
     const { recordId } = req.params;
     const { userId, role } = actor(req);
-    const row = await medicalRecordService.getVisitReportById(recordId);
-    if (!row) return res.status(404).json({ error: 'Record not found' });
-    if (!canPatientViewPatient(userId, role, row.patient_id)) {
+    const result = await medicalRecordService.getPatientVisibleRecordById(
+      recordId
+    );
+    if (!result) return res.status(404).json({ error: 'Record not found' });
+    if (!canPatientViewPatient(userId, role, result.patientId)) {
       return forbid(res);
     }
-    res.json(row);
+    if (result.record.source === 'patientmedicalfile') {
+      const baseUrl =
+        process.env.BACKEND_URL || (req.protocol + '://' + req.get('host'));
+      result.record.fileUrl = resolveUploadUrl(
+        result.record.fileUrl,
+        '',
+        baseUrl
+      );
+    }
+    res.json(result.record);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -455,65 +456,41 @@ function buildRuleBasedMedicalSummary(text, fallbackKind, extra = '') {
   if (!normalized) return summarizeText(fallbackKind, text, extra);
 
   const conditions = [];
-  if (hasAny(lowerText, ['poorly controlled diabetes', 'diabetes', 'hba1c', 'glucose', 'blood sugar', 'fasting blood glucose'])) {
-    conditions.push(hasAny(lowerText, ['poorly controlled']) ? 'poorly controlled diabetes' : 'diabetes');
+  if (hasAny(lowerText, ['diabetes', 'hba1c', 'glucose', 'blood sugar'])) {
+    conditions.push('Diabetes / Blood sugar');
   }
   if (hasAny(lowerText, ['hypertension', 'blood pressure'])) {
-    conditions.push('hypertension');
+    conditions.push('Blood pressure / Hypertension');
   }
-  if (hasAny(lowerText, ['high cholesterol', 'cholesterol', 'ldl', 'hyperlipidemia'])) {
-    conditions.push('high cholesterol');
+  if (hasAny(lowerText, ['cholesterol', 'ldl', 'hyperlipidemia'])) {
+    conditions.push('Cholesterol');
   }
   if (hasAny(lowerText, ['wound', 'surgical wound', 'dressing', 'post-operative', 'post surgery'])) {
-    conditions.push('post-surgical wound care');
-  }
-  if (hasAny(lowerText, ['elderly', 'fall risk', 'mobility issues', 'geriatric'])) {
-    conditions.push('elderly care needs');
-  }
-
-  const followUps = [];
-  if (hasAny(lowerText, ['endocrinologist', 'endocrinology', 'diabetes', 'hba1c'])) {
-    followUps.push('endocrinology');
-  }
-  if (hasAny(lowerText, ['cardiologist', 'cardiology', 'cardiovascular', 'hypertension', 'cholesterol'])) {
-    followUps.push('cardiology');
-  }
-
-  const careNeeds = [];
-  if (hasAny(lowerText, ['blood pressure monitoring', 'hypertension', 'blood pressure'])) {
-    careNeeds.push('blood pressure monitoring');
-  }
-  if (hasAny(lowerText, ['glucose monitoring', 'blood sugar', 'hba1c', 'diabetes'])) {
-    careNeeds.push('glucose monitoring');
-  }
-  if (hasAny(lowerText, ['medication adherence', 'medication monitoring', 'medications'])) {
-    careNeeds.push('medication adherence');
-  }
-  if (hasAny(lowerText, ['wound', 'dressing', 'post-operative', 'surgical wound'])) {
-    careNeeds.push('wound dressing and post-operative care');
+    conditions.push('Wound care / Post-surgical');
   }
 
   const medications = [];
-  if (lowerText.includes('metformin')) medications.push('metformin');
-  if (lowerText.includes('amlodipine')) medications.push('amlodipine');
-  if (lowerText.includes('atorvastatin')) medications.push('atorvastatin');
-  if (lowerText.includes('insulin')) medications.push('insulin');
+  if (lowerText.includes('metformin')) medications.push('Metformin');
+  if (lowerText.includes('amlodipine')) medications.push('Amlodipine');
+  if (lowerText.includes('atorvastatin')) medications.push('Atorvastatin');
+  if (lowerText.includes('insulin')) medications.push('Insulin');
 
-  const sentences = [];
-  if (conditions.length) {
-    sentences.push(`This record indicates ${joinHumanList(conditions)}.`);
-  }
-  if (followUps.length) {
-    sentences.push(`Follow-up with ${joinHumanList(followUps)} is recommended.`);
-  }
-  if (careNeeds.length) {
-    sentences.push(`Home nursing support may help with ${joinHumanList(careNeeds)}.`);
-  }
-  if (medications.length) {
-    sentences.push(`Current medications mentioned include ${joinHumanList(medications)}.`);
-  }
+  const output = {
+    conditionsMentioned: conditions,
+    medicationsMentioned: medications,
+    allergiesMentioned: [],
+    labValuesFound: '',
+    importantDates: [],
+    providerNotes: '',
+    sourceType: fallbackKind,
+    aiSummary: summarizeText(fallbackKind, text, extra),
+    confidence: conditions.length > 0 ? 'High' : 'Low',
+    warnings: [],
+    ai_generated: true,
+    verified_by_provider: false
+  };
 
-  return sentences.length ? sentences.join(' ') : summarizeText(fallbackKind, text, extra);
+  return JSON.stringify(output);
 }
 
 function joinHumanList(items) {
@@ -599,7 +576,7 @@ async function processRecordAi(recordId) {
         analysisTags = extractAnalysisTags(extractedText);
       } else {
         extractedText = 'PDF processed but contains no selectable text (may be a scanned document).';
-        aiSummary = 'PDF uploaded successfully. The document appears to be scanned or image-based; no text could be extracted automatically.';
+        aiSummary = JSON.stringify({ aiSummary: 'PDF uploaded successfully. The document appears to be scanned or image-based; no text could be extracted automatically.' });
       }
     } catch (err) {
       aiStatus = 'failed';
@@ -621,14 +598,14 @@ async function processRecordAi(recordId) {
     aiStatus = 'processed';
     aiProcessed = 1;
     extractedText = 'Image uploaded successfully. OCR is not available yet.';
-    aiSummary = 'Image record uploaded. Manual review may be required.';
+    aiSummary = JSON.stringify({ aiSummary: 'Image record uploaded. Manual review may be required.' });
     analysisTags = [];
   } else if ((isTextMime || isTextExt) && !isPdfMagic) {
     try {
       extractedText = fs.readFileSync(fullPath, 'utf8').trim();
       aiSummary = extractedText
         ? buildRuleBasedMedicalSummary(extractedText, 'Text file')
-        : 'Text file uploaded successfully, but it is empty.';
+        : JSON.stringify({ aiSummary: 'Text file uploaded successfully, but it is empty.' });
       analysisTags = extractAnalysisTags(extractedText);
       if (!extractedText) extractedText = 'Text file processed but no text content was found.';
     } catch (err) {

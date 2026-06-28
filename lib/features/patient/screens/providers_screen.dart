@@ -109,7 +109,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
         _careSummary = PatientCareSummary.mergeClinical(base, clinical);
         _applyFiltersAndSort();
       });
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
           _careSummary = PatientCareSummary.empty;
@@ -155,11 +155,17 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
               if (id.isNotEmpty) backendRecommendations[id] = map;
             }
           }
-          data = await ApiService().getProviders(realAvailability: true, patientId: patientId);
+          data = await ApiService().getProviders(
+            realAvailability: true,
+            patientId: patientId,
+          );
         }
       } catch (_) {
         final patientId = widget.userId?.trim() ?? '';
-        data = await ApiService().getProviders(realAvailability: true, patientId: patientId);
+        data = await ApiService().getProviders(
+          realAvailability: true,
+          patientId: patientId,
+        );
       }
       final fetched = data
           .map((e) => ProviderModel.fromJson(e))
@@ -171,11 +177,11 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       _backendRecommendations = backendRecommendations;
       _applyFiltersAndSort();
       setState(() => _isLoading = false);
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Failed to load providers.';
+        _errorMessage = context.l10n.userMessage(error);
       });
     }
   }
@@ -363,180 +369,238 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     double? tempMaxDistance = _maxDistanceKm;
     double? tempMaxPrice = _maxPrice;
 
-    await showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: CarelinkPalette.of(context).surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
       builder: (context) {
         final p = CarelinkPalette.of(context);
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return SafeArea(
-              top: false,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  18,
-                  18,
-                  18,
-                  18 + MediaQuery.of(context).viewInsets.bottom,
+        return Directionality(
+          textDirection: context.l10n.isArabic
+              ? TextDirection.rtl
+              : TextDirection.ltr,
+          child: StatefulBuilder(
+            builder: (context, setSheetState) => FractionallySizedBox(
+              heightFactor: 0.92,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: p.surface,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(32),
+                  ),
                 ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _copy('Filter Providers', 'تصفية مقدمي الرعاية'),
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: p.inkDark,
-                        ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 46,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: p.stroke,
+                        borderRadius: BorderRadius.circular(99),
                       ),
-                      const SizedBox(height: 14),
-                      _dropdownField(
-                        p: p,
-                        label: _copy('Provider Type', 'نوع مقدم الرعاية'),
-                        value: tempRole,
-                        items: const ['all', 'doctor', 'nurse'],
-                        onChanged: (v) => setSheetState(() => tempRole = v),
-                      ),
-                      const SizedBox(height: 10),
-                      _dropdownField(
-                        p: p,
-                        label: _copy('Specialization', 'التخصص'),
-                        value: tempSpecialization,
-                        items: ['all', ..._specializations],
-                        onChanged: (v) =>
-                            setSheetState(() => tempSpecialization = v),
-                      ),
-                      const SizedBox(height: 10),
-                      _dropdownField(
-                        p: p,
-                        label: _copy('Service Type', 'نوع الخدمة'),
-                        value: tempServiceType,
-                        items: ['all', ..._serviceTypes],
-                        onChanged: (v) =>
-                            setSheetState(() => tempServiceType = v),
-                      ),
-                      const SizedBox(height: 10),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        value: tempAvailable,
-                        onChanged: (v) =>
-                            setSheetState(() => tempAvailable = v),
-                        title: Text(
-                          _copy('Available now only', 'المتاحون الآن فقط'),
-                          style: TextStyle(
-                            color: p.inkDark,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 15,
-                          ),
-                        ),
-                        activeTrackColor: AppColors.primary,
-                        activeThumbColor: Colors.white,
-                        inactiveTrackColor: p.stroke,
-                        inactiveThumbColor: p.inkMuted,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${_copy('Min rating', 'الحد الأدنى للتقييم')}: ${tempMinRating.toStringAsFixed(1)}',
-                        style: TextStyle(
-                          color: p.inkDark,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      SliderTheme(
-                        data: SliderThemeData(
-                          activeTrackColor: AppColors.primary,
-                          inactiveTrackColor: p.stroke,
-                          thumbColor: AppColors.primary,
-                          overlayColor: AppColors.primary.withValues(
-                            alpha: 0.18,
-                          ),
-                        ),
-                        child: Slider(
-                          value: tempMinRating,
-                          min: 0,
-                          max: 5,
-                          divisions: 10,
-                          label: tempMinRating.toStringAsFixed(1),
-                          onChanged: (v) =>
-                              setSheetState(() => tempMinRating = v),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _copy('Max distance', 'أقصى مسافة'),
-                        style: TextStyle(
-                          color: p.inkDark,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [null, 2.0, 5.0, 10.0].map((km) {
-                          final selected = tempMaxDistance == km;
-                          final label = km == null
-                              ? _copy('Any', 'الكل')
-                              : '${km.toInt()} km';
-                          return _filterChoiceChip(
-                            p: p,
-                            label: label,
-                            selected: selected,
-                            onSelected: () =>
-                                setSheetState(() => tempMaxDistance = km),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        _copy('Max price (if available)', 'أقصى سعر (إن توفر)'),
-                        style: TextStyle(
-                          color: p.inkDark,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [null, 50.0, 100.0, 150.0].map((price) {
-                          final selected = tempMaxPrice == price;
-                          final label = price == null
-                              ? _copy('Any', 'الكل')
-                              : '${price.toInt()} ILS';
-                          return _filterChoiceChip(
-                            p: p,
-                            label: label,
-                            selected: selected,
-                            onSelected: () =>
-                                setSheetState(() => tempMaxPrice = price),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                      child: Row(
                         children: [
                           Expanded(
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.primary,
-                                side: BorderSide(color: p.stroke),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
+                            child: Text(
+                              _copy(
+                                'Filter care providers',
+                                'تصفية مقدمي الرعاية',
                               ),
+                              style: TextStyle(
+                                color: p.inkDark,
+                                fontSize: 21,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close_rounded),
+                            color: p.inkMuted,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _filterSectionTitle(
+                              p,
+                              Icons.medical_services_outlined,
+                              _copy('Provider type', 'نوع مقدم الرعاية'),
+                            ),
+                            const SizedBox(height: 8),
+                            _dropdownField(
+                              p: p,
+                              label: _copy('Select type', 'اختر النوع'),
+                              value: tempRole,
+                              items: const ['all', 'doctor', 'nurse'],
+                              onChanged: (value) =>
+                                  setSheetState(() => tempRole = value),
+                            ),
+                            const SizedBox(height: 18),
+                            _filterSectionTitle(
+                              p,
+                              Icons.health_and_safety_outlined,
+                              _copy('Specialty', 'التخصص'),
+                            ),
+                            const SizedBox(height: 8),
+                            _dropdownField(
+                              p: p,
+                              label: _copy('Select specialty', 'اختر التخصص'),
+                              value: tempSpecialization,
+                              items: ['all', ..._specializations],
+                              onChanged: (value) => setSheetState(
+                                () => tempSpecialization = value,
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            _filterSectionTitle(
+                              p,
+                              Icons.volunteer_activism_outlined,
+                              _copy('Service', 'الخدمة'),
+                            ),
+                            const SizedBox(height: 8),
+                            _dropdownField(
+                              p: p,
+                              label: _copy('Select service', 'اختر الخدمة'),
+                              value: tempServiceType,
+                              items: ['all', ..._serviceTypes],
+                              onChanged: (value) =>
+                                  setSheetState(() => tempServiceType = value),
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: p.filterSurface,
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(color: p.stroke),
+                              ),
+                              child: SwitchListTile.adaptive(
+                                contentPadding: EdgeInsets.zero,
+                                value: tempAvailable,
+                                onChanged: (value) =>
+                                    setSheetState(() => tempAvailable = value),
+                                title: Text(
+                                  _copy(
+                                    'Available now only',
+                                    'المتاحون الآن فقط',
+                                  ),
+                                  style: TextStyle(
+                                    color: p.inkDark,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                secondary: const Icon(
+                                  Icons.bolt_rounded,
+                                  color: AppColors.primary,
+                                ),
+                                activeTrackColor: AppColors.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            _filterSectionTitle(
+                              p,
+                              Icons.star_outline_rounded,
+                              _copy('Minimum rating', 'الحد الأدنى للتقييم'),
+                              trailing: tempMinRating.toStringAsFixed(1),
+                            ),
+                            SliderTheme(
+                              data: SliderThemeData(
+                                activeTrackColor: AppColors.primary,
+                                inactiveTrackColor: p.stroke,
+                                thumbColor: AppColors.primary,
+                                overlayColor: AppColors.primary.withValues(
+                                  alpha: 0.14,
+                                ),
+                                trackHeight: 4,
+                              ),
+                              child: Slider(
+                                value: tempMinRating,
+                                min: 0,
+                                max: 5,
+                                divisions: 10,
+                                label: tempMinRating.toStringAsFixed(1),
+                                onChanged: (value) =>
+                                    setSheetState(() => tempMinRating = value),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            _filterSectionTitle(
+                              p,
+                              Icons.location_on_outlined,
+                              _copy('Maximum distance', 'أقصى مسافة'),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [null, 2.0, 5.0, 10.0].map((km) {
+                                return _filterChoiceChip(
+                                  p: p,
+                                  label: km == null
+                                      ? _copy('All', 'الكل')
+                                      : '${km.toInt()} ${_copy('km', 'كم')}',
+                                  selected: tempMaxDistance == km,
+                                  onSelected: () =>
+                                      setSheetState(() => tempMaxDistance = km),
+                                );
+                              }).toList(),
+                            ),
+                            const SizedBox(height: 18),
+                            _filterSectionTitle(
+                              p,
+                              Icons.payments_outlined,
+                              _copy('Budget', 'الميزانية'),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [null, 50.0, 100.0, 150.0].map((price) {
+                                return _filterChoiceChip(
+                                  p: p,
+                                  label: price == null
+                                      ? _copy('All', 'الكل')
+                                      : '${price.toInt()} ILS',
+                                  selected: tempMaxPrice == price,
+                                  onSelected: () =>
+                                      setSheetState(() => tempMaxPrice = price),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        12,
+                        20,
+                        12 + MediaQuery.paddingOf(context).bottom,
+                      ),
+                      decoration: BoxDecoration(
+                        color: p.surface,
+                        border: Border(top: BorderSide(color: p.stroke)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
                               onPressed: () {
                                 setState(() {
                                   _selectedRole = 'all';
@@ -550,23 +614,24 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                                 _applyFiltersAndSort();
                                 Navigator.pop(context);
                               },
-                              child: Text(_copy('Reset', 'إعادة ضبط')),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
+                              icon: const Icon(Icons.refresh_rounded, size: 18),
+                              label: Text(_copy('Reset', 'إعادة ضبط')),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                minimumSize: const Size.fromHeight(52),
+                                side: const BorderSide(
+                                  color: AppColors.primary,
                                 ),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(16),
                                 ),
                               ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: FilledButton(
                               onPressed: () {
                                 setState(() {
                                   _selectedRole = tempRole;
@@ -580,19 +645,72 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                                 _applyFiltersAndSort();
                                 Navigator.pop(context);
                               },
-                              child: Text(_copy('Apply', 'تطبيق')),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size.fromHeight(52),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: Text(
+                                _copy('Apply filters', 'تطبيق الفلاتر'),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            );
-          },
+            ),
+          ),
         );
       },
+    );
+  }
+
+  Widget _filterSectionTitle(
+    CarelinkPalette p,
+    IconData icon,
+    String title, {
+    String? trailing,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, color: AppColors.primary, size: 20),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            style: TextStyle(
+              color: p.inkDark,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        if (trailing != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.09),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              trailing,
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -608,7 +726,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
         style: TextStyle(
           color: selected ? Colors.white : p.inkDark,
           fontWeight: FontWeight.w600,
-          fontSize: 12.5,
+          fontSize: 11.5,
         ),
       ),
       selected: selected,
@@ -617,6 +735,9 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       backgroundColor: p.filterSurface,
       checkmarkColor: Colors.white,
       side: BorderSide(color: selected ? AppColors.primary : p.stroke),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      showCheckmark: selected,
     );
   }
 
@@ -633,17 +754,20 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
         labelStyle: TextStyle(color: p.inkMuted, fontSize: 13),
         filled: true,
         fillColor: p.filterSurface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 10,
+        ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: p.stroke),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: p.stroke),
         ),
       ),
@@ -653,7 +777,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
           isExpanded: true,
           style: TextStyle(
             color: p.inkDark,
-            fontSize: 15,
+            fontSize: 13,
             fontWeight: FontWeight.w500,
           ),
           dropdownColor: p.surface,
@@ -663,7 +787,13 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                 (e) => DropdownMenuItem(
                   value: e,
                   child: Text(
-                    e == 'all' ? _copy('All', 'الكل') : e,
+                    e == 'all'
+                        ? _copy('All', 'الكل')
+                        : e == 'doctor'
+                        ? _copy('Doctor', 'طبيب')
+                        : e == 'nurse'
+                        ? _copy('Nurse', 'ممرض')
+                        : e,
                     style: TextStyle(color: p.inkDark),
                   ),
                 ),
@@ -681,8 +811,18 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
     return Scaffold(
-      backgroundColor: p.pageBg,
-      appBar: PatientAppBar(title: context.tr('patient.title.findProviders')),
+      backgroundColor: p.isDark ? p.pageBg : const Color(0xFFF8FAFA),
+      appBar: PatientAppBar(
+        titleWidget: Text(
+          _copy('Find Providers', 'البحث عن مزودين'),
+          style: const TextStyle(
+            color: Color(0xFF0F766E),
+            fontSize: 27,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.4,
+          ),
+        ),
+      ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _fetchProviders,
@@ -691,9 +831,9 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.fromLTRB(
               16,
-              6,
+              8,
               16,
-              100 + MediaQuery.paddingOf(context).bottom,
+              128 + MediaQuery.paddingOf(context).bottom,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -705,11 +845,11 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                     _filterButton(p),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 _sortRow(p),
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
                 _statusRow(p),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 _buildBody(p),
               ],
             ),
@@ -721,30 +861,34 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
 
   Widget _buildSearchField(CarelinkPalette p) {
     final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(18),
       borderSide: BorderSide(color: p.stroke.withValues(alpha: 0.85)),
     );
     return SizedBox(
-      height: 46,
+      height: 52,
       child: TextField(
         controller: _searchController,
         onChanged: (v) {
           _searchQuery = v;
           _applyFiltersAndSort();
         },
-        style: TextStyle(color: p.inkDark, fontSize: 14),
+        style: TextStyle(
+          color: p.inkDark,
+          fontSize: 13.5,
+          fontWeight: FontWeight.w600,
+        ),
         cursorColor: AppColors.primary,
         decoration: InputDecoration(
           hintText: context.tr('providers.searchHint'),
           hintStyle: TextStyle(
             color: p.inkMuted,
-            fontSize: 13.5,
+            fontSize: 12.5,
             fontWeight: FontWeight.w500,
           ),
           prefixIcon: const Icon(
             Icons.search_rounded,
             color: AppColors.primary,
-            size: 20,
+            size: 21,
           ),
           filled: true,
           fillColor: p.surface,
@@ -752,7 +896,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
           border: border,
           enabledBorder: border,
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(18),
             borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
           ),
           contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -764,22 +908,22 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   Widget _filterButton(CarelinkPalette p) {
     return PatientPressable(
       onTap: _openFilters,
-      borderRadius: BorderRadius.circular(15),
+      borderRadius: BorderRadius.circular(18),
       child: Container(
-        width: 46,
-        height: 46,
+        width: 48,
+        height: 48,
         decoration: BoxDecoration(
           color: AppColors.primary,
-          borderRadius: BorderRadius.circular(15),
+          borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
               color: AppColors.primary.withValues(alpha: 0.22),
-              blurRadius: 12,
-              offset: const Offset(0, 5),
+              blurRadius: 18,
+              offset: const Offset(0, 7),
             ),
           ],
         ),
-        child: const Icon(Icons.tune_rounded, color: Colors.white, size: 21),
+        child: const Icon(Icons.tune_rounded, color: Colors.white, size: 23),
       ),
     );
   }
@@ -798,15 +942,26 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
             showCheckmark: false,
             visualDensity: VisualDensity.compact,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
             labelPadding: EdgeInsets.zero,
-            label: Text(
-              _sortLabel(option),
-              style: TextStyle(
-                color: selected ? Colors.white : p.inkDark,
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
+            label: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _sortIcon(option),
+                  size: 14,
+                  color: selected ? Colors.white : AppColors.primary,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  _sortLabel(option),
+                  style: TextStyle(
+                    color: selected ? Colors.white : p.inkDark,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11.5,
+                  ),
+                ),
+              ],
             ),
             selected: selected,
             selectedColor: AppColors.primary,
@@ -826,17 +981,80 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   }
 
   Widget _statusRow(CarelinkPalette p) {
-    return Text(
-      context.tr(
-        'providers.results',
-        args: {'count': '${_visibleProviders.length}'},
-      ),
-      style: TextStyle(
-        fontSize: 12.5,
-        color: p.inkMuted,
-        fontWeight: FontWeight.w700,
-      ),
+    return Row(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Icon(
+            Icons.medical_services_outlined,
+            color: AppColors.primary,
+            size: 21,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _copy(
+                  '${_visibleProviders.length} care providers available',
+                  '${_visibleProviders.length} مقدم رعاية متاح',
+                ),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: p.inkDark,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                _copy(
+                  'Choose the right provider for your care needs',
+                  'اختر مقدم الرعاية الأنسب لاحتياجاتك',
+                ),
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: p.inkMuted,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
+  }
+
+  IconData _sortIcon(ProviderSortOption option) {
+    return switch (option) {
+      ProviderSortOption.smartMatch => Icons.auto_awesome_rounded,
+      ProviderSortOption.nearest => Icons.near_me_outlined,
+      ProviderSortOption.ratingHighToLow => Icons.star_rounded,
+      ProviderSortOption.availableNow => Icons.bolt_rounded,
+      ProviderSortOption.priceLowToHigh => Icons.payments_outlined,
+    };
+  }
+
+  void _resetFilters() {
+    setState(() {
+      _searchController.clear();
+      _searchQuery = '';
+      _selectedRole = 'all';
+      _selectedSpecialization = 'all';
+      _selectedServiceType = 'all';
+      _availableNowOnly = false;
+      _minRating = 0;
+      _maxDistanceKm = null;
+      _maxPrice = null;
+      _sortOption = ProviderSortOption.smartMatch;
+    });
+    _applyFiltersAndSort();
   }
 
   Widget _buildBody(CarelinkPalette p) {
@@ -854,101 +1072,35 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     }
 
     if (_visibleProviders.isEmpty) {
-      return _errorCard(
-        p,
-        'No providers available right now. Try another date or service.',
-      );
+      return _emptyProvidersState(p);
     }
 
-    final bestRated = _visibleProviders.reduce(
-      (a, b) => a.overallRating >= b.overallRating ? a : b,
-    );
-    final nearest = _visibleProviders.reduce(
-      (a, b) => _distanceFor(a) <= _distanceFor(b) ? a : b,
-    );
-    final availableNow = _visibleProviders
-        .where(ProviderBookingEligibility.canBook)
-        .length;
-
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _infoChip(
-                p,
-                Icons.near_me_outlined,
-                '${context.tr('providers.closest')}: ${nearest.fullName.split(' ').first}',
-              ),
-              const SizedBox(width: 7),
-              _infoChip(
-                p,
-                Icons.star_outline_rounded,
-                '${context.tr('providers.topRated')}: ${bestRated.overallRating.toStringAsFixed(1)}',
-              ),
-              const SizedBox(width: 7),
-              _infoChip(
-                p,
-                Icons.bolt_rounded,
-                '${context.tr('providers.availableNow')}: $availableNow',
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            const spacing = 9.0;
-            final twoColumnCardWidth = (constraints.maxWidth - spacing) / 2;
-            final columns = twoColumnCardWidth >= 168 ? 2 : 1;
-            return GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _visibleProviders.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
-                crossAxisSpacing: spacing,
-                mainAxisSpacing: spacing,
-                childAspectRatio: columns == 1 ? 1.8 : 0.98,
-              ),
-              itemBuilder: (context, index) => _providerCard(
-                p,
-                _visibleProviders[index],
-                highlighted:
-                    index == 0 && _sortOption == ProviderSortOption.smartMatch,
-              ),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _infoChip(CarelinkPalette p, IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: p.stroke),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: AppColors.primary),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: p.inkDark,
+      children: List.generate(_visibleProviders.length, (index) {
+        final provider = _visibleProviders[index];
+        return TweenAnimationBuilder<double>(
+          key: ValueKey(provider.userId),
+          duration: Duration(milliseconds: 220 + (index.clamp(0, 4) * 25)),
+          curve: Curves.easeOutCubic,
+          tween: Tween(begin: 0, end: 1),
+          builder: (context, value, child) => Opacity(
+            opacity: value,
+            child: Transform.translate(
+              offset: Offset(0, 14 * (1 - value)),
+              child: child,
             ),
           ),
-        ],
-      ),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _providerCard(
+              p,
+              provider,
+              highlighted:
+                  index == 0 && _sortOption == ProviderSortOption.smartMatch,
+            ),
+          ),
+        );
+      }),
     );
   }
 
@@ -960,173 +1112,207 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     final isDoctor = provider.role.toLowerCase() == 'doctor';
     final matchPercentage = _matchPercentageFor(provider);
 
+    final available = ProviderBookingEligibility.canBook(provider);
+    final distanceKm = _distanceFor(provider) / 1000;
+    final specialty = provider.serviceType.trim().isNotEmpty
+        ? provider.serviceType.trim()
+        : provider.specialization.trim().isNotEmpty
+        ? provider.specialization.trim()
+        : context.tr(isDoctor ? 'providers.doctor' : 'providers.nurse');
+    final favorite = _favoriteIds.contains(provider.userId);
+
     return PatientPressable(
       onTap: () => _openProvider(provider),
-      borderRadius: BorderRadius.circular(17),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: p.surface,
-          borderRadius: BorderRadius.circular(17),
+          color: p.isDark ? p.surface : Colors.white,
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: highlighted
-                ? AppColors.primary.withValues(alpha: 0.55)
-                : p.stroke.withValues(alpha: 0.9),
-            width: highlighted ? 1.25 : 1,
+                ? AppColors.primary.withValues(alpha: 0.4)
+                : p.stroke.withValues(alpha: 0.5),
+            width: highlighted ? 1.2 : 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: p.cardShadowColor(0.05),
+              color: p.cardShadowColor(0.04),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
           ],
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _compactProviderAvatar(p, provider, isDoctor),
-                const Spacer(),
-                if (matchPercentage != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.09),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      '$matchPercentage%',
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
+                _compactProviderAvatar(p, provider, isDoctor, size: 60),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              provider.fullName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: p.inkDark,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            favorite
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            color: favorite ? const Color(0xFFE85D75) : p.inkMuted,
+                            size: 20,
+                          ),
+                        ],
                       ),
-                    ),
+                      const SizedBox(height: 2),
+                      Text(
+                        specialty,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: p.inkMuted,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.star_rounded, color: Color(0xFFFFB020), size: 14),
+                              const SizedBox(width: 3),
+                              Text(
+                                provider.overallRating.toStringAsFixed(1),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: p.inkDark,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.location_on_outlined, color: Color(0xFF64748B), size: 13),
+                              const SizedBox(width: 2),
+                              Text(
+                                '${distanceKm.toStringAsFixed(1)} ${_copy('km', 'كم')}',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: p.inkMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (matchPercentage != null && matchPercentage >= 80)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.auto_awesome_rounded, color: AppColors.primary, size: 10),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    _copy('AI Match', 'تطابق'),
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          _providerPill(
+                            icon: Icons.circle,
+                            label: available
+                                ? _copy('Available', 'متاح')
+                                : _copy('Unavailable', 'غير متاح'),
+                            color: available
+                                ? const Color(0xFF16A34A)
+                                : p.inkMuted,
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
+                ),
               ],
             ),
-            const SizedBox(height: 7),
+            const SizedBox(height: 12),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
-                  child: Text(
-                    provider.fullName,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      height: 1.15,
-                      fontWeight: FontWeight.w800,
-                      color: p.inkDark,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        provider.consultationFee == null
+                            ? _copy('TBD', 'يُحدد لاحقاً')
+                            : '${provider.consultationFee!.toStringAsFixed(0)} ILS',
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (provider.consultationFee != null)
+                        Text(
+                          _copy('per visit', 'للزيارة'),
+                          style: TextStyle(
+                            color: p.inkMuted,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                if (_favoriteIds.contains(provider.userId)) ...[
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.favorite_rounded,
-                    color: Color(0xFFFF6B6B),
-                    size: 14,
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              provider.specialization.isEmpty
-                  ? context.tr(
-                      isDoctor ? 'providers.doctor' : 'providers.nurse',
-                    )
-                  : provider.specialization,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: p.inkMuted,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const Spacer(),
-            Row(
-              children: [
-                const Icon(
-                  Icons.star_rounded,
-                  size: 15,
-                  color: Color(0xFFFFB020),
-                ),
-                const SizedBox(width: 3),
-                Text(
-                  provider.overallRating.toStringAsFixed(1),
-                  style: TextStyle(
-                    color: p.inkDark,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  provider.consultationFee == null
-                      ? _copy('Price later', 'السعر لاحقاً')
-                      : '${provider.consultationFee!.toStringAsFixed(0)} ILS',
-                  style: TextStyle(
-                    color: p.inkDark,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 7),
-            Row(
-              children: [
-                Flexible(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(999),
+                SizedBox(
+                  height: 38,
+                  child: FilledButton(
+                    onPressed: () => _openProvider(provider),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     child: Text(
-                      context.tr(
-                        ProviderBookingEligibility.canBook(provider)
-                            ? 'providers.available'
-                            : 'providers.busy',
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      _copy('View details', 'عرض التفاصيل'),
                       style: const TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 9,
+                        fontSize: 12,
                         fontWeight: FontWeight.w800,
                       ),
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: IconButton(
-                    onPressed: () => _openProvider(provider),
-                    padding: EdgeInsets.zero,
-                    style: IconButton.styleFrom(
-                      backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                      foregroundColor: AppColors.primary,
-                    ),
-                    icon: Icon(
-                      context.l10n.isArabic
-                          ? Icons.arrow_back_rounded
-                          : Icons.arrow_forward_rounded,
-                      size: 15,
                     ),
                   ),
                 ),
@@ -1138,31 +1324,126 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     );
   }
 
+  Widget _providerPill({
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: icon == Icons.circle ? 7 : 13),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyProvidersState(CarelinkPalette p) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+      decoration: BoxDecoration(
+        color: p.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: p.stroke.withValues(alpha: 0.65)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 88,
+            height: 88,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.person_search_rounded,
+              size: 44,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _copy('No care provider found', 'لم يتم العثور على مقدم رعاية'),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: p.inkDark,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _copy(
+              'Try changing the filters or searching with another name.',
+              'جرّب تغيير الفلاتر أو البحث باسم آخر.',
+            ),
+            textAlign: TextAlign.center,
+            style: TextStyle(color: p.inkMuted, fontSize: 12.5, height: 1.4),
+          ),
+          const SizedBox(height: 18),
+          OutlinedButton.icon(
+            onPressed: _resetFilters,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: Text(_copy('Reset filters', 'إعادة ضبط الفلاتر')),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: const BorderSide(color: AppColors.primary),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _compactProviderAvatar(
     CarelinkPalette p,
     ProviderModel provider,
-    bool isDoctor,
-  ) {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: p.isDark ? 0.22 : 0.10),
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.22),
-          width: 1.25,
+    bool isDoctor, {
+    double size = 80,
+  }) {
+    return Hero(
+      tag: 'provider-avatar-${provider.userId}',
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: AppColors.primary.withValues(alpha: p.isDark ? 0.22 : 0.10),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: AppColors.primary.withValues(alpha: 0.22),
+            width: 1.25,
+          ),
         ),
-      ),
-      child: ClipOval(
-        child: profileAvatarOrPlaceholder(
-          imageUrl: provider.profileImageUrl,
-          size: 44,
-          placeholderColor: AppColors.primary,
-          placeholderIcon: isDoctor
-              ? Icons.medical_services_outlined
-              : Icons.local_hospital_outlined,
-          iconSize: 21,
+        child: ClipOval(
+          child: profileAvatarOrPlaceholder(
+            imageUrl: provider.profileImageUrl,
+            size: size,
+            placeholderColor: AppColors.primary,
+            placeholderIcon: isDoctor
+                ? Icons.medical_services_outlined
+                : Icons.local_hospital_outlined,
+            iconSize: size * 0.4,
+          ),
         ),
       ),
     );

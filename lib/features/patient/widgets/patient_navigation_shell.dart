@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/carelink_palette.dart';
@@ -99,7 +100,7 @@ class _PatientNavigationShellState extends State<PatientNavigationShell> {
     final p = CarelinkPalette.of(context);
 
     if (isRestoringSession) {
-      return Scaffold(
+      return PatientScaffold(
         backgroundColor: p.pageBg,
         body: const Center(child: CircularProgressIndicator()),
       );
@@ -128,7 +129,8 @@ class _PatientNavigationShellState extends State<PatientNavigationShell> {
                 });
               }
             },
-            child: Scaffold(
+            child: PatientScaffold(
+              extendBody: true,
               backgroundColor: p.pageBg,
               body: IndexedStack(index: currentIndex, children: screens),
               bottomNavigationBar: _buildFloatingBottomNav(p),
@@ -168,79 +170,74 @@ class _PatientNavigationShellState extends State<PatientNavigationShell> {
       ),
     ];
 
-    return Material(
-      elevation: 18,
-      shadowColor: Colors.black12,
-      color: Colors.transparent,
+    return SafeArea(
+      top: false,
       child: Container(
-        margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        height: 68,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         decoration: BoxDecoration(
-          color: p.navBackground,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: p.stroke),
+          color: p.isDark ? p.navBackground : Colors.white,
+          borderRadius: BorderRadius.circular(34),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: p.isDark ? 0.35 : 0.08),
+              color: Colors.black.withValues(alpha: 0.12),
               blurRadius: 24,
-              offset: const Offset(0, 10),
+              offset: const Offset(0, 8),
             ),
           ],
         ),
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 70,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final count = items.length;
-                final itemWidth = constraints.maxWidth / count;
-                final visualIndex = _isArabic
-                    ? count - 1 - currentIndex
-                    : currentIndex;
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 360),
-                      curve: Curves.easeOutBack,
-                      left: visualIndex * itemWidth + 6,
-                      top: 8,
-                      width: itemWidth - 12,
-                      height: 54,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(
-                            alpha: p.isDark ? 0.18 : 0.11,
-                          ),
-                          borderRadius: BorderRadius.circular(22),
-                          border: Border.all(
-                            color: AppColors.primary.withValues(alpha: 0.16),
-                          ),
-                        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final count = items.length;
+            final itemWidth = constraints.maxWidth / count;
+            final visualIndex = _isArabic
+                ? count - 1 - currentIndex
+                : currentIndex;
+            
+            // Smaller pill width for elegance
+            final pillWidth = itemWidth * 0.75;
+            final pillHeight = 48.0;
+            final leftOffset = (visualIndex * itemWidth) + ((itemWidth - pillWidth) / 2);
+
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  left: leftOffset,
+                  top: (68 - pillHeight) / 2,
+                  width: pillWidth,
+                  height: pillHeight,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F766E).withValues(
+                        alpha: p.isDark ? 0.15 : 0.08,
                       ),
+                      borderRadius: BorderRadius.circular(24),
                     ),
-                    Row(
-                      children: List.generate(items.length, (index) {
-                        final item = items[index];
-                        final selected = index == currentIndex;
-                        return Expanded(
-                          child: _PatientFloatingNavButton(
-                            item: item,
-                            selected: selected,
-                            palette: p,
-                            onTap: () {
-                              if (currentIndex == index) return;
-                              setState(() => currentIndex = index);
-                            },
-                          ),
-                        );
-                      }),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
+                  ),
+                ),
+                Row(
+                  children: List.generate(items.length, (index) {
+                    final item = items[index];
+                    final selected = index == currentIndex;
+                    return Expanded(
+                      child: _PatientFloatingNavButton(
+                        item: item,
+                        selected: selected,
+                        palette: p,
+                        onTap: () {
+                          if (currentIndex == index) return;
+                          setState(() => currentIndex = index);
+                        },
+                      ),
+                    );
+                  }),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -288,8 +285,10 @@ class _PatientFloatingNavButtonState extends State<_PatientFloatingNavButton> {
   @override
   Widget build(BuildContext context) {
     final color = widget.selected
-        ? AppColors.primary
-        : widget.palette.navUnselected;
+        ? const Color(0xFF0F766E)
+        : widget.palette.isDark
+        ? widget.palette.navUnselected
+        : const Color(0xFF94A3B8);
     return Listener(
       onPointerDown: (_) => _setPressed(true),
       onPointerUp: (_) => _setPressed(false),
@@ -306,7 +305,7 @@ class _PatientFloatingNavButtonState extends State<_PatientFloatingNavButton> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 240),
             curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,

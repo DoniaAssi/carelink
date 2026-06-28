@@ -21,9 +21,6 @@ class CarelinkRegistrationController extends GetxController {
   final pinController = TextEditingController();
   final addressText = TextEditingController();
   final dateOfBirth = TextEditingController();
-  final chronicDiseases = TextEditingController();
-  final allergies = TextEditingController();
-  final currentMedications = TextEditingController();
   final specialization = TextEditingController();
   final licenseNumber = TextEditingController();
   final experienceYears = TextEditingController();
@@ -127,7 +124,8 @@ class CarelinkRegistrationController extends GetxController {
           return false;
         }
       } else {
-        if (safeControllerText(specialization).trim().length < 2) {
+        if (role == CarelinkRegistrationRole.doctor &&
+            safeControllerText(specialization).trim().length < 2) {
           errorText.value = 'Please enter your specialization';
           return false;
         }
@@ -237,10 +235,9 @@ class CarelinkRegistrationController extends GetxController {
         addressText: safeControllerText(addressText).trim(),
         dateOfBirth: safeControllerText(dateOfBirth).trim(),
         gender: role == CarelinkRegistrationRole.patient ? gender : null,
-        chronicDiseases: safeControllerText(chronicDiseases).trim(),
-        allergies: safeControllerText(allergies).trim(),
-        currentMedications: safeControllerText(currentMedications).trim(),
-        specialization: safeControllerText(specialization).trim(),
+        specialization: role == CarelinkRegistrationRole.doctor
+            ? safeControllerText(specialization).trim()
+            : null,
         licenseNumber: safeControllerText(licenseNumber).trim(),
         experienceYears: safeControllerText(experienceYears).trim(),
         serviceType: safeControllerText(serviceType).trim(),
@@ -293,9 +290,6 @@ class CarelinkRegistrationController extends GetxController {
     pinController.dispose();
     addressText.dispose();
     dateOfBirth.dispose();
-    chronicDiseases.dispose();
-    allergies.dispose();
-    currentMedications.dispose();
     specialization.dispose();
     licenseNumber.dispose();
     experienceYears.dispose();

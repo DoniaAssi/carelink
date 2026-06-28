@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
@@ -86,9 +87,10 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
       }
 
       setState(() {
-        _errorMessage = errorText.isNotEmpty
-            ? errorText
-            : context.tr('booking.review.submitFailed');
+        _errorMessage = context.l10n.userMessage(
+          errorText.isEmpty ? Exception('') : Exception(errorText),
+          fallbackKey: 'booking.review.submitFailed',
+        );
       });
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -100,7 +102,7 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
     final p = CarelinkPalette.of(context);
     final r = widget.request;
 
-    return Scaffold(
+    return PatientScaffold(
       backgroundColor: p.pageBg,
       appBar: PatientAppBar(
         title: context.l10n.isArabic

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:carelink/core/app_colors.dart';
@@ -11,11 +12,12 @@ import '../ai_slot_utils.dart';
 import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/features/ai/recommendation/models/recommendation_models.dart';
 import 'package:carelink/features/patient/screens/booking_screen.dart';
-import 'package:carelink/features/ai/widgets/ai_score_breakdown.dart';
+import 'package:carelink/features/patient/screens/chat_screen.dart';
 import 'package:carelink/features/patient/utils/booking_service_helper.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/shared/services/patient_favorites_service.dart';
 
 /// Why-this-provider view and bridge into the standard booking flow.
 class AiProviderDetailsScreen extends StatefulWidget {
@@ -40,13 +42,19 @@ class AiProviderDetailsScreen extends StatefulWidget {
 class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
   AvailabilitySlot? _slot;
   AIRecommendationResult? _activeResult;
+  ProviderModel? _freshProvider;
   String? _activePatientUserId;
   String _activeCaseReason = '';
   bool _bootstrapped = false;
   bool _isContinuing = false;
-  bool _showMore = false;
+  bool _favorite = false;
+  bool _favoriteBusy = false;
+  bool _isCheckingRelationship = false;
+  double _reviewAverage = 0;
+  int _reviewCount = 0;
+  final Map<int, int> _ratingDistribution = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0};
 
-  ProviderModel? get _p => _activeResult?.provider;
+  ProviderModel? get _p => _freshProvider ?? _activeResult?.provider;
   bool get _ar => Directionality.of(context) == TextDirection.rtl;
 
   @override
@@ -82,6 +90,29 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
       });
 
       _loadSessionIfNeeded();
+      if (res != null) {
+        _loadProviderProfile(res.provider.userId);
+        _loadRatings(res.provider.userId);
+        _loadFavorite();
+      }
+    }
+  }
+
+  Future<void> _loadProviderProfile(String providerId) async {
+    try {
+      final data = await ApiService().getProviderById(
+        providerId,
+        realAvailability: true,
+      );
+      final provider = ProviderModel.fromJson(data);
+      final slots = AiSlotUtils.sortedSlots(provider.availableSlots);
+      if (!mounted) return;
+      setState(() {
+        _freshProvider = provider;
+        _slot = slots.isNotEmpty ? slots.first : null;
+      });
+    } catch (_) {
+      // Keep the provider supplied by the recommendation response.
     }
   }
 
@@ -95,7 +126,78 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
         setState(() {
           _activePatientUserId = savedId;
         });
+        await _loadFavorite();
       }
+    }
+  }
+
+  Future<void> _loadFavorite() async {
+    final patientId = _activePatientUserId?.trim() ?? '';
+    final providerId = _p?.userId.trim() ?? '';
+    if (patientId.isEmpty || providerId.isEmpty) return;
+    final favorite = await PatientFavoritesService.isFavorite(
+      patientId,
+      providerId,
+    );
+    if (mounted) setState(() => _favorite = favorite);
+  }
+
+  Future<void> _toggleFavorite() async {
+    final patientId = _activePatientUserId?.trim() ?? '';
+    final providerId = _p?.userId.trim() ?? '';
+    if (patientId.isEmpty || providerId.isEmpty || _favoriteBusy) return;
+    final next = !_favorite;
+    setState(() {
+      _favorite = next;
+      _favoriteBusy = true;
+    });
+    try {
+      if (next) {
+        await PatientFavoritesService.addFavorite(patientId, providerId);
+      } else {
+        await PatientFavoritesService.removeFavorite(patientId, providerId);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _favorite = !next);
+    } finally {
+      if (mounted) setState(() => _favoriteBusy = false);
+    }
+  }
+
+  Future<void> _loadRatings(String providerId) async {
+    try {
+      final data = await ApiService().getProviderRatingsAggregate(
+        providerId,
+        limit: 100,
+      );
+      final distribution = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0};
+      final items = data['items'];
+      if (items is List) {
+        for (final item in items.whereType<Map>()) {
+          final stars = (item['stars'] as num?)?.round();
+          if (stars != null && distribution.containsKey(stars)) {
+            distribution[stars] = distribution[stars]! + 1;
+          }
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _reviewAverage =
+            (data['averageRating'] as num?)?.toDouble() ??
+            _p?.overallRating ??
+            0;
+        _reviewCount =
+            (data['ratingsCount'] as num?)?.round() ?? _p?.ratingsCount ?? 0;
+        _ratingDistribution
+          ..clear()
+          ..addAll(distribution);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _reviewAverage = _p?.overallRating ?? 0;
+        _reviewCount = _p?.ratingsCount ?? 0;
+      });
     }
   }
 
@@ -131,22 +233,19 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
       }
 
       if (!mounted) return;
-      final request = BookingServiceHelper.createRequestForProvider(
-        provider: freshProvider,
-        patientId: id,
-      ).copyWith(
-        patientReason: reason,
-        symptoms: reason,
-        bookingStatus: 'pending_payment',
-      );
+      final request =
+          BookingServiceHelper.createRequestForProvider(
+            provider: freshProvider,
+            patientId: id,
+          ).copyWith(
+            patientReason: reason,
+            symptoms: reason,
+            bookingStatus: 'pending_payment',
+          );
 
       final becameUnavailable = await Navigator.push<bool>(
         context,
-        MaterialPageRoute(
-          builder: (_) => BookingScreen(
-            request: request,
-          ),
-        ),
+        MaterialPageRoute(builder: (_) => BookingScreen(request: request)),
       );
       if (becameUnavailable == true && mounted) {
         Navigator.pop(context, true);
@@ -173,6 +272,57 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
     }
   }
 
+  Future<void> _messageProvider() async {
+    final patientId = _activePatientUserId?.trim() ?? '';
+    final provider = _p;
+    if (patientId.isEmpty || provider == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_t('signIn'))));
+      return;
+    }
+    if (_isCheckingRelationship) return;
+    setState(() => _isCheckingRelationship = true);
+    try {
+      final appointments = await ApiService().getAppointments(patientId);
+      final history = await ApiService().getAppointmentHistory(patientId);
+      final hasRelationship = [...appointments, ...history].any(
+        (appointment) =>
+            appointment['providerUserId'] == provider.userId ||
+            appointment['providerId'] == provider.userId,
+      );
+      if (!hasRelationship) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_t('chatRequiresBooking'))));
+        return;
+      }
+      if (!mounted) return;
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            name: provider.fullName,
+            userId: patientId,
+            doctorId: provider.userId,
+            currentUserId: patientId,
+            patientUserId: patientId,
+            providerUserId: provider.userId,
+            peerImageUrl: provider.profileImageUrl,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_t('chatFailed'))));
+    } finally {
+      if (mounted) setState(() => _isCheckingRelationship = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -180,7 +330,6 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
       builder: (context, _) {
         final palette = CarelinkPalette.of(context);
         final themeColor = palette.inkDark;
-        final helperColor = palette.inkMuted;
         final pageBgColor = palette.pageBg;
         final cardBgColor = palette.surface;
         final strokeColor = palette.stroke;
@@ -191,7 +340,7 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
             textDirection: localeController.isArabic
                 ? TextDirection.rtl
                 : TextDirection.ltr,
-            child: Scaffold(
+            child: PatientScaffold(
               backgroundColor: pageBgColor,
               appBar: PatientAppBar(title: _t('title')),
               body: Center(
@@ -253,92 +402,110 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
           textDirection: localeController.isArabic
               ? TextDirection.rtl
               : TextDirection.ltr,
-          child: Scaffold(
+          child: PatientScaffold(
             backgroundColor: pageBgColor,
-            appBar: PatientAppBar(title: _t('title')),
+            appBar: _detailsAppBar(palette),
             bottomNavigationBar: SafeArea(
               top: false,
               minimum: const EdgeInsets.fromLTRB(20, 8, 20, 14),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withValues(
-                        alpha: palette.isDark ? 0.24 : 0.2,
-                      ),
-                      blurRadius: 18,
-                      offset: const Offset(0, 7),
-                    ),
-                  ],
-                ),
-                child: SizedBox(
-                  height: 50,
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: AppColors.primary.withValues(
-                        alpha: 0.65,
-                      ),
-                      disabledForegroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 18),
-                      shape: RoundedRectangleBorder(
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.2),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
                       ),
-                    ),
-                    onPressed: _isContinuing ? null : _continueBooking,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _t('continue'),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15,
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        const SizedBox(width: 9),
-                        if (_isContinuing)
-                          const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        else
-                          Icon(
-                            _ar
-                                ? Icons.arrow_back_rounded
-                                : Icons.arrow_forward_rounded,
-                            size: 19,
+                        onPressed: _isContinuing ? null : _continueBooking,
+                        icon: _isContinuing
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.calendar_month_rounded,
+                                size: 19,
+                              ),
+                        label: Text(
+                          _t('bookAppointment'),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
                           ),
-                      ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                        foregroundColor: AppColors.primary,
+                        side: BorderSide(
+                          color: AppColors.primary.withValues(alpha: 0.45),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: _isCheckingRelationship
+                          ? null
+                          : _messageProvider,
+                      icon: _isCheckingRelationship
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.chat_bubble_rounded, size: 18),
+                      label: Text(
+                        _t('chat'),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             body: SafeArea(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 children: [
-                  // 1. Compact Summary Card
+                  // Provider profile hero
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       color: cardBgColor,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: strokeColor),
+                      borderRadius: BorderRadius.circular(18),
                       boxShadow: [
                         BoxShadow(
-                          color: palette.cardShadowColor(0.055),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
+                          color: palette.cardShadowColor(0.04),
+                          blurRadius: 14,
+                          offset: const Offset(0, 5),
                         ),
                       ],
                     ),
@@ -346,24 +513,22 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Container(
-                          width: 68,
-                          height: 68,
+                          width: 104,
+                          height: 140,
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
+                            borderRadius: BorderRadius.circular(16),
                             color: AppColors.primary.withValues(alpha: 0.09),
-                            border: Border.all(
-                              color: AppColors.primary.withValues(alpha: 0.24),
-                            ),
                           ),
-                          child: ClipOval(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
                             child: profileAvatarOrPlaceholder(
                               imageUrl: p.profileImageUrl,
-                              size: 68,
+                              size: 140,
                               placeholderColor: AppColors.primary,
                               placeholderIcon: isDoctor
                                   ? Icons.medical_services_outlined
                                   : Icons.local_hospital_outlined,
-                              iconSize: 31,
+                              iconSize: 42,
                             ),
                           ),
                         ),
@@ -388,25 +553,10 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
                                       ),
                                     ),
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary.withValues(
-                                        alpha: 0.1,
-                                      ),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      _ar ? 'موصى به' : 'Recommended',
-                                      style: const TextStyle(
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
+                                  const Icon(
+                                    Icons.verified_rounded,
+                                    color: AppColors.primary,
+                                    size: 19,
                                   ),
                                 ],
                               ),
@@ -414,19 +564,14 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
                               Text(
                                 specialty,
                                 style: TextStyle(
-                                  color: helperColor,
-                                  fontSize: 14,
+                                  color: AppColors.primary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 9),
                               Row(
                                 children: [
-                                  const Icon(
-                                    Icons.star_rounded,
-                                    color: Color(0xFFF2B036),
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 2),
                                   Text(
                                     p.overallRating.toStringAsFixed(1),
                                     style: TextStyle(
@@ -435,37 +580,38 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
                                       fontSize: 12,
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
-                                  const Icon(
-                                    Icons.location_on_outlined,
-                                    color: primaryColor,
-                                    size: 15,
+                                  const SizedBox(width: 5),
+                                  ...List.generate(
+                                    5,
+                                    (index) => Icon(
+                                      index < p.overallRating.round()
+                                          ? Icons.star_rounded
+                                          : Icons.star_border_rounded,
+                                      color: const Color(0xFFF2B036),
+                                      size: 15,
+                                    ),
                                   ),
-                                  const SizedBox(width: 2),
-                                  Text(
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  _profilePill(
+                                    palette,
+                                    Icons.circle,
+                                    slotHint,
+                                    p.isAvailable
+                                        ? Colors.green
+                                        : Colors.orange,
+                                    smallIcon: true,
+                                  ),
+                                  _profilePill(
+                                    palette,
+                                    Icons.location_on_rounded,
                                     distLabel,
-                                    style: TextStyle(
-                                      color: helperColor,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Icon(
-                                    Icons.event_available_rounded,
-                                    color: primaryColor,
-                                    size: 15,
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Expanded(
-                                    child: Text(
-                                      slotHint,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: helperColor,
-                                        fontSize: 12,
-                                      ),
-                                    ),
+                                    AppColors.primary,
                                   ),
                                 ],
                               ),
@@ -495,110 +641,29 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
                       ],
                     ),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 54,
-                              height: 54,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: AppColors.primary.withValues(alpha: 0.1),
-                              ),
-                              child: const Icon(
-                                Icons.auto_awesome_rounded,
-                                color: AppColors.primary,
-                                size: 27,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _t('overallMatch'),
-                                    style: TextStyle(
-                                      color: helperColor,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    _overallMatchLabel(
-                                      _activeResult!.matchPercentage,
-                                    ),
-                                    style: const TextStyle(
-                                      color: AppColors.primary,
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    _t('shortExplanation'),
-                                    style: TextStyle(
-                                      color: themeColor,
-                                      fontSize: 12,
-                                      height: 1.3,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                setState(() => _showMore = !_showMore);
-                              },
-                              child: Text(
-                                _t(_showMore ? 'showLess' : 'showMore'),
-                                style: const TextStyle(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        AnimatedCrossFade(
-                          duration: const Duration(milliseconds: 200),
-                          crossFadeState: _showMore
-                              ? CrossFadeState.showSecond
-                              : CrossFadeState.showFirst,
-                          firstChild: const SizedBox(width: double.infinity),
-                          secondChild: Column(
-                            children: [
-                              Divider(height: 24, color: strokeColor),
-                              Row(
-                                children: [
-                                  Text(
-                                    _t('matchScore'),
-                                    style: TextStyle(
-                                      color: helperColor,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Text(
-                                    '${_activeResult!.matchPercentage}%',
-                                    style: const TextStyle(
-                                      color: AppColors.primary,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              AiScoreBreakdown(
-                                breakdown: _activeResult!.breakdown,
-                                isArabic: _ar,
-                              ),
-                            ],
+                        Text(
+                          _t('aboutProvider'),
+                          style: TextStyle(
+                            color: themeColor,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _providerAbout(p, specialty),
+                          style: TextStyle(
+                            color: themeColor,
+                            fontSize: 13,
+                            height: 1.65,
+                          ),
+                        ),
+                        if (_serviceTiles(p, palette).isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Row(children: _serviceTiles(p, palette)),
+                        ],
                       ],
                     ),
                   ),
@@ -631,26 +696,12 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        _reasonRow(
-                          palette,
-                          Icons.health_and_safety_outlined,
-                          _t('reasonCondition'),
-                        ),
-                        const SizedBox(height: 10),
-                        _reasonRow(
-                          palette,
-                          Icons.location_on_outlined,
-                          _t('reasonArea'),
-                        ),
-                        const SizedBox(height: 10),
-                        _reasonRow(
-                          palette,
-                          Icons.star_outline_rounded,
-                          _t('reasonRating'),
-                        ),
+                        ..._recommendationReasonRows(palette),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 14),
+                  _ratingsCard(palette),
                   const SizedBox(height: 20),
                 ],
               ),
@@ -659,6 +710,350 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
         );
       },
     );
+  }
+
+  PreferredSizeWidget _detailsAppBar(CarelinkPalette palette) {
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(56),
+      child: ColoredBox(
+        color: palette.pageBg,
+        child: SafeArea(
+          bottom: false,
+          child: SizedBox(
+            height: 56,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Text(
+                  _t('title'),
+                  style: TextStyle(
+                    color: palette.inkDark,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Positioned(
+                  left: 4,
+                  child: IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 4,
+                  child: IconButton(
+                    onPressed: _favoriteBusy ? null : _toggleFavorite,
+                    icon: Icon(
+                      _favorite
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      color: Colors.red,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _profilePill(
+    CarelinkPalette palette,
+    IconData icon,
+    String label,
+    Color color, {
+    bool smallIcon = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      decoration: BoxDecoration(
+        color: palette.isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : const Color(0xFFF5F7F7),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: smallIcon ? 8 : 14),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: palette.inkDark,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _providerAbout(ProviderModel provider, String specialty) {
+    final facts = <String>[];
+    if (specialty.trim().isNotEmpty) {
+      facts.add(_ar ? 'التخصص: $specialty' : 'Specialty: $specialty');
+    }
+    final service = provider.serviceType.trim();
+    if (service.isNotEmpty &&
+        service.toLowerCase() != provider.specialization.trim().toLowerCase()) {
+      facts.add(
+        _ar ? 'الخدمة: ${_localizedSpecialty(service)}' : 'Service: $service',
+      );
+    }
+    final years = provider.experienceYears;
+    if (years != null && years >= 0) {
+      facts.add(_ar ? 'سنوات الخبرة: $years' : 'Years of experience: $years');
+    }
+    if (facts.isEmpty) {
+      return _ar
+          ? 'لا تتوفر معلومات إضافية في ملف مقدم الرعاية حالياً.'
+          : 'No additional profile information is currently available.';
+    }
+    return facts.join(_ar ? '، ' : ' • ');
+  }
+
+  List<Widget> _serviceTiles(ProviderModel provider, CarelinkPalette palette) {
+    final services = provider.serviceType
+        .split(RegExp(r'[,;|]'))
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .take(4)
+        .toList();
+    return services
+        .map(
+          (service) => Expanded(
+            child: _serviceTile(
+              palette,
+              _serviceIcon(service),
+              _ar ? _localizedSpecialty(service) : service,
+            ),
+          ),
+        )
+        .toList();
+  }
+
+  IconData _serviceIcon(String service) {
+    final value = service.toLowerCase();
+    if (value.contains('wound') || value.contains('جرح')) {
+      return Icons.healing_rounded;
+    }
+    if (value.contains('medic') || value.contains('دواء')) {
+      return Icons.medication_rounded;
+    }
+    if (value.contains('heart') || value.contains('cardio')) {
+      return Icons.monitor_heart_rounded;
+    }
+    if (value.contains('nurs') || value.contains('تمريض')) {
+      return Icons.health_and_safety_rounded;
+    }
+    return Icons.medical_services_rounded;
+  }
+
+  Widget _serviceTile(CarelinkPalette palette, IconData icon, String label) {
+    return Column(
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.07),
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: Icon(icon, color: AppColors.primary, size: 22),
+        ),
+        const SizedBox(height: 7),
+        Text(
+          label,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: palette.inkDark,
+            fontSize: 9.5,
+            height: 1.25,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _ratingsCard(CarelinkPalette palette) {
+    final count = _reviewCount > 0 ? _reviewCount : (_p?.ratingsCount ?? 0);
+    final average = _reviewAverage > 0
+        ? _reviewAverage
+        : (_p?.overallRating ?? 0);
+    final maxCount = _ratingDistribution.values.fold<int>(
+      0,
+      (current, value) => value > current ? value : current,
+    );
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: palette.stroke),
+        boxShadow: [
+          BoxShadow(
+            color: palette.cardShadowColor(0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                _t('ratings'),
+                style: TextStyle(
+                  color: palette.inkDark,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                average.toStringAsFixed(1),
+                style: TextStyle(
+                  color: palette.inkDark,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(width: 5),
+              ...List.generate(
+                5,
+                (index) => Icon(
+                  index < average.round()
+                      ? Icons.star_rounded
+                      : Icons.star_border_rounded,
+                  color: const Color(0xFFF2B036),
+                  size: 15,
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                '($count)',
+                style: TextStyle(color: palette.inkMuted, fontSize: 10),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          for (var stars = 5; stars >= 1; stars--)
+            _ratingBar(
+              palette,
+              stars,
+              _ratingDistribution[stars] ?? 0,
+              maxCount,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _ratingBar(
+    CarelinkPalette palette,
+    int stars,
+    int count,
+    int maxCount,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 14,
+            child: Text(
+              '$stars',
+              style: TextStyle(
+                color: stars == 1 ? Colors.red : palette.inkDark,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                value: maxCount == 0 ? 0 : count / maxCount,
+                minHeight: 6,
+                backgroundColor: palette.stroke.withValues(alpha: 0.7),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  stars == 1 ? Colors.red : AppColors.primary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 24,
+            child: Text(
+              '$count',
+              textAlign: TextAlign.end,
+              style: TextStyle(color: palette.inkMuted, fontSize: 10),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _recommendationReasonRows(CarelinkPalette palette) {
+    final breakdown = _activeResult!.breakdown;
+    final metrics = <(IconData, String, double)>[
+      (
+        Icons.health_and_safety_outlined,
+        _ar ? 'التوافق الطبي' : 'Medical compatibility',
+        breakdown.medicalCompatibility,
+      ),
+      (
+        Icons.medical_services_outlined,
+        _ar ? 'توافق التخصص' : 'Specialty match',
+        breakdown.specialization,
+      ),
+      (
+        Icons.schedule_rounded,
+        _ar ? 'التوفر' : 'Availability',
+        breakdown.availability,
+      ),
+      (
+        Icons.location_on_outlined,
+        _ar ? 'ملاءمة الموقع' : 'Location fit',
+        breakdown.location,
+      ),
+      (
+        Icons.star_outline_rounded,
+        _ar ? 'التقييم' : 'Rating score',
+        breakdown.rating,
+      ),
+    ];
+    final rows = <Widget>[];
+    for (var index = 0; index < metrics.length; index++) {
+      final metric = metrics[index];
+      rows.add(
+        _reasonRow(
+          palette,
+          metric.$1,
+          '${metric.$2}: ${(metric.$3 * 100).round()}%',
+        ),
+      );
+      if (index != metrics.length - 1) {
+        rows.add(const SizedBox(height: 10));
+      }
+    }
+    return rows;
   }
 
   Widget _reasonRow(CarelinkPalette palette, IconData icon, String label) {
@@ -693,13 +1088,6 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
     );
   }
 
-  String _overallMatchLabel(int score) {
-    if (score >= 85) return _ar ? 'توافق ممتاز' : 'Excellent Match';
-    if (score >= 70) return _ar ? 'توافق جيد جداً' : 'Very Good Match';
-    if (score >= 50) return _ar ? 'توافق جيد' : 'Good Match';
-    return _ar ? 'توافق متوسط' : 'Moderate Match';
-  }
-
   String _providerSpecialty(ProviderModel provider) {
     final specialty = provider.specialization.trim();
     final invalid = {
@@ -711,11 +1099,29 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
       'unknown',
       'carid',
     };
-    if (!invalid.contains(specialty.toLowerCase())) return specialty;
+    if (!invalid.contains(specialty.toLowerCase())) {
+      return _localizedSpecialty(specialty);
+    }
 
     final service = provider.serviceType.trim();
-    if (!invalid.contains(service.toLowerCase())) return service;
+    if (!invalid.contains(service.toLowerCase())) {
+      return _localizedSpecialty(service);
+    }
     return _ar ? 'مقدم رعاية عامة' : 'General Care Provider';
+  }
+
+  String _localizedSpecialty(String value) {
+    if (!_ar) return value;
+    const values = <String, String>{
+      'home nursing': 'تمريض منزلي',
+      'wound care': 'رعاية جروح',
+      'general doctor': 'طب عام',
+      'general care': 'رعاية عامة',
+      'cardiology': 'أمراض القلب',
+      'physiotherapy': 'علاج طبيعي',
+      'elderly care': 'رعاية كبار السن',
+    };
+    return values[value.trim().toLowerCase()] ?? value;
   }
 
   String _distanceLabel(double? value) {
@@ -764,7 +1170,7 @@ class _AiProviderDetailsScreenState extends State<AiProviderDetailsScreen> {
 }
 
 const _enStrings = <String, String>{
-  'title': 'Why this provider?',
+  'title': 'Care Provider Details',
   'match': 'match',
   'continue': 'Continue Booking',
   'privacy':
@@ -785,10 +1191,25 @@ const _enStrings = <String, String>{
   'reasonCondition': 'Suitable for your condition',
   'reasonArea': 'Available in your area',
   'reasonRating': 'Well rated by patients',
+  'reasonAvailability': 'Available at a suitable time',
+  'aboutProvider': 'About the provider',
+  'ratings': 'Ratings',
+  'bookAppointment': 'Book appointment',
+  'chat': 'Chat',
+  'chatRequiresBooking':
+      'You can message this provider after sending a booking request or having an appointment.',
+  'chatFailed': 'Unable to open chat. Please try again.',
+  'serviceConsultation': 'Consultation',
+  'serviceFollowUp': 'Follow-up',
+  'serviceDiagnosis': 'Assessment',
+  'serviceMedication': 'Medication',
+  'serviceDressings': 'Dressings',
+  'servicePostOp': 'Post-op care',
+  'serviceWounds': 'Wound care',
 };
 
 const _arStrings = <String, String>{
-  'title': 'لماذا هذا المقدم؟',
+  'title': 'تفاصيل مقدم الرعاية',
   'match': 'توافق',
   'continue': 'متابعة الحجز',
   'privacy': 'خصوصيتك محمية، ولا نشارك بياناتك مع أي طرف خارجي.',
@@ -808,4 +1229,19 @@ const _arStrings = <String, String>{
   'reasonCondition': 'مناسب لحالتك',
   'reasonArea': 'متاح في منطقتك',
   'reasonRating': 'تقييمه جيد',
+  'reasonAvailability': 'متاح في الوقت المناسب',
+  'aboutProvider': 'عن مقدم الرعاية',
+  'ratings': 'التقييمات',
+  'bookAppointment': 'احجز موعد',
+  'chat': 'محادثة',
+  'chatRequiresBooking':
+      'يمكنك مراسلة مقدم الرعاية بعد إرسال طلب حجز أو وجود موعد معه.',
+  'chatFailed': 'تعذر فتح المحادثة. حاول مرة أخرى.',
+  'serviceConsultation': 'استشارة طبية',
+  'serviceFollowUp': 'متابعة الحالة',
+  'serviceDiagnosis': 'تقييم الحالة',
+  'serviceMedication': 'إعطاء الأدوية',
+  'serviceDressings': 'تغيير الضمادات',
+  'servicePostOp': 'العناية بعد العمليات',
+  'serviceWounds': 'رعاية الجروح',
 };

@@ -51,9 +51,6 @@ function validateUnifiedSignupBody(body) {
   const experienceYearsRaw = body.experienceYears;
   const licenseNumber = String(body.licenseNumber || '').trim();
   const serviceType = String(body.serviceType || '').trim();
-  const chronicDiseases = String(body.chronicDiseases || '').trim();
-  const allergies = String(body.allergies || '').trim();
-  const currentMedications = String(body.currentMedications || '').trim();
   const gpsLat =
     body.gpsLat == null || body.gpsLat === '' ? null : Number(body.gpsLat);
   const gpsLng =
@@ -101,11 +98,11 @@ function validateUnifiedSignupBody(body) {
       }
     }
   } else if (role === 'nurse' || role === 'doctor') {
-    if (!specialization) {
+    if (role === 'doctor' && !specialization) {
       return {
         ok: false,
         status: 400,
-        error: 'Nurses and doctors must provide specialization',
+        error: 'Doctors must provide specialization',
       };
     }
     const parsedExp = Number.isFinite(Number(experienceYearsRaw))
@@ -142,9 +139,6 @@ function validateUnifiedSignupBody(body) {
       experienceYears: parsedExperience,
       licenseNumber,
       serviceType,
-      chronicDiseases,
-      allergies,
-      currentMedications,
       gpsLat: parsedGpsLat,
       gpsLng: parsedGpsLng,
     },
@@ -267,9 +261,6 @@ async function upsertUserRow(db, connection, v, opts) {
 async function upsertPatientProfile(db, connection, v, userId, isResume) {
   const hasPatientDob = await hasColumn(db, 'patient', 'dateOfBirth');
   const hasPatientGender = await hasColumn(db, 'patient', 'gender');
-  const hasChronic = await hasColumn(db, 'patient', 'chronicDiseases');
-  const hasAllergies = await hasColumn(db, 'patient', 'allergies');
-  const hasMeds = await hasColumn(db, 'patient', 'currentMedications');
 
   const lat = Number.isFinite(v.gpsLat) ? v.gpsLat : 0;
   const lng = Number.isFinite(v.gpsLng) ? v.gpsLng : 0;
@@ -289,18 +280,6 @@ async function upsertPatientProfile(db, connection, v, userId, isResume) {
       cols.push('gender = ?');
       vals.push(v.gender);
     }
-    if (hasChronic) {
-      cols.push('chronicDiseases = ?');
-      vals.push(v.chronicDiseases || null);
-    }
-    if (hasAllergies) {
-      cols.push('allergies = ?');
-      vals.push(v.allergies || null);
-    }
-    if (hasMeds) {
-      cols.push('currentMedications = ?');
-      vals.push(v.currentMedications || null);
-    }
     vals.push(userId);
     if (pr.length) {
       await connection.query(
@@ -317,18 +296,6 @@ async function upsertPatientProfile(db, connection, v, userId, isResume) {
       if (hasPatientGender) {
         iCols.push('gender');
         iVals.push(v.gender);
-      }
-      if (hasChronic) {
-        iCols.push('chronicDiseases');
-        iVals.push(v.chronicDiseases || null);
-      }
-      if (hasAllergies) {
-        iCols.push('allergies');
-        iVals.push(v.allergies || null);
-      }
-      if (hasMeds) {
-        iCols.push('currentMedications');
-        iVals.push(v.currentMedications || null);
       }
       await connection.query(
         `INSERT INTO patient (${iCols.join(', ')}) VALUES (${iCols.map(() => '?').join(', ')})`,
@@ -347,18 +314,6 @@ async function upsertPatientProfile(db, connection, v, userId, isResume) {
   if (hasPatientGender) {
     patientColumns.push('gender');
     patientValues.push(v.gender);
-  }
-  if (hasChronic) {
-    patientColumns.push('chronicDiseases');
-    patientValues.push(v.chronicDiseases || null);
-  }
-  if (hasAllergies) {
-    patientColumns.push('allergies');
-    patientValues.push(v.allergies || null);
-  }
-  if (hasMeds) {
-    patientColumns.push('currentMedications');
-    patientValues.push(v.currentMedications || null);
   }
   await connection.query(
     `INSERT INTO patient (${patientColumns.join(', ')})
@@ -393,7 +348,7 @@ async function upsertProviderProfile(db, connection, v, userId, role, isResume) 
   ];
   const providerValues = [
     userId,
-    v.specialization,
+    role === 'doctor' ? v.specialization : null,
     0.0,
     1,
     Number.isFinite(v.gpsLat) ? v.gpsLat : null,

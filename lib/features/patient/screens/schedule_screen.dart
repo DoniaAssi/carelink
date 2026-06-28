@@ -1,7 +1,10 @@
 // ignore_for_file: unused_element
 
 import 'package:flutter/material.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:intl/intl.dart' as intl;
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
@@ -34,6 +37,9 @@ enum _BookingState {
   waitingPayment,
   confirmed,
   inProgress,
+  requestExpired,
+  missed,
+  pendingCompletion,
   completed,
   cancelled,
 }
@@ -48,6 +54,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   String? _payingId;
   _BookingFilter _filter = _BookingFilter.all;
   DateTime? _selectedDay;
+  DateTime _focusedDay = DateTime.now();
 
   bool get _isArabic => context.l10n.isArabic;
   String _t(String english, String arabic) => _isArabic ? arabic : english;
@@ -55,6 +62,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   @override
   void initState() {
     super.initState();
+    initializeDateFormatting('ar');
     _loadAppointments();
   }
 
@@ -111,7 +119,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _error = error.toString().replaceFirst('Exception: ', '');
+        _error = context.l10n.userMessage(error);
       });
     }
   }
@@ -122,6 +130,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final method = (row['paymentMethod'] ?? '').toString().trim().toLowerCase();
     final isPaid = payment == 'paid';
     final cashOnVisit = method == 'cash' || method == 'cash_on_visit';
+    final hasPassed = _dateOf(row)?.isBefore(DateTime.now()) ?? false;
 
     if (status == 'cancelled' || status == 'canceled' || status == 'rejected') {
       return _BookingState.cancelled;
@@ -129,8 +138,46 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     if (status == 'completed' || status == 'done') {
       return _BookingState.completed;
     }
+    if (status == 'expired' || status == 'request_expired') {
+      return _BookingState.requestExpired;
+    }
+    if (status == 'missed' || status == 'no_show') {
+      return _BookingState.missed;
+    }
+    if (status == 'pending_completion') {
+      return _BookingState.pendingCompletion;
+    }
     if (status == 'in_progress' || status == 'waiting_report') {
-      return _BookingState.inProgress;
+      return hasPassed
+          ? _BookingState.pendingCompletion
+          : _BookingState.inProgress;
+    }
+    const waitingProviderStatuses = {
+      'pending_provider_approval',
+      'pending',
+      'waiting',
+      'awaiting_provider_approval',
+      'waiting_provider_response',
+      'requested',
+      'request_sent',
+      'new',
+    };
+    if (waitingProviderStatuses.contains(status) && hasPassed) {
+      return _BookingState.requestExpired;
+    }
+    const approvedStatuses = {
+      'pending_payment',
+      'payment_pending',
+      'confirmed',
+      'accepted',
+      'scheduled',
+      'approved',
+      'provider_approved',
+      'paid',
+      'upcoming',
+    };
+    if (approvedStatuses.contains(status) && hasPassed) {
+      return _BookingState.missed;
     }
     if (status == 'pending_payment' ||
         status == 'payment_pending' ||
@@ -257,11 +304,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       await _loadAppointments();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Exception: ', '')),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.l10n.userMessage(error))));
     } finally {
       if (mounted) setState(() => _payingId = null);
     }
@@ -358,7 +403,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       );
       return provider;
     } catch (error) {
-      if (mounted) _showSnack(error.toString().replaceFirst('Exception: ', ''));
+      if (mounted) _showSnack(context.l10n.userMessage(error));
       return null;
     }
   }
@@ -386,10 +431,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = CarelinkPalette.of(context);
-    return Scaffold(
+    return PatientScaffold(
       backgroundColor: palette.pageBg,
       appBar: PatientAppBar(
-        title: _t('My Bookings', 'مواعيدي'),
+        titleWidget: Text(
+          _t('My Bookings', 'مواعيدي'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Color(0xFF0F766E),
+            fontSize: 23,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+          ),
+        ),
         showBack: false,
         showMessages: true,
         onMessageTap: () {
@@ -409,7 +464,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              SliverToBoxAdapter(child: _weekStrip(palette)),
+              SliverToBoxAdapter(child: _dateStrip(palette)),
               SliverToBoxAdapter(child: _filters(palette)),
               if (_isLoading)
                 const SliverFillRemaining(
@@ -430,7 +485,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 )
               else
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 150),
                   sliver: SliverList.list(
                     children: _dateGroups.entries
                         .map((entry) => _dateGroup(entry, palette))
@@ -444,108 +499,131 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  Widget _weekStrip(CarelinkPalette palette) {
-    final today = DateTime.now();
-    final start = today.subtract(Duration(days: today.weekday - 1));
-    final days = List.generate(7, (index) => start.add(Duration(days: index)));
+  Widget _dateStrip(CarelinkPalette palette) {
+    const primary = Color(0xFF0F766E);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final days = List.generate(8, (index) => today.add(Duration(days: index)));
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 7, 16, 9),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: palette.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: palette.stroke),
+          color: palette.isDark ? palette.surface : Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(
+                alpha: palette.isDark ? 0.16 : 0.05,
+              ),
+              blurRadius: 20,
+              offset: const Offset(0, 7),
+            ),
+          ],
         ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            const spacing = 6.0;
-            final minimumCardWidth = _isArabic ? 76.0 : 64.0;
-            final fittedCardWidth =
-                (constraints.maxWidth - (spacing * 6)) / days.length;
-            final cardWidth = fittedCardWidth > minimumCardWidth
-                ? fittedCardWidth
-                : minimumCardWidth;
-
-            return SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: List.generate(days.length, (index) {
-                  final day = days[index];
-                  final selected =
-                      _selectedDay != null && _sameDay(_selectedDay!, day);
-                  final isToday = _sameDay(today, day);
-                  final hasBooking = _appointments.any((row) {
-                    final date = _dateOf(row);
-                    return date != null && _sameDay(date, day);
-                  });
-
-                  return Padding(
-                    padding: EdgeInsetsDirectional.only(
-                      end: index == days.length - 1 ? 0 : spacing,
-                    ),
-                    child: SizedBox(
-                      width: cardWidth,
+        child: Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 90,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: days.length,
+                  separatorBuilder: (_, index) => const SizedBox(width: 7),
+                  itemBuilder: (context, index) {
+                    final day = days[index];
+                    final selected =
+                        _selectedDay != null && _sameDay(_selectedDay!, day);
+                    final isToday = _sameDay(today, day);
+                    final hasBooking = _appointments.any((row) {
+                      final date = _dateOf(row);
+                      return date != null && _sameDay(date, day);
+                    });
+                    return SizedBox(
+                      width: _isArabic ? 64 : 58,
                       child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(16),
                         onTap: () => setState(() {
                           _selectedDay = selected ? null : day;
+                          _focusedDay = day;
                         }),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
+                            horizontal: 5,
                             vertical: 9,
                           ),
                           decoration: BoxDecoration(
                             color: selected
-                                ? AppColors.primary
-                                : palette.surfaceSoft,
-                            borderRadius: BorderRadius.circular(12),
+                                ? primary
+                                : palette.isDark
+                                ? palette.surfaceSoft
+                                : isToday
+                                ? const Color(0xFFE6F7F3)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(16),
                             border: Border.all(
                               color: selected
-                                  ? AppColors.primary
+                                  ? primary
                                   : isToday
-                                  ? AppColors.primary
-                                  : palette.stroke,
+                                  ? const Color(
+                                      0xFF14B8A6,
+                                    ).withValues(alpha: 0.55)
+                                  : palette.stroke.withValues(alpha: 0.7),
                             ),
+                            boxShadow: null,
                           ),
                           child: Column(
-                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Text(
                                 _shortDay(day),
                                 maxLines: 1,
-                                textAlign: TextAlign.center,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: selected
                                       ? Colors.white
                                       : palette.inkDark,
-                                  fontSize: _isArabic ? 12 : 11,
+                                  fontSize: _isArabic ? 10.5 : 10,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              const SizedBox(height: 5),
+                              const SizedBox(height: 4),
                               Text(
                                 '${day.day}',
                                 style: TextStyle(
                                   color: selected
                                       ? Colors.white
                                       : palette.inkDark,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              const SizedBox(height: 5),
+                              const SizedBox(height: 2),
+                              Text(
+                                _monthName(day),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: selected
+                                      ? Colors.white.withValues(alpha: 0.86)
+                                      : palette.inkMuted,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
                               Container(
-                                width: 5,
-                                height: 5,
+                                width: 7,
+                                height: 7,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color: hasBooking
                                       ? selected
                                             ? Colors.white
-                                            : AppColors.primary
+                                            : primary
                                       : Colors.transparent,
                                 ),
                               ),
@@ -553,12 +631,189 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                           ),
                         ),
                       ),
-                    ),
-                  );
-                }),
+                    );
+                  },
+                ),
               ),
-            );
-          },
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 48,
+              child: InkWell(
+                onTap: _showCalendarPicker,
+                borderRadius: BorderRadius.circular(24),
+                child: Tooltip(
+                  message: _t('Calendar', 'التقويم'),
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: primary.withValues(
+                        alpha: palette.isDark ? 0.18 : 0.10,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.calendar_month_rounded,
+                      color: primary,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCalendarPicker() async {
+    const primary = Color(0xFF0F766E);
+    const accent = Color(0xFF14B8A6);
+    final palette = CarelinkPalette.of(context);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    var sheetFocused = _selectedDay ?? _focusedDay;
+    if (sheetFocused.isBefore(today)) sheetFocused = today;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Directionality(
+        textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+        child: StatefulBuilder(
+          builder: (context, setSheetState) => Container(
+            padding: EdgeInsets.fromLTRB(
+              18,
+              12,
+              18,
+              18 + MediaQuery.paddingOf(context).bottom,
+            ),
+            decoration: BoxDecoration(
+              color: palette.isDark ? palette.surface : Colors.white,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: palette.stroke,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _t('Choose a date', 'اختر تاريخاً'),
+                          style: TextStyle(
+                            color: palette.inkDark,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close_rounded),
+                        color: palette.inkMuted,
+                      ),
+                    ],
+                  ),
+                  TableCalendar<Map<String, dynamic>>(
+                    locale: _isArabic ? 'ar' : 'en_US',
+                    firstDay: today,
+                    lastDay: DateTime(today.year + 5, 12, 31),
+                    focusedDay: sheetFocused,
+                    currentDay: today,
+                    calendarFormat: CalendarFormat.month,
+                    availableCalendarFormats: const {
+                      CalendarFormat.month: 'Month',
+                    },
+                    startingDayOfWeek: StartingDayOfWeek.sunday,
+                    selectedDayPredicate: (day) =>
+                        _selectedDay != null && _sameDay(_selectedDay!, day),
+                    enabledDayPredicate: (day) =>
+                        !DateTime(day.year, day.month, day.day).isBefore(today),
+                    eventLoader: (day) => _appointments.where((row) {
+                      final date = _dateOf(row);
+                      return date != null && _sameDay(date, day);
+                    }).toList(),
+                    onDaySelected: (selectedDay, focusedDay) {
+                      setState(() {
+                        _selectedDay = DateTime(
+                          selectedDay.year,
+                          selectedDay.month,
+                          selectedDay.day,
+                        );
+                        _focusedDay = focusedDay;
+                      });
+                      Navigator.pop(sheetContext);
+                    },
+                    onPageChanged: (focusedDay) {
+                      setSheetState(() => sheetFocused = focusedDay);
+                    },
+                    rowHeight: 44,
+                    headerStyle: HeaderStyle(
+                      formatButtonVisible: false,
+                      titleCentered: true,
+                      leftChevronIcon: const Icon(
+                        Icons.chevron_left_rounded,
+                        color: primary,
+                      ),
+                      rightChevronIcon: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: primary,
+                      ),
+                      titleTextStyle: TextStyle(
+                        color: palette.inkDark,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    calendarStyle: CalendarStyle(
+                      outsideDaysVisible: false,
+                      selectedDecoration: const BoxDecoration(
+                        color: primary,
+                        shape: BoxShape.circle,
+                      ),
+                      selectedTextStyle: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      todayDecoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.10),
+                        shape: BoxShape.circle,
+                      ),
+                      todayTextStyle: const TextStyle(
+                        color: primary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      markerDecoration: const BoxDecoration(
+                        color: accent,
+                        shape: BoxShape.circle,
+                      ),
+                      markerSize: 5,
+                      markersMaxCount: 1,
+                      disabledTextStyle: TextStyle(
+                        color: palette.inkMuted.withValues(alpha: 0.42),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -578,7 +833,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
         itemCount: filters.length,
-        separatorBuilder: (context, index) => const SizedBox(width: 7),
+        separatorBuilder: (context, index) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final filter = filters[index];
           final selected = filter.$1 == _filter;
@@ -587,17 +842,23 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             selected: selected,
             onSelected: (_) => setState(() => _filter = filter.$1),
             selectedColor: AppColors.primary,
-            backgroundColor: palette.surface,
+            backgroundColor: palette.isDark ? palette.surface : Colors.white,
             side: BorderSide(
-              color: selected ? AppColors.primary : palette.stroke,
+              color: selected
+                  ? AppColors.primary
+                  : palette.isDark
+                  ? palette.stroke
+                  : const Color(0xFFE5EEEC),
             ),
+            shape: const StadiumBorder(),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             labelStyle: TextStyle(
               color: selected ? Colors.white : palette.inkDark,
-              fontSize: 12,
+              fontSize: 11.5,
               fontWeight: FontWeight.w700,
             ),
             showCheckmark: false,
-            visualDensity: VisualDensity.compact,
+            visualDensity: const VisualDensity(horizontal: 0, vertical: -1),
           );
         },
       ),
@@ -611,28 +872,40 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final today = DateTime.now();
     final tomorrow = today.add(const Duration(days: 1));
     final date = entry.key;
+    final startOfToday = DateTime(today.year, today.month, today.day);
+    final isPast = date.isBefore(startOfToday);
     final title = _sameDay(date, today)
         ? _t('Today', 'اليوم')
         : _sameDay(date, tomorrow)
         ? _t('Tomorrow', 'غداً')
         : _longDay(date);
     return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 4),
+      padding: const EdgeInsets.only(top: 10, bottom: 5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
+              const Icon(
+                Icons.calendar_today_rounded,
+                color: Color(0xFF0F766E),
+                size: 18,
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   '$title, ${_monthDay(date)}',
                   style: TextStyle(
                     color: palette.inkDark,
-                    fontSize: 15,
+                    fontSize: 16,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
+              if (isPast) ...[
+                _badge(_t('Past', 'سابق'), const Color(0xFF64748B), palette),
+                const SizedBox(width: 8),
+              ],
               Text(
                 _t(
                   '${entry.value.length} appointment${entry.value.length == 1 ? '' : 's'}',
@@ -640,18 +913,34 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 ),
                 style: TextStyle(
                   color: palette.inkMuted,
-                  fontSize: 11,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: 10),
           Container(
             decoration: BoxDecoration(
-              color: palette.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: palette.stroke),
+              color: palette.isDark
+                  ? palette.surface
+                  : isPast
+                  ? const Color(0xFFF1F5F4)
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: palette.isDark
+                        ? 0.16
+                        : isPast
+                        ? 0.025
+                        : 0.05,
+                  ),
+                  blurRadius: 18,
+                  offset: const Offset(0, 7),
+                ),
+              ],
             ),
             clipBehavior: Clip.antiAlias,
             child: Column(
@@ -659,10 +948,19 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 for (var index = 0; index < entry.value.length; index++) ...[
                   PatientAnimatedListItem(
                     index: index,
-                    child: _appointmentRow(entry.value[index], palette),
+                    child: _appointmentRow(
+                      entry.value[index],
+                      palette,
+                      isPast: isPast,
+                    ),
                   ),
                   if (index < entry.value.length - 1)
-                    Divider(height: 1, color: palette.stroke),
+                    Divider(
+                      height: 1,
+                      indent: 14,
+                      endIndent: 14,
+                      color: palette.stroke.withValues(alpha: 0.65),
+                    ),
                 ],
               ],
             ),
@@ -672,7 +970,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  Widget _appointmentRow(Map<String, dynamic> row, CarelinkPalette palette) {
+  Widget _appointmentRow(
+    Map<String, dynamic> row,
+    CarelinkPalette palette, {
+    required bool isPast,
+  }) {
     final date = _dateOf(row);
     final state = _stateOf(row);
     final name = _providerDisplayName(row);
@@ -682,99 +984,128 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
     return PatientPressable(
       onTap: () => _openDetails(row),
-      borderRadius: BorderRadius.circular(14),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 11, 10, 11),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 55,
-              child: Text(
-                date == null
-                    ? '--:--'
-                    : intl.DateFormat('h:mm\na').format(date),
-                textAlign: TextAlign.center,
-                textDirection: TextDirection.ltr,
-                style: TextStyle(
-                  color: palette.inkDark,
-                  fontSize: 11,
-                  height: 1.2,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-            Container(
-              width: 2,
-              height: 54,
-              margin: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: _statusColor(row, state),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            CircleAvatar(
-              radius: 21,
-              backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-              foregroundImage: image == null ? null : NetworkImage(image),
-              child: image == null
-                  ? const Icon(
-                      Icons.medical_services_outlined,
-                      color: AppColors.primary,
-                      size: 19,
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      borderRadius: BorderRadius.circular(22),
+      child: Stack(
+        children: [
+          Opacity(
+            opacity: isPast ? 0.72 : 1,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 16, 12, 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.inkDark,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
+                  SizedBox(
+                    width: 50,
+                    child: Text(
+                      date == null
+                          ? '--:--'
+                          : intl.DateFormat('h:mm\na').format(date),
+                      textAlign: TextAlign.center,
+                      textDirection: TextDirection.ltr,
+                      style: TextStyle(
+                        color: palette.inkDark,
+                        fontSize: 11.5,
+                        height: 1.25,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    service.isEmpty
-                        ? _t('Healthcare appointment', 'موعد رعاية صحية')
-                        : service,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: palette.inkMuted, fontSize: 11.5),
+                  Container(
+                    width: 2,
+                    height: 62,
+                    margin: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F766E),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 5,
-                    runSpacing: 4,
-                    children: [
-                      _badge(
-                        _statusLabel(row, state),
-                        _statusColor(row, state),
-                        palette,
-                      ),
-                      _badge(_paymentLabel(row), _paymentColor(row), palette),
-                      if (state == _BookingState.completed && !_hasRating(row))
-                        _badge(
-                          _t('Waiting for your rating', 'بانتظار تقييمك'),
-                          const Color(0xFFFFB020),
-                          palette,
+                  CircleAvatar(
+                    radius: 23,
+                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                    foregroundImage: image == null ? null : NetworkImage(image),
+                    child: image == null
+                        ? const Icon(
+                            Icons.medical_services_outlined,
+                            color: AppColors.primary,
+                            size: 21,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.inkDark,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                    ],
+                        const SizedBox(height: 3),
+                        Text(
+                          service.isEmpty
+                              ? _t('Healthcare appointment', 'موعد رعاية صحية')
+                              : service,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.inkMuted,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            _badge(
+                              _statusLabel(row, state),
+                              _statusColor(row, state),
+                              palette,
+                            ),
+                            _badge(
+                              _paymentLabel(row, state),
+                              _paymentColor(row, state),
+                              palette,
+                            ),
+                            if (state == _BookingState.completed &&
+                                !_hasRating(row))
+                              _badge(
+                                _t('Waiting for your rating', 'بانتظار تقييمك'),
+                                const Color(0xFFFFB020),
+                                palette,
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 7),
+                  _rowAction(row, state, palette, isPast: isPast),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            _rowAction(row, state, palette),
-          ],
-        ),
+          ),
+          PositionedDirectional(
+            top: 12,
+            end: 14,
+            child: Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: isPast
+                    ? const Color(0xFF94A3B8)
+                    : const Color(0xFF0F766E),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -782,8 +1113,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Widget _rowAction(
     Map<String, dynamic> row,
     _BookingState state,
-    CarelinkPalette palette,
-  ) {
+    CarelinkPalette palette, {
+    required bool isPast,
+  }) {
     final id = (row['appointmentId'] ?? row['requestId'] ?? '').toString();
     if (state == _BookingState.waitingPayment) {
       return FilledButton(
@@ -809,8 +1141,36 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final status = _normalizedStatus(row);
     final paymentStatus = _normalizedPaymentStatus(row);
 
-    if (state == _BookingState.cancelled) {
-      return _bookAgainButton(row, palette);
+    if (state == _BookingState.cancelled ||
+        state == _BookingState.completed ||
+        isPast) {
+      final canRebook = _hasFutureAvailabilityHint(row);
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Tooltip(
+            message: canRebook
+                ? _t('Book Again', 'احجز مجدداً')
+                : _t('No future availability', 'لا توجد مواعيد مستقبلية متاحة'),
+            child: IconButton(
+              onPressed: canRebook ? () => _showRebookChoices(row) : null,
+              style: IconButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                disabledForegroundColor: palette.inkMuted.withValues(
+                  alpha: 0.45,
+                ),
+                backgroundColor: palette.surfaceSoft,
+                fixedSize: const Size(34, 34),
+                padding: EdgeInsets.zero,
+                shape: const CircleBorder(),
+              ),
+              icon: const Icon(Icons.replay_rounded, size: 18),
+            ),
+          ),
+          const SizedBox(width: 4),
+          _detailsButton(row, palette),
+        ],
+      );
     }
 
     // Convert requestedRescheduleAt if present
@@ -868,17 +1228,38 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         child: Text(_t('Book Again', 'احجز مجدداً')),
       );
     }
+    return _detailsButton(row, palette);
+  }
+
+  Widget _detailsButton(Map<String, dynamic> row, CarelinkPalette palette) {
     return IconButton(
       tooltip: _t('Details', 'التفاصيل'),
       onPressed: () => _openDetails(row),
       style: IconButton.styleFrom(
         foregroundColor: AppColors.primary,
         backgroundColor: AppColors.primary.withValues(alpha: 0.08),
+        fixedSize: const Size(38, 38),
+        shape: const CircleBorder(),
       ),
       icon: Icon(
         _isArabic ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
       ),
     );
+  }
+
+  bool _hasFutureAvailabilityHint(Map<String, dynamic> row) {
+    if (!_hasProviderId(row)) return false;
+    final explicit =
+        row['providerHasFutureAvailability'] ??
+        row['hasFutureAvailability'] ??
+        row['providerIsAvailable'];
+    if (explicit == false || explicit == 0 || explicit == 'false') return false;
+
+    if (row.containsKey('availableSlots')) {
+      final slots = row['availableSlots'];
+      if (slots is List) return slots.isNotEmpty;
+    }
+    return true;
   }
 
   Widget _bookAgainButton(
@@ -926,7 +1307,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   Widget _badge(String label, Color color, CarelinkPalette palette) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
         color: color.withValues(alpha: palette.isDark ? 0.18 : 0.1),
         borderRadius: BorderRadius.circular(20),
@@ -935,7 +1316,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         label,
         style: TextStyle(
           color: color,
-          fontSize: 9.5,
+          fontSize: 10.5,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -958,6 +1339,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       _BookingState.waitingPayment => _t('Waiting Payment', 'بانتظار الدفع'),
       _BookingState.confirmed => _t('Confirmed', 'مؤكد'),
       _BookingState.inProgress => _t('In Progress', 'قيد التنفيذ'),
+      _BookingState.requestExpired => _t(
+        'Request Expired',
+        'انتهت صلاحية الطلب',
+      ),
+      _BookingState.missed => _t('Missed Appointment', 'موعد فائت'),
+      _BookingState.pendingCompletion => _t(
+        'Pending Completion',
+        'بانتظار تأكيد الإتمام',
+      ),
       _BookingState.completed => _t('Completed', 'مكتمل'),
       _BookingState.cancelled => _t('Cancelled', 'ملغي'),
     };
@@ -971,12 +1361,18 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       _BookingState.waitingPayment => const Color(0xFFE56B16),
       _BookingState.confirmed => AppColors.primary,
       _BookingState.inProgress => const Color(0xFF2583C5),
+      _BookingState.requestExpired => const Color(0xFF64748B),
+      _BookingState.missed => const Color(0xFF9A5B45),
+      _BookingState.pendingCompletion => const Color(0xFF7C6FA8),
       _BookingState.completed => const Color(0xFF4D7FA7),
       _BookingState.cancelled => const Color(0xFFC95353),
     };
   }
 
-  String _paymentLabel(Map<String, dynamic> row) {
+  String _paymentLabel(Map<String, dynamic> row, _BookingState bookingState) {
+    if (bookingState == _BookingState.missed) {
+      return _t('Payment Under Review', 'الدفع قيد المراجعة');
+    }
     final status = (row['paymentStatus'] ?? '').toString().trim().toLowerCase();
     return switch (status) {
       'paid' => _t('Paid', 'مدفوع'),
@@ -987,7 +1383,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     };
   }
 
-  Color _paymentColor(Map<String, dynamic> row) {
+  Color _paymentColor(Map<String, dynamic> row, _BookingState bookingState) {
+    if (bookingState == _BookingState.missed) {
+      return const Color(0xFF64748B);
+    }
     final status = (row['paymentStatus'] ?? '').toString().trim().toLowerCase();
     return switch (status) {
       'paid' => AppColors.success,
@@ -1051,8 +1450,35 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     if (!_isArabic) {
       return intl.DateFormat('EEE').format(date);
     }
-    const days = ['إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت', 'أحد'];
+    const days = [
+      'الاثنين',
+      'الثلاثاء',
+      'الأربعاء',
+      'الخميس',
+      'الجمعة',
+      'السبت',
+      'الأحد',
+    ];
     return days[date.weekday - 1];
+  }
+
+  String _monthName(DateTime date) {
+    if (!_isArabic) return intl.DateFormat('MMM').format(date);
+    const months = [
+      'يناير',
+      'فبراير',
+      'مارس',
+      'أبريل',
+      'مايو',
+      'يونيو',
+      'يوليو',
+      'أغسطس',
+      'سبتمبر',
+      'أكتوبر',
+      'نوفمبر',
+      'ديسمبر',
+    ];
+    return months[date.month - 1];
   }
 
   String _longDay(DateTime date) {
