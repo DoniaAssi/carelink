@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:carelink/core/app_nav.dart';
+import 'package:carelink/features/admin/screens/admin_booking_review_screen.dart';
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
@@ -30,8 +32,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   String? _error;
   int _tabIndex = 0;
   String _requestFilter = 'all';
+  String _requestQuery = '';
+  String _providerFilter = 'all';
   String _userFilter = 'all';
   String _userQuery = '';
+  String _ratingFilter = 'all';
+  int _financeTab = 0;
+  String _transactionFilter = 'all';
+  String _payoutFilter = 'all';
   Map<String, dynamic> _data = const {};
 
   Map<String, dynamic> get _metrics =>
@@ -39,8 +47,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   List<Map<String, dynamic>> get _requests => _list(_data['requests']);
   List<Map<String, dynamic>> get _users => _list(_data['users']);
   List<Map<String, dynamic>> get _ratings => _list(_data['ratings']);
+  List<Map<String, dynamic>> get _bookingReviewItems =>
+      _list(_data['bookingReview']);
   Map<String, dynamic> get _performance =>
       Map<String, dynamic>.from(_data['performance'] ?? const {});
+  List<Map<String, dynamic>> get _serviceRequests =>
+      _list(_performance['recentRequests']);
   Map<String, dynamic> get _finance =>
       Map<String, dynamic>.from(_data['finance'] ?? const {});
   Map<String, dynamic> get _financeOverview =>
@@ -110,97 +122,677 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       case 1:
         return _requestsPage();
       case 2:
-        return _usersPage();
+        return _providersPage();
       case 3:
-        return _ratingsPage();
+        return _usersPage();
       case 4:
-        return _financePage();
+        return _ratingsPage();
       case 5:
-        return _pricingPage();
+        return _financePage();
       default:
         return _dashboardPage();
     }
   }
 
   Widget _dashboardPage() {
-    final pending = _requests
-        .where((r) => _text(r['approvalStatus']) == 'pending')
-        .take(3)
-        .toList();
-    final services = _list(_performance['services']).take(4).toList();
-    return _page(
-      title: 'Welcome, ${widget.user.fullName}',
-      subtitle: 'Here is your system overview today',
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
+        _adminTopBar(),
+        const SizedBox(height: 20),
+        _adminWelcomeCard(),
+        const SizedBox(height: 16),
+        _bookingReviewShortcut(),
+        const SizedBox(height: 22),
+        _dashboardSectionTitle('Users'),
+        const SizedBox(height: 10),
         GridView.count(
           crossAxisCount: 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.42,
+          childAspectRatio: 1.34,
           children: [
-            _statCard('Patients', _n('patients'), '${_n('totalUsers')} users'),
-            _statCard('Nurses', _n('nurses'), '${_n('doctors')} doctors'),
-            _statCard('Pending Reviews', _n('pendingProviders'), 'New'),
-            _statCard(
-              'Service Requests',
-              _n('totalRequests'),
-              '${_n('completedRequests')} completed',
+            _dashboardMetricCard(
+              title: 'Users',
+              value: _compactNumber(_metrics['totalUsers']),
+              trend: '+ 12%',
+              positive: true,
+            ),
+            _dashboardMetricCard(
+              title: 'Providers',
+              value: _compactNumber(
+                _int(_metrics['nurses']) + _int(_metrics['doctors']),
+              ),
+              trend: '+ 8%',
+              positive: true,
+            ),
+            _dashboardMetricCard(
+              title: 'Service Requests',
+              value: _compactNumber(_metrics['totalRequests']),
+              trend: '+ 15%',
+              positive: true,
+            ),
+            _dashboardMetricCard(
+              title: 'Pending Approvals',
+              value: _compactNumber(_metrics['pendingProviders']),
+              trend: '- 23%',
+              positive: false,
             ),
           ],
         ),
-        const SizedBox(height: 18),
-        _performancePanel(),
-        const SizedBox(height: 18),
-        _sectionHeader(
-          'Registration Requests Pending Review',
-          'View all',
-          () => setState(() => _tabIndex = 1),
-        ),
-        if (pending.isEmpty)
-          _empty('No pending registration requests right now')
-        else
-          ...pending.map(_requestCard),
-        const SizedBox(height: 12),
-        _sectionTitle('Top Requested Services'),
-        _whitePanel(
-          child: services.isEmpty
-              ? _emptyInline('No requested services yet')
-              : Column(children: services.map(_serviceBar).toList()),
-        ),
+        const SizedBox(height: 22),
+        _financeOverviewCard(),
+        const SizedBox(height: 22),
+        _requestsByStatusCard(),
       ],
     );
   }
 
   Widget _requestsPage() {
-    final filtered = _requests.where((r) {
-      final role = _text(r['role']);
-      final status = _text(r['approvalStatus']);
-      if (_requestFilter == 'all') return true;
-      if (_requestFilter == 'rejected') return status == 'rejected';
-      return role == _requestFilter;
+    final query = _requestQuery.trim().toLowerCase();
+    final filtered = _serviceRequests.where((request) {
+      final statusGroup = _serviceStatusGroup(_text(request['status']));
+      final haystack =
+          '${request['patientName']} ${request['providerName']} ${request['serviceType']} ${request['location']}'
+              .toLowerCase();
+      return (_requestFilter == 'all' || statusGroup == _requestFilter) &&
+          (query.isEmpty || haystack.contains(query));
     }).toList();
 
-    return _page(
-      title: 'Registration Requests',
-      subtitle: 'Review new nurses and doctors',
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
-        _filterRow(
-          value: _requestFilter,
-          options: const {
-            'all': 'All',
-            'nurse': 'Nurses',
-            'doctor': 'Doctors',
-            'rejected': 'Rejected',
-          },
-          onChanged: (v) => setState(() => _requestFilter = v),
-        ),
-        const SizedBox(height: 12),
+        _requestsTopBar('Service Requests'),
+        const SizedBox(height: 18),
+        _requestSearchRow(),
+        const SizedBox(height: 16),
+        _serviceRequestStatusTabs(),
+        const SizedBox(height: 16),
+        _bookingReviewInlineCard(),
+        const SizedBox(height: 16),
         if (filtered.isEmpty)
-          _empty('No requests match this filter')
+          _empty('No service requests match this filter')
         else
-          ...filtered.map(_requestCard),
+          ...filtered.map(_serviceRequestTile),
+        const SizedBox(height: 18),
+        _requestsTopBar('Reports & Complaints', compact: true),
+        const SizedBox(height: 12),
+        _reportsComplaintTabs(),
+        const SizedBox(height: 14),
+        if (_ratings.isEmpty)
+          _empty('No reports or feedback yet')
+        else
+          ..._ratings.take(6).map(_reportComplaintTile),
+      ],
+    );
+  }
+
+  Widget _requestsTopBar(String title, {bool compact = false}) {
+    return Row(
+      children: [
+        IconButton(
+          tooltip: 'Back',
+          onPressed: () => setState(() => _tabIndex = 0),
+          icon: const Icon(Icons.arrow_back_rounded, color: _teal, size: 21),
+        ),
+        Expanded(
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _ink,
+              fontSize: compact ? 15 : 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Language',
+          onPressed: () {},
+          icon: const Icon(Icons.language_rounded, color: _teal, size: 20),
+        ),
+        IconButton(
+          tooltip: 'Theme',
+          onPressed: () {},
+          icon: const Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openBookingReview() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            AdminBookingReviewScreen(serviceRequests: _serviceRequests),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  Widget _bookingReviewInlineCard() {
+    final count = _bookingReviewItems.length;
+    if (count == 0) {
+      return Container(
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE3F0EE)),
+          boxShadow: _softDashboardShadow,
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.verified_user_outlined, color: _teal, size: 20),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'No nurse bookings need admin review right now.',
+                style: TextStyle(
+                  color: Color(0xFF6B7C86),
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: _openBookingReview,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFDDEDEA)),
+          boxShadow: _softDashboardShadow,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE7F6F3),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.gavel_rounded, color: _darkTeal),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Booking Review',
+                    style: TextStyle(
+                      color: _ink,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$count nurse booking${count == 1 ? '' : 's'} need admin decision',
+                    style: const TextStyle(
+                      color: Color(0xFF6B7C86),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _pill('$count', const Color(0xFFE7FAF4), _teal),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded, color: _darkTeal),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _requestSearchRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            onChanged: (v) => setState(() => _requestQuery = v),
+            decoration: InputDecoration(
+              hintText: 'Search requests...',
+              hintStyle: const TextStyle(
+                color: Color(0xFFB5C2C4),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                color: Color(0xFFB5C2C4),
+                size: 20,
+              ),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        TextButton.icon(
+          onPressed: () => setState(() {
+            _requestFilter = _requestFilter == 'all' ? 'pending' : 'all';
+          }),
+          icon: const Icon(Icons.filter_list_rounded, size: 18),
+          label: const Text('Filter'),
+          style: TextButton.styleFrom(
+            foregroundColor: _teal,
+            textStyle: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _serviceRequestStatusTabs() {
+    final options = [
+      ('all', 'All', _serviceRequests.length),
+      (
+        'pending',
+        'Pending',
+        _serviceRequests
+            .where((r) => _serviceStatusGroup(_text(r['status'])) == 'pending')
+            .length,
+      ),
+      (
+        'in_progress',
+        'In Progress',
+        _serviceRequests
+            .where(
+              (r) => _serviceStatusGroup(_text(r['status'])) == 'in_progress',
+            )
+            .length,
+      ),
+      (
+        'completed',
+        'Completed',
+        _serviceRequests
+            .where(
+              (r) => _serviceStatusGroup(_text(r['status'])) == 'completed',
+            )
+            .length,
+      ),
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final option in options) ...[
+            _serviceRequestChip(option.$1, '${option.$2} (${option.$3})'),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _serviceRequestChip(String value, String label) {
+    final selected = _requestFilter == value;
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => setState(() => _requestFilter = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? _teal : const Color(0xFFE9F8F6),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: selected ? _teal : const Color(0xFFD9EEEC)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : _teal,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _serviceRequestTile(Map<String, dynamic> request) {
+    final status = _text(request['status'], fallback: 'pending');
+    final patientName = _text(request['patientName'], fallback: 'Patient');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE3F0EE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 23,
+            backgroundColor: _teal.withValues(alpha: 0.14),
+            child: Text(
+              _initials(patientName),
+              style: const TextStyle(
+                color: _teal,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  patientName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _text(request['serviceType'], fallback: 'Service request'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF64787C),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_rounded,
+                      color: _teal,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        _text(
+                          request['location'],
+                          fallback: 'Location not set',
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF6F8589),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                _shortDate(request['scheduledAt'] ?? request['createdAt']),
+                style: const TextStyle(
+                  color: _ink,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                _shortTime(request['scheduledAt'] ?? request['createdAt']),
+                style: const TextStyle(
+                  color: Color(0xFF6F8589),
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              _serviceStatusPill(status),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reportsComplaintTabs() {
+    return Row(
+      children: [
+        _reportsComplaintChip('Complaints (0)', true),
+        const SizedBox(width: 8),
+        _reportsComplaintChip('Feedback (${_ratings.length})', false),
+      ],
+    );
+  }
+
+  Widget _reportsComplaintChip(String label, bool selected) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+      decoration: BoxDecoration(
+        color: selected ? _teal : const Color(0xFFE9F8F6),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: selected ? Colors.white : _teal,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  Widget _reportComplaintTile(Map<String, dynamic> item) {
+    final status = _int(item['stars']) <= 2
+        ? 'New'
+        : _int(item['stars']) >= 4
+        ? 'Resolved'
+        : 'In Progress';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE3F0EE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: const Color(0xFF0AA0B8).withValues(alpha: 0.14),
+            child: Text(
+              _initials(item['patientName']),
+              style: const TextStyle(
+                color: Color(0xFF0AA0B8),
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _text(item['patientName'], fallback: 'Patient'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _text(item['comment'], fallback: 'Service feedback'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF64787C),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${_shortDate(item['createdAt'])} - ${_shortTime(item['createdAt'])}',
+                  style: const TextStyle(
+                    color: Color(0xFF9AA8AB),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _complaintStatusPill(status),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => _showRatingDetails(item),
+                style: TextButton.styleFrom(
+                  foregroundColor: _teal,
+                  textStyle: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                child: const Text('View'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showRatingDetails(Map<String, dynamic> item) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(_text(item['patientName'], fallback: 'Feedback')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _stars(_int(item['stars'])),
+            const SizedBox(height: 12),
+            Text(_text(item['comment'], fallback: 'No comment provided')),
+            const SizedBox(height: 12),
+            Text('Provider: ${_text(item['providerName'])}'),
+            Text('Service: ${_text(item['serviceType'])}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _serviceStatusPill(String status) {
+    final group = _serviceStatusGroup(status);
+    final color = _serviceStatusColor(group);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        _serviceStatusLabel(status),
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  Widget _complaintStatusPill(String status) {
+    final color = status == 'New'
+        ? const Color(0xFFE04F5F)
+        : status == 'Resolved'
+        ? const Color(0xFF1E9D69)
+        : const Color(0xFFD28A00);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        status,
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  Widget _providersPage() {
+    final providers = _requests.where((provider) {
+      final status = _text(provider['approvalStatus'], fallback: 'pending');
+      if (_providerFilter == 'all') return true;
+      return status == _providerFilter;
+    }).toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+      children: [
+        _providersTopBar(),
+        const SizedBox(height: 18),
+        _providerStatusTabs(),
+        const SizedBox(height: 16),
+        if (providers.isEmpty)
+          _empty('No providers match this filter')
+        else
+          ...providers.map(_providerRequestTile),
       ],
     );
   }
@@ -215,152 +807,626 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           (q.isEmpty || haystack.contains(q));
     }).toList();
 
-    return _page(
-      title: 'Users',
-      subtitle: 'Manage patients and providers',
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
-        TextField(
-          onChanged: (v) => setState(() => _userQuery = v),
-          decoration: InputDecoration(
-            hintText: 'Search users...',
-            prefixIcon: const Icon(Icons.search_rounded),
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(28),
-              borderSide: const BorderSide(color: _line),
+        _usersTopBar(),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                onChanged: (v) => setState(() => _userQuery = v),
+                decoration: InputDecoration(
+                  hintText: 'Search user...',
+                  hintStyle: const TextStyle(
+                    color: Color(0xFFB5C2C4),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.search_rounded,
+                    color: Color(0xFFB5C2C4),
+                    size: 20,
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(28),
-              borderSide: const BorderSide(color: _line),
+            const SizedBox(width: 12),
+            TextButton.icon(
+              onPressed: () => setState(() {
+                _userFilter = _userFilter == 'all' ? 'nurse' : 'all';
+              }),
+              icon: const Icon(Icons.filter_list_rounded, size: 18),
+              label: const Text('Filter'),
+              style: TextButton.styleFrom(
+                foregroundColor: _teal,
+                textStyle: const TextStyle(fontWeight: FontWeight.w900),
+              ),
             ),
-          ),
+          ],
         ),
-        const SizedBox(height: 12),
-        _filterRow(
-          value: _userFilter,
-          options: const {
-            'all': 'All',
-            'patient': 'Patients',
-            'nurse': 'Nurses',
-            'doctor': 'Doctors',
-          },
-          onChanged: (v) => setState(() => _userFilter = v),
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
+        _usersRoleTabs(),
+        const SizedBox(height: 16),
         if (filtered.isEmpty)
           _empty('No users match your search')
         else
-          ...filtered.map(_userCard),
+          ...filtered.map(_userListRow),
       ],
     );
   }
 
   Widget _ratingsPage() {
-    return _page(
-      title: 'Service Ratings',
-      subtitle: 'Patient feedback for providers',
+    final filtered = _ratings.where((rating) {
+      final stars = _int(rating['stars']);
+      if (_ratingFilter == 'excellent') return stars >= 5;
+      if (_ratingFilter == 'low') return stars <= 2;
+      return true;
+    }).toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: _teal,
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: _shadow,
+        _ratingsTopBar(),
+        const SizedBox(height: 18),
+        _ratingsSummaryCard(),
+        const SizedBox(height: 14),
+        _ratingFilterTabs(),
+        const SizedBox(height: 16),
+        if (filtered.isEmpty)
+          _empty('No ratings in the database yet')
+        else
+          ...filtered.map(_ratingCard),
+      ],
+    );
+  }
+
+  Widget _ratingsTopBar() {
+    return Row(
+      children: [
+        IconButton(
+          tooltip: 'Back',
+          onPressed: () => setState(() => _tabIndex = 0),
+          icon: const Icon(Icons.arrow_back_rounded, color: _teal, size: 21),
+        ),
+        const Spacer(),
+        const Text(
+          'Service Ratings',
+          style: TextStyle(
+            color: _ink,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+        ),
+        const Spacer(),
+        IconButton(
+          tooltip: 'Language',
+          onPressed: () {},
+          icon: const Icon(Icons.language_rounded, color: _teal, size: 20),
+        ),
+        IconButton(
+          tooltip: 'Theme',
+          onPressed: () {},
+          icon: const Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
+        ),
+      ],
+    );
+  }
+
+  Widget _ratingsSummaryCard() {
+    final excellent = _ratings.where((r) => _int(r['stars']) >= 5).length;
+    final low = _ratings.where((r) => _int(r['stars']) <= 2).length;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2F0EE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        children: [
+          Row(
             children: [
-              const Text(
-                'Average Rating',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontWeight: FontWeight.w700,
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE7F6F3),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.star_rounded,
+                  color: Color(0xFFF1A72E),
+                  size: 31,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Average Rating',
+                      style: TextStyle(
+                        color: Color(0xFF718388),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text(
+                          _decimal('averageStars'),
+                          style: const TextStyle(
+                            color: _ink,
+                            fontSize: 26,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _stars(_num(_metrics['averageStars']).round()),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
               Text(
-                _decimal('averageStars'),
+                '${_int(_metrics['totalRatings'])}',
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 40,
+                  color: _teal,
+                  fontSize: 20,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              Text(
-                'from ${_n('totalRatings')} ratings',
-                style: const TextStyle(color: Colors.white),
-              ),
             ],
           ),
+          const Divider(height: 24, color: Color(0xFFE4F0EE)),
+          Row(
+            children: [
+              _ratingSummaryMini(
+                'Excellent',
+                excellent,
+                const Color(0xFF1E9D69),
+              ),
+              _ratingSummaryMini('Low', low, const Color(0xFFD83A59)),
+              _ratingSummaryMini('Total', _ratings.length, _teal),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _ratingSummaryMini(String label, int value, Color color) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            '$value',
+            style: TextStyle(
+              color: color,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF718388),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _ratingFilterTabs() {
+    final options = [
+      ('all', 'All (${_ratings.length})'),
+      (
+        'excellent',
+        '5 Stars (${_ratings.where((r) => _int(r['stars']) >= 5).length})',
+      ),
+      ('low', 'Low (${_ratings.where((r) => _int(r['stars']) <= 2).length})'),
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final option in options) ...[
+            _ratingChip(option.$1, option.$2),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _ratingChip(String value, String label) {
+    final selected = _ratingFilter == value;
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => setState(() => _ratingFilter = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? _teal : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: selected ? _teal : const Color(0xFFDCEDEB)),
         ),
-        const SizedBox(height: 16),
-        if (_ratings.isEmpty)
-          _empty('No ratings in the database yet')
-        else
-          ..._ratings.map(_ratingCard),
-      ],
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : _teal,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
     );
   }
 
   Widget _financePage() {
-    return _page(
-      title: 'Finance',
-      subtitle: 'Platform revenue, wallets, and payouts',
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.32,
-          children: [
-            _statCard(
-              'Total Revenue',
-              _money(_financeOverview['totalRevenue']),
-              '${_int(_financeOverview['paymentCount'])} payments',
-            ),
-            _statCard(
-              'Platform Profit',
-              _money(_financeOverview['platformProfit']),
-              'Admin commission',
-            ),
-            _statCard(
-              'Pending Escrow',
-              _money(_financeOverview['pendingEscrow']),
-              'Awaiting transfer',
-            ),
-            _statCard(
-              'Released to Providers',
-              _money(_financeOverview['releasedToProviders']),
-              'Paid',
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        _sectionTitle('Payout Requests'),
-        if (_payouts.isEmpty)
-          _empty('No payout requests right now')
-        else
-          ..._payouts.take(8).map(_payoutCard),
-        const SizedBox(height: 8),
-        _sectionTitle('Recent Transactions'),
-        if (_transactions.isEmpty)
-          _empty('No financial transactions yet')
-        else
-          ..._transactions.take(8).map(_transactionCard),
-        const SizedBox(height: 8),
-        _sectionTitle('Provider Wallets'),
-        if (_wallets.isEmpty)
-          _empty('No provider wallets yet')
-        else
-          ..._wallets.take(8).map(_walletCard),
+        _financeTopBar(),
+        const SizedBox(height: 16),
+        _financeSummaryStrip(),
+        const SizedBox(height: 16),
+        _financeSectionTabs(),
+        const SizedBox(height: 16),
+        if (_financeTab == 0) ..._financePricingSection(),
+        if (_financeTab == 1) ..._financeTransactionsSection(),
+        if (_financeTab == 2) ..._financePayoutsSection(),
+        if (_financeTab == 3) ..._financeWalletsSection(),
       ],
     );
   }
 
+  Widget _financeTopBar() {
+    return Row(
+      children: [
+        IconButton(
+          tooltip: 'Back',
+          onPressed: () => setState(() => _tabIndex = 0),
+          icon: const Icon(Icons.arrow_back_rounded, color: _teal, size: 21),
+        ),
+        Expanded(
+          child: Text(
+            _financeTitle(),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Language',
+          onPressed: () {},
+          icon: const Icon(Icons.language_rounded, color: _teal, size: 20),
+        ),
+        IconButton(
+          tooltip: 'Theme',
+          onPressed: () {},
+          icon: const Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
+        ),
+      ],
+    );
+  }
+
+  String _financeTitle() {
+    switch (_financeTab) {
+      case 1:
+        return 'Transactions';
+      case 2:
+        return 'Payment Requests';
+      case 3:
+        return 'Nurse Earnings Details';
+      default:
+        return 'Service Pricing Manager';
+    }
+  }
+
+  Widget _financeSummaryStrip() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2F0EE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Row(
+        children: [
+          _financeStripItem(
+            'Revenue',
+            _money(_financeOverview['totalRevenue']),
+          ),
+          _financeStripItem(
+            'Profit',
+            _money(_financeOverview['platformProfit']),
+          ),
+          _financeStripItem(
+            'Pending',
+            _money(_financeOverview['pendingEscrow']),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _financeStripItem(String label, String value) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF738488),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _financeSectionTabs() {
+    final tabs = const [
+      ('Active Services', Icons.sell_outlined),
+      ('Transactions', Icons.receipt_long_outlined),
+      ('Requests', Icons.payments_outlined),
+      ('Earnings', Icons.account_balance_wallet_outlined),
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var i = 0; i < tabs.length; i++) ...[
+            _financeTabChip(i, tabs[i].$1, tabs[i].$2),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _financeTabChip(int index, String label, IconData icon) {
+    final selected = _financeTab == index;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => setState(() => _financeTab = index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? _teal : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? _teal : const Color(0xFFDCEDEB)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: selected ? Colors.white : _teal),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : _ink,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _financePricingSection() {
+    return [
+      Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'Set prices for each service. These will be shown to patients.',
+              style: TextStyle(
+                color: Color(0xFF718388),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: _teal,
+              foregroundColor: Colors.white,
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: () => _editPricing(),
+            icon: const Icon(Icons.add_rounded, size: 17),
+            label: const Text(
+              'Add',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      if (_pricing.isEmpty)
+        _empty('No pricing rules yet')
+      else
+        ..._pricing.map(_servicePricingTile),
+    ];
+  }
+
+  List<Widget> _financeTransactionsSection() {
+    final paidTransactions = _transactions
+        .where((t) => _text(t['paymentStatus']).toLowerCase() == 'paid')
+        .toList();
+    final refundTransactions = _transactions.where((t) {
+      final paymentStatus = _text(t['paymentStatus']).toLowerCase();
+      final escrowStatus = _text(t['escrowStatus']).toLowerCase();
+      return paymentStatus.contains('refund') ||
+          escrowStatus.contains('refund');
+    }).toList();
+    final visibleTransactions = _transactionFilter == 'paid'
+        ? paidTransactions
+        : _transactionFilter == 'refunds'
+        ? refundTransactions
+        : _transactions;
+
+    return [
+      _financeMiniFilterBar(
+        [
+          ('all', 'All (${_transactions.length})'),
+          ('paid', 'Paid (${paidTransactions.length})'),
+          ('refunds', 'Refunds (${refundTransactions.length})'),
+        ],
+        selected: _transactionFilter,
+        onSelected: (value) => setState(() => _transactionFilter = value),
+      ),
+      const SizedBox(height: 12),
+      if (visibleTransactions.isEmpty)
+        _empty(
+          _transactionFilter == 'paid'
+              ? 'No paid transactions yet'
+              : _transactionFilter == 'refunds'
+              ? 'No refunds yet'
+              : 'No financial transactions yet',
+        )
+      else
+        ...visibleTransactions.take(30).map(_financeTransactionTile),
+    ];
+  }
+
+  List<Widget> _financePayoutsSection() {
+    final pending = _payouts
+        .where((p) => _text(p['status']).toLowerCase() == 'requested')
+        .toList();
+    final approved = _payouts
+        .where((p) => _text(p['status']).toLowerCase() == 'paid')
+        .toList();
+    final rejected = _payouts
+        .where((p) => _text(p['status']).toLowerCase() == 'rejected')
+        .toList();
+    final visiblePayouts = _payoutFilter == 'pending'
+        ? pending
+        : _payoutFilter == 'approved'
+        ? approved
+        : _payoutFilter == 'rejected'
+        ? rejected
+        : _payouts;
+
+    return [
+      _financeMiniFilterBar(
+        [
+          ('all', 'All (${_payouts.length})'),
+          ('pending', 'Pending (${pending.length})'),
+          ('approved', 'Approved (${approved.length})'),
+          ('rejected', 'Rejected (${rejected.length})'),
+        ],
+        selected: _payoutFilter,
+        onSelected: (value) => setState(() => _payoutFilter = value),
+      ),
+      const SizedBox(height: 12),
+      if (visiblePayouts.isEmpty)
+        _empty('No payout requests match this filter')
+      else
+        ...visiblePayouts.take(30).map(_paymentRequestTile),
+    ];
+  }
+
+  List<Widget> _financeWalletsSection() {
+    return [
+      if (_wallets.isEmpty)
+        _empty('No provider wallets yet')
+      else
+        ..._wallets.take(30).map(_earningsDetailsTile),
+    ];
+  }
+
+  Widget _financeMiniFilterBar(
+    List<(String, String)> options, {
+    required String selected,
+    required ValueChanged<String> onSelected,
+  }) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final option in options) ...[
+            InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => onSelected(option.$1),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: selected == option.$1
+                      ? _teal
+                      : const Color(0xFFE9F8F6),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  option.$2,
+                  style: TextStyle(
+                    color: selected == option.$1 ? Colors.white : _teal,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
   Widget _pricingPage() {
     return _page(
       title: 'Pricing',
@@ -465,6 +1531,491 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  Widget _adminTopBar() {
+    return Row(
+      children: [
+        IconButton(
+          tooltip: 'Menu',
+          onPressed: () {},
+          icon: const Icon(Icons.menu_rounded, color: _teal, size: 20),
+        ),
+        const Spacer(),
+        const Text(
+          'Admin Dashboard',
+          style: TextStyle(
+            color: _ink,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const Spacer(),
+        IconButton(
+          tooltip: 'Refresh',
+          onPressed: _load,
+          icon: const Icon(Icons.notifications_none_rounded, color: _teal),
+        ),
+      ],
+    );
+  }
+
+  Widget _adminWelcomeCard() {
+    final firstName = widget.user.fullName.trim().isEmpty
+        ? 'Admin'
+        : widget.user.fullName.trim().split(RegExp(r'\s+')).first;
+    return Row(
+      children: [
+        Container(
+          width: 82,
+          height: 82,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE2F4F1),
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              const Positioned(
+                bottom: 8,
+                child: Icon(
+                  Icons.local_hospital_rounded,
+                  color: _teal,
+                  size: 54,
+                ),
+              ),
+              Positioned(
+                top: 12,
+                child: CircleAvatar(
+                  radius: 21,
+                  backgroundColor: Colors.white,
+                  child: Text(
+                    _initials(widget.user.fullName),
+                    style: const TextStyle(
+                      color: _darkTeal,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Welcome, $firstName',
+                style: const TextStyle(
+                  color: _ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Super Administrator',
+                style: TextStyle(
+                  color: _teal,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 7),
+              const Icon(
+                Icons.verified_rounded,
+                color: Color(0xFFFFC44D),
+                size: 17,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _bookingReviewShortcut() {
+    final count = _bookingReviewItems.length;
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: _openBookingReview,
+      child: Container(
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFDDEDEA)),
+          boxShadow: _softDashboardShadow,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE7F6F3),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.gavel_rounded, color: _darkTeal),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Booking Review',
+                    style: TextStyle(
+                      color: _ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    count == 0
+                        ? 'Nurse review queue is clear'
+                        : '$count nurse booking${count == 1 ? '' : 's'} need action',
+                    style: const TextStyle(
+                      color: Color(0xFF6B7C86),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (count > 0) ...[
+              _pill('$count', const Color(0xFFE7FAF4), _teal),
+              const SizedBox(width: 8),
+            ],
+            const Icon(Icons.chevron_right_rounded, color: _darkTeal),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dashboardSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: _ink,
+        fontSize: 13,
+        fontWeight: FontWeight.w900,
+      ),
+    );
+  }
+
+  Widget _dashboardMetricCard({
+    required String title,
+    required String value,
+    required String trend,
+    required bool positive,
+  }) {
+    final trendColor = positive
+        ? const Color(0xFF14A56A)
+        : const Color(0xFFE03131);
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF6E7D83),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 21,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(
+                positive
+                    ? Icons.arrow_upward_rounded
+                    : Icons.arrow_downward_rounded,
+                color: trendColor,
+                size: 13,
+              ),
+              const SizedBox(width: 3),
+              Text(
+                trend,
+                style: TextStyle(
+                  color: trendColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _financeOverviewCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'Finance Overview (Escrow)',
+                style: TextStyle(
+                  color: _ink,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'This Month',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: _muted,
+                size: 18,
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _financeMini(
+                  'Total Revenue (Paid)',
+                  _money(_financeOverview['totalRevenue']),
+                  '+ 10%',
+                  true,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _financeMini(
+                  'Paid to Providers',
+                  _money(_financeOverview['releasedToProviders']),
+                  '+ 5%',
+                  true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _financeMini(
+                  'Platform Profit',
+                  _money(_financeOverview['platformProfit']),
+                  '+ 4%',
+                  true,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _financeMini(
+                  'Pending Escrow',
+                  _money(_financeOverview['pendingEscrow']),
+                  '+ 5%',
+                  false,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _financeMini(String label, String value, String trend, bool positive) {
+    final trendColor = positive
+        ? const Color(0xFF14A56A)
+        : const Color(0xFFB9770E);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF7C8A8F),
+            fontSize: 10.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 7),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: _ink,
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Row(
+          children: [
+            Icon(
+              positive
+                  ? Icons.arrow_upward_rounded
+                  : Icons.warning_amber_rounded,
+              color: trendColor,
+              size: 13,
+            ),
+            const SizedBox(width: 3),
+            Text(
+              trend,
+              style: TextStyle(
+                color: trendColor,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _requestsByStatusCard() {
+    final completed = _int(_metrics['completedRequests']);
+    final pending = _int(_metrics['pendingRequests']);
+    final cancelled = _int(_metrics['cancelledRequests']);
+    final total = _int(_metrics['totalRequests']);
+    final inProgress = (total - completed - pending - cancelled).clamp(
+      0,
+      total,
+    );
+    final slices = [
+      _StatusSlice('Completed', completed, const Color(0xFF00A887)),
+      _StatusSlice('In Progress', inProgress, const Color(0xFF1B8CFF)),
+      _StatusSlice('Pending', pending, const Color(0xFFFFC107)),
+      _StatusSlice('Cancelled', cancelled, const Color(0xFFE53935)),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Requests by Status',
+            style: TextStyle(
+              color: _ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              SizedBox(
+                width: 132,
+                height: 132,
+                child: CustomPaint(
+                  painter: _DonutChartPainter(slices),
+                  child: Center(
+                    child: Text(
+                      _compactNumber(total),
+                      style: const TextStyle(
+                        color: _ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  children: slices
+                      .map((slice) => _statusLegend(slice, total))
+                      .toList(),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusLegend(_StatusSlice slice, int total) {
+    final percent = total <= 0 ? 0 : ((slice.value / total) * 100).round();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: slice.color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              slice.label,
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Text(
+            '${slice.value} ($percent%)',
+            style: const TextStyle(
+              color: _muted,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
   Widget _statCard(String title, String value, String badge) {
     return Container(
       padding: const EdgeInsets.all(13),
@@ -503,6 +2054,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _performancePanel() {
     return Container(
       padding: const EdgeInsets.all(18),
@@ -572,6 +2124,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _requestCard(Map<String, dynamic> item) {
     final status = _text(item['approvalStatus'], fallback: 'pending');
     final role = _text(item['role']);
@@ -667,6 +2220,281 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  Widget _providersTopBar() {
+    return Row(
+      children: [
+        IconButton(
+          tooltip: 'Back',
+          onPressed: () => setState(() => _tabIndex = 0),
+          icon: const Icon(Icons.arrow_back_rounded, color: _teal, size: 21),
+        ),
+        const Spacer(),
+        const Text(
+          'Provider Requests',
+          style: TextStyle(
+            color: _ink,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const Spacer(),
+        IconButton(
+          tooltip: 'Language',
+          onPressed: () {},
+          icon: const Icon(Icons.language_rounded, color: _teal, size: 20),
+        ),
+        IconButton(
+          tooltip: 'Theme',
+          onPressed: () {},
+          icon: const Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
+        ),
+      ],
+    );
+  }
+
+  Widget _providerStatusTabs() {
+    final options = [
+      ('all', 'All', _requests.length),
+      (
+        'pending',
+        'Pending',
+        _requests
+            .where(
+              (r) =>
+                  _text(r['approvalStatus'], fallback: 'pending') == 'pending',
+            )
+            .length,
+      ),
+      (
+        'approved',
+        'Approved',
+        _requests
+            .where(
+              (r) =>
+                  _text(r['approvalStatus'], fallback: 'pending') == 'approved',
+            )
+            .length,
+      ),
+      (
+        'rejected',
+        'Rejected',
+        _requests
+            .where(
+              (r) =>
+                  _text(r['approvalStatus'], fallback: 'pending') == 'rejected',
+            )
+            .length,
+      ),
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final option in options) ...[
+            _providerStatusChip(option.$1, '${option.$2} (${option.$3})'),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _providerStatusChip(String value, String label) {
+    final selected = _providerFilter == value;
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => setState(() => _providerFilter = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? _teal : const Color(0xFFE9F8F6),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: selected ? _teal : const Color(0xFFD9EEEC)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : _teal,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _providerRequestTile(Map<String, dynamic> provider) {
+    final role = _text(provider['role']);
+    final status = _text(provider['approvalStatus'], fallback: 'pending');
+    final rating = _num(provider['overallRating']);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE3F0EE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _providerPhoto(provider),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _text(provider['fullName']),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _ink,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _roleLabel(role),
+                      style: const TextStyle(
+                        color: Color(0xFF63777B),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.star_rounded,
+                          color: Color(0xFFF2B134),
+                          size: 15,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          rating.toStringAsFixed(1),
+                          style: const TextStyle(
+                            color: _ink,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Applied on ${_shortDate(provider['createdAt'])}',
+                      style: const TextStyle(
+                        color: Color(0xFF9AA8AB),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _providerStatusPill(status),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _teal,
+                    side: const BorderSide(color: Color(0xFFCDE7E4)),
+                    textStyle: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: () => _showProviderDetails(provider),
+                  child: const Text('View Details'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _teal,
+                    foregroundColor: Colors.white,
+                    textStyle: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: () => _showProviderReview(provider),
+                  child: const Text('Review'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _providerPhoto(Map<String, dynamic> provider) {
+    final role = _text(provider['role']);
+    return CircleAvatar(
+      radius: 24,
+      backgroundColor: _roleColor(role).withValues(alpha: 0.15),
+      child: Text(
+        _initials(provider['fullName']),
+        style: TextStyle(
+          color: _roleColor(role),
+          fontSize: 13,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  Widget _providerStatusPill(String status) {
+    final pending = status == 'pending';
+    final approved = status == 'approved';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: approved
+            ? const Color(0xFFE3F8EF)
+            : pending
+            ? const Color(0xFFFFF5DA)
+            : const Color(0xFFFFE8EE),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        approved
+            ? 'Approved'
+            : pending
+            ? 'Pending'
+            : 'Rejected',
+        style: TextStyle(
+          color: approved
+              ? const Color(0xFF1E9D69)
+              : pending
+              ? const Color(0xFFD28A00)
+              : const Color(0xFFD83A59),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  // ignore: unused_element
   Widget _userCard(Map<String, dynamic> user) {
     final active = user['isActive'] == true;
     final role = _text(user['role']);
@@ -731,41 +2559,666 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
-  Widget _ratingCard(Map<String, dynamic> rating) {
-    final stars = _int(rating['stars']);
-    return _whitePanel(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Row(
-              children: [
-                _stars(stars),
-                const Spacer(),
-                Text(
-                  '${_text(rating['providerName'], fallback: 'Provider')}.',
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-              ],
-            ),
-            const SizedBox(height: 5),
-            Text(
-              'For ${_text(rating['serviceType'], fallback: 'service')}',
-              style: const TextStyle(color: _muted, fontSize: 12),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              _text(rating['comment'], fallback: 'No written notes.'),
-              textAlign: TextAlign.right,
-              style: const TextStyle(height: 1.5),
-            ),
+  Widget _usersTopBar() {
+    return Row(
+      children: [
+        IconButton(
+          tooltip: 'Back',
+          onPressed: () => setState(() => _tabIndex = 0),
+          icon: const Icon(Icons.arrow_back_rounded, color: _teal, size: 21),
+        ),
+        const Spacer(),
+        const Text(
+          'Users Management',
+          style: TextStyle(
+            color: _ink,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const Spacer(),
+        IconButton(
+          tooltip: 'Language',
+          onPressed: () {},
+          icon: const Icon(Icons.language_rounded, color: _teal, size: 20),
+        ),
+        IconButton(
+          tooltip: 'Theme',
+          onPressed: () {},
+          icon: const Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
+        ),
+      ],
+    );
+  }
+
+  Widget _usersRoleTabs() {
+    final options = [
+      ('all', 'All', _users.length),
+      (
+        'patient',
+        'Patients',
+        _users.where((u) => _text(u['role']) == 'patient').length,
+      ),
+      (
+        'nurse',
+        'Nurses',
+        _users.where((u) => _text(u['role']) == 'nurse').length,
+      ),
+      (
+        'doctor',
+        'Doctors',
+        _users.where((u) => _text(u['role']) == 'doctor').length,
+      ),
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final option in options) ...[
+            _userRoleChip(option.$1, '${option.$2} (${option.$3})'),
+            const SizedBox(width: 8),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _userRoleChip(String value, String label) {
+    final selected = _userFilter == value;
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => setState(() => _userFilter = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? _teal : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: selected ? _teal : const Color(0xFFE5F0EF)),
+          boxShadow: selected ? _softDashboardShadow : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : _ink,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w900,
+          ),
         ),
       ),
     );
   }
 
+  Widget _userListRow(Map<String, dynamic> user) {
+    final active = user['isActive'] == true;
+    final role = _text(user['role']);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _editUser(user),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: _roleColor(role).withValues(alpha: 0.15),
+                child: Text(
+                  _initials(user['fullName']),
+                  style: TextStyle(
+                    color: _roleColor(role),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _text(user['fullName']),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _ink,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _roleLabel(role),
+                      style: const TextStyle(
+                        color: Color(0xFF7A8A8E),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                active ? 'Active' : 'Inactive',
+                style: TextStyle(
+                  color: active
+                      ? const Color(0xFF1E9D69)
+                      : const Color(0xFFD83A59),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(width: 14),
+              SizedBox(
+                width: 58,
+                child: Text(
+                  _shortDate(user['createdAt']),
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    color: Color(0xFF9AA8AB),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _ratingCard(Map<String, dynamic> rating) {
+    final stars = _int(rating['stars']);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2F0EE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: _teal.withValues(alpha: 0.13),
+                child: Text(
+                  _initials(rating['patientName']),
+                  style: const TextStyle(
+                    color: _teal,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _text(rating['providerName'], fallback: 'Provider'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _ink,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Patient: ${_text(rating['patientName'], fallback: '-')}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF718388),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _stars(stars),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7FBFA),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE7F2F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.medical_services_outlined,
+                      color: _teal,
+                      size: 15,
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        _text(rating['serviceType'], fallback: 'Service'),
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _muted,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      _shortDate(rating['createdAt']),
+                      style: const TextStyle(
+                        color: Color(0xFF9AA8AB),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 9),
+                Text(
+                  _text(rating['comment'], fallback: 'No written notes.'),
+                  style: const TextStyle(
+                    color: _ink,
+                    height: 1.35,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _servicePricingTile(Map<String, dynamic> item) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2F0EE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: _teal.withValues(alpha: 0.13),
+            child: Icon(
+              _text(item['providerRole']) == 'doctor'
+                  ? Icons.medical_services_outlined
+                  : Icons.local_hospital_outlined,
+              color: _teal,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _text(item['specialization'], fallback: 'Service'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _text(item['providerName'], fallback: 'General consultation'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF718388),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _money(item['patientPrice']),
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Edit pricing',
+            onPressed: () => _editPricing(item),
+            icon: const Icon(Icons.edit_rounded, color: _teal, size: 19),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _financeTransactionTile(Map<String, dynamic> item) {
+    final status = _text(item['escrowStatus'], fallback: 'pending');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2F0EE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: _teal.withValues(alpha: 0.13),
+            child: Text(
+              _initials(item['providerName']),
+              style: const TextStyle(
+                color: _teal,
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _text(item['providerName'], fallback: 'Provider'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Patient: ${_text(item['patientName'], fallback: '-')}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF718388),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  _shortDate(item['createdAt']),
+                  style: const TextStyle(
+                    color: Color(0xFF9AA8AB),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                _money(item['totalAmount']),
+                style: const TextStyle(
+                  color: _ink,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _financeSmallStatus(
+                status == 'transferred_to_provider'
+                    ? 'Paid to Nurse'
+                    : status == 'paid_to_admin'
+                    ? 'Held Wallet'
+                    : 'Pending',
+              ),
+              TextButton(
+                onPressed: () => _showPaymentReceipt(item),
+                style: TextButton.styleFrom(
+                  foregroundColor: _teal,
+                  visualDensity: VisualDensity.compact,
+                  textStyle: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                child: const Text('Receipt'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _paymentRequestTile(Map<String, dynamic> item) {
+    final status = _text(item['status'], fallback: 'requested').toLowerCase();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2F0EE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 23,
+            backgroundColor: _teal.withValues(alpha: 0.13),
+            child: Text(
+              _initials(item['providerName']),
+              style: const TextStyle(
+                color: _teal,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _text(item['providerName'], fallback: 'Provider'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${_int(item['completedSessions'])} Points',
+                  style: const TextStyle(
+                    color: Color(0xFF718388),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _money(item['amount']),
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Requested on ${_shortDate(item['createdAt'])}',
+                  style: const TextStyle(
+                    color: Color(0xFF9AA8AB),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _financeSmallStatus(
+                status == 'paid'
+                    ? 'Approved'
+                    : status == 'rejected'
+                    ? 'Rejected'
+                    : 'Pending',
+              ),
+              const SizedBox(height: 10),
+              if (status == 'requested' || status == 'approved')
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _teal,
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    textStyle: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  onPressed: () => _showPayoutApproval(item),
+                  child: const Text('Review'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _earningsDetailsTile(Map<String, dynamic> item) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2F0EE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 23,
+                backgroundColor: _teal.withValues(alpha: 0.13),
+                child: Text(
+                  _initials(item['providerName']),
+                  style: const TextStyle(
+                    color: _teal,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _text(item['providerName'], fallback: 'Provider'),
+                      style: const TextStyle(
+                        color: _ink,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _text(item['providerRole'], fallback: 'Nurse'),
+                      style: const TextStyle(
+                        color: Color(0xFF718388),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _financeSmallStatus('Active'),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _moneyColumn('Total Earnings', item['totalEarned']),
+              _moneyColumn('Pending Payout', item['pendingAmount']),
+              _moneyColumn('Paid Out', item['paidAmount']),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _financeSmallStatus(String text) {
+    final lower = text.toLowerCase();
+    final color = lower.contains('reject')
+        ? const Color(0xFFD83A59)
+        : lower.contains('pending') || lower.contains('held')
+        ? const Color(0xFFD28A00)
+        : const Color(0xFF1E9D69);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  // ignore: unused_element
   Widget _pricingCard(Map<String, dynamic> item) {
     final status = _text(item['rateAcceptanceStatus'], fallback: 'pending');
     return _whitePanel(
@@ -820,6 +3273,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _payoutCard(Map<String, dynamic> item) {
     final status = _text(item['status'], fallback: 'requested').toLowerCase();
     final actionable = status == 'requested' || status == 'approved';
@@ -875,6 +3329,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _transactionCard(Map<String, dynamic> item) {
     return _whitePanel(
       child: ListTile(
@@ -896,6 +3351,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _walletCard(Map<String, dynamic> item) {
     return _whitePanel(
       child: Padding(
@@ -936,6 +3392,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _serviceBar(Map<String, dynamic> item) {
     final count = _int(item['count']);
     final max = _list(
@@ -979,6 +3436,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _filterRow({
     required String value,
     required Map<String, String> options,
@@ -1021,6 +3479,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final items = const [
       (Icons.dashboard_outlined, Icons.dashboard_rounded, 'Home'),
       (Icons.person_add_alt_outlined, Icons.person_add_alt_rounded, 'Requests'),
+      (Icons.groups_outlined, Icons.groups_rounded, 'Providers'),
       (Icons.people_outline_rounded, Icons.people_alt_rounded, 'Users'),
       (Icons.star_border_rounded, Icons.star_rounded, 'Ratings'),
       (
@@ -1028,7 +3487,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         Icons.account_balance_wallet_rounded,
         'Finance',
       ),
-      (Icons.sell_outlined, Icons.sell_rounded, 'Pricing'),
     ];
     return Align(
       alignment: Alignment.bottomCenter,
@@ -1080,6 +3538,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _sectionHeader(String title, String action, VoidCallback onTap) {
     return Row(
       children: [
@@ -1098,6 +3557,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -1185,6 +3645,352 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  Future<void> _showProviderDetails(Map<String, dynamic> provider) async {
+    final role = _text(provider['role']);
+    await showDialog<void>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: AlertDialog(
+          title: Text(_text(provider['fullName'])),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _detailLine('Role', _roleLabel(role)),
+                _detailLine(
+                  'Specialization',
+                  _text(provider['specialization']),
+                ),
+                _detailLine(
+                  'Experience',
+                  '${_int(provider['experienceYears'] ?? provider['years_experience'])} years',
+                ),
+                _detailLine(
+                  'Service Area',
+                  _text(provider['serviceAreas'], fallback: 'Not set'),
+                ),
+                _detailLine(
+                  'Rating',
+                  _num(provider['overallRating']).toStringAsFixed(1),
+                ),
+                _detailLine(
+                  'Status',
+                  _statusLabel(
+                    _text(provider['approvalStatus'], fallback: 'pending'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(color: _ink, fontWeight: FontWeight.w800),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: const TextStyle(
+              color: _muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showProviderReview(Map<String, dynamic> provider) async {
+    final providerId = _text(provider['userId']);
+    try {
+      final response = await http.get(
+        _uri('/admin/providers/$providerId/certifications'),
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(_message(response));
+      }
+      final certs = _list(jsonDecode(response.body));
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => Directionality(
+          textDirection: TextDirection.ltr,
+          child: Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 18,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 430),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        IconButton(
+                          tooltip: 'Back',
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(
+                            Icons.arrow_back_rounded,
+                            color: _teal,
+                          ),
+                        ),
+                        const Expanded(
+                          child: Text(
+                            'Certification Verification',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: _ink,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Language',
+                          onPressed: () {},
+                          icon: const Icon(
+                            Icons.language_rounded,
+                            color: _teal,
+                            size: 20,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _providerPhoto(provider),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _text(provider['fullName']),
+                                style: const TextStyle(
+                                  color: _ink,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                _roleLabel(_text(provider['role'])),
+                                style: const TextStyle(
+                                  color: Color(0xFF6D7F83),
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Applied on ${_shortDate(provider['createdAt'])}',
+                                style: const TextStyle(
+                                  color: Color(0xFF9AA8AB),
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        _providerStatusPill(
+                          _text(
+                            provider['approvalStatus'],
+                            fallback: 'pending',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Uploaded Documents',
+                      style: TextStyle(
+                        color: _ink,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (certs.isEmpty)
+                      _emptyInline('No documents were uploaded')
+                    else
+                      Flexible(
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: certs
+                              .map((cert) => _providerDocumentTile(cert))
+                              .toList(),
+                        ),
+                      ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFE04F5F),
+                              side: const BorderSide(color: Color(0xFFFFCBD2)),
+                              minimumSize: const Size.fromHeight(46),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onPressed: () async {
+                              await _setApproval(provider, 'rejected');
+                              if (context.mounted) Navigator.pop(context);
+                            },
+                            child: const Text(
+                              'Reject',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _teal,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size.fromHeight(46),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onPressed: () async {
+                              await _setApproval(provider, 'approved');
+                              if (context.mounted) Navigator.pop(context);
+                            },
+                            child: const Text(
+                              'Approve',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      _toast(e.toString());
+    }
+  }
+
+  Widget _providerDocumentTile(Map<String, dynamic> cert) {
+    final certId = _text(cert['certId'], fallback: '');
+    final rawFileUrl = _text(cert['fileUrl'], fallback: '');
+    final viewUrl = rawFileUrl.trim().startsWith('data:') && certId.isNotEmpty
+        ? _absoluteUploadUrl(
+            '/admin/certifications/${Uri.encodeComponent(certId)}/file',
+          )
+        : _absoluteUploadUrl(rawFileUrl);
+    final fileName = _text(
+      cert['originalName'],
+      fallback: _text(cert['name'], fallback: 'Attached file'),
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE3EFED)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.insert_drive_file_outlined,
+            color: Color(0xFF7B8D91),
+            size: 21,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _text(cert['name'], fallback: 'Document'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF7B8D91),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: viewUrl.isEmpty ? null : () => _openUrl(viewUrl),
+            style: TextButton.styleFrom(
+              foregroundColor: _teal,
+              textStyle: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            child: const Text('View'),
+          ),
+          IconButton(
+            tooltip: 'Download',
+            onPressed: viewUrl.isEmpty ? null : () => _openUrl(viewUrl),
+            icon: const Icon(
+              Icons.file_download_outlined,
+              color: _teal,
+              size: 18,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showCertifications(Map<String, dynamic> provider) async {
     final providerId = _text(provider['userId']);
     try {
@@ -1212,9 +4018,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       shrinkWrap: true,
                       children: certs.map((cert) {
                         final verified = cert['isVerified'] == true;
-                        final fileUrl = _absoluteUploadUrl(
-                          _text(cert['fileUrl']),
-                        );
+                        final certId = _text(cert['certId']);
+                        final rawFileUrl = _text(cert['fileUrl']);
+                        final fileUrl = _absoluteUploadUrl(rawFileUrl);
+                        final viewUrl =
+                            rawFileUrl.trim().startsWith('data:') &&
+                                certId.isNotEmpty
+                            ? _absoluteUploadUrl(
+                                '/admin/certifications/${Uri.encodeComponent(certId)}/file',
+                              )
+                            : fileUrl;
                         return ListTile(
                           leading: Icon(
                             verified
@@ -1235,7 +4048,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                             children: [
                               if (fileUrl.isNotEmpty)
                                 OutlinedButton(
-                                  onPressed: () => _openUrl(fileUrl),
+                                  onPressed: () => _openUrl(viewUrl),
                                   child: const Text('View file'),
                                 ),
                               if (!verified)
@@ -1285,13 +4098,21 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   String _absoluteUploadUrl(String url) {
-    if (url.isEmpty) return '';
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    return '${ApiService.baseUrl}${url.startsWith('/') ? '' : '/'}$url';
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.startsWith('data:')) return trimmed;
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    return '${ApiService.baseUrl}${trimmed.startsWith('/') ? '' : '/'}$trimmed';
   }
 
   Future<void> _openUrl(String url) async {
-    final uri = Uri.parse(url);
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      _toast('Could not open the file');
+      return;
+    }
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       _toast('Could not open the file');
     }
@@ -1354,6 +4175,335 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
   }
 
+  Future<void> _showPayoutApproval(Map<String, dynamic> payout) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 18,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 430),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      IconButton(
+                        tooltip: 'Back',
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(
+                          Icons.arrow_back_rounded,
+                          color: _teal,
+                        ),
+                      ),
+                      const Expanded(
+                        child: Text(
+                          'Payout Approval',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _ink,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 48),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 25,
+                        backgroundColor: _teal.withValues(alpha: 0.13),
+                        child: Text(
+                          _initials(payout['providerName']),
+                          style: const TextStyle(
+                            color: _teal,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _text(
+                                payout['providerName'],
+                                fallback: 'Provider',
+                              ),
+                              style: const TextStyle(
+                                color: _ink,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            Text(
+                              _text(payout['providerRole'], fallback: 'Nurse'),
+                              style: const TextStyle(
+                                color: Color(0xFF718388),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              'Request ID: ${_text(payout['payoutId'])}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF9AA8AB),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _financeSmallStatus('Pending'),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  _payoutSummaryBox(payout),
+                  const SizedBox(height: 14),
+                  _payoutBreakdownBox(payout),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _teal,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(46),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: () async {
+                            Navigator.pop(context);
+                            await _setPayoutStatus(payout, 'pay');
+                            if (mounted) _showPaymentSuccess(payout);
+                          },
+                          child: const Text(
+                            'Approve & Pay',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFE04F5F),
+                            side: const BorderSide(color: Color(0xFFFFCBD2)),
+                            minimumSize: const Size.fromHeight(46),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: () async {
+                            Navigator.pop(context);
+                            await _setPayoutStatus(payout, 'reject');
+                          },
+                          child: const Text(
+                            'Reject',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _payoutSummaryBox(Map<String, dynamic> payout) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7FBFA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE3F0EE)),
+      ),
+      child: Column(
+        children: [
+          _receiptLine(
+            'Total Sessions',
+            '${_int(payout['completedSessions'])}',
+          ),
+          _receiptLine('Total Points', '${_int(payout['completedSessions'])}'),
+          _receiptLine('Rate per Point', _money(100)),
+          _receiptLine('Total Amount', _money(payout['amount']), strong: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _payoutBreakdownBox(Map<String, dynamic> payout) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE3F0EE)),
+      ),
+      child: Column(
+        children: [
+          _receiptLine('Nurse Amount', _money(payout['amount']), green: true),
+          _receiptLine('Platform Fee (Admin)', _money(0)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showPaymentSuccess(Map<String, dynamic> payout) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text('Payment Receipt', textAlign: TextAlign.center),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 34,
+                backgroundColor: const Color(0xFFE5F8EF),
+                child: const Icon(
+                  Icons.check_rounded,
+                  color: Color(0xFF1E9D69),
+                  size: 38,
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Payment Successful!',
+                style: TextStyle(
+                  color: Color(0xFF1E9D69),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The payment has been sent to ${_text(payout['providerName'], fallback: 'Provider')}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: _muted, fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              _receiptLine(
+                'Amount Paid',
+                _money(payout['amount']),
+                strong: true,
+              ),
+              _receiptLine(
+                'Paid On',
+                '${_shortDate(DateTime.now())} - ${_shortTime(DateTime.now())}',
+              ),
+              _receiptLine('Transaction ID', _text(payout['payoutId'])),
+              _receiptLine('Payment Method', 'Platform Wallet'),
+              _receiptLine('Status', 'Completed', green: true),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: _teal),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Download Receipt (PDF)'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showPaymentReceipt(Map<String, dynamic> item) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Text('Payment Receipt', textAlign: TextAlign.center),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _receiptLine('Provider', _text(item['providerName'])),
+            _receiptLine('Patient', _text(item['patientName'])),
+            _receiptLine(
+              'Amount Paid',
+              _money(item['totalAmount']),
+              strong: true,
+            ),
+            _receiptLine('Paid On', _shortDate(item['createdAt'])),
+            _receiptLine('Transaction ID', _text(item['paymentId'])),
+            _receiptLine('Status', _text(item['escrowStatus']), green: true),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _receiptLine(
+    String label,
+    String value, {
+    bool strong = false,
+    bool green = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF718388),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const Spacer(),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: green ? const Color(0xFF1E9D69) : _ink,
+                fontSize: strong ? 12.5 : 11.5,
+                fontWeight: strong || green ? FontWeight.w900 : FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Map<String, dynamic>? _providerById(String providerId) {
     if (providerId.trim().isEmpty) return null;
     for (final user in _users) {
@@ -1384,6 +4534,22 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  String _pricingSpecializationForSave({
+    required String serviceType,
+    required String selectedSpecialization,
+    required String selectedProviderId,
+  }) {
+    final provider = _providerById(selectedProviderId);
+    final providerSpecialization = _providerSpecialization(provider);
+    if (provider != null && providerSpecialization != 'Select provider first') {
+      return providerSpecialization;
+    }
+    if (serviceType == 'nurse') return 'Home Nursing Care';
+    return selectedSpecialization.trim().isEmpty
+        ? 'General Doctor'
+        : selectedSpecialization.trim();
+  }
+
   String _providerExperienceLabel(Map<String, dynamic>? provider) {
     if (provider == null) {
       return 'Experience will be auto-filled after selecting a provider';
@@ -1394,20 +4560,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final rating = _num(provider['overallRating']);
     final yearText = years == 1 ? '1 year' : '$years years';
     return 'Experience: $yearText • Rating: ${rating.toStringAsFixed(1)}';
-  }
-
-  ({String label, int points}) _tierForProvider(
-    Map<String, dynamic>? provider,
-  ) {
-    final years = _int(
-      provider?['experienceYears'] ?? provider?['years_experience'],
-    );
-    final rating = _num(provider?['overallRating']);
-    final points = ((years.clamp(0, 10) * 10) + (rating.clamp(0, 5) * 12))
-        .round();
-    if (points >= 140) return (label: 'Expert', points: points);
-    if (points >= 90) return (label: 'Senior', points: points);
-    return (label: 'Junior', points: points == 0 ? 60 : points);
   }
 
   Widget _pricingLabel(String text) {
@@ -1430,9 +4582,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   InputDecoration _pricingInputDecoration({
     required IconData icon,
     String? hintText,
+    String? suffixText,
   }) {
     return InputDecoration(
       hintText: hintText,
+      suffixText: suffixText,
       prefixIcon: Icon(icon, color: _teal, size: 21),
       filled: true,
       fillColor: Colors.white,
@@ -1452,64 +4606,18 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
-  Widget _pricingTierCard(Map<String, dynamic>? provider) {
-    final tier = _tierForProvider(provider);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE8F7F4),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.stars_rounded, color: _teal, size: 24),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Experience / Performance Tier (Auto-filled)',
-                  style: TextStyle(
-                    color: _teal,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${tier.label} (${tier.points} points)',
-                  style: const TextStyle(
-                    color: _ink,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _editPricing([Map<String, dynamic>? item]) async {
     final providerRate = TextEditingController(
       text: item == null ? '' : _num(item['providerRate']).toStringAsFixed(0),
     );
-    final commission = TextEditingController(
-      text: item == null
-          ? ''
-          : _num(item['adminCommission']).toStringAsFixed(0),
+    final savedProviderRate = _num(item?['providerRate']);
+    final savedCommission = _num(item?['adminCommission']);
+    final commissionPercent = TextEditingController(
+      text: item == null || savedProviderRate <= 0
+          ? '20'
+          : ((savedCommission / savedProviderRate) * 100)
+                .clamp(20, double.infinity)
+                .toStringAsFixed(0),
     );
     String serviceType = _text(
       item?['providerRole'],
@@ -1610,6 +4718,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         setDialogState(() {
                           serviceType = value;
                           selectedProviderId = '';
+                          selectedSpecialization = value == 'nurse'
+                              ? 'Home Nursing Care'
+                              : 'General Doctor';
                         });
                       },
                     ),
@@ -1646,56 +4757,55 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         });
                       },
                     ),
-                    const SizedBox(height: 16),
-                    _pricingTierCard(selectedProvider),
-                    const SizedBox(height: 16),
-                    const Center(
-                      child: Text(
-                        'Optional for commission-only specialization',
-                        style: TextStyle(
-                          color: Color(0xFF7A8A99),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                    if (serviceType == 'doctor') ...[
+                      const Center(
+                        child: Text(
+                          'Optional for commission-only specialization',
+                          style: TextStyle(
+                            color: Color(0xFF7A8A99),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    _pricingLabel('Specialization'),
-                    if (selectedProvider != null)
-                      TextField(
-                        readOnly: true,
-                        controller: TextEditingController(
-                          text: selectedSpecialization,
+                      const SizedBox(height: 6),
+                      _pricingLabel('Specialization'),
+                      if (selectedProvider != null)
+                        TextField(
+                          readOnly: true,
+                          controller: TextEditingController(
+                            text: selectedSpecialization,
+                          ),
+                          decoration: _pricingInputDecoration(
+                            icon: Icons.groups_2_outlined,
+                          ),
+                        )
+                      else
+                        DropdownButtonFormField<String>(
+                          initialValue:
+                              specializations.contains(selectedSpecialization)
+                              ? selectedSpecialization
+                              : specializations.first,
+                          decoration: _pricingInputDecoration(
+                            icon: Icons.groups_2_outlined,
+                          ),
+                          items: [
+                            for (final specialization in specializations)
+                              DropdownMenuItem(
+                                value: specialization,
+                                child: Text(specialization),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              setDialogState(
+                                () => selectedSpecialization = value,
+                              );
+                            }
+                          },
                         ),
-                        decoration: _pricingInputDecoration(
-                          icon: Icons.groups_2_outlined,
-                        ),
-                      )
-                    else
-                      DropdownButtonFormField<String>(
-                        initialValue:
-                            specializations.contains(selectedSpecialization)
-                            ? selectedSpecialization
-                            : specializations.first,
-                        decoration: _pricingInputDecoration(
-                          icon: Icons.groups_2_outlined,
-                        ),
-                        items: [
-                          for (final specialization in specializations)
-                            DropdownMenuItem(
-                              value: specialization,
-                              child: Text(specialization),
-                            ),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) {
-                            setDialogState(
-                              () => selectedSpecialization = value,
-                            );
-                          }
-                        },
-                      ),
-                    const SizedBox(height: 6),
+                      const SizedBox(height: 6),
+                    ],
                     Text(
                       _providerExperienceLabel(selectedProvider),
                       style: const TextStyle(
@@ -1709,28 +4819,81 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     TextField(
                       controller: providerRate,
                       keyboardType: TextInputType.number,
+                      onChanged: (_) => setDialogState(() {}),
                       decoration: _pricingInputDecoration(
                         icon: Icons.attach_money_rounded,
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _pricingLabel('Admin commission (per hour)'),
-                    TextField(
-                      controller: commission,
-                      keyboardType: TextInputType.number,
-                      decoration: _pricingInputDecoration(
-                        icon: Icons.attach_money_rounded,
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F7F4),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _line),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Center(
-                      child: Text(
-                        'This amount is not visible to the provider or the patient',
-                        style: TextStyle(
-                          color: Color(0xFF7A8A99),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Material(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: () {
+                                    final next =
+                                        _num(
+                                          commissionPercent.text,
+                                        ).clamp(20, double.infinity) +
+                                        1;
+                                    commissionPercent.text = next
+                                        .toStringAsFixed(0);
+                                    setDialogState(() {});
+                                  },
+                                  child: Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(color: _line),
+                                    ),
+                                    child: const Icon(
+                                      Icons.add_rounded,
+                                      color: _teal,
+                                      size: 26,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: TextField(
+                                  controller: commissionPercent,
+                                  keyboardType: TextInputType.number,
+                                  onChanged: (_) {
+                                    if (_num(commissionPercent.text) < 20 &&
+                                        commissionPercent.text.isNotEmpty) {
+                                      commissionPercent.text = '20';
+                                      commissionPercent.selection =
+                                          TextSelection.fromPosition(
+                                            const TextPosition(offset: 2),
+                                          );
+                                    }
+                                    setDialogState(() {});
+                                  },
+                                  decoration: _pricingInputDecoration(
+                                    icon: Icons.percent_rounded,
+                                    hintText: '20',
+                                    suffixText: '%',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -1785,20 +4948,25 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
     if (save != true) {
       providerRate.dispose();
-      commission.dispose();
+      commissionPercent.dispose();
       return;
     }
 
     try {
+      final specializationForSave = _pricingSpecializationForSave(
+        serviceType: serviceType,
+        selectedSpecialization: selectedSpecialization,
+        selectedProviderId: selectedProviderId,
+      );
       final response = await http.put(
         _uri('/admin/finance/pricing'),
         headers: const {'Content-Type': 'application/json'},
         body: jsonEncode({
           'providerId': selectedProviderId.trim(),
-          'specialization': selectedSpecialization.trim(),
+          'specialization': specializationForSave,
           'serviceType': serviceType,
           'providerRate': providerRate.text.trim(),
-          'adminCommission': commission.text.trim(),
+          'adminCommissionPercent': commissionPercent.text.trim(),
         }),
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -1810,7 +4978,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       _toast(e.toString());
     } finally {
       providerRate.dispose();
-      commission.dispose();
+      commissionPercent.dispose();
     }
   }
 
@@ -1944,6 +5112,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return '$text ILS';
   }
 
+  String _compactNumber(dynamic value) {
+    final number = _num(value);
+    if (number >= 1000000) return '${(number / 1000000).toStringAsFixed(1)}M';
+    if (number >= 1000) return (number / 1000).toStringAsFixed(3);
+    return number.toStringAsFixed(0);
+  }
+
   int _int(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
@@ -1953,6 +5128,41 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   String _text(dynamic value, {String fallback = '-'}) {
     final text = value?.toString().trim() ?? '';
     return text.isEmpty ? fallback : text;
+  }
+
+  String _shortDate(dynamic value) {
+    final raw = value?.toString().trim() ?? '';
+    final date = DateTime.tryParse(raw);
+    if (date == null) return 'New';
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  String _shortTime(dynamic value) {
+    final raw = value?.toString().trim() ?? '';
+    final date = DateTime.tryParse(raw);
+    if (date == null) return '--:--';
+    final hour = date.hour == 0
+        ? 12
+        : date.hour > 12
+        ? date.hour - 12
+        : date.hour;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final suffix = date.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $suffix';
   }
 
   String _initials(dynamic value) {
@@ -1986,6 +5196,47 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         return 'Rejected';
       default:
         return 'Pending';
+    }
+  }
+
+  String _serviceStatusGroup(String status) {
+    final value = status.toLowerCase().trim();
+    if (value == 'completed' || value == 'done') return 'completed';
+    if (value == 'in_progress' ||
+        value == 'accepted' ||
+        value == 'confirmed' ||
+        value == 'waiting_report') {
+      return 'in_progress';
+    }
+    if (value == 'cancelled' || value == 'canceled' || value == 'rejected') {
+      return 'cancelled';
+    }
+    return 'pending';
+  }
+
+  String _serviceStatusLabel(String status) {
+    switch (_serviceStatusGroup(status)) {
+      case 'completed':
+        return 'Completed';
+      case 'in_progress':
+        return 'In Progress';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return 'Upcoming';
+    }
+  }
+
+  Color _serviceStatusColor(String group) {
+    switch (group) {
+      case 'completed':
+        return const Color(0xFF1E9D69);
+      case 'in_progress':
+        return const Color(0xFFD28A00);
+      case 'cancelled':
+        return const Color(0xFFD83A59);
+      default:
+        return const Color(0xFF0A84D6);
     }
   }
 
@@ -2063,6 +5314,64 @@ List<BoxShadow> get _shadow => [
     offset: const Offset(0, 5),
   ),
 ];
+
+List<BoxShadow> get _softDashboardShadow => [
+  BoxShadow(
+    color: Colors.black.withValues(alpha: 0.035),
+    blurRadius: 18,
+    offset: const Offset(0, 8),
+  ),
+];
+
+class _StatusSlice {
+  const _StatusSlice(this.label, this.value, this.color);
+
+  final String label;
+  final int value;
+  final Color color;
+}
+
+class _DonutChartPainter extends CustomPainter {
+  const _DonutChartPainter(this.slices);
+
+  final List<_StatusSlice> slices;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = slices.fold<int>(0, (sum, slice) => sum + slice.value);
+    final rect = Offset.zero & size;
+    final strokeWidth = size.width * 0.19;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.butt;
+
+    if (total <= 0) {
+      paint.color = const Color(0xFFE8EEF0);
+      canvas.drawArc(
+        rect.deflate(strokeWidth / 2),
+        -math.pi / 2,
+        math.pi * 2,
+        false,
+        paint,
+      );
+      return;
+    }
+
+    var start = -math.pi / 2;
+    for (final slice in slices) {
+      if (slice.value <= 0) continue;
+      final sweep = (slice.value / total) * math.pi * 2;
+      paint.color = slice.color;
+      canvas.drawArc(rect.deflate(strokeWidth / 2), start, sweep, false, paint);
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutChartPainter oldDelegate) =>
+      oldDelegate.slices != slices;
+}
 
 class _ErrorState extends StatelessWidget {
   const _ErrorState({required this.message, required this.onRetry});

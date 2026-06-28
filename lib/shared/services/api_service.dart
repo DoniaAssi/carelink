@@ -595,6 +595,7 @@ class ApiService {
         body['cvFileData'] = cvFileData.trim();
         body['cvMimeType'] = (cvMimeType ?? 'application/pdf').trim();
         if (cvFileSize != null) body['cvFileSize'] = cvFileSize;
+      }
       if (serviceAreas != null && serviceAreas.trim().isNotEmpty) {
         body['serviceAreas'] = serviceAreas.trim();
       }
@@ -619,7 +620,6 @@ class ApiService {
       if (homeCareAvailability != null) {
         body['homeCareAvailability'] = homeCareAvailability;
       }
-    }
     }
 
     final response = await _sendRequest(

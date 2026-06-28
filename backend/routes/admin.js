@@ -89,7 +89,7 @@ async function ensureAdminColumns() {
       cache.set('provider_certification.verifiedAt', true);
     }
     const fileColumns = [
-      ['fileUrl', 'VARCHAR(1024) NULL'],
+      ['fileUrl', 'LONGTEXT NULL'],
       ['originalName', 'VARCHAR(512) NULL'],
       ['mimeType', 'VARCHAR(160) NULL'],
       ['fileSize', 'BIGINT NULL'],
@@ -102,22 +102,47 @@ async function ensureAdminColumns() {
         cache.set(`provider_certification.${column}`, true);
       }
     }
+    try {
+      await db.query('ALTER TABLE provider_certification MODIFY COLUMN fileUrl LONGTEXT NULL');
+      cache.set('provider_certification.fileUrl', true);
+    } catch (_) {}
   }
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS provider_documents (
       documentId CHAR(36) NOT NULL PRIMARY KEY,
       providerUserId CHAR(36) NOT NULL,
-      medical_certificate VARCHAR(1024) NULL,
-      nursing_license VARCHAR(1024) NULL,
-      id_card VARCHAR(1024) NULL,
-      cv_file VARCHAR(1024) NULL,
+      medical_certificate LONGTEXT NULL,
+      nursing_license LONGTEXT NULL,
+      id_card LONGTEXT NULL,
+      cv_file LONGTEXT NULL,
       workplace_history TEXT NULL,
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       KEY idx_provider_documents_provider (providerUserId)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
+  for (const column of ['medical_certificate', 'nursing_license', 'id_card', 'cv_file']) {
+    try {
+      await db.query(`ALTER TABLE provider_documents MODIFY COLUMN ${column} LONGTEXT NULL`);
+      cache.set(`provider_documents.${column}`, true);
+    } catch (_) {}
+  }
+
+  const serviceRequestReviewColumns = [
+    ['paymentStatus', "VARCHAR(32) NULL"],
+    ['completedAt', 'DATETIME NULL'],
+    ['adminReviewStatus', "VARCHAR(32) NULL"],
+    ['adminReviewDecision', "VARCHAR(32) NULL"],
+    ['adminReviewNotes', 'TEXT NULL'],
+    ['adminReviewedAt', 'DATETIME NULL'],
+  ];
+  for (const [column, definition] of serviceRequestReviewColumns) {
+    if (!(await hasColumn('servicerequest', column))) {
+      await db.query(`ALTER TABLE servicerequest ADD COLUMN ${column} ${definition}`);
+      cache.set(`servicerequest.${column}`, true);
+    }
+  }
 }
 
 function num(value) {
@@ -197,6 +222,10 @@ async function getMetrics() {
 }
 
 async function getRegistrationRequests() {
+  const hasUserCreatedAt = await hasColumn('user', 'createdAt');
+  const userCreatedAtSelect = hasUserCreatedAt ? 'u.createdAt' : 'NULL AS createdAt';
+  const userCreatedAtGroup = hasUserCreatedAt ? ', u.createdAt' : '';
+
   const [rows] = await db.query(`
     SELECT
       u.userId,
@@ -204,6 +233,7 @@ async function getRegistrationRequests() {
       u.email,
       u.phone,
       u.role,
+      ${userCreatedAtSelect},
       COALESCE(u.isActive, 1) AS isActive,
       cp.specialization,
       cp.experienceYears,
@@ -229,7 +259,7 @@ async function getRegistrationRequests() {
     LEFT JOIN provider_documents pd ON BINARY pd.providerUserId = BINARY u.userId
     WHERE BINARY CAST(u.role AS CHAR) IN (BINARY 'nurse', BINARY 'doctor')
     GROUP BY
-      u.userId, u.fullName, u.email, u.phone, u.role, u.isActive,
+      u.userId, u.fullName, u.email, u.phone, u.role${userCreatedAtGroup}, u.isActive,
       cp.specialization, cp.experienceYears, cp.years_experience,
       cp.experience_tier, cp.experience_level, cp.serviceType,
       cp.licenseNumber, cp.license_number, cp.serviceAreas, cp.biography,
@@ -262,6 +292,9 @@ async function getRegistrationRequests() {
 }
 
 async function getUsers(role = 'all') {
+  const userCreatedAtSelect = (await hasColumn('user', 'createdAt'))
+    ? 'u.createdAt'
+    : 'NULL AS createdAt';
   const params = [];
   let where = "WHERE BINARY CAST(u.role AS CHAR) IN (BINARY 'patient', BINARY 'nurse', BINARY 'doctor')";
   if (['patient', 'nurse', 'doctor'].includes(role)) {
@@ -277,6 +310,7 @@ async function getUsers(role = 'all') {
       u.email,
       u.phone,
       u.role,
+      ${userCreatedAtSelect},
       COALESCE(u.isActive, 1) AS isActive,
       cp.specialization,
       cp.serviceType,
@@ -299,18 +333,207 @@ async function getUsers(role = 'all') {
 }
 
 async function getCertifications(providerId) {
-  if (!(await hasTable('provider_certification'))) return [];
-  const [rows] = await db.query(
-    `
-    SELECT certId, providerUserId, name, fileUrl, originalName, mimeType, fileSize,
-           createdAt, COALESCE(isVerified, 0) AS isVerified, verifiedAt
-    FROM provider_certification
-    WHERE BINARY providerUserId = BINARY ?
-    ORDER BY createdAt DESC
-    `,
-    [providerId],
+  const certRows = [];
+  if (await hasTable('provider_certification')) {
+    const [rows] = await db.query(
+      `
+      SELECT certId, providerUserId, name, fileUrl, originalName, mimeType, fileSize,
+             createdAt, COALESCE(isVerified, 0) AS isVerified, verifiedAt
+      FROM provider_certification
+      WHERE BINARY providerUserId = BINARY ?
+      ORDER BY createdAt DESC
+      `,
+      [providerId],
+    );
+    certRows.push(
+      ...rows.map((row) => {
+        const certId = row.certId?.toString() || '';
+        const fileUrl = (row.fileUrl || '').toString().trim();
+        return {
+          ...row,
+          fileUrl: listSafeFileUrl(certId, fileUrl),
+          isVerified: Boolean(row.isVerified),
+          hasEmbeddedFile: fileUrl.startsWith('data:'),
+        };
+      }),
+    );
+  }
+
+  const documents = await getProviderDocuments(providerId);
+  const documentLabels = [
+    ['cv_file', 'CV File'],
+    ['medical_certificate', 'Medical Certificate'],
+    ['id_card', 'ID Card'],
+    ['nursing_license', 'Nursing License'],
+  ];
+  for (const doc of documents) {
+    for (const [field, name] of documentLabels) {
+      const fileUrl = (doc[field] || '').toString().trim();
+      if (!fileUrl) continue;
+      const certId = `document:${doc.documentId}:${field}`;
+      certRows.push({
+        certId,
+        providerUserId: doc.providerUserId,
+        name,
+        fileUrl: listSafeFileUrl(certId, fileUrl),
+        originalName: 'Attached file',
+        mimeType: mimeFromFileValue(fileUrl),
+        fileSize: null,
+        createdAt: doc.createdAt,
+        isVerified: true,
+        verifiedAt: doc.updatedAt,
+        documentField: field,
+      });
+    }
+  }
+
+  return certRows;
+}
+
+function listSafeFileUrl(certId, fileUrl) {
+  const value = (fileUrl || '').toString().trim();
+  if (!value.startsWith('data:')) return value;
+  return `/admin/certifications/${encodeURIComponent(certId)}/file`;
+}
+
+function parseDataUrl(value) {
+  const text = (value || '').toString().trim();
+  const match = text.match(/^data:([^;,]+);base64,(.+)$/);
+  if (!match) return null;
+  try {
+    return {
+      mimeType: match[1],
+      buffer: Buffer.from(match[2].replace(/\s/g, ''), 'base64'),
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function mimeFromFileValue(value) {
+  const text = (value || '').toString().trim().toLowerCase();
+  const dataMatch = text.match(/^data:([^;,]+);base64,/);
+  if (dataMatch) return dataMatch[1];
+  if (text.endsWith('.pdf')) return 'application/pdf';
+  if (text.endsWith('.png')) return 'image/png';
+  if (text.endsWith('.jpg') || text.endsWith('.jpeg')) return 'image/jpeg';
+  if (text.endsWith('.webp')) return 'image/webp';
+  return '';
+}
+
+function sniffFileType(buffer, fallbackMimeType = '') {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4) {
+    return { mimeType: fallbackMimeType || 'application/octet-stream', ext: 'bin', valid: false };
+  }
+  if (buffer.subarray(0, 4).toString('utf8') === '%PDF') {
+    return { mimeType: 'application/pdf', ext: 'pdf', valid: true };
+  }
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return { mimeType: 'image/png', ext: 'png', valid: true };
+  }
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { mimeType: 'image/jpeg', ext: 'jpg', valid: true };
+  }
+  if (
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    buffer.subarray(8, 12).toString('ascii') === 'WEBP'
+  ) {
+    return { mimeType: 'image/webp', ext: 'webp', valid: true };
+  }
+  return { mimeType: fallbackMimeType || 'application/octet-stream', ext: 'bin', valid: false };
+}
+
+function sendInvalidFileMessage(res) {
+  res.status(422);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return res.send(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Invalid file</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 32px; color: #183236; }
+          .box { max-width: 560px; border: 1px solid #d7e7e5; border-radius: 16px; padding: 22px; }
+          h1 { font-size: 20px; margin: 0 0 12px; color: #0f766e; }
+          p { line-height: 1.5; }
+        </style>
+      </head>
+      <body>
+        <div class="box">
+          <h1>File needs to be uploaded again</h1>
+          <p>This old document was saved in an incomplete format, so it cannot be previewed as a PDF or image.</p>
+          <p>Please ask the provider to upload the document again. New uploads will be saved as full files.</p>
+        </div>
+      </body>
+    </html>
+  `);
+}
+
+async function getCertificationFileRecord(certId) {
+  const id = (certId || '').toString();
+  if (id.startsWith('document:')) {
+    const [, documentId, field] = id.split(':');
+    const allowed = new Set([
+      'cv_file',
+      'medical_certificate',
+      'id_card',
+      'nursing_license',
+    ]);
+    if (!documentId || !allowed.has(field)) return null;
+    const [[doc]] = await db.query(
+      `SELECT documentId, ${field} AS fileUrl, updatedAt
+       FROM provider_documents
+       WHERE documentId = ?
+       LIMIT 1`,
+      [documentId],
+    );
+    if (!doc || !doc.fileUrl) return null;
+    const names = {
+      cv_file: 'CV File',
+      medical_certificate: 'Medical Certificate',
+      id_card: 'ID Card',
+      nursing_license: 'Nursing License',
+    };
+    return {
+      name: names[field] || 'Document',
+      fileUrl: doc.fileUrl,
+      originalName: `${names[field] || 'document'}.${extensionFromMimeOrValue(
+        mimeFromFileValue(doc.fileUrl),
+        doc.fileUrl,
+      )}`,
+      mimeType: mimeFromFileValue(doc.fileUrl),
+    };
+  }
+
+  const [[cert]] = await db.query(
+    `SELECT name, fileUrl, originalName, mimeType
+     FROM provider_certification
+     WHERE certId = ?
+     LIMIT 1`,
+    [id],
   );
-  return rows.map((row) => ({ ...row, isVerified: Boolean(row.isVerified) }));
+  return cert || null;
+}
+
+function extensionFromMimeOrValue(mimeType, value) {
+  const text = (value || '').toString().trim().toLowerCase();
+  const extMatch = text.match(/\.([a-z0-9]+)(?:\?.*)?$/);
+  if (extMatch) return extMatch[1];
+  const map = {
+    'application/pdf': 'pdf',
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/webp': 'webp',
+  };
+  return map[(mimeType || '').toLowerCase()] || 'bin';
 }
 
 async function getRatings() {
@@ -337,6 +560,16 @@ async function getRatings() {
 }
 
 async function getPerformance() {
+  const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
+  const hasLocationNote = await hasColumn('servicerequest', 'locationNote');
+  const hasCreatedAt = await hasColumn('servicerequest', 'createdAt');
+  const requestLocationSelect = hasVisitAddress
+    ? "COALESCE(NULLIF(sr.visitAddress, ''), NULLIF(sr.location, ''), NULLIF(sr.notes, ''), '')"
+    : hasLocationNote
+      ? "COALESCE(NULLIF(sr.location, ''), NULLIF(sr.locationNote, ''), NULLIF(sr.notes, ''), '')"
+      : "COALESCE(NULLIF(sr.location, ''), NULLIF(sr.notes, ''), '')";
+  const requestCreatedAtSelect = hasCreatedAt ? 'sr.createdAt' : 'NULL';
+
   const [statusRows] = await db.query(`
     SELECT status, COUNT(*) AS count
     FROM servicerequest
@@ -370,6 +603,30 @@ async function getPerformance() {
     LIMIT 10
   `);
 
+  const [requestRows] = await db.query(`
+    SELECT
+      sr.requestId,
+      sr.patientUserId,
+      sr.providerUserId,
+      sr.serviceType,
+      sr.status,
+      ${requestLocationSelect} AS location,
+      sr.scheduledAt,
+      ${requestCreatedAtSelect} AS createdAt,
+      COALESCE(p.final_amount, p.amount, 0) AS paidAmount,
+      COALESCE(p.paymentStatus, 'pending') AS paymentStatus,
+      pu.fullName AS patientName,
+      pr.fullName AS providerName,
+      pr.role AS providerRole
+    FROM servicerequest sr
+    LEFT JOIN payment p ON BINARY p.requestId = BINARY sr.requestId
+    LEFT JOIN user pu ON BINARY pu.userId = BINARY sr.patientUserId
+    LEFT JOIN user pr ON BINARY pr.userId = BINARY sr.providerUserId
+    WHERE BINARY LOWER(COALESCE(CAST(sr.status AS CHAR), '')) <> BINARY 'draft'
+    ORDER BY COALESCE(sr.scheduledAt, ${requestCreatedAtSelect}) DESC
+    LIMIT 120
+  `);
+
   return {
     statuses: statusRows.map((row) => ({ ...row, count: num(row.count) })),
     services: serviceRows.map((row) => ({ ...row, count: num(row.count) })),
@@ -378,6 +635,7 @@ async function getPerformance() {
       totalVisits: num(row.totalVisits),
       completedVisits: num(row.completedVisits),
     })),
+    recentRequests: requestRows,
   };
 }
 
@@ -805,6 +1063,329 @@ async function getFinanceData() {
   };
 }
 
+function bookingReviewStatusFrom(row) {
+  const status = (row.status || '').toString().trim().toLowerCase();
+  const adminStatus = (row.adminReviewStatus || '').toString().trim().toLowerCase();
+  if (adminStatus) return adminStatus;
+  if (['under_review', 'dispute', 'no_show'].includes(status)) return status;
+  if (['pending', 'pending_provider_approval', 'pending_payment', 'payment_pending'].includes(status)) {
+    return 'request_expired';
+  }
+  if (['confirmed', 'upcoming', 'accepted'].includes(status)) return 'missed_appointment';
+  if (['in_progress', 'waiting_report'].includes(status)) return 'waiting_completion';
+  return '';
+}
+
+function bookingReviewReason(reviewStatus) {
+  switch (reviewStatus) {
+    case 'request_expired':
+      return 'The patient paid or requested a booking, but the nurse did not approve before the appointment time.';
+    case 'missed_appointment':
+    case 'no_show':
+      return 'The confirmed appointment time passed without cancellation or completion.';
+    case 'waiting_completion':
+      return 'The visit was active or waiting for a report, but completion was not confirmed.';
+    case 'dispute':
+      return 'The case needs an admin decision because the attendance or service outcome is unclear.';
+    case 'under_review':
+      return 'The booking is already held for admin review.';
+    default:
+      return 'This booking needs an admin decision.';
+  }
+}
+
+function bookingReviewNotes(reviewStatus) {
+  switch (reviewStatus) {
+    case 'request_expired':
+      return 'Expected decision: full refund if the nurse did not approve or attend.';
+    case 'missed_appointment':
+    case 'no_show':
+      return 'Do not treat this as patient cancellation. Keep funds under review until admin decides.';
+    case 'waiting_completion':
+      return 'If care was delivered, confirm completion. Otherwise move to dispute or refund.';
+    case 'dispute':
+      return 'Review nurse notes, attendance evidence, and payment status before deciding.';
+    default:
+      return 'Admin review state is tracked separately from patient cancellation.';
+  }
+}
+
+async function getBookingReviewItems() {
+  await ensureAdminColumns();
+  const [rows] = await db.query(`
+    SELECT
+      sr.requestId,
+      sr.patientUserId,
+      sr.providerUserId,
+      sr.serviceType,
+      sr.status,
+      sr.scheduledAt,
+      sr.adminReviewStatus,
+      sr.adminReviewDecision,
+      sr.adminReviewNotes,
+      sr.adminReviewedAt,
+      pu.fullName AS patientName,
+      pr.fullName AS providerName,
+      pr.role AS providerRole,
+      COALESCE(p.paymentId, '') AS paymentId,
+      COALESCE(p.paymentStatus, sr.paymentStatus, 'pending') AS paymentStatus,
+      COALESCE(p.final_amount, p.amount, 0) AS paidAmount,
+      COALESCE(p.status, 'pending') AS escrowStatus
+    FROM servicerequest sr
+    JOIN user pr ON BINARY pr.userId = BINARY sr.providerUserId
+    LEFT JOIN user pu ON BINARY pu.userId = BINARY sr.patientUserId
+    LEFT JOIN payment p ON BINARY p.requestId = BINARY sr.requestId
+    WHERE BINARY CAST(pr.role AS CHAR) = BINARY 'nurse'
+      AND sr.scheduledAt IS NOT NULL
+      AND sr.scheduledAt < NOW()
+      AND BINARY LOWER(COALESCE(CAST(sr.status AS CHAR), '')) NOT IN
+        (BINARY 'completed', BINARY 'done', BINARY 'cancelled', BINARY 'canceled', BINARY 'draft')
+      AND (
+        sr.adminReviewDecision IS NULL
+        OR BINARY CAST(sr.adminReviewDecision AS CHAR) = BINARY ''
+        OR BINARY CAST(sr.adminReviewStatus AS CHAR) IN (BINARY 'under_review', BINARY 'dispute')
+      )
+    ORDER BY sr.scheduledAt DESC
+    LIMIT 200
+  `);
+
+  return rows
+    .map((row) => {
+      const reviewStatus = bookingReviewStatusFrom(row);
+      if (!reviewStatus) return null;
+      return {
+        id: row.requestId,
+        requestId: row.requestId,
+        patientUserId: row.patientUserId,
+        providerUserId: row.providerUserId,
+        patientName: row.patientName || 'Patient',
+        providerName: row.providerName || 'Nurse',
+        providerRole: 'nurse',
+        serviceType: row.serviceType || 'Nursing Service',
+        scheduledAt: row.scheduledAt,
+        amount: Number(row.paidAmount || 0),
+        status: reviewStatus,
+        originalStatus: row.status,
+        paymentStatus: row.paymentStatus || 'pending',
+        escrowStatus: row.escrowStatus || 'pending',
+        decision: row.adminReviewDecision || '',
+        reason: bookingReviewReason(reviewStatus),
+        systemNotes: row.adminReviewNotes || bookingReviewNotes(reviewStatus),
+      };
+    })
+    .filter(Boolean);
+}
+
+async function applyBookingReviewDecision(requestId, body = {}) {
+  await ensureAdminColumns();
+  await ensureFinanceTables();
+  const decision = (body.decision || '').toString().trim().toLowerCase();
+  const notes = (body.notes || '').toString().trim();
+  const allowed = new Set([
+    'confirm_completed',
+    'full_refund',
+    'partial_refund',
+    'deny_refund',
+    'mark_dispute',
+  ]);
+  if (!allowed.has(decision)) {
+    const e = new Error('decision must be confirm_completed, full_refund, partial_refund, deny_refund, or mark_dispute');
+    e.status = 400;
+    throw e;
+  }
+
+  const [[booking]] = await db.query(
+    `SELECT sr.requestId, sr.patientUserId, sr.providerUserId, sr.status, sr.scheduledAt,
+            sr.adminReviewDecision, pr.role AS providerRole
+     FROM servicerequest sr
+     JOIN user pr ON BINARY pr.userId = BINARY sr.providerUserId
+     WHERE BINARY sr.requestId = BINARY ?
+     LIMIT 1`,
+    [requestId],
+  );
+  if (!booking) {
+    const e = new Error('Booking not found');
+    e.status = 404;
+    throw e;
+  }
+  if ((booking.providerRole || '').toString().toLowerCase() !== 'nurse') {
+    const e = new Error('Booking review is available for nurse bookings only');
+    e.status = 403;
+    throw e;
+  }
+
+  const [[payment]] = await db.query(
+    `SELECT paymentId, providerUserId, amount, final_amount, provider_amount, admin_amount, paymentStatus, status
+     FROM payment
+     WHERE BINARY requestId = BINARY ?
+     ORDER BY createdAt DESC
+     LIMIT 1`,
+    [requestId],
+  );
+  const paidAmount = Math.max(0, Number(payment?.final_amount || payment?.amount || 0));
+  let reviewStatus = 'under_review';
+  let paymentSummary = null;
+
+  if (decision === 'confirm_completed') {
+    await db.query(
+      `UPDATE servicerequest
+       SET status = 'completed',
+           completedAt = COALESCE(completedAt, NOW()),
+           adminReviewStatus = 'resolved',
+           adminReviewDecision = ?,
+           adminReviewNotes = ?,
+           adminReviewedAt = NOW()
+       WHERE BINARY requestId = BINARY ?`,
+      [decision, notes || 'Admin confirmed that the nurse completed the service.', requestId],
+    );
+    await syncFinanceLedger();
+    reviewStatus = 'resolved';
+  } else if (decision === 'full_refund') {
+    if (payment?.paymentId) {
+      await db.query(
+        `UPDATE payment
+         SET paymentStatus = 'refunded',
+             status = 'refunded',
+             provider_amount = 0,
+             admin_amount = 0,
+             final_amount = 0,
+             updatedAt = NOW()
+         WHERE BINARY paymentId = BINARY ?`,
+        [payment.paymentId],
+      );
+      await adjustFinanceLedgerForReview({
+        providerId: payment.providerUserId || booking.providerUserId,
+        oldProviderAmount: payment.provider_amount,
+        newProviderAmount: 0,
+        oldAdminAmount: payment.admin_amount,
+        newAdminAmount: 0,
+      });
+      paymentSummary = { refundAmount: paidAmount, retainedAmount: 0 };
+    }
+    await db.query(
+      `UPDATE servicerequest
+       SET adminReviewStatus = 'resolved',
+           adminReviewDecision = ?,
+           adminReviewNotes = ?,
+           adminReviewedAt = NOW()
+       WHERE BINARY requestId = BINARY ?`,
+      [decision, notes || 'Admin approved a full refund. This is not a patient cancellation.', requestId],
+    );
+    reviewStatus = 'resolved';
+  } else if (decision === 'partial_refund') {
+    const requestedRefund = Number(body.refundAmount);
+    const refundAmount = Number.isFinite(requestedRefund)
+      ? Math.min(Math.max(0, requestedRefund), paidAmount)
+      : Number((paidAmount * 0.8).toFixed(2));
+    const retained = Math.max(0, paidAmount - refundAmount);
+    const providerShare = Number((retained / 2).toFixed(2));
+    const adminShare = Number((retained - providerShare).toFixed(2));
+    if (payment?.paymentId) {
+      await db.query(
+        `UPDATE payment
+         SET paymentStatus = 'refunded',
+             status = 'refunded',
+             provider_amount = ?,
+             admin_amount = ?,
+             final_amount = ?,
+             updatedAt = NOW()
+         WHERE BINARY paymentId = BINARY ?`,
+        [providerShare, adminShare, retained, payment.paymentId],
+      );
+      await adjustFinanceLedgerForReview({
+        providerId: payment.providerUserId || booking.providerUserId,
+        oldProviderAmount: payment.provider_amount,
+        newProviderAmount: providerShare,
+        oldAdminAmount: payment.admin_amount,
+        newAdminAmount: adminShare,
+      });
+      paymentSummary = { refundAmount, retainedAmount: retained, providerShare, adminShare };
+    }
+    await db.query(
+      `UPDATE servicerequest
+       SET adminReviewStatus = 'resolved',
+           adminReviewDecision = ?,
+           adminReviewNotes = ?,
+           adminReviewedAt = NOW()
+       WHERE BINARY requestId = BINARY ?`,
+      [decision, notes || `Admin approved a partial refund of ${refundAmount}.`, requestId],
+    );
+    reviewStatus = 'resolved';
+  } else if (decision === 'deny_refund') {
+    await db.query(
+      `UPDATE servicerequest
+       SET adminReviewStatus = 'resolved',
+           adminReviewDecision = ?,
+           adminReviewNotes = ?,
+           adminReviewedAt = NOW()
+       WHERE BINARY requestId = BINARY ?`,
+      [decision, notes || 'Admin denied refund because patient no-show or no valid refund reason was confirmed.', requestId],
+    );
+    reviewStatus = 'resolved';
+  } else if (decision === 'mark_dispute') {
+    await db.query(
+      `UPDATE servicerequest
+       SET adminReviewStatus = 'dispute',
+           adminReviewDecision = ?,
+           adminReviewNotes = ?,
+           adminReviewedAt = NOW()
+       WHERE BINARY requestId = BINARY ?`,
+      [decision, notes || 'Admin moved this nurse booking to dispute review.', requestId],
+    );
+    reviewStatus = 'dispute';
+  }
+
+  try {
+    if (booking.providerUserId) {
+      await insertNotification({
+        userId: booking.providerUserId,
+        type: 'booking_review',
+        title: 'Booking review updated',
+        body: `Admin decision for booking ${requestId}: ${decision.replace(/_/g, ' ')}.`,
+        relatedRequestId: requestId,
+      });
+    }
+  } catch (_) {}
+
+  return { success: true, requestId, decision, reviewStatus, payment: paymentSummary };
+}
+
+async function adjustFinanceLedgerForReview({
+  providerId,
+  oldProviderAmount,
+  newProviderAmount,
+  oldAdminAmount,
+  newAdminAmount,
+}) {
+  const providerDelta = Number(newProviderAmount || 0) - Number(oldProviderAmount || 0);
+  const adminDelta = Number(newAdminAmount || 0) - Number(oldAdminAmount || 0);
+  if (providerId && Math.abs(providerDelta) > 0.001) {
+    await db.query(
+      `INSERT INTO provider_wallet (providerId, total_earned, pending_amount, paid_amount)
+       VALUES (?, GREATEST(0, ?), GREATEST(0, ?), 0)
+       ON DUPLICATE KEY UPDATE
+         total_earned = GREATEST(0, total_earned + ?),
+         pending_amount = GREATEST(0, pending_amount + ?)`,
+      [
+        providerId,
+        Math.max(0, providerDelta),
+        Math.max(0, providerDelta),
+        providerDelta,
+        providerDelta,
+      ],
+    );
+  }
+  if (Math.abs(adminDelta) > 0.001) {
+    await db.query(
+      `INSERT INTO admin_wallet (id, total_income)
+       VALUES (1, GREATEST(0, ?))
+       ON DUPLICATE KEY UPDATE
+         total_income = GREATEST(0, total_income + ?)`,
+      [Math.max(0, adminDelta), adminDelta],
+    );
+  }
+}
+
 async function upsertFinancePricing(body) {
   await ensureAdminColumns();
   await ensureFinanceTables();
@@ -812,8 +1393,10 @@ async function upsertFinancePricing(body) {
   const specialization = (body.specialization || '').toString().trim();
   const serviceType = (body.serviceType || '').toString().trim().toLowerCase();
   const providerRate = Number(body.providerRate);
-  const commission = Number(body.adminCommission);
-  const patientRate = providerRate + commission;
+  const commissionPercent = Number(body.adminCommissionPercent ?? 20);
+  const extraCommission = Number(
+    body.adminCommissionExtra ?? body.extraAdminCommission ?? 0,
+  );
 
   if (!specialization || !['doctor', 'nurse'].includes(serviceType)) {
     const e = new Error('specialization and serviceType doctor/nurse are required');
@@ -825,11 +1408,21 @@ async function upsertFinancePricing(body) {
     e.status = 400;
     throw e;
   }
-  if (!Number.isFinite(commission) || commission < 0) {
-    const e = new Error('adminCommission must be a valid positive number');
+  if (!Number.isFinite(commissionPercent) || commissionPercent < 20) {
+    const e = new Error('adminCommissionPercent must be at least 20');
     e.status = 400;
     throw e;
   }
+  if (!Number.isFinite(extraCommission) || extraCommission < 0) {
+    const e = new Error('adminCommissionExtra must be a valid positive number');
+    e.status = 400;
+    throw e;
+  }
+  const commission =
+    body.adminCommissionPercent == null
+      ? Math.round(((providerRate * 0.2) + extraCommission) * 100) / 100
+      : Math.round(providerRate * (commissionPercent / 100) * 100) / 100;
+  const patientRate = Math.round((providerRate + commission) * 100) / 100;
 
   const [[existingCommission]] = await db.query(
     `SELECT id FROM admin_commission
@@ -1014,17 +1607,34 @@ async function updatePayoutStatus(payoutId, action) {
 router.get('/dashboard', async (req, res) => {
   try {
     await ensureAdminColumns();
-    const [metrics, requests, users, ratings, performance, finance] = await Promise.all([
+    const [metrics, requests, users, ratings, performance, finance, bookingReview] = await Promise.all([
       getMetrics(),
       getRegistrationRequests(),
       getUsers(req.query.role?.toString() || 'all'),
       getRatings(),
       getPerformance(),
       getFinanceData(),
+      getBookingReviewItems(),
     ]);
-    res.json({ metrics, requests, users, ratings, performance, finance });
+    res.json({ metrics, requests, users, ratings, performance, finance, bookingReview });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/booking-review', async (req, res) => {
+  try {
+    res.json(await getBookingReviewItems());
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.put('/booking-review/:requestId/decision', async (req, res) => {
+  try {
+    res.json(await applyBookingReviewDecision(req.params.requestId, req.body || {}));
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -1067,6 +1677,48 @@ router.get('/providers/:providerId/documents', async (req, res) => {
     res.json(await getProviderDocuments(req.params.providerId));
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/certifications/:certId/file', async (req, res) => {
+  try {
+    await ensureAdminColumns();
+    const cert = await getCertificationFileRecord(req.params.certId);
+    if (!cert || !cert.fileUrl) {
+      return res.status(404).send('Certification file not found');
+    }
+
+    const fileUrl = cert.fileUrl.toString().trim();
+    if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+      return res.redirect(fileUrl);
+    }
+    if (fileUrl.startsWith('/') || fileUrl.startsWith('uploads/')) {
+      return res.redirect(fileUrl.startsWith('/') ? fileUrl : `/${fileUrl}`);
+    }
+
+    const parsed = parseDataUrl(fileUrl);
+    if (!parsed) {
+      return res.status(400).send('Unsupported certification file format');
+    }
+    const detected = sniffFileType(parsed.buffer, cert.mimeType || parsed.mimeType);
+    if (!detected.valid) {
+      return sendInvalidFileMessage(res);
+    }
+    const safeName = (
+      cert.originalName ||
+      cert.name ||
+      'certification'
+    ).toString().replace(/[^\w.\- ]+/g, '_');
+    const filename = safeName.includes('.')
+      ? safeName
+      : `${safeName}.${detected.ext}`;
+    res.setHeader('Content-Type', detected.mimeType);
+    res.setHeader('Content-Length', parsed.buffer.length);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    return res.send(parsed.buffer);
+  } catch (err) {
+    return res.status(500).send(err.message);
   }
 });
 
