@@ -2223,6 +2223,53 @@ router.get('/availability/:providerId', async (req, res) => {
   }
 });
 
+function minutesFromTime(value) {
+  const text = (value || '').toString().trim();
+  const match = text.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return null;
+  }
+  return hour * 60 + minute;
+}
+
+function timeFromMinutes(totalMinutes) {
+  const minutesInDay = 24 * 60;
+  const value = ((totalMinutes % minutesInDay) + minutesInDay) % minutesInDay;
+  const hour = Math.floor(value / 60).toString().padStart(2, '0');
+  const minute = (value % 60).toString().padStart(2, '0');
+  return `${hour}:${minute}:00`;
+}
+
+function expandHourlyAvailabilitySlot(slot) {
+  const day = (slot.day ?? slot['day'] ?? '').toString().trim();
+  const startTime = (slot.startTime ?? slot['start'] ?? '').toString().trim();
+  const endTime = (slot.endTime ?? slot['end'] ?? '').toString().trim();
+  const start = minutesFromTime(startTime);
+  const end = minutesFromTime(endTime);
+  if (!day || start == null || end == null || end <= start) return [];
+
+  const expanded = [];
+  for (let cursor = start; cursor < end; cursor += 60) {
+    const next = Math.min(cursor + 60, end);
+    expanded.push({
+      day,
+      startTime: timeFromMinutes(cursor),
+      endTime: timeFromMinutes(next),
+    });
+  }
+  return expanded;
+}
+
 router.put('/availability/:providerId', async (req, res) => {
   const { providerId } = req.params;
   const slots = (req.body || {}).slots;
@@ -2234,7 +2281,8 @@ router.put('/availability/:providerId', async (req, res) => {
     await assertProviderCanWork(providerId);
     await ensureAvailabilitySlotTable();
     await conn.beginTransaction();
-    await ensureCareProviderForAvailability(conn, providerId, slots.length > 0);
+    const hourlySlots = slots.flatMap(expandHourlyAvailabilitySlot);
+    await ensureCareProviderForAvailability(conn, providerId, hourlySlots.length > 0);
     const hasSlotId = await hasColumn('availabilityslot', 'slotId');
     const hasSlotUnderscore = await hasColumn('availabilityslot', 'slot_id');
     if (hasSlotId || hasSlotUnderscore) {
@@ -2246,11 +2294,8 @@ router.put('/availability/:providerId', async (req, res) => {
         providerId,
       ]);
     }
-    for (const s of slots) {
-      const day = (s.day ?? s['day'] ?? '').toString().trim();
-      const startTime = (s.startTime ?? s['start'] ?? '').toString().trim();
-      const endTime = (s.endTime ?? s['end'] ?? '').toString().trim();
-      if (!day || !startTime || !endTime) continue;
+    for (const s of hourlySlots) {
+      const { day, startTime, endTime } = s;
       if (hasSlotId) {
         await conn.execute(
           `INSERT INTO availabilityslot (slotId, providerUserId, day, startTime, endTime)
@@ -2272,7 +2317,7 @@ router.put('/availability/:providerId', async (req, res) => {
       }
     }
     await conn.commit();
-    res.json({ success: true });
+    res.json({ success: true, slots: hourlySlots });
   } catch (err) {
     await conn.rollback();
     console.error('[nurse availability] save failed:', err.message);

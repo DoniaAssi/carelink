@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/app_colors.dart';
+import '../../../core/app_localizations.dart';
+import '../../../core/locale_controller.dart';
+import '../../../core/theme_controller.dart';
 import '../../../services/doctor_service.dart';
 import 'doctor_ui_constants.dart';
 
@@ -41,10 +44,18 @@ class _InitialDiagnosisReportScreenState
   bool _isSaving = false;
   int _requiredVisits = 5;
 
-  static const _pageColor = DoctorUiConstants.doctorBackground;
   static const _primary = Color(0xFF0F8B8D);
-  static const _ink = Color(0xFF101828);
-  static const _muted = Color(0xFF667085);
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _pageColor => _isDark
+      ? Theme.of(context).scaffoldBackgroundColor
+      : DoctorUiConstants.doctorBackground;
+  Color get _surfaceColor =>
+      _isDark ? Theme.of(context).colorScheme.surface : Colors.white;
+  Color get _ink => _isDark ? Colors.white : const Color(0xFF101828);
+  Color get _muted => _isDark ? Colors.white70 : const Color(0xFF667085);
+  Color get _softPrimary =>
+      _isDark ? _primary.withValues(alpha: 0.18) : const Color(0xFFE7F7F2);
+  Color get _fieldBorder => _isDark ? Colors.white24 : const Color(0xFFDDE7E5);
   static const _bloodTypes = <String>[
     'A+',
     'A-',
@@ -128,6 +139,10 @@ class _InitialDiagnosisReportScreenState
 
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    final doctorIdMissingMessage = context.dtr(
+      'doctor.initial.doctorIdMissing',
+    );
+    final saveFailedMessage = context.dtr('doctor.initial.saveFailed');
 
     final symptomText = [
       ..._symptoms,
@@ -137,7 +152,7 @@ class _InitialDiagnosisReportScreenState
 
     if (symptomText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select or enter symptoms')),
+        SnackBar(content: Text(context.dtr('doctor.initial.selectSymptoms'))),
       );
       return;
     }
@@ -149,7 +164,9 @@ class _InitialDiagnosisReportScreenState
           prefs.getString('doctor_userId') ??
           _text(widget.requestData?['providerUserId']) ??
           '';
-      if (doctorId.isEmpty) throw Exception('Doctor ID not found');
+      if (doctorId.isEmpty) {
+        throw Exception(doctorIdMissingMessage);
+      }
 
       final response = await _doctorService.createInitialDiagnosisReport(
         serviceRequestId: widget.requestId,
@@ -163,13 +180,13 @@ class _InitialDiagnosisReportScreenState
       );
 
       if (response['success'] != true) {
-        throw Exception(response['error'] ?? 'Failed to save report');
+        throw Exception(response['error'] ?? saveFailedMessage);
       }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Initial diagnosis saved successfully.'),
+        SnackBar(
+          content: Text(context.dtr('doctor.initial.saved')),
           backgroundColor: AppColors.success,
         ),
       );
@@ -186,52 +203,64 @@ class _InitialDiagnosisReportScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _pageColor,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: Form(
-              key: _formKey,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 26),
-                children: [
-                  _appBar(),
-                  const SizedBox(height: 18),
-                  _patientHeader(),
-                  const SizedBox(height: 12),
-                  _medicalProfileCard(),
-                  const SizedBox(height: 12),
-                  _textAreaCard(
-                    icon: Icons.assignment_outlined,
-                    title: 'Chief Complaint',
-                    controller: _chiefComplaintController,
-                    hint: 'Enter chief complaint...',
+    return ListenableBuilder(
+      listenable: localeController,
+      builder: (context, _) => Directionality(
+        textDirection: localeController.isDoctorArabic
+            ? TextDirection.rtl
+            : TextDirection.ltr,
+        child: Scaffold(
+          backgroundColor: _pageColor,
+          body: SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: Form(
+                  key: _formKey,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 26),
+                    children: [
+                      _appBar(),
+                      const SizedBox(height: 18),
+                      _patientHeader(),
+                      const SizedBox(height: 12),
+                      _medicalProfileCard(),
+                      const SizedBox(height: 12),
+                      _textAreaCard(
+                        icon: Icons.assignment_outlined,
+                        title: context.dtr('doctor.initial.chiefComplaint'),
+                        controller: _chiefComplaintController,
+                        hint: context.dtr('doctor.initial.enterChiefComplaint'),
+                      ),
+                      _symptomsCard(),
+                      _textAreaCard(
+                        icon: Icons.medical_services_outlined,
+                        title: context.dtr('doctor.initial.diagnosis'),
+                        controller: _diagnosisController,
+                        hint: context.dtr('doctor.initial.enterDiagnosis'),
+                      ),
+                      _textAreaCard(
+                        icon: Icons.medication_outlined,
+                        title: context.dtr('doctor.initial.treatmentPlan'),
+                        controller: _treatmentPlanController,
+                        hint: context.dtr('doctor.initial.enterTreatmentPlan'),
+                      ),
+                      _textAreaCard(
+                        icon: Icons.warning_amber_rounded,
+                        title: context.dtr(
+                          'doctor.initial.nursingInstructions',
+                        ),
+                        controller: _nursingInstructionsController,
+                        hint: context.dtr(
+                          'doctor.initial.enterNursingInstructions',
+                        ),
+                      ),
+                      _visitsCard(),
+                      const SizedBox(height: 18),
+                      _saveButton(),
+                    ],
                   ),
-                  _symptomsCard(),
-                  _textAreaCard(
-                    icon: Icons.medical_services_outlined,
-                    title: 'Diagnosis',
-                    controller: _diagnosisController,
-                    hint: 'Enter diagnosis...',
-                  ),
-                  _textAreaCard(
-                    icon: Icons.medication_outlined,
-                    title: 'Treatment Plan',
-                    controller: _treatmentPlanController,
-                    hint: 'Enter treatment plan...',
-                  ),
-                  _textAreaCard(
-                    icon: Icons.warning_amber_rounded,
-                    title: 'Nursing Instructions',
-                    controller: _nursingInstructionsController,
-                    hint: 'Enter nursing instructions...',
-                  ),
-                  _visitsCard(),
-                  const SizedBox(height: 18),
-                  _saveButton(),
-                ],
+                ),
               ),
             ),
           ),
@@ -244,15 +273,28 @@ class _InitialDiagnosisReportScreenState
     return Row(
       children: [
         _iconButton(Icons.arrow_back_rounded, () => Navigator.pop(context)),
-        const Expanded(
+        Expanded(
           child: Text(
-            'Initial Diagnosis Report',
+            context.dtr('doctor.initial.title'),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: _ink,
               fontSize: 22,
               fontWeight: FontWeight.w900,
             ),
+          ),
+        ),
+        _iconButton(
+          Icons.language_rounded,
+          () => localeController.toggleDoctor(),
+        ),
+        ListenableBuilder(
+          listenable: themeController,
+          builder: (context, _) => _iconButton(
+            themeController.isDark
+                ? Icons.light_mode_rounded
+                : Icons.dark_mode_rounded,
+            () => themeController.toggle(),
           ),
         ),
         _iconButton(Icons.save_outlined, _isSaving ? null : _save),
@@ -262,16 +304,21 @@ class _InitialDiagnosisReportScreenState
 
   Widget _patientHeader() {
     final data = widget.requestData ?? {};
-    final name = _text(data['patientName']) ?? 'Patient';
+    final name =
+        _text(data['patientName']) ?? context.dtr('doctor.initial.patient');
     final age = _ageLabel(_text(_medicalRecord['dateOfBirth']));
-    final gender = _text(_medicalRecord['gender']) ?? 'Not set';
+    final gender =
+        _text(_medicalRecord['gender']) ?? context.dtr('doctor.common.notSet');
     final address =
         _text(data['visitAddress']) ??
         _text(data['location']) ??
         _text(_medicalRecord['addressText']) ??
-        'Not set';
-    final phone = _text(data['patientPhone']) ?? 'Not set';
-    final serviceType = _text(data['serviceType']) ?? 'Medical Visit';
+        context.dtr('doctor.common.notSet');
+    final phone =
+        _text(data['patientPhone']) ?? context.dtr('doctor.common.notSet');
+    final serviceType =
+        _text(data['serviceType']) ??
+        context.dtr('doctor.initial.medicalVisit');
     final image = _text(data['profileImageUrl']) ?? _text(data['patientImage']);
 
     return _card(
@@ -279,7 +326,7 @@ class _InitialDiagnosisReportScreenState
         children: [
           CircleAvatar(
             radius: 44,
-            backgroundColor: const Color(0xFFE7F7F2),
+            backgroundColor: _softPrimary,
             backgroundImage: image == null ? null : NetworkImage(image),
             child: image == null
                 ? Text(
@@ -299,7 +346,7 @@ class _InitialDiagnosisReportScreenState
               children: [
                 Text(
                   name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _ink,
                     fontSize: 21,
                     fontWeight: FontWeight.w900,
@@ -308,10 +355,7 @@ class _InitialDiagnosisReportScreenState
                 const SizedBox(height: 8),
                 Text(
                   '$age, $gender',
-                  style: const TextStyle(
-                    color: _muted,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: TextStyle(color: _muted, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
                 _inlineInfo(Icons.location_on_outlined, address),
@@ -323,7 +367,7 @@ class _InitialDiagnosisReportScreenState
                     Expanded(
                       child: _inlineInfo(Icons.local_hospital, serviceType),
                     ),
-                    _statusBadge('Active'),
+                    _statusBadge(context.dtr('doctor.initial.active')),
                   ],
                 ),
               ],
@@ -342,10 +386,10 @@ class _InitialDiagnosisReportScreenState
             children: [
               _iconTile(Icons.water_drop_outlined),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Medical Profile',
-                  style: TextStyle(
+                  context.dtr('doctor.initial.medicalProfile'),
+                  style: const TextStyle(
                     color: _primary,
                     fontSize: 17,
                     fontWeight: FontWeight.w900,
@@ -361,12 +405,18 @@ class _InitialDiagnosisReportScreenState
               child: CircularProgressIndicator(),
             )
           else ...[
-            _medicalFieldLabel(Icons.water_drop, 'Blood Type', required: true),
+            _medicalFieldLabel(
+              Icons.water_drop,
+              context.dtr('doctor.initial.bloodType'),
+              required: true,
+            ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
               initialValue: _selectedBloodType,
               isExpanded: true,
-              decoration: _medicalInputDecoration('Select blood type'),
+              decoration: _medicalInputDecoration(
+                context.dtr('doctor.initial.selectBloodType'),
+              ),
               items: _bloodTypes
                   .map(
                     (type) => DropdownMenuItem<String>(
@@ -375,33 +425,34 @@ class _InitialDiagnosisReportScreenState
                     ),
                   )
                   .toList(),
-              validator: (value) => value == null ? 'Required' : null,
+              validator: (value) =>
+                  value == null ? context.dtr('doctor.initial.required') : null,
               onChanged: (value) => setState(() => _selectedBloodType = value),
             ),
             const SizedBox(height: 16),
             _medicalTextField(
               icon: Icons.monitor_heart,
-              label: 'Chronic Diseases',
+              label: context.dtr('doctor.initial.chronicDiseases'),
               controller: _chronicDiseasesController,
-              hint: 'Enter chronic diseases...',
+              hint: context.dtr('doctor.initial.enterChronicDiseases'),
             ),
             _medicalTextField(
               icon: Icons.warning_amber_rounded,
-              label: 'Allergies',
+              label: context.dtr('doctor.initial.allergies'),
               controller: _allergiesController,
-              hint: 'Enter allergies...',
+              hint: context.dtr('doctor.initial.enterAllergies'),
             ),
             _medicalTextField(
               icon: Icons.medication_outlined,
-              label: 'Current Medications',
+              label: context.dtr('doctor.initial.currentMedications'),
               controller: _currentMedicationsController,
-              hint: 'Enter current medications...',
+              hint: context.dtr('doctor.initial.enterCurrentMedications'),
             ),
             _medicalTextField(
               icon: Icons.edit_outlined,
-              label: 'Previous Surgeries',
+              label: context.dtr('doctor.initial.previousSurgeries'),
               controller: _previousSurgeriesController,
-              hint: 'Enter previous surgeries...',
+              hint: context.dtr('doctor.initial.enterPreviousSurgeries'),
               bottomSpacing: 0,
             ),
           ],
@@ -411,33 +462,37 @@ class _InitialDiagnosisReportScreenState
   }
 
   Widget _symptomsCard() {
+    const symptomOptions = <(String, String)>[
+      ('Fever', 'doctor.initial.fever'),
+      ('Headache', 'doctor.initial.headache'),
+      ('Dizziness', 'doctor.initial.dizziness'),
+      ('Nausea', 'doctor.initial.nausea'),
+      ('Other', 'doctor.initial.other'),
+    ];
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _fieldTitle(Icons.medical_services_outlined, 'Symptoms'),
+          _fieldTitle(
+            Icons.medical_services_outlined,
+            context.dtr('doctor.initial.symptoms'),
+          ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 22,
             runSpacing: 10,
             children: [
-              for (final symptom in const [
-                'Fever',
-                'Headache',
-                'Dizziness',
-                'Nausea',
-                'Other',
-              ])
+              for (final option in symptomOptions)
                 SizedBox(
-                  width: symptom == 'Other' ? 110 : 140,
+                  width: option.$1 == 'Other' ? 110 : 140,
                   child: CheckboxListTile(
-                    value: _symptoms.contains(symptom),
+                    value: _symptoms.contains(option.$1),
                     onChanged: (value) {
                       setState(() {
                         if (value == true) {
-                          _symptoms.add(symptom);
+                          _symptoms.add(option.$1);
                         } else {
-                          _symptoms.remove(symptom);
+                          _symptoms.remove(option.$1);
                         }
                       });
                     },
@@ -445,7 +500,7 @@ class _InitialDiagnosisReportScreenState
                     contentPadding: EdgeInsets.zero,
                     dense: true,
                     title: Text(
-                      symptom,
+                      context.dtr(option.$2),
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
@@ -455,7 +510,7 @@ class _InitialDiagnosisReportScreenState
                 child: TextField(
                   controller: _otherSymptomsController,
                   decoration: InputDecoration(
-                    hintText: 'Specify other symptoms...',
+                    hintText: context.dtr('doctor.initial.specifyOther'),
                     isDense: true,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -487,18 +542,19 @@ class _InitialDiagnosisReportScreenState
             minLines: 3,
             maxLines: 5,
             maxLength: 500,
-            validator: (value) =>
-                value == null || value.trim().isEmpty ? 'Required' : null,
+            validator: (value) => value == null || value.trim().isEmpty
+                ? context.dtr('doctor.initial.required')
+                : null,
             decoration: InputDecoration(
               hintText: hint,
-              counterStyle: const TextStyle(color: _muted, fontSize: 11),
+              counterStyle: TextStyle(color: _muted, fontSize: 11),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFDDE7E5)),
+                borderSide: BorderSide(color: _fieldBorder),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFDDE7E5)),
+                borderSide: BorderSide(color: _fieldBorder),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -517,7 +573,7 @@ class _InitialDiagnosisReportScreenState
         children: [
           _fieldTitle(
             Icons.calendar_month_outlined,
-            'Required Number of Visits',
+            context.dtr('doctor.initial.requiredVisits'),
           ),
           const SizedBox(height: 20),
           Row(
@@ -533,8 +589,8 @@ class _InitialDiagnosisReportScreenState
                 child: Text(
                   '$_requiredVisits',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.black,
+                  style: TextStyle(
+                    color: _ink,
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
                   ),
@@ -550,18 +606,23 @@ class _InitialDiagnosisReportScreenState
           Text.rich(
             TextSpan(
               children: [
-                const TextSpan(text: 'Progress: '),
+                TextSpan(text: '${context.dtr('doctor.initial.progress')} '),
                 TextSpan(
-                  text: '0 / $_requiredVisits',
+                  text: context.dtr(
+                    'doctor.initial.visitsProgress',
+                    args: {'completed': '0', 'required': '$_requiredVisits'},
+                  ),
                   style: const TextStyle(
                     color: _primary,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const TextSpan(text: ' Visits Completed'),
+                TextSpan(
+                  text: ' ${context.dtr('doctor.initial.visitsCompleted')}',
+                ),
               ],
             ),
-            style: const TextStyle(
+            style: TextStyle(
               color: _muted,
               fontSize: 16,
               fontWeight: FontWeight.w800,
@@ -585,7 +646,7 @@ class _InitialDiagnosisReportScreenState
               ),
             )
           : const Icon(Icons.save_outlined),
-      label: const Text('Save Initial Diagnosis'),
+      label: Text(context.dtr('doctor.initial.save')),
       style: ElevatedButton.styleFrom(
         backgroundColor: _primary,
         foregroundColor: Colors.white,
@@ -601,7 +662,7 @@ class _InitialDiagnosisReportScreenState
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
@@ -660,7 +721,7 @@ class _InitialDiagnosisReportScreenState
                 ),
             ],
           ),
-          style: const TextStyle(color: _ink, fontWeight: FontWeight.w800),
+          style: TextStyle(color: _ink, fontWeight: FontWeight.w800),
         ),
       ],
     );
@@ -695,15 +756,15 @@ class _InitialDiagnosisReportScreenState
     return InputDecoration(
       hintText: hint,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: _surfaceColor,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFDDE7E5)),
+        borderSide: BorderSide(color: _fieldBorder),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFDDE7E5)),
+        borderSide: BorderSide(color: _fieldBorder),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -722,7 +783,7 @@ class _InitialDiagnosisReportScreenState
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: _ink, fontWeight: FontWeight.w800),
+            style: TextStyle(color: _ink, fontWeight: FontWeight.w800),
           ),
         ),
       ],
@@ -734,7 +795,7 @@ class _InitialDiagnosisReportScreenState
       width: 34,
       height: 34,
       decoration: BoxDecoration(
-        color: const Color(0xFFE7F7F2),
+        color: _softPrimary,
         borderRadius: BorderRadius.circular(9),
       ),
       child: Icon(icon, color: _primary, size: 20),
@@ -743,7 +804,7 @@ class _InitialDiagnosisReportScreenState
 
   Widget _counterButton(IconData icon, VoidCallback onTap) {
     return Material(
-      color: const Color(0xFFE7F7F2),
+      color: _softPrimary,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: onTap,
@@ -761,7 +822,7 @@ class _InitialDiagnosisReportScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFE7F7F2),
+        color: _softPrimary,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -819,14 +880,14 @@ class _InitialDiagnosisReportScreenState
 
   String _ageLabel(String? dateOfBirth) {
     final date = DateTime.tryParse(dateOfBirth ?? '');
-    if (date == null) return 'Not set';
+    if (date == null) return context.dtr('doctor.common.notSet');
     final now = DateTime.now();
     var age = now.year - date.year;
     if (now.month < date.month ||
         (now.month == date.month && now.day < date.day)) {
       age--;
     }
-    return '$age years';
+    return context.dtr('doctor.initial.years', args: {'count': '$age'});
   }
 
   String? _text(dynamic value) {

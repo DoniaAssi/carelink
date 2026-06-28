@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   // غيّري هذا الـ IP إلى IPv4 تبع جهازك إذا كنتِ تشغلين التطبيق على هاتف حقيقي
-  static const String _machineIp = '192.168.1.5';
+  static const String _machineIp = '192.168.1.3';
 
   // إذا كنتِ تستخدمين Android Emulator خليها true
   static const bool _useAndroidEmulator = false;
@@ -59,19 +59,34 @@ class ApiService {
 
   Uri _endpoint(String path) {
     final normalizedPath = path.startsWith('/') ? path : '/$path';
-    return Uri.parse('$baseUrl$normalizedPath');
+    final uri = Uri.parse('$baseUrl$normalizedPath');
+    debugPrint('[API] Request URL: $uri');
+    return uri;
   }
 
   Future<http.Response> _sendRequest(Future<http.Response> request) async {
     try {
-      return await request.timeout(const Duration(seconds: 20));
-    } on TimeoutException {
+      final response = await request.timeout(const Duration(seconds: 20));
+      debugPrint(
+        '[API] Response: ${response.request?.method ?? 'UNKNOWN'} '
+        '${response.request?.url ?? baseUrl} -> ${response.statusCode}',
+      );
+      return response;
+    } on TimeoutException catch (error, stackTrace) {
+      debugPrint('[API] Timeout at $baseUrl: $error');
+      debugPrintStack(stackTrace: stackTrace);
       throw Exception(
         'Request timed out. Backend may be down or unreachable at $baseUrl',
       );
-    } on http.ClientException catch (e) {
+    } on http.ClientException catch (e, stackTrace) {
+      debugPrint(
+        '[API] ClientException URL: ${e.uri ?? baseUrl}; error: ${e.message}',
+      );
+      debugPrintStack(stackTrace: stackTrace);
       throw Exception('Network request failed: ${e.message}');
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('[API] Network error at $baseUrl: $e');
+      debugPrintStack(stackTrace: stackTrace);
       throw Exception('Network error: $e');
     }
   }
@@ -725,9 +740,7 @@ class ApiService {
     );
   }
 
-
-
-    Future<dynamic> get(String endpoint) async {
+  Future<dynamic> get(String endpoint) async {
     final response = await _sendRequest(
       http.get(_endpoint(endpoint), headers: _jsonHeaders),
     );

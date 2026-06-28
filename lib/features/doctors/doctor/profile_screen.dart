@@ -156,30 +156,13 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                   maxLines: 3,
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: experienceController,
-                        decoration: const InputDecoration(
-                          labelText: 'Experience (Years)',
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextField(
-                        controller: feeController,
-                        decoration: const InputDecoration(
-                          labelText: 'Consultation Fee',
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                  ],
+                TextField(
+                  controller: experienceController,
+                  decoration: const InputDecoration(
+                    labelText: 'Experience (Years)',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton(
@@ -336,9 +319,12 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
         return Scaffold(
           backgroundColor: DoctorUiConstants.doctorBackground,
           appBar: AppBar(
-            title: Text(context.dtr('doctor.nav.profile')),
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
+            title: Text(
+              context.dtr('doctor.nav.profile'),
+              style: const TextStyle(color: Colors.black),
+            ),
+            backgroundColor: DoctorUiConstants.doctorBackground,
+            foregroundColor: Colors.black,
             actions: [
               IconButton(
                 icon: const Icon(Icons.edit),
@@ -443,10 +429,6 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                                         .toString(),
                                   },
                                 ),
-                              ),
-                              _buildDetailRow(
-                                context.dtr('doctor.profile.consultationFee'),
-                                '\$${profile['consultationFee'] ?? 0}',
                               ),
                               _buildDetailRow(
                                 context.dtr('doctor.profile.rating'),

@@ -77,21 +77,21 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
   Widget build(BuildContext context) {
     return NurseUi.reactive(
       (context) => Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFF4FAF9),
         appBar: AppBar(
           title: const Text('My Schedule'),
           centerTitle: true,
-          backgroundColor: Colors.white,
+          backgroundColor: const Color(0xFFF4FAF9),
           foregroundColor: const Color(0xFF111827),
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.menu_rounded),
+            icon: const Icon(Icons.arrow_back_rounded),
             color: const Color(0xFF0F766E),
             onPressed: () {},
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.info_outline_rounded),
+              icon: const Icon(Icons.calendar_month_outlined),
               color: const Color(0xFF0F766E),
               onPressed: () {
                 Navigator.push(
@@ -162,7 +162,7 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
       'Cancelled',
     ];
     return SizedBox(
-      height: 38,
+      height: 34,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: filters.length,
@@ -174,16 +174,12 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
             borderRadius: BorderRadius.circular(10),
             child: Container(
               alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 13),
               decoration: BoxDecoration(
-                color: selected ? const Color(0xFF0F766E) : Colors.white,
+                color: selected
+                    ? const Color(0xFF0F766E)
+                    : const Color(0xFFE9F7F4),
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: selected
-                      ? const Color(0xFF0F766E)
-                      : const Color(0xFFE5E7EB),
-                  width: selected ? 1.5 : 1,
-                ),
               ),
               child: Text(
                 filters[index],
@@ -207,7 +203,7 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
     final days = List.generate(7, (index) => start.add(Duration(days: index)));
     const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return SizedBox(
-      height: 70,
+      height: 72,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: days.length,
@@ -219,24 +215,13 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
             borderRadius: BorderRadius.circular(14),
             onTap: () => setState(() => selectedDate = day),
             child: Container(
-              width: 54,
+              width: 42,
               decoration: BoxDecoration(
-                color: selected ? const Color(0xFF0F766E) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: selected
-                      ? const Color(0xFF0F766E)
-                      : const Color(0xFFE5E7EB),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: selected
-                        ? const Color(0xFF0F766E).withValues(alpha: 0.18)
-                        : Colors.black.withValues(alpha: 0.045),
-                    blurRadius: selected ? 16 : 12,
-                    offset: const Offset(0, 7),
-                  ),
-                ],
+                color: selected ? const Color(0xFFE2F5F1) : Colors.transparent,
+                borderRadius: BorderRadius.circular(18),
+                border: selected
+                    ? Border.all(color: const Color(0xFF0F766E), width: 1.4)
+                    : null,
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -244,7 +229,9 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
                   Text(
                     labels[index],
                     style: TextStyle(
-                      color: selected ? Colors.white : const Color(0xFF607D8B),
+                      color: selected
+                          ? const Color(0xFF0F766E)
+                          : const Color(0xFF607D8B),
                       fontSize: 11,
                       fontWeight: FontWeight.w900,
                     ),
@@ -253,7 +240,9 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
                   Text(
                     '${day.day}',
                     style: TextStyle(
-                      color: selected ? Colors.white : const Color(0xFF151823),
+                      color: selected
+                          ? const Color(0xFF0F766E)
+                          : const Color(0xFF151823),
                       fontSize: 17,
                       fontWeight: FontWeight.w900,
                     ),
@@ -295,47 +284,21 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
     }
 
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            width: 680,
-            child: Column(
-              children: [
-                Container(
-                  height: 48,
-                  color: const Color(0xFFF8FAFC),
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  child: Row(
-                    children: const [
-                      _ScheduleHeaderCell('Patient Name', flex: 3),
-                      _ScheduleHeaderCell('Time', flex: 2),
-                      _ScheduleHeaderCell('Service Type', flex: 3),
-                      _ScheduleHeaderCell('Status', flex: 2),
-                    ],
-                  ),
-                ),
-                for (var i = 0; i < appointments.length; i++) ...[
-                  _scheduleTableRow(appointments[i]),
-                  if (i != appointments.length - 1)
-                    const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                ],
-              ],
-            ),
-          ),
-        ),
+      padding: const EdgeInsets.only(top: 2),
+      child: Column(
+        children: [
+          for (var i = 0; i < appointments.length; i++) ...[
+            _scheduleListRow(appointments[i]),
+            if (i != appointments.length - 1) const SizedBox(height: 12),
+          ],
+        ],
       ),
     );
   }
 
-  Widget _scheduleTableRow(ServiceRequest request) {
+  Widget _scheduleListRow(ServiceRequest request) {
     return InkWell(
+      borderRadius: BorderRadius.circular(16),
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
@@ -346,19 +309,46 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
           ),
         ),
       ),
-      child: Container(
-        height: 76,
-        color: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: Row(
-          children: [
-            Expanded(
-              flex: 3,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 46,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Text(
+                _timeStacked(request.scheduledDate),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF111827),
+                  fontSize: 10,
+                  height: 1.05,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.045),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+                border: Border.all(color: const Color(0xFFE8F1EF)),
+              ),
               child: Row(
                 children: [
                   CircleAvatar(
-                    radius: 18,
-                    backgroundColor: const Color(0xFFE0F2F1),
+                    radius: 20,
+                    backgroundColor: const Color(0xFFDDF4EF),
                     child: Text(
                       _initial(request.patientName),
                       style: const TextStyle(
@@ -367,68 +357,67 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      _shortPatientName(request.patientName),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF111827),
-                        fontWeight: FontWeight.w900,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _shortPatientName(request.patientName),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF111827),
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          request.serviceType.isEmpty
+                              ? 'Home Nursing Care'
+                              : request.serviceType,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF6B7280),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.location_on_rounded,
+                              color: Color(0xFF0F766E),
+                              size: 13,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                _locationLabel(request),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFF5B7F7A),
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  _chip(_scheduleStatusLabel(request.status), request.status),
                 ],
               ),
             ),
-            Expanded(
-              flex: 2,
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.access_time_rounded,
-                    color: Color(0xFF0F766E),
-                    size: 15,
-                  ),
-                  const SizedBox(width: 5),
-                  Flexible(
-                    child: Text(
-                      _timeOneLine(request.scheduledDate),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF111827),
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              flex: 3,
-              child: Text(
-                request.serviceType.isEmpty
-                    ? 'Home Nursing Care'
-                    : request.serviceType,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: _chip(_statusLabel(request.status), request.status),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -587,10 +576,17 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
     return '${months[date.month - 1]} ${date.day}';
   }
 
-  String _timeOneLine(DateTime date) {
+  String _timeStacked(DateTime date) {
     final h = date.hour % 12 == 0 ? 12 : date.hour % 12;
     final m = date.minute.toString().padLeft(2, '0');
-    return '$h:$m ${date.hour >= 12 ? 'PM' : 'AM'}';
+    return '$h:$m\n${date.hour >= 12 ? 'PM' : 'AM'}';
+  }
+
+  String _locationLabel(ServiceRequest request) {
+    final value = request.location.trim().isNotEmpty
+        ? request.location.trim()
+        : request.patientAddress.trim();
+    return value.isEmpty ? 'Location not set' : value;
   }
 
   String _shortPatientName(String name) {
@@ -631,6 +627,17 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
     }
   }
 
+  String _scheduleStatusLabel(String status) {
+    final value = status.toLowerCase();
+    if (value == 'assigned' ||
+        value == 'scheduled' ||
+        value == 'accepted' ||
+        value == 'confirmed') {
+      return 'Upcoming';
+    }
+    return _statusLabel(status);
+  }
+
   Color _statusColor(String status) {
     switch (status.toLowerCase()) {
       case 'pending':
@@ -657,30 +664,6 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
 
   bool _sameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
-  }
-}
-
-class _ScheduleHeaderCell extends StatelessWidget {
-  const _ScheduleHeaderCell(this.label, {required this.flex});
-
-  final String label;
-  final int flex;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      flex: flex,
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Color(0xFF64748B),
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
   }
 }
 
@@ -742,8 +725,8 @@ class _NurseSetAvailabilityScreenState
               (data['reason'] ??
                       'Accept your admin-set hourly rate before setting availability.')
                   .toString();
-          approvedSpecialization =
-              (data['specialization'] ?? 'Nursing').toString();
+          approvedSpecialization = (data['specialization'] ?? 'Nursing')
+              .toString();
           approvedHourlyRate = _double(data['providerRate']);
           eligibilityLoading = false;
         });
@@ -1047,7 +1030,10 @@ class _NurseSetAvailabilityScreenState
       );
       return;
     }
-    await _saveLocalSlots(slots);
+    final hourlySlots = ProviderProfileService.expandHourlyAvailabilitySlots(
+      slots,
+    );
+    await _saveLocalSlots(hourlySlots);
     final success = await ProviderProfileService.saveAvailability(
       providerId,
       slots,
@@ -1063,7 +1049,7 @@ class _NurseSetAvailabilityScreenState
         ),
       ),
     );
-    if (success) Navigator.pop(context, slots);
+      if (success) Navigator.pop(context, hourlySlots);
   }
 
   Future<void> _saveLocalSlots(List<Map<String, dynamic>> value) async {
@@ -1548,11 +1534,14 @@ class _NurseMyAvailabilityScreenState extends State<NurseMyAvailabilityScreen> {
   }
 
   Future<void> _saveSlots() async {
+    final hourlySlots = ProviderProfileService.expandHourlyAvailabilitySlots(
+      slots,
+    );
     await ProviderProfileService.saveAvailability(widget.user.userId, slots);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       'nurse_availability_slots_${widget.user.userId}',
-      jsonEncode(slots),
+      jsonEncode(hourlySlots),
     );
   }
 

@@ -119,12 +119,13 @@ class ProviderProfileService {
     List<Map<String, dynamic>> slots,
   ) async {
     lastError = null;
-    await _publishProviderAvailability(providerId, slots.isNotEmpty);
+    final hourlySlots = expandHourlyAvailabilitySlots(slots);
+    await _publishProviderAvailability(providerId, hourlySlots.isNotEmpty);
     try {
       final response = await http.put(
         Uri.parse('$baseUrl/nurse/availability/$providerId'),
         headers: const <String, String>{'Content-Type': 'application/json'},
-        body: jsonEncode({'slots': slots}),
+        body: jsonEncode({'slots': hourlySlots}),
       );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return true;
@@ -133,7 +134,7 @@ class ProviderProfileService {
           _responseError(response.body) ?? 'HTTP ${response.statusCode}';
       final fallbackSaved = await _saveAvailabilityThroughSchedule(
         providerId,
-        slots,
+        hourlySlots,
       );
       if (fallbackSaved) {
         return true;
@@ -146,7 +147,7 @@ class ProviderProfileService {
       lastError = e.toString();
       final fallbackSaved = await _saveAvailabilityThroughSchedule(
         providerId,
-        slots,
+        hourlySlots,
       );
       if (fallbackSaved) {
         return true;
@@ -154,6 +155,54 @@ class ProviderProfileService {
       _logError('Error message: $e');
     }
     return false;
+  }
+
+  static List<Map<String, dynamic>> expandHourlyAvailabilitySlots(
+    List<Map<String, dynamic>> slots,
+  ) {
+    final expanded = <Map<String, dynamic>>[];
+    for (final slot in slots) {
+      final day = (slot['day'] ?? '').toString().trim();
+      final start = _minutesFromTime(slot['startTime'] ?? slot['start']);
+      final end = _minutesFromTime(slot['endTime'] ?? slot['end']);
+      if (day.isEmpty || start == null || end == null || end <= start) {
+        continue;
+      }
+      for (var cursor = start; cursor < end; cursor += 60) {
+        final next = cursor + 60 > end ? end : cursor + 60;
+        expanded.add({
+          'day': day,
+          'startTime': _timeFromMinutes(cursor),
+          'endTime': _timeFromMinutes(next),
+        });
+      }
+    }
+    return expanded;
+  }
+
+  static int? _minutesFromTime(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(text);
+    if (match == null) return null;
+    final hour = int.tryParse(match.group(1) ?? '');
+    final minute = int.tryParse(match.group(2) ?? '');
+    if (hour == null ||
+        minute == null ||
+        hour < 0 ||
+        hour > 23 ||
+        minute < 0 ||
+        minute > 59) {
+      return null;
+    }
+    return hour * 60 + minute;
+  }
+
+  static String _timeFromMinutes(int totalMinutes) {
+    const minutesInDay = 24 * 60;
+    final value = ((totalMinutes % minutesInDay) + minutesInDay) % minutesInDay;
+    final hour = (value ~/ 60).toString().padLeft(2, '0');
+    final minute = (value % 60).toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 
   static Future<void> _publishProviderAvailability(
