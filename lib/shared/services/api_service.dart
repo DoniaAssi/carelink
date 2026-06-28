@@ -17,11 +17,11 @@ class ApiServiceException implements Exception {
 
 class ApiService {
   // غيّري هذا الـ IP إلى IPv4 تبع جهازك إذا كنتِ تشغلين التطبيق على هاتف حقيقي
-  static const String _machineIp = '192.168.1.5';
+  static const String _machineIp = '192.168.1.15';
 
   // إذا كنتِ تستخدمين Android Emulator خليها true.
   // إذا كنتِ تستخدمين جهاز حقيقي، ضعيها false وحددي عنوان IP صحيح في _machineIp.
-  static const bool _useAndroidEmulator = true;
+  static const bool _useAndroidEmulator = false;
 
   static const String _androidEmulatorBase = 'http://10.0.2.2:3000';
   static const String _webBase = 'http://localhost:3000';

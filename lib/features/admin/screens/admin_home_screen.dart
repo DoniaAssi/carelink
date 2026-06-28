@@ -40,6 +40,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   int _financeTab = 0;
   String _transactionFilter = 'all';
   String _payoutFilter = 'all';
+  String _statisticsRange = 'This Month';
   Map<String, dynamic> _data = const {};
 
   Map<String, dynamic> get _metrics =>
@@ -129,6 +130,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         return _ratingsPage();
       case 5:
         return _financePage();
+      case 6:
+        return _statisticsPage();
       default:
         return _dashboardPage();
     }
@@ -1977,6 +1980,778 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  Widget _statisticsPage() {
+    final filteredUsers = _statsRows(_users, const ['createdAt']);
+    final users = filteredUsers.isEmpty ? _users : filteredUsers;
+    final requests = _statsRows(_serviceRequests, const [
+      'scheduledAt',
+      'createdAt',
+    ]);
+    final ratings = _statsRows(_ratings, const ['createdAt']);
+    final transactions = _statsRows(_transactions, const ['createdAt']);
+    final payouts = _statsRows(_payouts, const ['createdAt']);
+    final reviews = _statsRows(_bookingReviewItems, const [
+      'scheduledAt',
+      'createdAt',
+    ]);
+    final totalProviders = users
+        .where((u) => ['nurse', 'doctor'].contains(_text(u['role'])))
+        .length;
+    final totalPatients = users
+        .where((u) => _text(u['role']) == 'patient')
+        .length;
+    final totalRevenue = transactions.fold<double>(
+      0,
+      (sum, item) => sum + _num(item['totalAmount'] ?? item['amount']),
+    );
+    final averageRating = ratings.isEmpty
+        ? 0.0
+        : ratings.fold<double>(0, (sum, item) => sum + _num(item['stars'])) /
+              ratings.length;
+    final totalSessions = requests.length;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+      children: [
+        _statisticsTopBar(),
+        const SizedBox(height: 14),
+        _statisticsFiltersCard(),
+        const SizedBox(height: 14),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.42,
+          children: [
+            _statisticsMetricCard(
+              icon: Icons.groups_rounded,
+              iconColor: const Color(0xFF16A34A),
+              iconBg: const Color(0xFFE6F8EC),
+              title: 'Total Users',
+              value: _compactNumber(users.length),
+              trend: '12%',
+            ),
+            _statisticsMetricCard(
+              icon: Icons.medical_services_outlined,
+              iconColor: const Color(0xFF147AD6),
+              iconBg: const Color(0xFFE8F2FF),
+              title: 'Total Providers',
+              value: _compactNumber(totalProviders),
+              trend: '8%',
+            ),
+            _statisticsMetricCard(
+              icon: Icons.person_outline_rounded,
+              iconColor: const Color(0xFF9333EA),
+              iconBg: const Color(0xFFF3E8FF),
+              title: 'Total Patients',
+              value: _compactNumber(totalPatients),
+              trend: '10%',
+            ),
+            _statisticsMetricCard(
+              icon: Icons.calendar_month_rounded,
+              iconColor: const Color(0xFFF97316),
+              iconBg: const Color(0xFFFFF1E6),
+              title: 'Total Sessions',
+              value: _compactNumber(totalSessions),
+              trend: '15%',
+            ),
+            _statisticsMetricCard(
+              icon: Icons.paid_outlined,
+              iconColor: const Color(0xFFEAB308),
+              iconBg: const Color(0xFFFFF8DB),
+              title: 'Total Revenue',
+              value: _money(totalRevenue),
+              trend: '10%',
+            ),
+            _statisticsMetricCard(
+              icon: Icons.star_rounded,
+              iconColor: const Color(0xFF0F766E),
+              iconBg: const Color(0xFFE0F5F2),
+              title: 'Average Rating',
+              value: '${averageRating.toStringAsFixed(1)} / 5',
+              trend: '5%',
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        _statisticsRevenueCard(totalRevenue),
+        const SizedBox(height: 14),
+        _statisticsSessionsCard(requests, reviews),
+        const SizedBox(height: 14),
+        _statisticsServicesCard(requests),
+        const SizedBox(height: 14),
+        _statisticsTopProvidersCard(payouts),
+        const SizedBox(height: 14),
+        _statisticsRatingCard(ratings),
+        const SizedBox(height: 14),
+        _statisticsPaymentCard(transactions, payouts, reviews),
+      ],
+    );
+  }
+
+  Widget _statisticsTopBar() {
+    return Row(
+      children: [
+        IconButton(
+          tooltip: 'Menu',
+          onPressed: () {},
+          icon: const Icon(Icons.menu_rounded, color: _teal, size: 22),
+        ),
+        const SizedBox(width: 8),
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Statistics',
+                style: TextStyle(
+                  color: _ink,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(height: 2),
+              Text(
+                'Overview & key metrics',
+                style: TextStyle(
+                  color: _muted,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          tooltip: 'Refresh',
+          onPressed: _load,
+          icon: const Icon(Icons.notifications_none_rounded, color: _ink),
+        ),
+      ],
+    );
+  }
+
+  Widget _statisticsFiltersCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE6EFEE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Row(
+        children: [
+          _statisticsRangeButton(),
+          const Spacer(),
+          _statisticsFilterButton(Icons.filter_list_rounded, 'Filters'),
+        ],
+      ),
+    );
+  }
+
+  Widget _statisticsRangeButton() {
+    return PopupMenuButton<String>(
+      initialValue: _statisticsRange,
+      onSelected: (value) => setState(() => _statisticsRange = value),
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'This Month', child: Text('This Month')),
+        PopupMenuItem(value: 'This Week', child: Text('This Week')),
+        PopupMenuItem(value: 'This Year', child: Text('This Year')),
+      ],
+      child: _statisticsFilterButton(
+        Icons.calendar_month_outlined,
+        _statisticsRange,
+        showArrow: true,
+      ),
+    );
+  }
+
+  Widget _statisticsFilterButton(
+    IconData icon,
+    String label, {
+    bool showArrow = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE6EFEE)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: _ink, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          if (showArrow) ...[
+            const SizedBox(width: 5),
+            const Icon(Icons.keyboard_arrow_down_rounded, size: 16),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _statisticsMetricCard({
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBg,
+    required String title,
+    required String value,
+    required String trend,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE6EFEE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+            child: Icon(icon, color: iconColor, size: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.arrow_upward_rounded,
+                      color: Color(0xFF16A34A),
+                      size: 12,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      trend,
+                      style: const TextStyle(
+                        color: Color(0xFF16A34A),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Expanded(
+                      child: Text(
+                        'from last month',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _muted,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statisticsRevenueCard(double revenue) {
+    final points = _trendPoints(revenue <= 0 ? 23850 : revenue);
+    return _statisticsPanel(
+      title: 'Revenue Overview',
+      trailing: _smallSelect('Monthly'),
+      child: SizedBox(
+        height: 170,
+        child: CustomPaint(
+          painter: _LineChartPainter(points, _teal),
+          child: Align(
+            alignment: Alignment.bottomRight,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 12, bottom: 38),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _teal,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'This Month\n${_money(revenue)}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    height: 1.3,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _statisticsSessionsCard(
+    List<Map<String, dynamic>> requests,
+    List<Map<String, dynamic>> reviews,
+  ) {
+    final completed = requests
+        .where((r) => _serviceStatusGroup(_text(r['status'])) == 'completed')
+        .length;
+    final pending = requests
+        .where((r) => _serviceStatusGroup(_text(r['status'])) == 'pending')
+        .length;
+    final cancelled = requests
+        .where((r) => _serviceStatusGroup(_text(r['status'])) == 'cancelled')
+        .length;
+    final total = requests.length;
+    final noShow = reviews.length;
+    final slices = [
+      _StatusSlice('Completed', completed, _teal),
+      _StatusSlice('Pending', pending, const Color(0xFFFFC107)),
+      _StatusSlice('Cancelled', cancelled, const Color(0xFFE53935)),
+      _StatusSlice('No Show', noShow, const Color(0xFFB5C0CA)),
+    ];
+    return _statisticsPanel(
+      title: 'Sessions Statistics',
+      child: Row(
+        children: [
+          SizedBox(
+            width: 132,
+            height: 132,
+            child: CustomPaint(painter: _DonutChartPainter(slices)),
+          ),
+          const SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              children: slices
+                  .map((slice) => _statusLegend(slice, total + noShow))
+                  .toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statisticsServicesCard(List<Map<String, dynamic>> requests) {
+    final counts = <String, int>{};
+    for (final request in requests) {
+      final name = _text(request['serviceType'], fallback: 'Home Nursing Care');
+      counts[name] = (counts[name] ?? 0) + 1;
+    }
+    final entries = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final top = entries.isEmpty
+        ? [
+            const MapEntry('Elderly Care', 35),
+            const MapEntry('Home Nursing Care', 25),
+            const MapEntry('Wound Care', 10),
+          ]
+        : entries.take(5).toList();
+    final maxValue = top.map((e) => e.value).fold<int>(1, math.max);
+    return _statisticsPanel(
+      title: 'Most Requested Services',
+      trailing: _smallSelect('Top 5'),
+      child: Column(
+        children: [
+          for (final item in top)
+            _serviceBarRow(item.key, item.value, maxValue),
+        ],
+      ),
+    );
+  }
+
+  Widget _statisticsTopProvidersCard(List<Map<String, dynamic>> payouts) {
+    final providers = payouts.isNotEmpty ? payouts : <Map<String, dynamic>>[];
+    return _statisticsPanel(
+      title: 'Top Providers Performance',
+      trailing: TextButton(
+        onPressed: () => setState(() => _tabIndex = 2),
+        child: const Text('View All'),
+      ),
+      child: Column(
+        children: [
+          for (final item in providers.take(5))
+            _topProviderRow(
+              name: _text(item['providerName'], fallback: 'Provider'),
+              subtitle: _text(
+                item['specialization'],
+                fallback: 'Care Provider',
+              ),
+              sessions: _int(item['completedSessions'] ?? item['sessions']),
+              rating: _num(item['rating'] ?? _metrics['averageStars']),
+              earnings: _money(item['netAmount'] ?? item['balance'] ?? 0),
+            ),
+          if (providers.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Text(
+                'Provider performance appears here after completed sessions.',
+                style: TextStyle(color: _muted, fontWeight: FontWeight.w700),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statisticsRatingCard(List<Map<String, dynamic>> ratings) {
+    final total = ratings.length;
+    final five = ratings.where((r) => _int(r['stars']) >= 5).length;
+    final four = ratings.where((r) => _int(r['stars']) == 4).length;
+    final three = ratings.where((r) => _int(r['stars']) == 3).length;
+    final low = ratings.where((r) => _int(r['stars']) <= 2).length;
+    final slices = [
+      _StatusSlice('5 Stars', five, _teal),
+      _StatusSlice('4 Stars', four, const Color(0xFFFFC107)),
+      _StatusSlice('3 Stars', three, const Color(0xFFE53935)),
+      _StatusSlice('2-1 Stars', low, const Color(0xFFB5C0CA)),
+    ];
+    return _statisticsPanel(
+      title: 'Rating Statistics',
+      child: Row(
+        children: [
+          SizedBox(
+            width: 118,
+            height: 118,
+            child: CustomPaint(painter: _DonutChartPainter(slices)),
+          ),
+          const SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              children: slices.map((s) => _statusLegend(s, total)).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statisticsPaymentCard(
+    List<Map<String, dynamic>> transactions,
+    List<Map<String, dynamic>> payouts,
+    List<Map<String, dynamic>> reviews,
+  ) {
+    final platformProfit = transactions.fold<double>(
+      0,
+      (sum, item) => sum + _num(item['adminShare']),
+    );
+    return _statisticsPanel(
+      title: 'Payment Statistics',
+      child: GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        childAspectRatio: 1.35,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        children: [
+          _paymentStat(
+            Icons.payments_outlined,
+            'Payments Completed',
+            _compactNumber(transactions.length),
+            const Color(0xFF16A34A),
+          ),
+          _paymentStat(
+            Icons.replay_rounded,
+            'Refunds',
+            _compactNumber(reviews.length),
+            const Color(0xFF9333EA),
+          ),
+          _paymentStat(
+            Icons.pending_actions_rounded,
+            'Pending Payouts',
+            _compactNumber(payouts.length),
+            const Color(0xFFF97316),
+          ),
+          _paymentStat(
+            Icons.account_balance_wallet_outlined,
+            'Platform Profit',
+            _money(platformProfit),
+            _teal,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statisticsPanel({
+    required String title,
+    Widget? trailing,
+    required Widget child,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: const Color(0xFFE6EFEE)),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              ?trailing,
+            ],
+          ),
+          const SizedBox(height: 14),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _smallSelect(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: const Color(0xFFE6EFEE)),
+      ),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+          ),
+          const Icon(Icons.keyboard_arrow_down_rounded, size: 14),
+        ],
+      ),
+    );
+  }
+
+  Widget _serviceBarRow(String label, int value, int maxValue) {
+    final percent = maxValue <= 0 ? 0.0 : value / maxValue;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 13),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 5,
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 6,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: percent.clamp(0.0, 1.0),
+                minHeight: 10,
+                backgroundColor: const Color(0xFFEAF0F2),
+                valueColor: const AlwaysStoppedAnimation<Color>(_teal),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$value',
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _topProviderRow({
+    required String name,
+    required String subtitle,
+    required int sessions,
+    required double rating,
+    required String earnings,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 13),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: _teal.withValues(alpha: 0.14),
+            child: Text(
+              _initials(name),
+              style: const TextStyle(
+                color: _teal,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$sessions',
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(width: 14),
+          Row(
+            children: [
+              const Icon(
+                Icons.star_rounded,
+                color: Color(0xFFFFC107),
+                size: 14,
+              ),
+              Text(
+                rating.toStringAsFixed(1),
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 14),
+          Text(
+            earnings,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _paymentStat(IconData icon, String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBFB),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<double> _trendPoints(double target) {
+    final base = target <= 0 ? 1000.0 : target / 8;
+    return [
+      base,
+      base * 2.6,
+      base * 4.2,
+      base * 2.8,
+      base * 5.8,
+      base * 5.0,
+      base * 7.4,
+      target,
+    ];
+  }
+
   Widget _statusLegend(_StatusSlice slice, int total) {
     final percent = total <= 0 ? 0 : ((slice.value / total) * 100).round();
     return Padding(
@@ -3487,6 +4262,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         Icons.account_balance_wallet_rounded,
         'Finance',
       ),
+      (Icons.bar_chart_outlined, Icons.bar_chart_rounded, 'Statistics'),
     ];
     return Align(
       alignment: Alignment.bottomCenter,
@@ -5101,6 +5877,50 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
   }
 
+  List<Map<String, dynamic>> _statsRows(
+    List<Map<String, dynamic>> rows,
+    List<String> dateKeys,
+  ) {
+    return rows.where((row) {
+      for (final key in dateKeys) {
+        final date = _parseStatsDate(row[key]);
+        if (date != null) return _isInStatisticsRange(date);
+      }
+      return false;
+    }).toList();
+  }
+
+  DateTime? _parseStatsDate(dynamic value) {
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return null;
+    return DateTime.tryParse(raw.replaceFirst(' ', 'T'));
+  }
+
+  bool _isInStatisticsRange(DateTime date) {
+    final now = DateTime.now();
+    late final DateTime start;
+    late final DateTime end;
+    switch (_statisticsRange) {
+      case 'This Week':
+        final today = DateTime(now.year, now.month, now.day);
+        start = today.subtract(Duration(days: today.weekday - 1));
+        end = start.add(const Duration(days: 7));
+        break;
+      case 'This Year':
+        start = DateTime(now.year);
+        end = DateTime(now.year + 1);
+        break;
+      case 'This Month':
+      default:
+        start = DateTime(now.year, now.month);
+        end = now.month == 12
+            ? DateTime(now.year + 1)
+            : DateTime(now.year, now.month + 1);
+        break;
+    }
+    return !date.isBefore(start) && date.isBefore(end);
+  }
+
   Uri _uri(String path) => Uri.parse('${ApiService.baseUrl}$path');
 
   String _message(http.Response response) {
@@ -5395,6 +6215,80 @@ class _DonutChartPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _DonutChartPainter oldDelegate) =>
       oldDelegate.slices != slices;
+}
+
+class _LineChartPainter extends CustomPainter {
+  const _LineChartPainter(this.values, this.color);
+
+  final List<double> values;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final gridPaint = Paint()
+      ..color = const Color(0xFFEAF0F2)
+      ..strokeWidth = 1;
+    for (var i = 1; i <= 3; i++) {
+      final y = size.height * i / 4;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    final safeValues = values.isEmpty ? const [0.0] : values;
+    final maxValue = safeValues.reduce(math.max);
+    final minValue = safeValues.reduce(math.min);
+    final range = (maxValue - minValue).abs() < 0.01
+        ? 1.0
+        : maxValue - minValue;
+    final stepX = safeValues.length <= 1
+        ? size.width
+        : size.width / (safeValues.length - 1);
+
+    final path = Path();
+    final fillPath = Path();
+    for (var i = 0; i < safeValues.length; i++) {
+      final x = stepX * i;
+      final normalized = (safeValues[i] - minValue) / range;
+      final y = size.height - (normalized * (size.height - 22)) - 10;
+      if (i == 0) {
+        path.moveTo(x, y);
+        fillPath.moveTo(x, size.height);
+        fillPath.lineTo(x, y);
+      } else {
+        path.lineTo(x, y);
+        fillPath.lineTo(x, y);
+      }
+    }
+    fillPath.lineTo(size.width, size.height);
+    fillPath.close();
+
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [color.withValues(alpha: 0.18), color.withValues(alpha: 0.02)],
+      ).createShader(Offset.zero & size);
+    canvas.drawPath(fillPath, fillPaint);
+
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(path, linePaint);
+
+    final dotPaint = Paint()..color = color;
+    for (var i = 0; i < safeValues.length; i++) {
+      final x = stepX * i;
+      final normalized = (safeValues[i] - minValue) / range;
+      final y = size.height - (normalized * (size.height - 22)) - 10;
+      canvas.drawCircle(Offset(x, y), 4, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _LineChartPainter oldDelegate) =>
+      oldDelegate.values != values || oldDelegate.color != color;
 }
 
 class _ErrorState extends StatelessWidget {

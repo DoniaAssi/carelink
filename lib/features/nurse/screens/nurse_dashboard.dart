@@ -145,7 +145,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
             onRefresh: dashboardController.refresh,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(24, 26, 24, 112),
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 104),
               children: [
                 if (dashboardController.isLoading)
                   _loadingDashboard()
@@ -166,16 +166,16 @@ class _NurseDashboardState extends State<NurseDashboard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _dashboardHeader(model.notificationCount),
-        const SizedBox(height: 34),
+        const SizedBox(height: 18),
         _greeting(model),
-        const SizedBox(height: 30),
+        const SizedBox(height: 20),
         if (!model.canWork) ...[
           _rateGateCard(model),
         ] else ...[
           _quickGrid(),
-          const SizedBox(height: 34),
+          const SizedBox(height: 26),
           _upcomingVisitsSection(model),
-          const SizedBox(height: 32),
+          const SizedBox(height: 22),
           _motivationBanner(),
         ],
       ],
@@ -277,7 +277,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
       children: [
         Builder(
           builder: (context) => IconButton(
-            icon: const Icon(Icons.menu_rounded, size: 34),
+            icon: const Icon(Icons.menu_rounded, size: 22),
             color: const Color(0xFF0F766E),
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
@@ -293,7 +293,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
       clipBehavior: Clip.none,
       children: [
         IconButton(
-          icon: const Icon(Icons.notifications_none_rounded, size: 32),
+          icon: const Icon(Icons.notifications_none_rounded, size: 22),
           color: const Color(0xFF0F172A),
           onPressed: () => setState(() => selectedIndex = 4),
         ),
@@ -308,15 +308,15 @@ class _NurseDashboardState extends State<NurseDashboard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Hello, Nurse $name \u{1F44B}',
+          'Hello, Nurse $name',
           style: const TextStyle(
             color: Color(0xFF0F172A),
-            fontSize: 34,
+            fontSize: 18,
             fontWeight: FontWeight.w900,
             letterSpacing: 0,
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 7),
         Text.rich(
           TextSpan(
             children: [
@@ -333,9 +333,9 @@ class _NurseDashboardState extends State<NurseDashboard> {
           ),
           style: const TextStyle(
             color: Color(0xFF0F172A),
-            fontSize: 20,
+            fontSize: 11.5,
             height: 1.35,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ],
@@ -382,9 +382,9 @@ class _NurseDashboardState extends State<NurseDashboard> {
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 4,
-        mainAxisSpacing: 18,
-        crossAxisSpacing: 18,
-        childAspectRatio: 0.96,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 0.86,
       ),
       itemBuilder: (context, index) {
         final item = actions[index];
@@ -392,28 +392,29 @@ class _NurseDashboardState extends State<NurseDashboard> {
           borderRadius: BorderRadius.circular(22),
           onTap: item.$3,
           child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(10),
               boxShadow: _modernShadow,
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  width: 58,
-                  height: 58,
+                  width: 30,
+                  height: 30,
                   decoration: BoxDecoration(
                     color: const Color(0xFFE6F7F4),
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
                     item.$1,
                     color: const Color(0xFF0F766E),
-                    size: 34,
+                    size: 17,
                   ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 8),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Text(
@@ -423,7 +424,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Color(0xFF0F172A),
-                      fontSize: 15,
+                      fontSize: 9.5,
                       fontWeight: FontWeight.w900,
                       height: 1.1,
                     ),
@@ -446,7 +447,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
               'Upcoming Visits',
               style: TextStyle(
                 color: Color(0xFF0F172A),
-                fontSize: 23,
+                fontSize: 13.5,
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -465,21 +466,21 @@ class _NurseDashboardState extends State<NurseDashboard> {
                 'View All',
                 style: TextStyle(
                   color: Color(0xFF0F766E),
-                  fontSize: 18,
+                  fontSize: 10,
                   fontWeight: FontWeight.w900,
                 ),
               ),
               icon: const Icon(
                 Icons.arrow_forward_ios_rounded,
                 color: Color(0xFF0F766E),
-                size: 18,
+                size: 10,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 12),
         Container(
-          decoration: _modernCardDecoration(radius: 24),
+          decoration: _modernCardDecoration(radius: 12),
           child: model.upcomingVisits.isEmpty
               ? const Padding(
                   padding: EdgeInsets.symmetric(vertical: 42),
@@ -512,22 +513,22 @@ class _NurseDashboardState extends State<NurseDashboard> {
     return InkWell(
       onTap: () => _openRequest(visit.request),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         child: Row(
           children: [
             CircleAvatar(
-              radius: 38,
+              radius: 20,
               backgroundColor: const Color(0xFFE6F7F4),
               child: Text(
                 visit.patientInitial,
                 style: const TextStyle(
                   color: Color(0xFF0F766E),
-                  fontSize: 30,
+                  fontSize: 15,
                   fontWeight: FontWeight.w900,
                 ),
               ),
             ),
-            const SizedBox(width: 24),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -538,30 +539,30 @@ class _NurseDashboardState extends State<NurseDashboard> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Color(0xFF0F172A),
-                      fontSize: 20,
+                      fontSize: 12,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 3),
                   Text(
                     visit.serviceType,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Color(0xFF0F172A),
-                      fontSize: 15,
+                      fontSize: 9.5,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 7),
+                  const SizedBox(height: 5),
                   Row(
                     children: [
                       const Icon(
                         Icons.location_on_outlined,
                         color: Color(0xFF14B8A6),
-                        size: 19,
+                        size: 11,
                       ),
-                      const SizedBox(width: 7),
+                      const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           visit.location,
@@ -569,7 +570,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Color(0xFF0F172A),
-                            fontSize: 14,
+                            fontSize: 9,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -579,7 +580,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
                 ],
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -589,20 +590,20 @@ class _NurseDashboardState extends State<NurseDashboard> {
                     const Icon(
                       Icons.access_time_rounded,
                       color: Color(0xFF0F766E),
-                      size: 18,
+                      size: 11,
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 4),
                     Text(
                       visit.time,
                       style: const TextStyle(
                         color: Color(0xFF0F172A),
-                        fontSize: 18,
+                        fontSize: 9.5,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 8),
                 _visitStatusBadge(
                   isPending ? 'Pending' : 'Accepted',
                   isPending ? const Color(0xFFFFEDD5) : const Color(0xFFDCFCE7),
@@ -610,11 +611,11 @@ class _NurseDashboardState extends State<NurseDashboard> {
                 ),
               ],
             ),
-            const SizedBox(width: 22),
+            const SizedBox(width: 8),
             const Icon(
               Icons.arrow_forward_ios_rounded,
               color: Color(0xFF0F766E),
-              size: 25,
+              size: 13,
             ),
           ],
         ),
@@ -625,17 +626,17 @@ class _NurseDashboardState extends State<NurseDashboard> {
   Widget _motivationBanner() {
     return Container(
       width: double.infinity,
-      height: 142,
-      padding: const EdgeInsets.fromLTRB(34, 24, 18, 0),
+      height: 90,
+      padding: const EdgeInsets.fromLTRB(18, 16, 12, 0),
       decoration: BoxDecoration(
         color: const Color(0xFFE6F7F4),
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Stack(
         children: [
           const Positioned(
             left: 0,
-            top: 18,
+            top: 4,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -643,16 +644,16 @@ class _NurseDashboardState extends State<NurseDashboard> {
                   "You're doing great!",
                   style: TextStyle(
                     color: Color(0xFF0F172A),
-                    fontSize: 24,
+                    fontSize: 13,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                SizedBox(height: 16),
+                SizedBox(height: 8),
                 Text(
                   'Your care makes a big difference.',
                   style: TextStyle(
                     color: Color(0xFF0F172A),
-                    fontSize: 17,
+                    fontSize: 10,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -667,41 +668,49 @@ class _NurseDashboardState extends State<NurseDashboard> {
 
   Widget _nurseIllustration() {
     return SizedBox(
-      width: 150,
-      height: 132,
+      width: 88,
+      height: 82,
       child: Stack(
         alignment: Alignment.bottomCenter,
         children: [
           Positioned(
-            right: 18,
+            right: 8,
             top: 0,
             child: Container(
-              width: 58,
-              height: 58,
+              width: 34,
+              height: 34,
               decoration: const BoxDecoration(
                 color: Color(0xFF0F766E),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.favorite_rounded, color: Colors.white),
+              child: const Icon(
+                Icons.favorite_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
           ),
           Positioned(
             bottom: 0,
             child: Container(
-              width: 78,
-              height: 72,
+              width: 48,
+              height: 42,
               decoration: const BoxDecoration(
                 color: Color(0xFF0F766E),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
-              child: const Icon(Icons.local_hospital, color: Colors.white),
+              child: const Icon(
+                Icons.local_hospital,
+                color: Colors.white,
+                size: 22,
+              ),
             ),
           ),
           Positioned(
-            bottom: 52,
+            bottom: 31,
             child: Container(
-              width: 58,
-              height: 58,
+              width: 34,
+              height: 34,
               decoration: const BoxDecoration(
                 color: Color(0xFFFFD7C2),
                 shape: BoxShape.circle,
@@ -709,19 +718,19 @@ class _NurseDashboardState extends State<NurseDashboard> {
             ),
           ),
           Positioned(
-            bottom: 93,
+            bottom: 56,
             child: Container(
-              width: 54,
-              height: 22,
+              width: 34,
+              height: 15,
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
               ),
               child: const Center(
                 child: Icon(
                   Icons.add_rounded,
                   color: Color(0xFF0F766E),
-                  size: 18,
+                  size: 12,
                 ),
               ),
             ),
@@ -881,22 +890,22 @@ class _NurseDashboardState extends State<NurseDashboard> {
 
   Widget _visitStatusBadge(String text, Color bg, Color fg) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         text,
-        style: TextStyle(color: fg, fontSize: 15, fontWeight: FontWeight.w900),
+        style: TextStyle(color: fg, fontSize: 9, fontWeight: FontWeight.w900),
       ),
     );
   }
 
   Widget _smallBadge(int count) {
     return Container(
-      width: 24,
-      height: 24,
+      width: 16,
+      height: 16,
       decoration: const BoxDecoration(
         color: Color(0xFFEF4444),
         shape: BoxShape.circle,
@@ -906,7 +915,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
           count > 9 ? '9+' : '$count',
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 12,
+            fontSize: 8,
             fontWeight: FontWeight.w900,
           ),
         ),
