@@ -112,10 +112,13 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
         return Scaffold(
           backgroundColor: DoctorUiConstants.doctorBackground,
           appBar: AppBar(
-            title: const Text('Earnings'),
+            title: const Text(
+              'Earnings',
+              style: TextStyle(color: Colors.black),
+            ),
             centerTitle: true,
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
+            backgroundColor: DoctorUiConstants.doctorBackground,
+            foregroundColor: Colors.black,
           ),
           body: _isLoading
               ? const Center(child: CircularProgressIndicator())

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/app_colors.dart';
+import '../../../core/app_localizations.dart';
+import '../../../core/locale_controller.dart';
+import '../../../core/theme_controller.dart';
 import '../../../services/doctor_service.dart';
 import 'doctor_ui_constants.dart';
 
@@ -36,9 +39,17 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
   String _patientCondition = 'Improved';
 
   static const _primary = Color(0xFF0F8B8D);
-  static const _ink = Color(0xFF101828);
-  static const _muted = Color(0xFF667085);
-  static const _line = Color(0xFFDDE6E3);
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _pageColor => _isDark
+      ? Theme.of(context).scaffoldBackgroundColor
+      : DoctorUiConstants.doctorBackground;
+  Color get _surfaceColor =>
+      _isDark ? Theme.of(context).colorScheme.surface : Colors.white;
+  Color get _ink => _isDark ? Colors.white : const Color(0xFF101828);
+  Color get _muted => _isDark ? Colors.white70 : const Color(0xFF667085);
+  Color get _line => _isDark ? Colors.white24 : const Color(0xFFDDE6E3);
+  Color get _softPrimary =>
+      _isDark ? _primary.withValues(alpha: 0.18) : const Color(0xFFE7F7F2);
 
   @override
   void initState() {
@@ -62,6 +73,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
   Future<void> _pickFollowUpDate() async {
     final date = await showDatePicker(
       context: context,
+      locale: localeController.doctorLocale,
       initialDate: DateTime.now().add(const Duration(days: 7)),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
@@ -89,8 +101,8 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Draft saved'),
+      SnackBar(
+        content: Text(context.dtr('doctor.visitReport.draftSaved')),
         backgroundColor: AppColors.primary,
       ),
     );
@@ -98,15 +110,18 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
 
   Future<void> _submitReport() async {
     if (!_formKey.currentState!.validate()) return;
+    final doctorIdMissingMessage = context.dtr(
+      'doctor.visitReport.doctorIdMissing',
+    );
+    final submittedMessage = context.dtr('doctor.visitReport.submitted');
+    final submitFailedMessage = context.dtr('doctor.visitReport.submitFailed');
     final status = (widget.requestData?['status'] ?? '')
         .toString()
         .toLowerCase();
     if (status != 'completed') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Medical reports can be submitted only after the visit is completed.',
-          ),
+        SnackBar(
+          content: Text(context.dtr('doctor.visitReport.completedOnly')),
           backgroundColor: Colors.red,
         ),
       );
@@ -120,7 +135,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
       final doctorId = prefs.getString('doctor_userId');
 
       if (doctorId == null || doctorId.isEmpty) {
-        throw Exception('Doctor ID not found. Please login again.');
+        throw Exception(doctorIdMissingMessage);
       }
 
       final notes = <String>[
@@ -159,22 +174,22 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
         await prefs.remove('doctor_report_draft_${widget.requestId}');
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Medical report submitted successfully'),
+          SnackBar(
+            content: Text(submittedMessage),
             backgroundColor: AppColors.success,
             duration: Duration(seconds: 2),
           ),
         );
         Navigator.pop(context, true);
       } else {
-        throw Exception(response['error'] ?? 'Failed to submit report');
+        throw Exception(response['error'] ?? submitFailedMessage);
       }
     } catch (e) {
       debugPrint('Error submitting report: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to submit report. Please try again.'),
+          SnackBar(
+            content: Text(submitFailedMessage),
             backgroundColor: Colors.red,
           ),
         );
@@ -203,11 +218,15 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
 
   bool _validateCurrentStep() {
     if (_currentStep == 2 && _diagnosisController.text.trim().isEmpty) {
-      _showValidationMessage('Please enter the diagnosis.');
+      _showValidationMessage(
+        context.dtr('doctor.visitReport.enterDiagnosisValidation'),
+      );
       return false;
     }
     if (_currentStep == 2 && _treatmentController.text.trim().isEmpty) {
-      _showValidationMessage('Please enter the procedures performed.');
+      _showValidationMessage(
+        context.dtr('doctor.visitReport.enterProceduresValidation'),
+      );
       return false;
     }
     return true;
@@ -221,33 +240,41 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: DoctorUiConstants.doctorBackground,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildHeader(),
-                    const SizedBox(height: 26),
-                    _buildSteps(),
-                    const SizedBox(height: 24),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      child: KeyedSubtree(
-                        key: ValueKey(_currentStep),
-                        child: _buildCurrentStep(),
-                      ),
+    return ListenableBuilder(
+      listenable: localeController,
+      builder: (context, _) => Directionality(
+        textDirection: localeController.isDoctorArabic
+            ? TextDirection.rtl
+            : TextDirection.ltr,
+        child: Scaffold(
+          backgroundColor: _pageColor,
+          body: SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildHeader(),
+                        const SizedBox(height: 26),
+                        _buildSteps(),
+                        const SizedBox(height: 24),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 220),
+                          child: KeyedSubtree(
+                            key: ValueKey(_currentStep),
+                            child: _buildCurrentStep(),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        _buildActions(),
+                      ],
                     ),
-                    const SizedBox(height: 24),
-                    _buildActions(),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -261,10 +288,12 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
     return Row(
       children: [
         _circleButton(Icons.arrow_back_rounded, () => Navigator.pop(context)),
-        const Expanded(
+        Expanded(
           child: Text(
-            'Create Visit Report',
+            context.dtr('doctor.visitReport.title'),
             textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w900,
@@ -272,14 +301,27 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
             ),
           ),
         ),
+        _headerIconButton(
+          Icons.language_rounded,
+          () => localeController.toggleDoctor(),
+        ),
+        ListenableBuilder(
+          listenable: themeController,
+          builder: (context, _) => _headerIconButton(
+            themeController.isDark
+                ? Icons.light_mode_rounded
+                : Icons.dark_mode_rounded,
+            () => themeController.toggle(),
+          ),
+        ),
         OutlinedButton.icon(
           onPressed: _saveDraft,
           icon: const Icon(Icons.save_outlined, size: 19),
-          label: const Text('Save Draft'),
+          label: Text(context.dtr('doctor.visitReport.saveDraft')),
           style: OutlinedButton.styleFrom(
             foregroundColor: _primary,
-            backgroundColor: Colors.white,
-            side: const BorderSide(color: Color(0xFFEAF0EF)),
+            backgroundColor: _surfaceColor,
+            side: BorderSide(color: _line),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
@@ -290,9 +332,19 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
     );
   }
 
+  Widget _headerIconButton(IconData icon, VoidCallback onTap) {
+    return IconButton(
+      onPressed: onTap,
+      icon: Icon(icon, color: _primary),
+      constraints: const BoxConstraints.tightFor(width: 40, height: 44),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
   Widget _circleButton(IconData icon, VoidCallback onTap) {
     return Material(
-      color: Colors.white,
+      color: _surfaceColor,
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onTap,
@@ -308,11 +360,11 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
 
   Widget _buildSteps() {
     final steps = [
-      'Visit Details',
-      'Patient\nCondition',
-      'Procedures &\nMedications',
-      'Follow-up &\nNext Visit',
-      'Review &\nSubmit',
+      context.dtr('doctor.visitReport.stepVisitDetails'),
+      context.dtr('doctor.visitReport.stepPatientCondition'),
+      context.dtr('doctor.visitReport.stepProceduresMedications'),
+      context.dtr('doctor.visitReport.stepFollowUp'),
+      context.dtr('doctor.visitReport.stepReview'),
     ];
 
     return Row(
@@ -326,7 +378,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: i == _currentStep ? _primary : Colors.white,
+                    color: i == _currentStep ? _primary : _surfaceColor,
                     shape: BoxShape.circle,
                     border: i == _currentStep
                         ? null
@@ -415,24 +467,24 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
 
     return _buildSectionCard(
       icon: Icons.calendar_month_outlined,
-      title: 'Visit Information',
+      title: context.dtr('doctor.visitReport.visitInformation'),
       child: _infoPanel(
         children: [
           _visitInfoRow(
             Icons.calendar_today_outlined,
-            'Visit Number',
+            context.dtr('doctor.visitReport.visitNumber'),
             visitLabel,
           ),
           _panelDivider(),
           _visitInfoRow(
             Icons.calendar_today_outlined,
-            'Visit Date',
+            context.dtr('doctor.visitReport.visitDate'),
             _formatDate(scheduledAt),
           ),
           _panelDivider(),
           _visitInfoRow(
             Icons.access_time_rounded,
-            'Visit Time',
+            context.dtr('doctor.visitReport.visitTime'),
             _formatTime(scheduledAt),
           ),
         ],
@@ -444,8 +496,8 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
     return _buildSectionCard(
       stepNumber: 1,
       icon: Icons.person_outline_rounded,
-      title: 'Patient Condition',
-      subtitle: "How is the patient's condition today?",
+      title: context.dtr('doctor.visitReport.patientCondition'),
+      subtitle: context.dtr('doctor.visitReport.conditionQuestion'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -453,9 +505,21 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
             builder: (context, constraints) {
               final isNarrow = constraints.maxWidth < 560;
               final cards = [
-                _conditionCard('Improved', Icons.trending_up_rounded),
-                _conditionCard('No Change', Icons.remove_rounded),
-                _conditionCard('Worsened', Icons.trending_down_rounded),
+                _conditionCard(
+                  'Improved',
+                  context.dtr('doctor.visitReport.improved'),
+                  Icons.trending_up_rounded,
+                ),
+                _conditionCard(
+                  'No Change',
+                  context.dtr('doctor.visitReport.noChange'),
+                  Icons.remove_rounded,
+                ),
+                _conditionCard(
+                  'Worsened',
+                  context.dtr('doctor.visitReport.worsened'),
+                  Icons.trending_down_rounded,
+                ),
               ];
               if (isNarrow) {
                 return Column(
@@ -478,8 +542,8 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
             },
           ),
           const SizedBox(height: 22),
-          const Text(
-            'Additional Notes (Optional)',
+          Text(
+            context.dtr('doctor.visitReport.additionalNotesOptional'),
             style: TextStyle(
               color: _ink,
               fontSize: 15,
@@ -489,7 +553,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
           const SizedBox(height: 12),
           _reportField(
             _additionalNotesController,
-            'e.g., Fever gone, but cough still present.',
+            context.dtr('doctor.visitReport.additionalNotesHint'),
             maxLines: 4,
             maxLength: 500,
           ),
@@ -504,11 +568,11 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
         _buildSectionCard(
           stepNumber: 2,
           icon: Icons.assignment_outlined,
-          title: 'Diagnosis',
-          subtitle: 'What is the clinical diagnosis?',
+          title: context.dtr('doctor.visitReport.diagnosis'),
+          subtitle: context.dtr('doctor.visitReport.diagnosisQuestion'),
           child: _reportField(
             _diagnosisController,
-            'Enter diagnosis...',
+            context.dtr('doctor.visitReport.diagnosisHint'),
             maxLines: 4,
             maxLength: 500,
           ),
@@ -517,11 +581,11 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
         _buildSectionCard(
           stepNumber: 2,
           icon: Icons.medical_services_outlined,
-          title: 'Procedures Performed',
-          subtitle: 'What was done in this session?',
+          title: context.dtr('doctor.visitReport.proceduresPerformed'),
+          subtitle: context.dtr('doctor.visitReport.proceduresQuestion'),
           child: _reportField(
             _treatmentController,
-            'e.g., Performed physical therapy session and stretching exercises.',
+            context.dtr('doctor.visitReport.proceduresHint'),
             maxLines: 4,
             maxLength: 500,
           ),
@@ -530,11 +594,11 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
         _buildSectionCard(
           stepNumber: 3,
           icon: Icons.medication_outlined,
-          title: 'Medications Given',
-          subtitle: 'What medications were given?',
+          title: context.dtr('doctor.visitReport.medicationsGiven'),
+          subtitle: context.dtr('doctor.visitReport.medicationsQuestion'),
           child: _reportField(
             _medicationController,
-            'e.g., Paracetamol 500 mg or Ibuprofen 400 mg.',
+            context.dtr('doctor.visitReport.medicationsHint'),
             maxLines: 4,
             maxLength: 500,
           ),
@@ -549,11 +613,11 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
         _buildSectionCard(
           stepNumber: 4,
           icon: Icons.note_alt_outlined,
-          title: 'Follow-up Notes',
-          subtitle: 'What instructions or advice were given?',
+          title: context.dtr('doctor.visitReport.followUpNotes'),
+          subtitle: context.dtr('doctor.visitReport.followUpQuestion'),
           child: _reportField(
             _followUpNotesController,
-            'e.g., Continue medication, drink fluids, and get enough rest.',
+            context.dtr('doctor.visitReport.followUpHint'),
             maxLines: 4,
             maxLength: 500,
           ),
@@ -562,14 +626,14 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
         _buildSectionCard(
           stepNumber: 5,
           icon: Icons.calendar_month_outlined,
-          title: 'Next Appointment',
-          subtitle: 'When is the next visit?',
+          title: context.dtr('doctor.visitReport.nextAppointment'),
+          subtitle: context.dtr('doctor.visitReport.nextQuestion'),
           child: TextFormField(
             controller: _followUpDateController,
             readOnly: true,
             onTap: _pickFollowUpDate,
             decoration: _fieldDecoration(
-              'Select next appointment date',
+              context.dtr('doctor.visitReport.nextHint'),
               suffixIcon: Icons.calendar_month_outlined,
             ),
           ),
@@ -582,49 +646,73 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
     final data = widget.requestData ?? {};
     return Column(
       children: [
-        _summaryCard('Visit Information', [
-          _summaryLine('Visit Date', _formatDate(data['scheduledAt'])),
-          _summaryLine('Visit Time', _formatTime(data['scheduledAt'])),
+        _summaryCard(context.dtr('doctor.visitReport.visitInformation'), [
+          _summaryLine(
+            context.dtr('doctor.visitReport.visitDate'),
+            _formatDate(data['scheduledAt']),
+          ),
+          _summaryLine(
+            context.dtr('doctor.visitReport.visitTime'),
+            _formatTime(data['scheduledAt']),
+          ),
         ]),
         const SizedBox(height: 14),
-        _summaryCard('Patient Condition', [
-          _summaryLine('Condition', _patientCondition),
+        _summaryCard(context.dtr('doctor.visitReport.patientCondition'), [
           _summaryLine(
-            'Additional Notes',
+            context.dtr('doctor.visitReport.condition'),
+            _conditionDisplayLabel(_patientCondition),
+          ),
+          _summaryLine(
+            context.dtr('doctor.visitReport.additionalNotesOptional'),
             _additionalNotesController.text.trim(),
           ),
         ]),
         const SizedBox(height: 14),
-        _summaryCard('Procedures & Medications', [
-          _summaryLine('Diagnosis', _diagnosisController.text.trim()),
-          _summaryLine(
-            'Procedures Performed',
-            _treatmentController.text.trim(),
-          ),
-          _summaryLine('Medications Given', _medicationController.text.trim()),
-        ]),
+        _summaryCard(
+          context.dtr('doctor.visitReport.stepProceduresMedications'),
+          [
+            _summaryLine(
+              context.dtr('doctor.visitReport.diagnosis'),
+              _diagnosisController.text.trim(),
+            ),
+            _summaryLine(
+              context.dtr('doctor.visitReport.proceduresPerformed'),
+              _treatmentController.text.trim(),
+            ),
+            _summaryLine(
+              context.dtr('doctor.visitReport.medicationsGiven'),
+              _medicationController.text.trim(),
+            ),
+          ],
+        ),
         const SizedBox(height: 14),
-        _summaryCard('Follow-up & Next Visit', [
-          _summaryLine('Follow-up Notes', _followUpNotesController.text.trim()),
-          _summaryLine('Next Appointment', _followUpDateController.text.trim()),
+        _summaryCard(context.dtr('doctor.visitReport.stepFollowUp'), [
+          _summaryLine(
+            context.dtr('doctor.visitReport.followUpNotes'),
+            _followUpNotesController.text.trim(),
+          ),
+          _summaryLine(
+            context.dtr('doctor.visitReport.nextAppointment'),
+            _followUpDateController.text.trim(),
+          ),
         ]),
       ],
     );
   }
 
-  Widget _conditionCard(String label, IconData icon) {
-    final selected = _patientCondition == label;
-    final isWorsened = label == 'Worsened';
+  Widget _conditionCard(String value, String label, IconData icon) {
+    final selected = _patientCondition == value;
+    final isWorsened = value == 'Worsened';
     final color = isWorsened ? const Color(0xFFF27474) : _primary;
 
     return InkWell(
-      onTap: () => setState(() => _patientCondition = label),
+      onTap: () => setState(() => _patientCondition = value),
       borderRadius: BorderRadius.circular(16),
       child: Container(
         height: 150,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _surfaceColor,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: selected ? color : _line,
@@ -652,7 +740,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
             const SizedBox(height: 16),
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: _ink,
                 fontSize: 16,
                 fontWeight: FontWeight.w900,
@@ -698,9 +786,9 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFEAF0EF)),
+        border: Border.all(color: _line),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -733,7 +821,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
                 width: 50,
                 height: 50,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE7F7F2),
+                  color: _softPrimary,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(icon, color: _primary, size: 25),
@@ -745,7 +833,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 19,
                         fontWeight: FontWeight.w900,
                         color: _ink,
@@ -755,7 +843,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
                       const SizedBox(height: 6),
                       Text(
                         subtitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _muted,
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -778,7 +866,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _line),
       ),
@@ -796,7 +884,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: _muted,
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
@@ -809,7 +897,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
               value,
               textAlign: TextAlign.end,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: _ink,
                 fontSize: 16,
                 fontWeight: FontWeight.w900,
@@ -822,7 +910,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
   }
 
   Widget _panelDivider() {
-    return const Divider(height: 1, color: _line, indent: 46);
+    return Divider(height: 1, color: _line, indent: 46);
   }
 
   Widget _reportField(
@@ -843,18 +931,18 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
     return InputDecoration(
       hintText: hint,
       filled: true,
-      fillColor: Colors.white,
-      counterStyle: const TextStyle(color: _muted, fontSize: 11),
+      fillColor: _surfaceColor,
+      counterStyle: TextStyle(color: _muted, fontSize: 11),
       suffixIcon: suffixIcon == null
           ? null
           : Icon(suffixIcon, color: _primary, size: 22),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _line),
+        borderSide: BorderSide(color: _line),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _line),
+        borderSide: BorderSide(color: _line),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -882,10 +970,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
             flex: 2,
             child: Text(
               label,
-              style: const TextStyle(
-                color: _muted,
-                fontWeight: FontWeight.w800,
-              ),
+              style: TextStyle(color: _muted, fontWeight: FontWeight.w800),
             ),
           ),
           const SizedBox(width: 12),
@@ -894,7 +979,7 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
             child: Text(
               value.isEmpty ? '-' : value,
               textAlign: TextAlign.end,
-              style: const TextStyle(color: _ink, fontWeight: FontWeight.w900),
+              style: TextStyle(color: _ink, fontWeight: FontWeight.w900),
             ),
           ),
         ],
@@ -913,11 +998,15 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
             icon: Icon(
               isFirst ? Icons.close_rounded : Icons.arrow_back_rounded,
             ),
-            label: Text(isFirst ? 'Cancel' : 'Previous'),
+            label: Text(
+              isFirst
+                  ? context.dtr('doctor.visitReport.cancel')
+                  : context.dtr('doctor.visitReport.previous'),
+            ),
             style: OutlinedButton.styleFrom(
               foregroundColor: _primary,
-              backgroundColor: Colors.white,
-              side: const BorderSide(color: Color(0xFFB8D8D3)),
+              backgroundColor: _surfaceColor,
+              side: BorderSide(color: _line),
               padding: const EdgeInsets.symmetric(vertical: 18),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -945,7 +1034,11 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
                 : Icon(
                     isLast ? Icons.check_rounded : Icons.arrow_forward_rounded,
                   ),
-            label: Text(isLast ? 'Submit Report' : 'Next'),
+            label: Text(
+              isLast
+                  ? context.dtr('doctor.visitReport.submit')
+                  : context.dtr('doctor.visitReport.next'),
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: _primary,
               foregroundColor: Colors.white,
@@ -965,7 +1058,9 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
   }
 
   String _formatDate(dynamic value) {
-    if (value is! String || value.isEmpty) return 'Not scheduled';
+    if (value is! String || value.isEmpty) {
+      return context.dtr('doctor.visitReport.notScheduled');
+    }
     final date = DateTime.tryParse(value);
     if (date == null) return value;
     return '${date.day}/${date.month}/${date.year}';
@@ -981,8 +1076,21 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
         ? date.hour - 12
         : date.hour;
     final minute = date.minute.toString().padLeft(2, '0');
-    final suffix = date.hour >= 12 ? 'PM' : 'AM';
+    final suffix = date.hour >= 12
+        ? context.dtr('doctor.dashboard.timePm')
+        : context.dtr('doctor.dashboard.timeAm');
     return '$hour:$minute $suffix';
+  }
+
+  String _conditionDisplayLabel(String condition) {
+    switch (condition) {
+      case 'No Change':
+        return context.dtr('doctor.visitReport.noChange');
+      case 'Worsened':
+        return context.dtr('doctor.visitReport.worsened');
+      default:
+        return context.dtr('doctor.visitReport.improved');
+    }
   }
 
   String _firstText(List<dynamic> values) {
