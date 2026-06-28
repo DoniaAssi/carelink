@@ -597,9 +597,6 @@ class ApiService {
         body['cvMimeType'] = (cvMimeType ?? 'application/pdf').trim();
         if (cvFileSize != null) body['cvFileSize'] = cvFileSize;
       }
-      if (role == 'doctor' && certificates != null) {
-        body['certificates'] = certificates;
-      }
       if (serviceAreas != null && serviceAreas.trim().isNotEmpty) {
         body['serviceAreas'] = serviceAreas.trim();
       }
@@ -632,6 +629,7 @@ class ApiService {
         headers: _jsonHeaders,
         body: jsonEncode(body),
       ),
+    
     );
 
     if (response.statusCode >= 200 && response.statusCode < 300) {

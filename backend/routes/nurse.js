@@ -71,10 +71,10 @@ async function ensureAuxTables() {
     CREATE TABLE IF NOT EXISTS provider_documents (
       documentId CHAR(36) NOT NULL PRIMARY KEY,
       providerUserId CHAR(36) NOT NULL,
-      medical_certificate VARCHAR(1024) NULL,
-      nursing_license VARCHAR(1024) NULL,
-      id_card VARCHAR(1024) NULL,
-      cv_file VARCHAR(1024) NULL,
+      medical_certificate LONGTEXT NULL,
+      nursing_license LONGTEXT NULL,
+      id_card LONGTEXT NULL,
+      cv_file LONGTEXT NULL,
       workplace_history TEXT NULL,
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -82,10 +82,10 @@ async function ensureAuxTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
   const documentColumns = [
-    ['medical_certificate', 'VARCHAR(1024) NULL'],
-    ['nursing_license', 'VARCHAR(1024) NULL'],
-    ['id_card', 'VARCHAR(1024) NULL'],
-    ['cv_file', 'VARCHAR(1024) NULL'],
+    ['medical_certificate', 'LONGTEXT NULL'],
+    ['nursing_license', 'LONGTEXT NULL'],
+    ['id_card', 'LONGTEXT NULL'],
+    ['cv_file', 'LONGTEXT NULL'],
     ['workplace_history', 'TEXT NULL'],
     ['createdAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP'],
     ['updatedAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'],
@@ -94,6 +94,12 @@ async function ensureAuxTables() {
     if (await hasColumn('provider_documents', column)) continue;
     try {
       await db.query(`ALTER TABLE provider_documents ADD COLUMN ${column} ${definition}`);
+      columnCache.set(`provider_documents.${column}`, true);
+    } catch (_) {}
+  }
+  for (const column of ['medical_certificate', 'nursing_license', 'id_card', 'cv_file']) {
+    try {
+      await db.query(`ALTER TABLE provider_documents MODIFY COLUMN ${column} LONGTEXT NULL`);
       columnCache.set(`provider_documents.${column}`, true);
     } catch (_) {}
   }
