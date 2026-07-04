@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/shared/widgets/carelink_responsive.dart';
 
 /// The shared CareLink backdrop used by Sign In and every Patient page.
 ///
@@ -53,13 +54,17 @@ class PatientScaffold extends StatelessWidget {
       bottomNavigationBar: bottomNavigationBar,
       resizeToAvoidBottomInset: resizeToAvoidBottomInset,
     );
-    if (!enabled) return scaffold;
-    return CarelinkBackground(
-      child: Theme(
-        data: Theme.of(
-          context,
-        ).copyWith(scaffoldBackgroundColor: Colors.transparent),
-        child: scaffold,
+    if (!enabled) {
+      return CarelinkResponsiveScope(child: scaffold);
+    }
+    return CarelinkResponsiveScope(
+      child: CarelinkBackground(
+        child: Theme(
+          data: Theme.of(
+            context,
+          ).copyWith(scaffoldBackgroundColor: Colors.transparent),
+          child: scaffold,
+        ),
       ),
     );
   }

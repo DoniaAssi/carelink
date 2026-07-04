@@ -12,6 +12,7 @@ import 'package:carelink/shared/services/auth_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
 import 'package:carelink/shared/widgets/carelink_background.dart';
 import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/shared/widgets/carelink_responsive.dart';
 import 'package:carelink/features/admin/screens/admin_home_screen.dart';
 import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
 import 'package:carelink/features/doctors/doctor/doctor_rate_approval_screen.dart';
@@ -235,24 +236,29 @@ class _LoginScreenState extends State<LoginScreen> {
                         strokeWidth: 2.5,
                       ),
                     )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          context.tr('auth.signIn'),
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                  : FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            context.tr('auth.signIn'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.arrow_forward_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          const Icon(
+                            Icons.arrow_forward_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ],
+                      ),
                     ),
             ),
           ),
@@ -588,85 +594,93 @@ class _LoginScreenState extends State<LoginScreen> {
     final p = CarelinkPalette.of(context);
     final viewInsets = MediaQuery.viewInsetsOf(context).bottom;
 
-    return Scaffold(
-      backgroundColor: p.isDark
-          ? const Color(0xFF021018)
-          : AppColors.background,
-      resizeToAvoidBottomInset: true,
-      body: Stack(
-        children: [
-          Positioned.fill(child: CarelinkBackground(child: SizedBox.expand())),
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final w = constraints.maxWidth;
-                final horizontalPad = w < 400 ? 16.0 : 22.0;
-                final maxCardW = w < 520 ? double.infinity : 440.0;
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SizedBox(
-                      height: 48,
-                      child: Padding(
-                        padding: const EdgeInsetsDirectional.only(
-                          start: 6,
-                          end: 8,
-                        ),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              onPressed: () {
-                                appNavigatorKey.currentState
-                                    ?.pushNamedAndRemoveUntil(
-                                      '/intro',
-                                      (route) => false,
-                                    );
-                              },
-                              icon: const Icon(Icons.arrow_back_rounded),
-                              color: p.inkDark,
-                              iconSize: 24,
-                              visualDensity: VisualDensity.compact,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 42,
-                                height: 42,
-                              ),
-                              padding: EdgeInsets.zero,
-                            ),
-                            const Spacer(),
-                            PatientHeaderActions(color: AppColors.primary),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Center(
-                        child: SingleChildScrollView(
-                          padding: EdgeInsets.fromLTRB(
-                            horizontalPad,
-                            0,
-                            horizontalPad,
-                            16 + viewInsets,
-                          ),
-                          physics: const BouncingScrollPhysics(
-                            parent: AlwaysScrollableScrollPhysics(),
-                          ),
-                          child: Align(
-                            alignment: Alignment.topCenter,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(maxWidth: maxCardW),
-                              child: _loginFormCard(p, compact: w < 600),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
+    return CarelinkResponsiveScope(
+      child: Scaffold(
+        backgroundColor: p.isDark
+            ? const Color(0xFF021018)
+            : AppColors.background,
+        resizeToAvoidBottomInset: true,
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: CarelinkBackground(child: SizedBox.expand()),
             ),
-          ),
-        ],
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final w = constraints.maxWidth;
+                  final horizontalPad = w <= 320
+                      ? 12.0
+                      : w < 400
+                      ? 16.0
+                      : 22.0;
+                  final maxCardW = w < 520 ? double.infinity : 440.0;
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        height: 48,
+                        child: Padding(
+                          padding: const EdgeInsetsDirectional.only(
+                            start: 6,
+                            end: 8,
+                          ),
+                          child: Row(
+                            children: [
+                              IconButton(
+                                onPressed: () {
+                                  appNavigatorKey.currentState
+                                      ?.pushNamedAndRemoveUntil(
+                                        '/intro',
+                                        (route) => false,
+                                      );
+                                },
+                                icon: const Icon(Icons.arrow_back_rounded),
+                                color: p.inkDark,
+                                iconSize: 24,
+                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 42,
+                                  height: 42,
+                                ),
+                                padding: EdgeInsets.zero,
+                              ),
+                              const Spacer(),
+                              PatientHeaderActions(color: AppColors.primary),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Center(
+                          child: SingleChildScrollView(
+                            padding: EdgeInsets.fromLTRB(
+                              horizontalPad,
+                              0,
+                              horizontalPad,
+                              16 + viewInsets,
+                            ),
+                            physics: const BouncingScrollPhysics(
+                              parent: AlwaysScrollableScrollPhysics(),
+                            ),
+                            child: Align(
+                              alignment: Alignment.topCenter,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(maxWidth: maxCardW),
+                                child: _loginFormCard(p, compact: w < 600),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

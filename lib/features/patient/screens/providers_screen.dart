@@ -14,6 +14,7 @@ import 'package:carelink/features/ai/provider_smart_match.dart';
 import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/shared/services/patient_favorites_service.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
+import 'package:carelink/shared/widgets/carelink_responsive.dart';
 import 'provider_details_screen.dart';
 
 enum ProviderSortOption {
@@ -810,48 +811,52 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   @override
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
-    return Scaffold(
-      backgroundColor: p.isDark ? p.pageBg : const Color(0xFFF8FAFA),
-      appBar: PatientAppBar(
-        titleWidget: Text(
-          _copy('Find Providers', 'البحث عن مزودين'),
-          style: const TextStyle(
-            color: Color(0xFF0F766E),
-            fontSize: 27,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.4,
+    return CarelinkResponsiveScope(
+      child: Scaffold(
+        backgroundColor: p.isDark ? p.pageBg : const Color(0xFFF8FAFA),
+        appBar: PatientAppBar(
+          titleWidget: Text(
+            _copy('Find Providers', 'البحث عن مزودين'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF0F766E),
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+            ),
           ),
         ),
-      ),
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _fetchProviders,
-          color: AppColors.primary,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(
-              16,
-              8,
-              16,
-              128 + MediaQuery.paddingOf(context).bottom,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: _buildSearchField(p)),
-                    const SizedBox(width: 8),
-                    _filterButton(p),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _sortRow(p),
-                const SizedBox(height: 16),
-                _statusRow(p),
-                const SizedBox(height: 16),
-                _buildBody(p),
-              ],
+        body: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: _fetchProviders,
+            color: AppColors.primary,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                CarelinkResponsiveScope.horizontalPadding(context),
+                8,
+                CarelinkResponsiveScope.horizontalPadding(context),
+                128 + MediaQuery.paddingOf(context).bottom,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: _buildSearchField(p)),
+                      const SizedBox(width: 8),
+                      _filterButton(p),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _sortRow(p),
+                  const SizedBox(height: 16),
+                  _statusRow(p),
+                  const SizedBox(height: 16),
+                  _buildBody(p),
+                ],
+              ),
             ),
           ),
         ),
@@ -1174,7 +1179,9 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                             favorite
                                 ? Icons.favorite_rounded
                                 : Icons.favorite_border_rounded,
-                            color: favorite ? const Color(0xFFE85D75) : p.inkMuted,
+                            color: favorite
+                                ? const Color(0xFFE85D75)
+                                : p.inkMuted,
                             size: 20,
                           ),
                         ],
@@ -1199,7 +1206,11 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.star_rounded, color: Color(0xFFFFB020), size: 14),
+                              const Icon(
+                                Icons.star_rounded,
+                                color: Color(0xFFFFB020),
+                                size: 14,
+                              ),
                               const SizedBox(width: 3),
                               Text(
                                 provider.overallRating.toStringAsFixed(1),
@@ -1214,7 +1225,11 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.location_on_outlined, color: Color(0xFF64748B), size: 13),
+                              const Icon(
+                                Icons.location_on_outlined,
+                                color: Color(0xFF64748B),
+                                size: 13,
+                              ),
                               const SizedBox(width: 2),
                               Text(
                                 '${distanceKm.toStringAsFixed(1)} ${_copy('km', 'كم')}',
@@ -1228,7 +1243,10 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                           ),
                           if (matchPercentage != null && matchPercentage >= 80)
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppColors.primary.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(6),
@@ -1236,7 +1254,11 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.auto_awesome_rounded, color: AppColors.primary, size: 10),
+                                  const Icon(
+                                    Icons.auto_awesome_rounded,
+                                    color: AppColors.primary,
+                                    size: 10,
+                                  ),
                                   const SizedBox(width: 3),
                                   Text(
                                     _copy('AI Match', 'تطابق'),

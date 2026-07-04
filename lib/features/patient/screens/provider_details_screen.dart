@@ -2893,6 +2893,8 @@ class _ProviderReviewsScreen extends StatelessWidget {
       appBar: PatientAppBar(
         titleWidget: Text(
           'Reviews',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: context.patientTx.headline.copyWith(color: AppColors.primary),
         ),
         showLanguage: false,

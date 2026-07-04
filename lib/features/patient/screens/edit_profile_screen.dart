@@ -654,9 +654,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget build(BuildContext context) {
     final p = CarelinkPalette.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final pageBackground = scheme.brightness == Brightness.dark
+        ? Theme.of(context).scaffoldBackgroundColor
+        : Colors.white;
     return PatientScaffold(
       enabled: false,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: pageBackground,
       appBar: AppBar(
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -693,60 +696,68 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
               ),
             ),
-            _buildSaveBar(p),
+            _buildSaveBar(p, pageBackground),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSaveBar(CarelinkPalette p) {
+  Widget _buildSaveBar(CarelinkPalette p, Color pageBackground) {
     final disabled = isLoading;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      color: Theme.of(context).scaffoldBackgroundColor,
-        child: Center(
-          heightFactor: 1.0,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 500),
-            child: SizedBox(
-              width: double.infinity,
-              height: 54,
-              child: Material(
-                color: disabled ? const Color(0xFF9E9E9E) : const Color(0xFF0E8A78),
+      color: pageBackground,
+      child: Center(
+        heightFactor: 1.0,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 500),
+          child: SizedBox(
+            width: double.infinity,
+            height: 54,
+            child: Material(
+              color: disabled
+                  ? const Color(0xFF9E9E9E)
+                  : const Color(0xFF0E8A78),
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
                 borderRadius: BorderRadius.circular(16),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: disabled ? null : saveChanges,
-                  child: Center(
-                    child: isLoading
-                        ? const SizedBox(
-                            height: 24,
-                            width: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                onTap: disabled ? null : saveChanges,
+                child: Center(
+                  child: isLoading
+                      ? const SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
                             ),
-                          )
-                        : Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.save_outlined, size: 20, color: Colors.white),
-                              const SizedBox(width: 8),
-                              Text(
-                                _t('Save Changes', 'حفظ التغييرات'),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                ),
-                              ),
-                            ],
                           ),
-                  ),
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.save_outlined,
+                              size: 20,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _t('Save Changes', 'حفظ التغييرات'),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
                 ),
               ),
             ),
+          ),
         ),
       ),
     );
@@ -1036,7 +1047,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   color: p.inkMuted.withValues(alpha: 0.5),
                   fontSize: 14,
                 ),
-                suffixIcon: Icon(icon, color: const Color(0xFF16A085), size: 20),
+                suffixIcon: Icon(
+                  icon,
+                  color: const Color(0xFF16A085),
+                  size: 20,
+                ),
                 filled: true,
                 fillColor: p.surface,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1095,7 +1110,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: hasValue ? p.inkDark : p.inkMuted.withValues(alpha: 0.5),
+                          color: hasValue
+                              ? p.inkDark
+                              : p.inkMuted.withValues(alpha: 0.5),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1104,7 +1121,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const SizedBox(width: 8),
                     Icon(icon, color: const Color(0xFF16A085), size: 20),
                     const SizedBox(width: 8),
-                    Icon(Icons.keyboard_arrow_down_rounded, color: p.inkMuted, size: 20),
+                    Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: p.inkMuted,
+                      size: 20,
+                    ),
                   ],
                 ),
               ),
@@ -1147,14 +1168,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: addressController.text.isNotEmpty ? p.inkDark : p.inkMuted,
+                            color: addressController.text.isNotEmpty
+                                ? p.inkDark
+                                : p.inkMuted,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 12),
-                      const Icon(Icons.map_outlined, color: Color(0xFF16A085), size: 22),
+                      const Icon(
+                        Icons.map_outlined,
+                        color: Color(0xFF16A085),
+                        size: 22,
+                      ),
                     ],
                   ),
                 ),

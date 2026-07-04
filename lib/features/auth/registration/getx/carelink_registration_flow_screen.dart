@@ -17,6 +17,7 @@ import 'package:carelink/features/auth/registration/getx/widgets/role_selector.d
 import 'package:carelink/features/auth/widgets/carelink_auth_branded_shell.dart';
 import 'package:carelink/shared/widgets/carelink_trust_footer_bar.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
+import 'package:carelink/shared/widgets/carelink_responsive.dart';
 
 /// Same shell + card layout as [LoginScreen]: backdrop, back row, single form card.
 class CarelinkRegistrationFlowScreen extends StatefulWidget {
@@ -172,91 +173,98 @@ class _CarelinkRegistrationFlowScreenState
     final p = CarelinkPalette.of(context);
     final viewInsets = MediaQuery.viewInsetsOf(context).bottom;
 
-    return Scaffold(
-      backgroundColor: p.pageBg,
-      resizeToAvoidBottomInset: true,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: CarelinkAuthBrandedShell(
-              child: SafeArea(
-                bottom: false,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final w = constraints.maxWidth;
-                    const horizontalPad = 20.0;
-                    final maxCardW = w < 520 ? double.infinity : 440.0;
+    return CarelinkResponsiveScope(
+      child: Scaffold(
+        backgroundColor: p.pageBg,
+        resizeToAvoidBottomInset: true,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: CarelinkAuthBrandedShell(
+                child: SafeArea(
+                  bottom: false,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final w = constraints.maxWidth;
+                      final horizontalPad = w <= 320 ? 12.0 : 20.0;
+                      final maxCardW = w < 520 ? double.infinity : 440.0;
 
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                          height: 48,
-                          child: Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: Padding(
-                              padding: const EdgeInsetsDirectional.only(
-                                start: 6,
-                              ),
-                              child: IconButton(
-                                onPressed: () {
-                                  final c =
-                                      Get.find<
-                                        CarelinkRegistrationController
-                                      >();
-                                  if (c.stepIndex.value == 1) {
-                                    c.goBackToStep1();
-                                  } else {
-                                    Get.back<void>();
-                                  }
-                                },
-                                icon: const Icon(Icons.arrow_back_rounded),
-                                color: p.inkDark,
-                                iconSize: 24,
-                                visualDensity: VisualDensity.compact,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 42,
-                                  height: 42,
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                            height: 48,
+                            child: Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: Padding(
+                                padding: const EdgeInsetsDirectional.only(
+                                  start: 6,
                                 ),
-                                padding: EdgeInsets.zero,
-                              ),
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: Center(
-                            child: SingleChildScrollView(
-                              padding: EdgeInsets.fromLTRB(
-                                horizontalPad,
-                                0,
-                                horizontalPad,
-                                16 + viewInsets,
-                              ),
-                              physics: const BouncingScrollPhysics(
-                                parent: AlwaysScrollableScrollPhysics(),
-                              ),
-                              child: Align(
-                                alignment: Alignment.topCenter,
-                                child: ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    maxWidth: maxCardW,
+                                child: IconButton(
+                                  onPressed: () {
+                                    final c =
+                                        Get.find<
+                                          CarelinkRegistrationController
+                                        >();
+                                    if (c.stepIndex.value == 1) {
+                                      c.goBackToStep1();
+                                    } else {
+                                      Get.back<void>();
+                                    }
+                                  },
+                                  icon: const Icon(Icons.arrow_back_rounded),
+                                  color: p.inkDark,
+                                  iconSize: 24,
+                                  visualDensity: VisualDensity.compact,
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 42,
+                                    height: 42,
                                   ),
-                                  child: _registerFormCard(p, compact: w < 600),
+                                  padding: EdgeInsets.zero,
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    );
-                  },
+                          Expanded(
+                            child: Center(
+                              child: SingleChildScrollView(
+                                keyboardDismissBehavior:
+                                    ScrollViewKeyboardDismissBehavior.onDrag,
+                                padding: EdgeInsets.fromLTRB(
+                                  horizontalPad,
+                                  0,
+                                  horizontalPad,
+                                  16 + viewInsets,
+                                ),
+                                physics: const BouncingScrollPhysics(
+                                  parent: AlwaysScrollableScrollPhysics(),
+                                ),
+                                child: Align(
+                                  alignment: Alignment.topCenter,
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: maxCardW,
+                                    ),
+                                    child: _registerFormCard(
+                                      p,
+                                      compact: w < 600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
-          ),
-          const SafeArea(top: false, child: CarelinkTrustFooterBar()),
-        ],
+            const SafeArea(top: false, child: CarelinkTrustFooterBar()),
+          ],
+        ),
       ),
     );
   }
@@ -315,26 +323,31 @@ class _CarelinkPrimaryGradientButton extends StatelessWidget {
                         strokeWidth: 2.5,
                       ),
                     )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          label,
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                  : FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                        if (showTrailingArrow) ...[
-                          const SizedBox(width: 8),
-                          const Icon(
-                            Icons.arrow_forward_rounded,
-                            color: Colors.white,
-                            size: 20,
-                          ),
+                          if (showTrailingArrow) ...[
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.arrow_forward_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
             ),
           ),

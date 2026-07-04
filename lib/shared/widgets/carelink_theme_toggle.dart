@@ -19,6 +19,7 @@ class CarelinkLocaleIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 360;
     return ListenableBuilder(
       listenable: localeController,
       builder: (context, child) {
@@ -27,9 +28,12 @@ class CarelinkLocaleIconButton extends StatelessWidget {
         final button = IconButton(
           onPressed: () => localeController.toggle(),
           icon: Icon(Icons.language_rounded, color: color ?? AppColors.primary),
-          iconSize: 24,
+          iconSize: compact ? 21 : 24,
           tooltip: omitTooltip ? null : tip,
-          constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+          constraints: BoxConstraints.tightFor(
+            width: compact ? 36 : 40,
+            height: compact ? 36 : 40,
+          ),
           padding: EdgeInsets.zero,
           style: IconButton.styleFrom(
             backgroundColor: Colors.transparent,
@@ -175,6 +179,7 @@ class CarelinkThemeIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 360;
     return ListenableBuilder(
       listenable: themeController,
       builder: (context, child) {
@@ -186,9 +191,12 @@ class CarelinkThemeIconButton extends StatelessWidget {
             isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
             color: color ?? AppColors.primary,
           ),
-          iconSize: 24,
+          iconSize: compact ? 21 : 24,
           tooltip: omitTooltip ? null : tip,
-          constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+          constraints: BoxConstraints.tightFor(
+            width: compact ? 36 : 40,
+            height: compact ? 36 : 40,
+          ),
           padding: EdgeInsets.zero,
           style: IconButton.styleFrom(
             backgroundColor: Colors.transparent,

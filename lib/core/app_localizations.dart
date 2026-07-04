@@ -29,9 +29,61 @@ class CarelinkL10n {
     return value;
   }
 
+  /// Legacy Admin screens use their existing English copy as stable phrase
+  /// keys so localization can be added without changing any feature logic.
+  String admin(String source) {
+    if (!isArabic) return source;
+    final direct = _adminAr[source];
+    if (direct != null) return direct;
+
+    final rules = <(RegExp, String Function(RegExpMatch))>[
+      (RegExp(r'^Welcome, (.+)$'), (m) => 'مرحباً، ${m.group(1)}'),
+      (RegExp(r'^Applied on (.+)$'), (m) => 'تاريخ التقديم: ${m.group(1)}'),
+      (RegExp(r'^Requested on (.+)$'), (m) => 'تاريخ الطلب: ${m.group(1)}'),
+      (RegExp(r'^Patient: (.+)$'), (m) => 'المريض: ${m.group(1)}'),
+      (RegExp(r'^Provider: (.+)$'), (m) => 'مقدم الرعاية: ${m.group(1)}'),
+      (RegExp(r'^Service: (.+)$'), (m) => 'الخدمة: ${m.group(1)}'),
+      (
+        RegExp(r'^(\d+) nurse bookings? need admin decision$'),
+        (m) => '${m.group(1)} حجوزات تمريض تحتاج قرار الإدارة',
+      ),
+      (RegExp(r'^(\d+) years$'), (m) => '${m.group(1)} سنوات'),
+      (
+        RegExp(r'^(\d+) of (\d+) certificates$'),
+        (m) => '${m.group(1)} من ${m.group(2)} شهادات',
+      ),
+      (RegExp(r'^(\d+) docs$'), (m) => '${m.group(1)} مستندات'),
+      (
+        RegExp(r'^Decision saved: (.+)$'),
+        (m) => 'تم حفظ القرار: ${m.group(1)}',
+      ),
+      (RegExp(r'^Edit (.+)$'), (m) => 'تعديل ${m.group(1)}'),
+      (RegExp(r'^Request ID: (.+)$'), (m) => 'رقم الطلب: ${m.group(1)}'),
+      (
+        RegExp(r'^The payment has been sent to (.+)$'),
+        (m) => 'تم إرسال الدفعة إلى ${m.group(1)}',
+      ),
+      (
+        RegExp(r'^(.+) \((\d+)\)$'),
+        (m) => '${admin(m.group(1)!)} (${m.group(2)})',
+      ),
+      (RegExp(r'^(.+) Certificates$'), (m) => 'شهادات ${m.group(1)}'),
+      (RegExp(r'^(\d+) Points$'), (m) => '${m.group(1)} نقاط'),
+      (RegExp(r'^This Month\n(.+)$'), (m) => 'هذا الشهر\n${m.group(1)}'),
+    ];
+    for (final rule in rules) {
+      final match = rule.$1.firstMatch(source);
+      if (match != null) return rule.$2(match);
+    }
+    return source;
+  }
+
   /// Converts service/backend failures into safe, localized copy for UI
   /// surfaces. Technical exception text must never be rendered directly.
-  String userMessage(Object error, {String fallbackKey = 'common.error.generic'}) {
+  String userMessage(
+    Object error, {
+    String fallbackKey = 'common.error.generic',
+  }) {
     final raw = error
         .toString()
         .replaceFirst(RegExp(r'^Exception:\s*'), '')
@@ -73,6 +125,241 @@ class CarelinkL10n {
   }
 }
 
+const Map<String, String> _adminAr = {
+  'Home': 'الرئيسية',
+  'Requests': 'الطلبات',
+  'Providers': 'مقدمو الرعاية',
+  'Users': 'المستخدمون',
+  'Ratings': 'التقييمات',
+  'Finance': 'المالية',
+  'Statistics': 'الإحصائيات',
+  'Admin Dashboard': 'لوحة تحكم الإدارة',
+  'CareLink - Admin Dashboard': 'كيرلينك - لوحة تحكم الإدارة',
+  'Super Administrator': 'مدير النظام',
+  'Users Management': 'إدارة المستخدمين',
+  'Service Requests': 'طلبات الخدمة',
+  'Provider Requests': 'طلبات مقدمي الرعاية',
+  'Service Ratings': 'تقييمات الخدمة',
+  'Booking Review': 'مراجعة الحجوزات',
+  'Admin Review': 'مراجعة الإدارة',
+  'Booking Review Details': 'تفاصيل مراجعة الحجز',
+  'Review Details': 'تفاصيل المراجعة',
+  'Overview & key metrics': 'نظرة عامة ومؤشرات رئيسية',
+  'Total Users': 'إجمالي المستخدمين',
+  'Total Providers': 'إجمالي مقدمي الرعاية',
+  'Total Patients': 'إجمالي المرضى',
+  'Total Sessions': 'إجمالي الجلسات',
+  'Total Revenue': 'إجمالي الإيرادات',
+  'Average Rating': 'متوسط التقييم',
+  'Pending Approvals': 'الموافقات المعلقة',
+  'Requests by Status': 'الطلبات حسب الحالة',
+  'Finance Overview (Escrow)': 'الملخص المالي (الأموال المعلقة)',
+  'Revenue Overview': 'نظرة عامة على الإيرادات',
+  'Sessions Statistics': 'إحصائيات الجلسات',
+  'Most Requested Services': 'الخدمات الأكثر طلباً',
+  'Top Providers Performance': 'أفضل أداء لمقدمي الرعاية',
+  'Rating Statistics': 'إحصائيات التقييمات',
+  'Payment Statistics': 'إحصائيات المدفوعات',
+  'Performance Indicators': 'مؤشرات الأداء',
+  'Completed Requests': 'الطلبات المكتملة',
+  'Pending Requests': 'الطلبات المعلقة',
+  'Search requests...': 'البحث في الطلبات...',
+  'Search user...': 'البحث عن مستخدم...',
+  'Filter': 'تصفية',
+  'Filters': 'عوامل التصفية',
+  'All': 'الكل',
+  'Pending': 'معلق',
+  'In Progress': 'قيد التنفيذ',
+  'Completed': 'مكتمل',
+  'Cancelled': 'ملغي',
+  'Canceled': 'ملغي',
+  'Upcoming': 'قادم',
+  'Active': 'نشط',
+  'Inactive': 'غير نشط',
+  'Approved': 'مقبول',
+  'Rejected': 'مرفوض',
+  'Pending approval': 'بانتظار الموافقة',
+  'Accepted': 'مقبول',
+  'Excellent': 'ممتاز',
+  'Low': 'منخفض',
+  'Total': 'الإجمالي',
+  'New': 'جديد',
+  'Resolved': 'تم الحل',
+  'Feedback': 'الملاحظات',
+  'Complaints': 'الشكاوى',
+  'No service requests match this filter': 'لا توجد طلبات خدمة تطابق التصفية',
+  'No reports or feedback yet': 'لا توجد تقارير أو ملاحظات بعد',
+  'No providers match this filter': 'لا يوجد مقدمو رعاية يطابقون التصفية',
+  'No users match your search': 'لا يوجد مستخدمون يطابقون البحث',
+  'No ratings in the database yet': 'لا توجد تقييمات حتى الآن',
+  'No pricing rows yet': 'لا توجد أسعار حتى الآن',
+  'No transactions yet': 'لا توجد معاملات حتى الآن',
+  'No payout requests yet': 'لا توجد طلبات سحب حتى الآن',
+  'No provider wallets yet': 'لا توجد محافظ لمقدمي الرعاية بعد',
+  'No nurse bookings need admin review right now.':
+      'لا توجد حجوزات تمريض تحتاج مراجعة الإدارة حالياً.',
+  'Review nurse bookings that need an admin decision after the appointment time has passed.':
+      'راجع حجوزات التمريض التي تحتاج قراراً من الإدارة بعد انتهاء موعدها.',
+  'Admin decisions are saved for nurse bookings only. Missed appointments are not treated as patient cancellations.':
+      'تُحفظ قرارات الإدارة لحجوزات التمريض فقط، ولا تُعامل المواعيد الفائتة كإلغاء من المريض.',
+  'Admin Decisions': 'قرارات الإدارة',
+  'Use when the nurse delivered the service but the status was not updated.':
+      'استخدمه عندما قُدمت الخدمة ولم تُحدّث حالتها.',
+  'The booking will become Completed and the existing finance ledger will handle the split.':
+      'سيصبح الحجز مكتملاً وسيتولى السجل المالي الحالي توزيع المبلغ.',
+  'Use when the nurse did not approve or did not attend.':
+      'استخدمه عندما لم يوافق الممرض أو لم يحضر.',
+  'Payment will be marked refunded. This is not a patient cancellation.':
+      'سيتم تسجيل الدفعة كمستردة، وهذا ليس إلغاءً من المريض.',
+  'Use when admin decides the patient should receive part of the payment back.':
+      'استخدمه عندما تقرر الإدارة إعادة جزء من الدفعة للمريض.',
+  'Default is 80% refund, with the retained amount split between nurse and admin.':
+      'الافتراضي استرداد 80% وتقسيم المبلغ المتبقي بين الممرض والإدارة.',
+  'Use when patient no-show is confirmed or no valid refund reason exists.':
+      'استخدمه عند تأكيد عدم حضور المريض أو عدم وجود سبب صالح للاسترداد.',
+  'The review will be resolved and no automatic refund will be made.':
+      'ستُغلق المراجعة ولن يتم إجراء استرداد تلقائي.',
+  'Use when patient and nurse reports conflict.':
+      'استخدمه عند تعارض تقرير المريض مع تقرير الممرض.',
+  'Funds remain held while the admin continues the dispute review.':
+      'تبقى الأموال معلقة بينما تواصل الإدارة مراجعة النزاع.',
+  'Under Review': 'قيد المراجعة',
+  'Missed': 'فائت',
+  'Expired': 'منتهي',
+  'Disputes': 'نزاعات',
+  'Waiting Completion': 'بانتظار الإكمال',
+  'Missed Appointment': 'موعد فائت',
+  'Request Expired': 'انتهت صلاحية الطلب',
+  'Waiting for Completion': 'بانتظار الإكمال',
+  'Dispute': 'نزاع',
+  'Confirm Service Completed': 'تأكيد اكتمال الخدمة',
+  'Full Refund to Patient': 'استرداد كامل للمريض',
+  'Partial Refund': 'استرداد جزئي',
+  'Deny Refund': 'رفض الاسترداد',
+  'Move to Dispute': 'نقل إلى نزاع',
+  'Apply Decision': 'تطبيق القرار',
+  'Admin notes (optional)': 'ملاحظات الإدارة (اختياري)',
+  'Refund amount': 'مبلغ الاسترداد',
+  'When to use it': 'متى يُستخدم',
+  'What will happen': 'ما الذي سيحدث',
+  'This booking needs admin review.': 'هذا الحجز يحتاج مراجعة الإدارة.',
+  'Funds stay held until the admin decision is saved.':
+      'تبقى الأموال معلقة حتى حفظ قرار الإدارة.',
+  'Held for review': 'معلق للمراجعة',
+  'Patient': 'المريض',
+  'Nurse': 'ممرض/ة',
+  'Doctor': 'طبيب/ة',
+  'Provider': 'مقدم الرعاية',
+  'Care Provider': 'مقدم رعاية',
+  'Service': 'الخدمة',
+  'Nursing Service': 'خدمة تمريض',
+  'Date & Time': 'التاريخ والوقت',
+  'Paid Amount': 'المبلغ المدفوع',
+  'Reason': 'السبب',
+  'System Notes': 'ملاحظات النظام',
+  'Time': 'الوقت',
+  'Paid': 'مدفوع',
+  'Payment': 'الدفع',
+  'View': 'عرض',
+  'View All': 'عرض الكل',
+  'View Details': 'عرض التفاصيل',
+  'Review': 'مراجعة',
+  'Approve': 'موافقة',
+  'Reject': 'رفض',
+  'Verify': 'تحقق',
+  'Certificates': 'الشهادات',
+  'Certification Verification': 'التحقق من الشهادات',
+  'Uploaded Documents': 'المستندات المرفوعة',
+  'Document': 'مستند',
+  'Attached file': 'ملف مرفق',
+  'View file': 'عرض الملف',
+  'Download': 'تنزيل',
+  'No documents were uploaded': 'لم يتم رفع مستندات',
+  'No certificates were uploaded for this account.':
+      'لم يتم رفع شهادات لهذا الحساب.',
+  'Pending verification': 'بانتظار التحقق',
+  'Verified': 'تم التحقق',
+  'Account approved': 'تمت الموافقة على الحساب',
+  'Account rejected': 'تم رفض الحساب',
+  'Certificate verified': 'تم التحقق من الشهادة',
+  'Full name': 'الاسم الكامل',
+  'Phone number': 'رقم الهاتف',
+  'Specialization': 'التخصص',
+  'Service type': 'نوع الخدمة',
+  'Address': 'العنوان',
+  'Edit details': 'تعديل التفاصيل',
+  'User details updated': 'تم تحديث بيانات المستخدم',
+  'User activated': 'تم تفعيل المستخدم',
+  'User disabled': 'تم تعطيل المستخدم',
+  'Pricing': 'التسعير',
+  'Active Services': 'الخدمات النشطة',
+  'Service Pricing & Commission': 'تسعير الخدمات والعمولة',
+  'Set provider rates and admin commissions':
+      'تحديد أسعار مقدمي الرعاية وعمولات الإدارة',
+  'Set prices for each service. These will be shown to patients.':
+      'حدد سعر كل خدمة ليظهر للمرضى.',
+  'Add Pricing': 'إضافة تسعير',
+  'Edit pricing': 'تعديل التسعير',
+  'Select provider': 'اختر مقدم الرعاية',
+  'Select provider first': 'اختر مقدم الرعاية أولاً',
+  'Provider Rate': 'سعر مقدم الرعاية',
+  'Admin Commission': 'عمولة الإدارة',
+  'Patient Price': 'سعر المريض',
+  'Pricing saved': 'تم حفظ التسعير',
+  'Optional for commission-only specialization':
+      'اختياري عند تحديد عمولة التخصص فقط',
+  'Transactions': 'المعاملات',
+  'Payouts': 'طلبات السحب',
+  'Wallets': 'المحافظ',
+  'Payout Approval': 'الموافقة على السحب',
+  'Approve & Pay': 'موافقة ودفع',
+  'Transfer': 'تحويل',
+  'Payment Successful!': 'تم الدفع بنجاح!',
+  'Payment Receipt': 'إيصال الدفع',
+  'Download Receipt (PDF)': 'تنزيل الإيصال (PDF)',
+  'Receipt': 'إيصال',
+  'Provider earning': 'أرباح مقدم الرعاية',
+  'Platform commission': 'عمولة المنصة',
+  'Requested amount': 'المبلغ المطلوب',
+  'Pending Payouts': 'طلبات السحب المعلقة',
+  'Payments Completed': 'المدفوعات المكتملة',
+  'Refunds': 'المبالغ المستردة',
+  'Platform Profit': 'ربح المنصة',
+  'Released to Providers': 'المحول لمقدمي الرعاية',
+  'Pending Escrow': 'الأموال المعلقة',
+  'This Month': 'هذا الشهر',
+  'This Week': 'هذا الأسبوع',
+  'This Year': 'هذه السنة',
+  'Monthly': 'شهري',
+  'Top 5': 'أفضل 5',
+  'from last month': 'مقارنة بالشهر الماضي',
+  'General consultation': 'استشارة عامة',
+  'Home Nursing Care': 'رعاية تمريضية منزلية',
+  'Elderly Care': 'رعاية كبار السن',
+  'Service request': 'طلب خدمة',
+  'Service feedback': 'ملاحظات الخدمة',
+  'No comment provided': 'لا يوجد تعليق',
+  'No written notes.': 'لا توجد ملاحظات مكتوبة.',
+  'Location not set': 'لم يتم تحديد الموقع',
+  'Not set': 'غير محدد',
+  'Unassigned provider': 'مقدم رعاية غير معين',
+  'Provider performance appears here after completed sessions.':
+      'يظهر أداء مقدمي الرعاية هنا بعد اكتمال الجلسات.',
+  'Back': 'رجوع',
+  'Close': 'إغلاق',
+  'Cancel': 'إلغاء',
+  'Save': 'حفظ',
+  'Add': 'إضافة',
+  'Refresh': 'تحديث',
+  'Retry': 'إعادة المحاولة',
+  'Menu': 'القائمة',
+  'Language': 'اللغة',
+  'Theme': 'المظهر',
+  'Log out': 'تسجيل الخروج',
+  'Could not open the file': 'تعذر فتح الملف',
+  'Request failed': 'فشل الطلب',
+};
+
 extension CarelinkL10nX on BuildContext {
   CarelinkL10n get l10n => CarelinkL10n.of(this);
   CarelinkL10n get doctorL10n => CarelinkL10n.doctor(this);
@@ -95,7 +382,8 @@ const Map<String, String> _en = {
       'You already have a booking request for this appointment.',
   'common.error.locationPermission':
       'Please enable location services and allow location access.',
-  'common.error.paymentFailed': 'Payment could not be completed. Please try again.',
+  'common.error.paymentFailed':
+      'Payment could not be completed. Please try again.',
   'common.error.unauthorized': 'You are not authorized to perform this action.',
   'common.dateUnavailable': 'Date unavailable',
   'common.timeUnavailable': 'Time unavailable',
@@ -919,21 +1207,20 @@ const Map<String, String> _ar = {
   'patient.report.followDate': 'تاريخ المتابعة',
   'patient.report.submit': 'إرسال التقرير',
   'patient.report.requireClinicalNote': 'أضف التشخيص أو خطة العلاج.',
-  'patient.report.invalidVitals': 'يجب إدخال العلامات الحيوية بصيغة JSON صحيحة.',
+  'patient.report.invalidVitals':
+      'يجب إدخال العلامات الحيوية بصيغة JSON صحيحة.',
   'patient.provider.unavailable': 'مقدم الرعاية هذا غير متاح حالياً.',
   'patient.provider.firstVisitDoctor':
       'يجب أن يكون موعدك الأول مع طبيب لإجراء التقييم الأولي.',
   'patient.careService': 'خدمة رعاية',
   'patient.availableDates': 'التواريخ المتاحة',
-  'patient.rating.thanks':
-      'شكراً لك، يساعد تقييمك في تحسين التوصيات للجميع.',
+  'patient.rating.thanks': 'شكراً لك، يساعد تقييمك في تحسين التوصيات للجميع.',
   'booking.success.provider': 'مقدم الرعاية',
   'booking.success.service': 'الخدمة',
   'booking.success.date': 'التاريخ',
   'booking.success.time': 'الوقت',
   'booking.success.timelinePaidDescription': 'تمت عملية الدفع بنجاح.',
-  'booking.success.timelineSentDescription':
-      'تم إرسال طلبك إلى مقدم الرعاية.',
+  'booking.success.timelineSentDescription': 'تم إرسال طلبك إلى مقدم الرعاية.',
   'booking.success.timelineWaitingDescription':
       'سيقوم مقدم الرعاية بمراجعة طلبك.',
   'booking.success.timelineConfirmedDescription':

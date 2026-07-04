@@ -41,7 +41,14 @@ class PatientAppBar extends StatelessWidget implements PreferredSizeWidget {
       title:
           titleWidget ??
           (title != null
-              ? Text(title!, style: context.patientTx.headline.copyWith(color: AppColors.primary))
+              ? Text(
+                  title!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.patientTx.headline.copyWith(
+                    color: AppColors.primary,
+                  ),
+                )
               : null),
       centerTitle: false,
       leading: showBack
@@ -54,10 +61,7 @@ class PatientAppBar extends StatelessWidget implements PreferredSizeWidget {
       actions: [
         if (showNotification)
           IconButton(
-            icon: Icon(
-              Icons.notifications_outlined,
-              color: AppColors.primary,
-            ),
+            icon: Icon(Icons.notifications_outlined, color: AppColors.primary),
             iconSize: 24,
             onPressed: () {
               // Triggers notifications or profile page
@@ -74,10 +78,7 @@ class PatientAppBar extends StatelessWidget implements PreferredSizeWidget {
           ),
         if (showAiRobot)
           IconButton(
-            icon: Icon(
-              Icons.smart_toy_outlined,
-              color: AppColors.primary,
-            ),
+            icon: Icon(Icons.smart_toy_outlined, color: AppColors.primary),
             iconSize: 24,
             onPressed: () {
               Navigator.pushNamed(context, '/find-provider');

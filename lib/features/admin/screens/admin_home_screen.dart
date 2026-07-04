@@ -6,7 +6,9 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:carelink/core/app_nav.dart';
+import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/features/admin/screens/admin_booking_review_screen.dart';
+import 'package:carelink/features/admin/widgets/admin_ui_support.dart';
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
@@ -22,11 +24,13 @@ class AdminHomeScreen extends StatefulWidget {
 class _AdminHomeScreenState extends State<AdminHomeScreen> {
   static const _teal = Color(0xFF039D98);
   static const _darkTeal = Color(0xFF007B78);
-  static const _bg = Color(0xFFF1FAF9);
   static const _ink = Color(0xFF0D1B2A);
   static const _muted = Color(0xFF6B7C86);
   static const _line = Color(0xFFD7E7E5);
   static const double _phoneWidth = 430;
+
+  CarelinkPalette get _palette => CarelinkPalette.of(context);
+  Color get _surface => _palette.surface;
 
   bool _loading = true;
   String? _error;
@@ -93,27 +97,101 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: _bg,
-        body: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _phoneWidth),
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator(color: _teal))
-                  : _error != null
-                  ? _ErrorState(message: _error!, onRetry: _load)
-                  : RefreshIndicator(
-                      color: _teal,
-                      onRefresh: _load,
-                      child: _currentPage(),
-                    ),
+    return ListenableBuilder(
+      listenable: adminUiSettings,
+      builder: (context, _) => _buildAdminScreen(context),
+    );
+  }
+
+  Widget _buildAdminScreen(BuildContext context) {
+    final baseTheme = Theme.of(context);
+    final p = _palette;
+    return Theme(
+      data: baseTheme.copyWith(
+        scaffoldBackgroundColor: p.pageBg,
+        cardColor: p.surface,
+        canvasColor: p.surface,
+        dividerColor: p.stroke,
+        colorScheme: baseTheme.colorScheme.copyWith(
+          surface: p.surface,
+          onSurface: p.inkDark,
+          primary: _darkTeal,
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: p.surface,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+        ),
+        inputDecorationTheme: baseTheme.inputDecorationTheme.copyWith(
+          filled: true,
+          fillColor: p.surface,
+          hintStyle: TextStyle(color: p.inkMuted),
+          labelStyle: TextStyle(color: p.inkMuted),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: p.stroke),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: _darkTeal,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
             ),
           ),
         ),
-        bottomNavigationBar: _bottomNav(),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _darkTeal,
+            side: BorderSide(color: _line),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+      ),
+      child: Directionality(
+        textDirection: context.adminTextDirection,
+        child: Scaffold(
+          backgroundColor: p.pageBg,
+          body: SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: _phoneWidth),
+                child: Column(
+                  children: [
+                    AdminGlobalControls(),
+                    Expanded(
+                      child: _loading
+                          ? Center(
+                              child: CircularProgressIndicator(color: _teal),
+                            )
+                          : _error != null
+                          ? _ErrorState(message: _error!, onRetry: _load)
+                          : RefreshIndicator(
+                              color: _teal,
+                              onRefresh: _load,
+                              child: AnimatedSwitcher(
+                                duration: Duration(milliseconds: 240),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
+                                child: KeyedSubtree(
+                                  key: ValueKey(_tabIndex),
+                                  child: _currentPage(),
+                                ),
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          bottomNavigationBar: _bottomNav(),
+        ),
       ),
     );
   }
@@ -138,24 +216,29 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _dashboardPage() {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
+    final compact = screenWidth < 360;
+    final metricCardHeight =
+        (compact ? 132.0 : 124.0) + math.max(0, textScale - 1) * 22;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+      padding: EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
         _adminTopBar(),
-        const SizedBox(height: 20),
+        SizedBox(height: 20),
         _adminWelcomeCard(),
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
         _bookingReviewShortcut(),
-        const SizedBox(height: 22),
+        SizedBox(height: 22),
         _dashboardSectionTitle('Users'),
-        const SizedBox(height: 10),
+        SizedBox(height: 10),
         GridView.count(
           crossAxisCount: 2,
           shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
+          physics: NeverScrollableScrollPhysics(),
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.34,
+          mainAxisExtent: metricCardHeight,
           children: [
             _dashboardMetricCard(
               title: 'Users',
@@ -185,9 +268,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 22),
+        SizedBox(height: 22),
         _financeOverviewCard(),
-        const SizedBox(height: 22),
+        SizedBox(height: 22),
         _requestsByStatusCard(),
       ],
     );
@@ -205,25 +288,25 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }).toList();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+      padding: EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
         _requestsTopBar('Service Requests'),
-        const SizedBox(height: 18),
+        SizedBox(height: 18),
         _requestSearchRow(),
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
         _serviceRequestStatusTabs(),
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
         _bookingReviewInlineCard(),
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
         if (filtered.isEmpty)
           _empty('No service requests match this filter')
         else
           ...filtered.map(_serviceRequestTile),
-        const SizedBox(height: 18),
+        SizedBox(height: 18),
         _requestsTopBar('Reports & Complaints', compact: true),
-        const SizedBox(height: 12),
+        SizedBox(height: 12),
         _reportsComplaintTabs(),
-        const SizedBox(height: 14),
+        SizedBox(height: 14),
         if (_ratings.isEmpty)
           _empty('No reports or feedback yet')
         else
@@ -236,12 +319,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Row(
       children: [
         IconButton(
-          tooltip: 'Back',
+          tooltip: context.adminTr('Back'),
           onPressed: () => setState(() => _tabIndex = 0),
-          icon: const Icon(Icons.arrow_back_rounded, color: _teal, size: 21),
+          icon: Icon(context.adminBackIcon, color: _teal, size: 21),
         ),
         Expanded(
-          child: Text(
+          child: AdminLocalizedText(
             title,
             textAlign: TextAlign.center,
             style: TextStyle(
@@ -252,14 +335,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ),
         ),
         IconButton(
-          tooltip: 'Language',
+          tooltip: context.adminTr('Language'),
           onPressed: () {},
-          icon: const Icon(Icons.language_rounded, color: _teal, size: 20),
+          icon: Icon(Icons.language_rounded, color: _teal, size: 20),
         ),
         IconButton(
-          tooltip: 'Theme',
+          tooltip: context.adminTr('Theme'),
           onPressed: () {},
-          icon: const Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
+          icon: Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
         ),
       ],
     );
@@ -279,19 +362,19 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final count = _bookingReviewItems.length;
     if (count == 0) {
       return Container(
-        padding: const EdgeInsets.all(13),
+        padding: EdgeInsets.all(13),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE3F0EE)),
+          border: Border.all(color: _palette.stroke),
           boxShadow: _softDashboardShadow,
         ),
-        child: const Row(
+        child: Row(
           children: [
             Icon(Icons.verified_user_outlined, color: _teal, size: 20),
             SizedBox(width: 10),
             Expanded(
-              child: Text(
+              child: AdminLocalizedText(
                 'No nurse bookings need admin review right now.',
                 style: TextStyle(
                   color: Color(0xFF6B7C86),
@@ -308,11 +391,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       borderRadius: BorderRadius.circular(16),
       onTap: _openBookingReview,
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFDDEDEA)),
+          border: Border.all(color: Color(0xFFDDEDEA)),
           boxShadow: _softDashboardShadow,
         ),
         child: Row(
@@ -321,17 +404,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: const Color(0xFFE7F6F3),
+                color: _palette.surfaceSoft,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Icon(Icons.gavel_rounded, color: _darkTeal),
+              child: Icon(Icons.gavel_rounded, color: _darkTeal),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  AdminLocalizedText(
                     'Booking Review',
                     style: TextStyle(
                       color: _ink,
@@ -339,10 +422,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
+                  SizedBox(height: 4),
+                  AdminLocalizedText(
                     '$count nurse booking${count == 1 ? '' : 's'} need admin decision',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Color(0xFF6B7C86),
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
@@ -351,9 +434,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ],
               ),
             ),
-            _pill('$count', const Color(0xFFE7FAF4), _teal),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right_rounded, color: _darkTeal),
+            _pill('$count', Color(0xFFE7FAF4), _teal),
+            SizedBox(width: 8),
+            Icon(Icons.chevron_right_rounded, color: _darkTeal),
           ],
         ),
       ),
@@ -367,20 +450,20 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           child: TextField(
             onChanged: (v) => setState(() => _requestQuery = v),
             decoration: InputDecoration(
-              hintText: 'Search requests...',
-              hintStyle: const TextStyle(
+              hintText: context.adminTr('Search requests...'),
+              hintStyle: TextStyle(
                 color: Color(0xFFB5C2C4),
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
-              prefixIcon: const Icon(
+              prefixIcon: Icon(
                 Icons.search_rounded,
                 color: Color(0xFFB5C2C4),
                 size: 20,
               ),
               filled: true,
-              fillColor: Colors.white,
-              contentPadding: const EdgeInsets.symmetric(
+              fillColor: _surface,
+              contentPadding: EdgeInsets.symmetric(
                 horizontal: 16,
                 vertical: 14,
               ),
@@ -395,16 +478,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ),
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: 12),
         TextButton.icon(
           onPressed: () => setState(() {
             _requestFilter = _requestFilter == 'all' ? 'pending' : 'all';
           }),
-          icon: const Icon(Icons.filter_list_rounded, size: 18),
-          label: const Text('Filter'),
+          icon: Icon(Icons.filter_list_rounded, size: 18),
+          label: AdminLocalizedText('Filter'),
           style: TextButton.styleFrom(
             foregroundColor: _teal,
-            textStyle: const TextStyle(fontWeight: FontWeight.w900),
+            textStyle: TextStyle(fontWeight: FontWeight.w900),
           ),
         ),
       ],
@@ -446,7 +529,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         children: [
           for (final option in options) ...[
             _serviceRequestChip(option.$1, '${option.$2} (${option.$3})'),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
           ],
         ],
       ),
@@ -459,14 +542,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       borderRadius: BorderRadius.circular(18),
       onTap: () => setState(() => _requestFilter = value),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+        duration: Duration(milliseconds: 160),
+        padding: EdgeInsets.symmetric(horizontal: 13, vertical: 9),
         decoration: BoxDecoration(
-          color: selected ? _teal : const Color(0xFFE9F8F6),
+          color: selected ? _teal : Color(0xFFE9F8F6),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: selected ? _teal : const Color(0xFFD9EEEC)),
+          border: Border.all(color: selected ? _teal : Color(0xFFD9EEEC)),
         ),
-        child: Text(
+        child: AdminLocalizedText(
           label,
           style: TextStyle(
             color: selected ? Colors.white : _teal,
@@ -482,12 +565,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final status = _text(request['status'], fallback: 'pending');
     final patientName = _text(request['patientName'], fallback: 'Patient');
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.fromLTRB(12, 12, 12, 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE3F0EE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Row(
@@ -495,59 +578,55 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           CircleAvatar(
             radius: 23,
             backgroundColor: _teal.withValues(alpha: 0.14),
-            child: Text(
+            child: AdminLocalizedText(
               _initials(patientName),
-              style: const TextStyle(
+              style: TextStyle(
                 color: _teal,
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AdminLocalizedText(
                   patientName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _ink,
                     fontSize: 13.5,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
+                SizedBox(height: 4),
+                AdminLocalizedText(
                   _text(request['serviceType'], fallback: 'Service request'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Color(0xFF64787C),
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 7),
+                SizedBox(height: 7),
                 Row(
                   children: [
-                    const Icon(
-                      Icons.location_on_rounded,
-                      color: _teal,
-                      size: 14,
-                    ),
-                    const SizedBox(width: 4),
+                    Icon(Icons.location_on_rounded, color: _teal, size: 14),
+                    SizedBox(width: 4),
                     Expanded(
-                      child: Text(
+                      child: AdminLocalizedText(
                         _text(
                           request['location'],
                           fallback: 'Location not set',
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Color(0xFF6F8589),
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,
@@ -559,28 +638,28 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ],
             ),
           ),
-          const SizedBox(width: 10),
+          SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
+              AdminLocalizedText(
                 _shortDate(request['scheduledAt'] ?? request['createdAt']),
-                style: const TextStyle(
+                style: TextStyle(
                   color: _ink,
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 5),
-              Text(
+              SizedBox(height: 5),
+              AdminLocalizedText(
                 _shortTime(request['scheduledAt'] ?? request['createdAt']),
-                style: const TextStyle(
+                style: TextStyle(
                   color: Color(0xFF6F8589),
                   fontSize: 10.5,
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 10),
+              SizedBox(height: 10),
               _serviceStatusPill(status),
             ],
           ),
@@ -593,7 +672,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Row(
       children: [
         _reportsComplaintChip('Complaints (0)', true),
-        const SizedBox(width: 8),
+        SizedBox(width: 8),
         _reportsComplaintChip('Feedback (${_ratings.length})', false),
       ],
     );
@@ -601,12 +680,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   Widget _reportsComplaintChip(String label, bool selected) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+      padding: EdgeInsets.symmetric(horizontal: 13, vertical: 9),
       decoration: BoxDecoration(
-        color: selected ? _teal : const Color(0xFFE9F8F6),
+        color: selected ? _teal : Color(0xFFE9F8F6),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Text(
+      child: AdminLocalizedText(
         label,
         style: TextStyle(
           color: selected ? Colors.white : _teal,
@@ -624,58 +703,58 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         ? 'Resolved'
         : 'In Progress';
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.fromLTRB(12, 12, 12, 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE3F0EE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Row(
         children: [
           CircleAvatar(
             radius: 22,
-            backgroundColor: const Color(0xFF0AA0B8).withValues(alpha: 0.14),
-            child: Text(
+            backgroundColor: Color(0xFF0AA0B8).withValues(alpha: 0.14),
+            child: AdminLocalizedText(
               _initials(item['patientName']),
-              style: const TextStyle(
+              style: TextStyle(
                 color: Color(0xFF0AA0B8),
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AdminLocalizedText(
                   _text(item['patientName'], fallback: 'Patient'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _ink,
                     fontSize: 13.5,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
+                SizedBox(height: 4),
+                AdminLocalizedText(
                   _text(item['comment'], fallback: 'Service feedback'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Color(0xFF64787C),
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
+                SizedBox(height: 8),
+                AdminLocalizedText(
                   '${_shortDate(item['createdAt'])} - ${_shortTime(item['createdAt'])}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Color(0xFF9AA8AB),
                     fontSize: 10.5,
                     fontWeight: FontWeight.w700,
@@ -684,22 +763,22 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ],
             ),
           ),
-          const SizedBox(width: 10),
+          SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               _complaintStatusPill(status),
-              const SizedBox(height: 12),
+              SizedBox(height: 12),
               TextButton(
                 onPressed: () => _showRatingDetails(item),
                 style: TextButton.styleFrom(
                   foregroundColor: _teal,
-                  textStyle: const TextStyle(
+                  textStyle: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                child: const Text('View'),
+                child: AdminLocalizedText('View'),
               ),
             ],
           ),
@@ -712,23 +791,27 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(_text(item['patientName'], fallback: 'Feedback')),
+        title: AdminLocalizedText(
+          _text(item['patientName'], fallback: 'Feedback'),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _stars(_int(item['stars'])),
-            const SizedBox(height: 12),
-            Text(_text(item['comment'], fallback: 'No comment provided')),
-            const SizedBox(height: 12),
-            Text('Provider: ${_text(item['providerName'])}'),
-            Text('Service: ${_text(item['serviceType'])}'),
+            SizedBox(height: 12),
+            AdminLocalizedText(
+              _text(item['comment'], fallback: 'No comment provided'),
+            ),
+            SizedBox(height: 12),
+            AdminLocalizedText('Provider: ${_text(item['providerName'])}'),
+            AdminLocalizedText('Service: ${_text(item['serviceType'])}'),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: AdminLocalizedText('Close'),
           ),
         ],
       ),
@@ -739,12 +822,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final group = _serviceStatusGroup(status);
     final color = _serviceStatusColor(group);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      padding: EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.13),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(
+      child: AdminLocalizedText(
         _serviceStatusLabel(status),
         style: TextStyle(
           color: color,
@@ -757,17 +840,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   Widget _complaintStatusPill(String status) {
     final color = status == 'New'
-        ? const Color(0xFFE04F5F)
+        ? Color(0xFFE04F5F)
         : status == 'Resolved'
-        ? const Color(0xFF1E9D69)
-        : const Color(0xFFD28A00);
+        ? Color(0xFF1E9D69)
+        : Color(0xFFD28A00);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      padding: EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(
+      child: AdminLocalizedText(
         status,
         style: TextStyle(
           color: color,
@@ -786,12 +869,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }).toList();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+      padding: EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
         _providersTopBar(),
-        const SizedBox(height: 18),
+        SizedBox(height: 18),
         _providerStatusTabs(),
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
         if (providers.isEmpty)
           _empty('No providers match this filter')
         else
@@ -811,30 +894,30 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }).toList();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+      padding: EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
         _usersTopBar(),
-        const SizedBox(height: 18),
+        SizedBox(height: 18),
         Row(
           children: [
             Expanded(
               child: TextField(
                 onChanged: (v) => setState(() => _userQuery = v),
                 decoration: InputDecoration(
-                  hintText: 'Search user...',
-                  hintStyle: const TextStyle(
+                  hintText: context.adminTr('Search user...'),
+                  hintStyle: TextStyle(
                     color: Color(0xFFB5C2C4),
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
-                  prefixIcon: const Icon(
+                  prefixIcon: Icon(
                     Icons.search_rounded,
                     color: Color(0xFFB5C2C4),
                     size: 20,
                   ),
                   filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(
+                  fillColor: _surface,
+                  contentPadding: EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 14,
                   ),
@@ -849,23 +932,23 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: 12),
             TextButton.icon(
               onPressed: () => setState(() {
                 _userFilter = _userFilter == 'all' ? 'nurse' : 'all';
               }),
-              icon: const Icon(Icons.filter_list_rounded, size: 18),
-              label: const Text('Filter'),
+              icon: Icon(Icons.filter_list_rounded, size: 18),
+              label: AdminLocalizedText('Filter'),
               style: TextButton.styleFrom(
                 foregroundColor: _teal,
-                textStyle: const TextStyle(fontWeight: FontWeight.w900),
+                textStyle: TextStyle(fontWeight: FontWeight.w900),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
         _usersRoleTabs(),
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
         if (filtered.isEmpty)
           _empty('No users match your search')
         else
@@ -883,14 +966,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }).toList();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+      padding: EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
         _ratingsTopBar(),
-        const SizedBox(height: 18),
+        SizedBox(height: 18),
         _ratingsSummaryCard(),
-        const SizedBox(height: 14),
+        SizedBox(height: 14),
         _ratingFilterTabs(),
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
         if (filtered.isEmpty)
           _empty('No ratings in the database yet')
         else
@@ -903,12 +986,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Row(
       children: [
         IconButton(
-          tooltip: 'Back',
+          tooltip: context.adminTr('Back'),
           onPressed: () => setState(() => _tabIndex = 0),
-          icon: const Icon(Icons.arrow_back_rounded, color: _teal, size: 21),
+          icon: Icon(context.adminBackIcon, color: _teal, size: 21),
         ),
-        const Spacer(),
-        const Text(
+        Spacer(),
+        AdminLocalizedText(
           'Service Ratings',
           style: TextStyle(
             color: _ink,
@@ -916,16 +999,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
-        const Spacer(),
+        Spacer(),
         IconButton(
-          tooltip: 'Language',
+          tooltip: context.adminTr('Language'),
           onPressed: () {},
-          icon: const Icon(Icons.language_rounded, color: _teal, size: 20),
+          icon: Icon(Icons.language_rounded, color: _teal, size: 20),
         ),
         IconButton(
-          tooltip: 'Theme',
+          tooltip: context.adminTr('Theme'),
           onPressed: () {},
-          icon: const Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
+          icon: Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
         ),
       ],
     );
@@ -935,11 +1018,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final excellent = _ratings.where((r) => _int(r['stars']) >= 5).length;
     final low = _ratings.where((r) => _int(r['stars']) <= 2).length;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2F0EE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Column(
@@ -950,21 +1033,21 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE7F6F3),
+                  color: _palette.surfaceSoft,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.star_rounded,
                   color: Color(0xFFF1A72E),
                   size: 31,
                 ),
               ),
-              const SizedBox(width: 14),
+              SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    AdminLocalizedText(
                       'Average Rating',
                       style: TextStyle(
                         color: Color(0xFF718388),
@@ -972,27 +1055,27 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: 4),
                     Row(
                       children: [
-                        Text(
+                        AdminLocalizedText(
                           _decimal('averageStars'),
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _ink,
                             fontSize: 26,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        SizedBox(width: 8),
                         _stars(_num(_metrics['averageStars']).round()),
                       ],
                     ),
                   ],
                 ),
               ),
-              Text(
+              AdminLocalizedText(
                 '${_int(_metrics['totalRatings'])}',
-                style: const TextStyle(
+                style: TextStyle(
                   color: _teal,
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
@@ -1000,15 +1083,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ),
             ],
           ),
-          const Divider(height: 24, color: Color(0xFFE4F0EE)),
+          Divider(height: 24, color: _palette.stroke),
           Row(
             children: [
-              _ratingSummaryMini(
-                'Excellent',
-                excellent,
-                const Color(0xFF1E9D69),
-              ),
-              _ratingSummaryMini('Low', low, const Color(0xFFD83A59)),
+              _ratingSummaryMini('Excellent', excellent, Color(0xFF1E9D69)),
+              _ratingSummaryMini('Low', low, Color(0xFFD83A59)),
               _ratingSummaryMini('Total', _ratings.length, _teal),
             ],
           ),
@@ -1021,7 +1100,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Expanded(
       child: Column(
         children: [
-          Text(
+          AdminLocalizedText(
             '$value',
             style: TextStyle(
               color: color,
@@ -1029,10 +1108,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
+          SizedBox(height: 4),
+          AdminLocalizedText(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: Color(0xFF718388),
               fontSize: 10.5,
               fontWeight: FontWeight.w800,
@@ -1058,7 +1137,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         children: [
           for (final option in options) ...[
             _ratingChip(option.$1, option.$2),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
           ],
         ],
       ),
@@ -1071,14 +1150,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       borderRadius: BorderRadius.circular(16),
       onTap: () => setState(() => _ratingFilter = value),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+        duration: Duration(milliseconds: 160),
+        padding: EdgeInsets.symmetric(horizontal: 13, vertical: 9),
         decoration: BoxDecoration(
-          color: selected ? _teal : Colors.white,
+          color: selected ? _teal : _surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: selected ? _teal : const Color(0xFFDCEDEB)),
+          border: Border.all(color: selected ? _teal : Color(0xFFDCEDEB)),
         ),
-        child: Text(
+        child: AdminLocalizedText(
           label,
           style: TextStyle(
             color: selected ? Colors.white : _teal,
@@ -1092,14 +1171,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   Widget _financePage() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+      padding: EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
         _financeTopBar(),
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
         _financeSummaryStrip(),
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
         _financeSectionTabs(),
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
         if (_financeTab == 0) ..._financePricingSection(),
         if (_financeTab == 1) ..._financeTransactionsSection(),
         if (_financeTab == 2) ..._financePayoutsSection(),
@@ -1112,15 +1191,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Row(
       children: [
         IconButton(
-          tooltip: 'Back',
+          tooltip: context.adminTr('Back'),
           onPressed: () => setState(() => _tabIndex = 0),
-          icon: const Icon(Icons.arrow_back_rounded, color: _teal, size: 21),
+          icon: Icon(context.adminBackIcon, color: _teal, size: 21),
         ),
         Expanded(
-          child: Text(
+          child: AdminLocalizedText(
             _financeTitle(),
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               color: _ink,
               fontSize: 16,
               fontWeight: FontWeight.w900,
@@ -1128,14 +1207,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ),
         ),
         IconButton(
-          tooltip: 'Language',
+          tooltip: context.adminTr('Language'),
           onPressed: () {},
-          icon: const Icon(Icons.language_rounded, color: _teal, size: 20),
+          icon: Icon(Icons.language_rounded, color: _teal, size: 20),
         ),
         IconButton(
-          tooltip: 'Theme',
+          tooltip: context.adminTr('Theme'),
           onPressed: () {},
-          icon: const Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
+          icon: Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
         ),
       ],
     );
@@ -1156,11 +1235,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   Widget _financeSummaryStrip() {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2F0EE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Row(
@@ -1187,20 +1266,20 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          AdminLocalizedText(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: Color(0xFF738488),
               fontSize: 10.5,
               fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 5),
-          Text(
+          SizedBox(height: 5),
+          AdminLocalizedText(
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: _ink,
               fontSize: 13,
               fontWeight: FontWeight.w900,
@@ -1212,7 +1291,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _financeSectionTabs() {
-    final tabs = const [
+    final tabs = [
       ('Active Services', Icons.sell_outlined),
       ('Transactions', Icons.receipt_long_outlined),
       ('Requests', Icons.payments_outlined),
@@ -1224,7 +1303,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         children: [
           for (var i = 0; i < tabs.length; i++) ...[
             _financeTabChip(i, tabs[i].$1, tabs[i].$2),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
           ],
         ],
       ),
@@ -1237,19 +1316,19 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       borderRadius: BorderRadius.circular(14),
       onTap: () => setState(() => _financeTab = index),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+        duration: Duration(milliseconds: 160),
+        padding: EdgeInsets.symmetric(horizontal: 13, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? _teal : Colors.white,
+          color: selected ? _teal : _surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: selected ? _teal : const Color(0xFFDCEDEB)),
+          border: Border.all(color: selected ? _teal : Color(0xFFDCEDEB)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 16, color: selected ? Colors.white : _teal),
-            const SizedBox(width: 6),
-            Text(
+            SizedBox(width: 6),
+            AdminLocalizedText(
               label,
               style: TextStyle(
                 color: selected ? Colors.white : _ink,
@@ -1267,8 +1346,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return [
       Row(
         children: [
-          const Expanded(
-            child: Text(
+          Expanded(
+            child: AdminLocalizedText(
               'Set prices for each service. These will be shown to patients.',
               style: TextStyle(
                 color: Color(0xFF718388),
@@ -1277,7 +1356,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: 12),
           FilledButton.icon(
             style: FilledButton.styleFrom(
               backgroundColor: _teal,
@@ -1285,15 +1364,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               visualDensity: VisualDensity.compact,
             ),
             onPressed: () => _editPricing(),
-            icon: const Icon(Icons.add_rounded, size: 17),
-            label: const Text(
+            icon: Icon(Icons.add_rounded, size: 17),
+            label: AdminLocalizedText(
               'Add',
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
           ),
         ],
       ),
-      const SizedBox(height: 12),
+      SizedBox(height: 12),
       if (_pricing.isEmpty)
         _empty('No pricing rules yet')
       else
@@ -1327,7 +1406,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         selected: _transactionFilter,
         onSelected: (value) => setState(() => _transactionFilter = value),
       ),
-      const SizedBox(height: 12),
+      SizedBox(height: 12),
       if (visibleTransactions.isEmpty)
         _empty(
           _transactionFilter == 'paid'
@@ -1370,7 +1449,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         selected: _payoutFilter,
         onSelected: (value) => setState(() => _payoutFilter = value),
       ),
-      const SizedBox(height: 12),
+      SizedBox(height: 12),
       if (visiblePayouts.isEmpty)
         _empty('No payout requests match this filter')
       else
@@ -1401,18 +1480,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               borderRadius: BorderRadius.circular(14),
               onTap: () => onSelected(option.$1),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
+                duration: Duration(milliseconds: 160),
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: selected == option.$1
-                      ? _teal
-                      : const Color(0xFFE9F8F6),
+                  color: selected == option.$1 ? _teal : Color(0xFFE9F8F6),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Text(
+                child: AdminLocalizedText(
                   option.$2,
                   style: TextStyle(
                     color: selected == option.$1 ? Colors.white : _teal,
@@ -1422,7 +1496,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
           ],
         ],
       ),
@@ -1440,11 +1514,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           child: FilledButton.icon(
             style: FilledButton.styleFrom(backgroundColor: _teal),
             onPressed: () => _editPricing(),
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('Add Pricing'),
+            icon: Icon(Icons.add_rounded),
+            label: AdminLocalizedText('Add Pricing'),
           ),
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: 12),
         if (_pricing.isEmpty)
           _empty('No pricing rules yet')
         else
@@ -1463,7 +1537,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       children: [
         _heroHeader(title, subtitle),
         Padding(
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
+          padding: EdgeInsets.fromLTRB(18, 16, 18, 24),
           child: Column(children: children),
         ),
       ],
@@ -1473,8 +1547,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Widget _heroHeader(String title, String subtitle) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      decoration: const BoxDecoration(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16),
+      decoration: BoxDecoration(
         color: _darkTeal,
         borderRadius: BorderRadius.only(
           bottomLeft: Radius.circular(2),
@@ -1484,49 +1558,46 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       child: Row(
         children: [
           IconButton(
-            tooltip: 'Log out',
+            tooltip: context.adminTr('Log out'),
             onPressed: () {
               appNavigatorKey.currentState?.pushNamedAndRemoveUntil(
                 '/login',
                 (route) => false,
               );
             },
-            icon: const Icon(Icons.logout_rounded, color: Colors.white),
+            icon: Icon(Icons.logout_rounded, color: Colors.white),
           ),
-          const Spacer(),
+          Spacer(),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text(
+              AdminLocalizedText(
                 'CareLink - Admin Dashboard',
                 style: TextStyle(color: Colors.white70, fontSize: 12),
               ),
-              Text(
+              AdminLocalizedText(
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.white,
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              Text(
+              AdminLocalizedText(
                 subtitle,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
+                style: TextStyle(color: Colors.white, fontSize: 13),
               ),
             ],
           ),
-          const SizedBox(width: 18),
+          SizedBox(width: 18),
           CircleAvatar(
             backgroundColor: Colors.white.withValues(alpha: 0.16),
             child: IconButton(
-              tooltip: 'Refresh',
+              tooltip: context.adminTr('Refresh'),
               onPressed: _load,
-              icon: const Icon(
-                Icons.notifications_none_rounded,
-                color: Colors.white,
-              ),
+              icon: Icon(Icons.notifications_none_rounded, color: Colors.white),
             ),
           ),
         ],
@@ -1538,12 +1609,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Row(
       children: [
         IconButton(
-          tooltip: 'Menu',
+          tooltip: context.adminTr('Menu'),
           onPressed: () {},
-          icon: const Icon(Icons.menu_rounded, color: _teal, size: 20),
+          icon: Icon(Icons.menu_rounded, color: _teal, size: 20),
         ),
-        const Spacer(),
-        const Text(
+        Spacer(),
+        AdminLocalizedText(
           'Admin Dashboard',
           style: TextStyle(
             color: _ink,
@@ -1551,11 +1622,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
-        const Spacer(),
+        Spacer(),
         IconButton(
-          tooltip: 'Refresh',
+          tooltip: context.adminTr('Refresh'),
           onPressed: _load,
-          icon: const Icon(Icons.notifications_none_rounded, color: _teal),
+          icon: Icon(Icons.notifications_none_rounded, color: _teal),
         ),
       ],
     );
@@ -1571,13 +1642,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           width: 82,
           height: 82,
           decoration: BoxDecoration(
-            color: const Color(0xFFE2F4F1),
+            color: _palette.surfaceSoft,
             borderRadius: BorderRadius.circular(28),
           ),
           child: Stack(
             alignment: Alignment.center,
             children: [
-              const Positioned(
+              Positioned(
                 bottom: 8,
                 child: Icon(
                   Icons.local_hospital_rounded,
@@ -1589,10 +1660,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 top: 12,
                 child: CircleAvatar(
                   radius: 21,
-                  backgroundColor: Colors.white,
-                  child: Text(
+                  backgroundColor: _surface,
+                  child: AdminLocalizedText(
                     _initials(widget.user.fullName),
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _darkTeal,
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
@@ -1603,21 +1674,21 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ],
           ),
         ),
-        const SizedBox(width: 16),
+        SizedBox(width: 16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              AdminLocalizedText(
                 'Welcome, $firstName',
-                style: const TextStyle(
+                style: TextStyle(
                   color: _ink,
                   fontSize: 15,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 4),
-              const Text(
+              SizedBox(height: 4),
+              AdminLocalizedText(
                 'Super Administrator',
                 style: TextStyle(
                   color: _teal,
@@ -1625,12 +1696,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 7),
-              const Icon(
-                Icons.verified_rounded,
-                color: Color(0xFFFFC44D),
-                size: 17,
-              ),
+              SizedBox(height: 7),
+              Icon(Icons.verified_rounded, color: Color(0xFFFFC44D), size: 17),
             ],
           ),
         ),
@@ -1644,11 +1711,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       borderRadius: BorderRadius.circular(16),
       onTap: _openBookingReview,
       child: Container(
-        padding: const EdgeInsets.all(15),
+        padding: EdgeInsets.all(15),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFDDEDEA)),
+          border: Border.all(color: Color(0xFFDDEDEA)),
           boxShadow: _softDashboardShadow,
         ),
         child: Row(
@@ -1657,17 +1724,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: const Color(0xFFE7F6F3),
+                color: _palette.surfaceSoft,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Icon(Icons.gavel_rounded, color: _darkTeal),
+              child: Icon(Icons.gavel_rounded, color: _darkTeal),
             ),
-            const SizedBox(width: 13),
+            SizedBox(width: 13),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  AdminLocalizedText(
                     'Booking Review',
                     style: TextStyle(
                       color: _ink,
@@ -1675,12 +1742,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
+                  SizedBox(height: 4),
+                  AdminLocalizedText(
                     count == 0
                         ? 'Nurse review queue is clear'
                         : '$count nurse booking${count == 1 ? '' : 's'} need action',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Color(0xFF6B7C86),
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
@@ -1690,10 +1757,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ),
             ),
             if (count > 0) ...[
-              _pill('$count', const Color(0xFFE7FAF4), _teal),
-              const SizedBox(width: 8),
+              _pill('$count', Color(0xFFE7FAF4), _teal),
+              SizedBox(width: 8),
             ],
-            const Icon(Icons.chevron_right_rounded, color: _darkTeal),
+            Icon(Icons.chevron_right_rounded, color: _darkTeal),
           ],
         ),
       ),
@@ -1701,13 +1768,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _dashboardSectionTitle(String title) {
-    return Text(
+    return AdminLocalizedText(
       title,
-      style: const TextStyle(
-        color: _ink,
-        fontSize: 13,
-        fontWeight: FontWeight.w900,
-      ),
+      style: TextStyle(color: _ink, fontSize: 13, fontWeight: FontWeight.w900),
     );
   }
 
@@ -1717,13 +1780,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     required String trend,
     required bool positive,
   }) {
-    final trendColor = positive
-        ? const Color(0xFF14A56A)
-        : const Color(0xFFE03131);
+    final compact = MediaQuery.sizeOf(context).width < 360;
+    final trendColor = positive ? Color(0xFF14A56A) : Color(0xFFE03131);
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: EdgeInsets.all(compact ? 12 : 15),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(13),
         boxShadow: _softDashboardShadow,
       ),
@@ -1731,43 +1793,53 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
+          AdminLocalizedText(
             title,
-            style: const TextStyle(
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
               color: Color(0xFF6E7D83),
               fontSize: 10.5,
               fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 12),
-          Text(
+          SizedBox(height: compact ? 8 : 10),
+          AdminLocalizedText(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: _ink,
               fontSize: 21,
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                positive
-                    ? Icons.arrow_upward_rounded
-                    : Icons.arrow_downward_rounded,
-                color: trendColor,
-                size: 13,
-              ),
-              const SizedBox(width: 3),
-              Text(
-                trend,
-                style: TextStyle(
+          SizedBox(height: compact ? 5 : 7),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  positive
+                      ? Icons.arrow_upward_rounded
+                      : Icons.arrow_downward_rounded,
                   color: trendColor,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
+                  size: 13,
                 ),
-              ),
-            ],
+                const SizedBox(width: 3),
+                AdminLocalizedText(
+                  trend,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: trendColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1778,7 +1850,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(14),
         boxShadow: _softDashboardShadow,
       ),
@@ -1787,7 +1859,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         children: [
           Row(
             children: [
-              const Text(
+              const AdminLocalizedText(
                 'Finance Overview (Escrow)',
                 style: TextStyle(
                   color: _ink,
@@ -1796,7 +1868,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ),
               ),
               const Spacer(),
-              Text(
+              AdminLocalizedText(
                 'This Month',
                 style: TextStyle(
                   color: Colors.grey.shade600,
@@ -1868,7 +1940,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        AdminLocalizedText(
           label,
           style: const TextStyle(
             color: Color(0xFF7C8A8F),
@@ -1877,7 +1949,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ),
         ),
         const SizedBox(height: 7),
-        Text(
+        AdminLocalizedText(
           value,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -1898,7 +1970,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               size: 13,
             ),
             const SizedBox(width: 3),
-            Text(
+            AdminLocalizedText(
               trend,
               style: TextStyle(
                 color: trendColor,
@@ -1930,14 +2002,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(14),
         boxShadow: _softDashboardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          const AdminLocalizedText(
             'Requests by Status',
             style: TextStyle(
               color: _ink,
@@ -1954,7 +2026,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 child: CustomPaint(
                   painter: _DonutChartPainter(slices),
                   child: Center(
-                    child: Text(
+                    child: AdminLocalizedText(
                       _compactNumber(total),
                       style: const TextStyle(
                         color: _ink,
@@ -2094,7 +2166,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Row(
       children: [
         IconButton(
-          tooltip: 'Menu',
+          tooltip: context.adminTr('Menu'),
           onPressed: () {},
           icon: const Icon(Icons.menu_rounded, color: _teal, size: 22),
         ),
@@ -2103,7 +2175,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              AdminLocalizedText(
                 'Statistics',
                 style: TextStyle(
                   color: _ink,
@@ -2112,7 +2184,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ),
               ),
               SizedBox(height: 2),
-              Text(
+              AdminLocalizedText(
                 'Overview & key metrics',
                 style: TextStyle(
                   color: _muted,
@@ -2124,9 +2196,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ),
         ),
         IconButton(
-          tooltip: 'Refresh',
+          tooltip: context.adminTr('Refresh'),
           onPressed: _load,
-          icon: const Icon(Icons.notifications_none_rounded, color: _ink),
+          icon: Icon(Icons.notifications_none_rounded, color: _palette.inkDark),
         ),
       ],
     );
@@ -2136,9 +2208,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE6EFEE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Row(
@@ -2156,9 +2228,18 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       initialValue: _statisticsRange,
       onSelected: (value) => setState(() => _statisticsRange = value),
       itemBuilder: (context) => const [
-        PopupMenuItem(value: 'This Month', child: Text('This Month')),
-        PopupMenuItem(value: 'This Week', child: Text('This Week')),
-        PopupMenuItem(value: 'This Year', child: Text('This Year')),
+        PopupMenuItem(
+          value: 'This Month',
+          child: AdminLocalizedText('This Month'),
+        ),
+        PopupMenuItem(
+          value: 'This Week',
+          child: AdminLocalizedText('This Week'),
+        ),
+        PopupMenuItem(
+          value: 'This Year',
+          child: AdminLocalizedText('This Year'),
+        ),
       ],
       child: _statisticsFilterButton(
         Icons.calendar_month_outlined,
@@ -2176,15 +2257,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE6EFEE)),
+        border: Border.all(color: _palette.stroke),
       ),
       child: Row(
         children: [
-          Icon(icon, color: _ink, size: 18),
+          Icon(icon, color: _palette.inkDark, size: 18),
           const SizedBox(width: 8),
-          Text(
+          AdminLocalizedText(
             label,
             style: const TextStyle(
               color: _ink,
@@ -2212,9 +2293,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Container(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE6EFEE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Row(
@@ -2231,7 +2312,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AdminLocalizedText(
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -2242,7 +2323,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
+                AdminLocalizedText(
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -2261,7 +2342,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       size: 12,
                     ),
                     const SizedBox(width: 3),
-                    Text(
+                    AdminLocalizedText(
                       trend,
                       style: const TextStyle(
                         color: Color(0xFF16A34A),
@@ -2271,7 +2352,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     ),
                     const SizedBox(width: 4),
                     const Expanded(
-                      child: Text(
+                      child: AdminLocalizedText(
                         'from last month',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -2311,7 +2392,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   color: _teal,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
+                child: AdminLocalizedText(
                   'This Month\n${_money(revenue)}',
                   style: const TextStyle(
                     color: Colors.white,
@@ -2405,7 +2486,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       title: 'Top Providers Performance',
       trailing: TextButton(
         onPressed: () => setState(() => _tabIndex = 2),
-        child: const Text('View All'),
+        child: const AdminLocalizedText('View All'),
       ),
       child: Column(
         children: [
@@ -2423,7 +2504,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           if (providers.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 18),
-              child: Text(
+              child: AdminLocalizedText(
                 'Provider performance appears here after completed sessions.',
                 style: TextStyle(color: _muted, fontWeight: FontWeight.w700),
               ),
@@ -2521,9 +2602,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: const Color(0xFFE6EFEE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Column(
@@ -2532,7 +2613,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           Row(
             children: [
               Expanded(
-                child: Text(
+                child: AdminLocalizedText(
                   title,
                   style: const TextStyle(
                     color: _ink,
@@ -2556,11 +2637,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: const Color(0xFFE6EFEE)),
+        border: Border.all(color: _palette.stroke),
       ),
       child: Row(
         children: [
-          Text(
+          AdminLocalizedText(
             label,
             style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
           ),
@@ -2578,7 +2659,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         children: [
           Expanded(
             flex: 5,
-            child: Text(
+            child: AdminLocalizedText(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -2603,7 +2684,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Text(
+          AdminLocalizedText(
             '$value',
             style: const TextStyle(
               color: _ink,
@@ -2630,7 +2711,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           CircleAvatar(
             radius: 18,
             backgroundColor: _teal.withValues(alpha: 0.14),
-            child: Text(
+            child: AdminLocalizedText(
               _initials(name),
               style: const TextStyle(
                 color: _teal,
@@ -2644,7 +2725,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AdminLocalizedText(
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -2654,7 +2735,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                Text(
+                AdminLocalizedText(
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -2668,7 +2749,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Text(
+          AdminLocalizedText(
             '$sessions',
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
@@ -2680,7 +2761,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 color: Color(0xFFFFC107),
                 size: 14,
               ),
-              Text(
+              AdminLocalizedText(
                 rating.toStringAsFixed(1),
                 style: const TextStyle(
                   fontSize: 11,
@@ -2690,7 +2771,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ],
           ),
           const SizedBox(width: 14),
-          Text(
+          AdminLocalizedText(
             earnings,
             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
           ),
@@ -2703,7 +2784,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FBFB),
+        color: _palette.surfaceSoft,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -2712,7 +2793,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         children: [
           Icon(icon, color: color, size: 20),
           const SizedBox(height: 8),
-          Text(
+          AdminLocalizedText(
             label,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -2723,7 +2804,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ),
           ),
           const SizedBox(height: 6),
-          Text(
+          AdminLocalizedText(
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -2768,7 +2849,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
+            child: AdminLocalizedText(
               slice.label,
               style: const TextStyle(
                 color: _ink,
@@ -2777,7 +2858,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ),
             ),
           ),
-          Text(
+          AdminLocalizedText(
             '${slice.value} ($percent%)',
             style: const TextStyle(
               color: _muted,
@@ -2795,7 +2876,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Container(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: _line),
         boxShadow: _shadow,
@@ -2804,14 +2885,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
+          AdminLocalizedText(
             title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: _muted, fontSize: 12),
           ),
           const SizedBox(height: 6),
-          Text(
+          AdminLocalizedText(
             value,
             style: const TextStyle(
               color: _ink,
@@ -2845,7 +2926,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             children: [
               Icon(Icons.monitor_heart_rounded, color: Colors.white),
               Spacer(),
-              Text(
+              AdminLocalizedText(
                 'Performance Indicators',
                 style: TextStyle(
                   color: Colors.white,
@@ -2880,7 +2961,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         ),
         child: Column(
           children: [
-            Text(
+            AdminLocalizedText(
               value,
               style: const TextStyle(
                 color: Colors.white,
@@ -2889,7 +2970,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ),
             ),
             const SizedBox(height: 5),
-            Text(
+            AdminLocalizedText(
               label,
               style: const TextStyle(color: Colors.white, fontSize: 11),
             ),
@@ -2920,14 +3001,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text(
+                      AdminLocalizedText(
                         _text(item['fullName']),
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      Text(
+                      AdminLocalizedText(
                         '${_roleLabel(role)} - ${_text(item['specialization'])}',
                         style: const TextStyle(color: _muted, fontSize: 12),
                       ),
@@ -2965,7 +3046,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => _showCertifications(item),
-                    child: const Text('Certificates'),
+                    child: const AdminLocalizedText('Certificates'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -2974,7 +3055,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     onPressed: status == 'rejected'
                         ? null
                         : () => _setApproval(item, 'rejected'),
-                    child: const Text('Reject'),
+                    child: const AdminLocalizedText('Reject'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -2984,7 +3065,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     onPressed: status == 'approved'
                         ? null
                         : () => _setApproval(item, 'approved'),
-                    child: const Text('Approve'),
+                    child: const AdminLocalizedText('Approve'),
                   ),
                 ),
               ],
@@ -2999,12 +3080,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Row(
       children: [
         IconButton(
-          tooltip: 'Back',
+          tooltip: context.adminTr('Back'),
           onPressed: () => setState(() => _tabIndex = 0),
-          icon: const Icon(Icons.arrow_back_rounded, color: _teal, size: 21),
+          icon: Icon(context.adminBackIcon, color: _teal, size: 21),
         ),
         const Spacer(),
-        const Text(
+        const AdminLocalizedText(
           'Provider Requests',
           style: TextStyle(
             color: _ink,
@@ -3014,12 +3095,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         ),
         const Spacer(),
         IconButton(
-          tooltip: 'Language',
+          tooltip: context.adminTr('Language'),
           onPressed: () {},
           icon: const Icon(Icons.language_rounded, color: _teal, size: 20),
         ),
         IconButton(
-          tooltip: 'Theme',
+          tooltip: context.adminTr('Theme'),
           onPressed: () {},
           icon: const Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
         ),
@@ -3087,7 +3168,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: selected ? _teal : const Color(0xFFD9EEEC)),
         ),
-        child: Text(
+        child: AdminLocalizedText(
           label,
           style: TextStyle(
             color: selected ? Colors.white : _teal,
@@ -3107,9 +3188,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE3F0EE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Column(
@@ -3123,7 +3204,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    AdminLocalizedText(
                       _text(provider['fullName']),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -3134,7 +3215,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
+                    AdminLocalizedText(
                       _roleLabel(role),
                       style: const TextStyle(
                         color: Color(0xFF63777B),
@@ -3151,7 +3232,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           size: 15,
                         ),
                         const SizedBox(width: 3),
-                        Text(
+                        AdminLocalizedText(
                           rating.toStringAsFixed(1),
                           style: const TextStyle(
                             color: _ink,
@@ -3162,7 +3243,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Text(
+                    AdminLocalizedText(
                       'Applied on ${_shortDate(provider['createdAt'])}',
                       style: const TextStyle(
                         color: Color(0xFF9AA8AB),
@@ -3193,7 +3274,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     ),
                   ),
                   onPressed: () => _showProviderDetails(provider),
-                  child: const Text('View Details'),
+                  child: const AdminLocalizedText('View Details'),
                 ),
               ),
               const SizedBox(width: 12),
@@ -3211,7 +3292,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     ),
                   ),
                   onPressed: () => _showProviderReview(provider),
-                  child: const Text('Review'),
+                  child: const AdminLocalizedText('Review'),
                 ),
               ),
             ],
@@ -3226,7 +3307,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return CircleAvatar(
       radius: 24,
       backgroundColor: _roleColor(role).withValues(alpha: 0.15),
-      child: Text(
+      child: AdminLocalizedText(
         _initials(provider['fullName']),
         style: TextStyle(
           color: _roleColor(role),
@@ -3250,7 +3331,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             : const Color(0xFFFFE8EE),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(
+      child: AdminLocalizedText(
         approved
             ? 'Approved'
             : pending
@@ -3287,15 +3368,18 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 if (value == 'edit') _editUser(user);
               },
               itemBuilder: (context) => const [
-                PopupMenuItem(value: 'edit', child: Text('Edit details')),
+                PopupMenuItem(
+                  value: 'edit',
+                  child: AdminLocalizedText('Edit details'),
+                ),
               ],
             ),
-            title: Text(
+            title: AdminLocalizedText(
               _text(user['fullName']),
               textAlign: TextAlign.right,
               style: const TextStyle(fontWeight: FontWeight.w900),
             ),
-            subtitle: Text(
+            subtitle: AdminLocalizedText(
               '${_roleLabel(role)} - ${_text(user['email'])}\n${_text(user['phone'])}',
               textAlign: TextAlign.right,
             ),
@@ -3338,12 +3422,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Row(
       children: [
         IconButton(
-          tooltip: 'Back',
+          tooltip: context.adminTr('Back'),
           onPressed: () => setState(() => _tabIndex = 0),
-          icon: const Icon(Icons.arrow_back_rounded, color: _teal, size: 21),
+          icon: Icon(context.adminBackIcon, color: _teal, size: 21),
         ),
         const Spacer(),
-        const Text(
+        const AdminLocalizedText(
           'Users Management',
           style: TextStyle(
             color: _ink,
@@ -3353,12 +3437,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         ),
         const Spacer(),
         IconButton(
-          tooltip: 'Language',
+          tooltip: context.adminTr('Language'),
           onPressed: () {},
           icon: const Icon(Icons.language_rounded, color: _teal, size: 20),
         ),
         IconButton(
-          tooltip: 'Theme',
+          tooltip: context.adminTr('Theme'),
           onPressed: () {},
           icon: const Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
         ),
@@ -3407,12 +3491,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         decoration: BoxDecoration(
-          color: selected ? _teal : Colors.white,
+          color: selected ? _teal : _surface,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: selected ? _teal : const Color(0xFFE5F0EF)),
           boxShadow: selected ? _softDashboardShadow : null,
         ),
-        child: Text(
+        child: AdminLocalizedText(
           label,
           style: TextStyle(
             color: selected ? Colors.white : _ink,
@@ -3440,7 +3524,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               CircleAvatar(
                 radius: 22,
                 backgroundColor: _roleColor(role).withValues(alpha: 0.15),
-                child: Text(
+                child: AdminLocalizedText(
                   _initials(user['fullName']),
                   style: TextStyle(
                     color: _roleColor(role),
@@ -3454,7 +3538,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    AdminLocalizedText(
                       _text(user['fullName']),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -3465,7 +3549,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
+                    AdminLocalizedText(
                       _roleLabel(role),
                       style: const TextStyle(
                         color: Color(0xFF7A8A8E),
@@ -3477,7 +3561,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
+              AdminLocalizedText(
                 active ? 'Active' : 'Inactive',
                 style: TextStyle(
                   color: active
@@ -3490,7 +3574,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               const SizedBox(width: 14),
               SizedBox(
                 width: 58,
-                child: Text(
+                child: AdminLocalizedText(
                   _shortDate(user['createdAt']),
                   textAlign: TextAlign.right,
                   style: const TextStyle(
@@ -3513,9 +3597,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2F0EE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Column(
@@ -3525,7 +3609,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               CircleAvatar(
                 radius: 22,
                 backgroundColor: _teal.withValues(alpha: 0.13),
-                child: Text(
+                child: AdminLocalizedText(
                   _initials(rating['patientName']),
                   style: const TextStyle(
                     color: _teal,
@@ -3539,7 +3623,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    AdminLocalizedText(
                       _text(rating['providerName'], fallback: 'Provider'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -3550,7 +3634,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
+                    AdminLocalizedText(
                       'Patient: ${_text(rating['patientName'], fallback: '-')}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -3572,9 +3656,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFF7FBFA),
+              color: _palette.surfaceSoft,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE7F2F0)),
+              border: Border.all(color: _palette.stroke),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3588,7 +3672,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     ),
                     const SizedBox(width: 5),
                     Expanded(
-                      child: Text(
+                      child: AdminLocalizedText(
                         _text(rating['serviceType'], fallback: 'Service'),
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -3598,7 +3682,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         ),
                       ),
                     ),
-                    Text(
+                    AdminLocalizedText(
                       _shortDate(rating['createdAt']),
                       style: const TextStyle(
                         color: Color(0xFF9AA8AB),
@@ -3609,7 +3693,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   ],
                 ),
                 const SizedBox(height: 9),
-                Text(
+                AdminLocalizedText(
                   _text(rating['comment'], fallback: 'No written notes.'),
                   style: const TextStyle(
                     color: _ink,
@@ -3631,9 +3715,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2F0EE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Row(
@@ -3654,7 +3738,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AdminLocalizedText(
                   _text(item['specialization'], fallback: 'Service'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -3665,7 +3749,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
+                AdminLocalizedText(
                   _text(item['providerName'], fallback: 'General consultation'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -3679,7 +3763,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Text(
+          AdminLocalizedText(
             _money(item['patientPrice']),
             style: const TextStyle(
               color: _ink,
@@ -3688,7 +3772,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ),
           ),
           IconButton(
-            tooltip: 'Edit pricing',
+            tooltip: context.adminTr('Edit pricing'),
             onPressed: () => _editPricing(item),
             icon: const Icon(Icons.edit_rounded, color: _teal, size: 19),
           ),
@@ -3703,9 +3787,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2F0EE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Row(
@@ -3713,7 +3797,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           CircleAvatar(
             radius: 22,
             backgroundColor: _teal.withValues(alpha: 0.13),
-            child: Text(
+            child: AdminLocalizedText(
               _initials(item['providerName']),
               style: const TextStyle(
                 color: _teal,
@@ -3727,7 +3811,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AdminLocalizedText(
                   _text(item['providerName'], fallback: 'Provider'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -3738,7 +3822,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
+                AdminLocalizedText(
                   'Patient: ${_text(item['patientName'], fallback: '-')}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -3749,7 +3833,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 5),
-                Text(
+                AdminLocalizedText(
                   _shortDate(item['createdAt']),
                   style: const TextStyle(
                     color: Color(0xFF9AA8AB),
@@ -3764,7 +3848,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
+              AdminLocalizedText(
                 _money(item['totalAmount']),
                 style: const TextStyle(
                   color: _ink,
@@ -3790,7 +3874,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                child: const Text('Receipt'),
+                child: const AdminLocalizedText('Receipt'),
               ),
             ],
           ),
@@ -3805,9 +3889,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2F0EE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Row(
@@ -3815,7 +3899,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           CircleAvatar(
             radius: 23,
             backgroundColor: _teal.withValues(alpha: 0.13),
-            child: Text(
+            child: AdminLocalizedText(
               _initials(item['providerName']),
               style: const TextStyle(
                 color: _teal,
@@ -3829,7 +3913,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AdminLocalizedText(
                   _text(item['providerName'], fallback: 'Provider'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -3840,7 +3924,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
+                AdminLocalizedText(
                   '${_int(item['completedSessions'])} Points',
                   style: const TextStyle(
                     color: Color(0xFF718388),
@@ -3849,7 +3933,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
+                AdminLocalizedText(
                   _money(item['amount']),
                   style: const TextStyle(
                     color: _ink,
@@ -3858,7 +3942,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
+                AdminLocalizedText(
                   'Requested on ${_shortDate(item['createdAt'])}',
                   style: const TextStyle(
                     color: Color(0xFF9AA8AB),
@@ -3893,7 +3977,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     ),
                   ),
                   onPressed: () => _showPayoutApproval(item),
-                  child: const Text('Review'),
+                  child: const AdminLocalizedText('Review'),
                 ),
             ],
           ),
@@ -3907,9 +3991,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2F0EE)),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Column(
@@ -3919,7 +4003,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               CircleAvatar(
                 radius: 23,
                 backgroundColor: _teal.withValues(alpha: 0.13),
-                child: Text(
+                child: AdminLocalizedText(
                   _initials(item['providerName']),
                   style: const TextStyle(
                     color: _teal,
@@ -3933,7 +4017,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    AdminLocalizedText(
                       _text(item['providerName'], fallback: 'Provider'),
                       style: const TextStyle(
                         color: _ink,
@@ -3942,7 +4026,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
+                    AdminLocalizedText(
                       _text(item['providerRole'], fallback: 'Nurse'),
                       style: const TextStyle(
                         color: Color(0xFF718388),
@@ -3982,7 +4066,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(
+      child: AdminLocalizedText(
         text,
         style: TextStyle(
           color: color,
@@ -4005,13 +4089,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             Row(
               children: [
                 IconButton(
-                  tooltip: 'Edit pricing',
+                  tooltip: context.adminTr('Edit pricing'),
                   onPressed: () => _editPricing(item),
                   icon: const Icon(Icons.edit_rounded, color: _teal),
                 ),
                 const Spacer(),
                 Expanded(
-                  child: Text(
+                  child: AdminLocalizedText(
                     _text(
                       item['providerName'],
                       fallback: 'Unassigned provider',
@@ -4030,7 +4114,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
+            AdminLocalizedText(
               '${_roleLabel(_text(item['providerRole']))} - ${_text(item['specialization'], fallback: 'Service')}',
               style: const TextStyle(color: _muted, fontSize: 12),
             ),
@@ -4063,7 +4147,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 _pill(status, const Color(0xFFE7FAF4), _teal),
                 const Spacer(),
                 Expanded(
-                  child: Text(
+                  child: AdminLocalizedText(
                     _text(item['providerName'], fallback: 'Provider'),
                     textAlign: TextAlign.right,
                     overflow: TextOverflow.ellipsis,
@@ -4073,7 +4157,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
+            AdminLocalizedText(
               '${_money(item['amount'])} - ${_text(item['specialization'], fallback: 'Service')}',
               style: const TextStyle(color: _muted),
             ),
@@ -4084,7 +4168,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => _setPayoutStatus(item, 'reject'),
-                      child: const Text('Reject'),
+                      child: const AdminLocalizedText('Reject'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -4092,7 +4176,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     child: FilledButton(
                       style: FilledButton.styleFrom(backgroundColor: _teal),
                       onPressed: () => _setPayoutStatus(item, 'pay'),
-                      child: const Text('Transfer'),
+                      child: const AdminLocalizedText('Transfer'),
                     ),
                   ),
                 ],
@@ -4109,16 +4193,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return _whitePanel(
       child: ListTile(
         leading: const Icon(Icons.receipt_long_rounded, color: _teal),
-        title: Text(
+        title: AdminLocalizedText(
           _text(item['providerName'], fallback: 'Provider'),
           textAlign: TextAlign.right,
           style: const TextStyle(fontWeight: FontWeight.w900),
         ),
-        subtitle: Text(
+        subtitle: AdminLocalizedText(
           'Patient: ${_text(item['patientName'], fallback: '-')}',
           textAlign: TextAlign.right,
         ),
-        trailing: Text(
+        trailing: AdminLocalizedText(
           _money(item['totalAmount']),
           style: const TextStyle(fontWeight: FontWeight.w900, color: _ink),
         ),
@@ -4134,7 +4218,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(
+            AdminLocalizedText(
               _text(item['providerName'], fallback: 'Provider'),
               style: const TextStyle(fontWeight: FontWeight.w900),
             ),
@@ -4156,12 +4240,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Expanded(
       child: Column(
         children: [
-          Text(
+          AdminLocalizedText(
             _money(value),
             style: const TextStyle(fontWeight: FontWeight.w900, color: _ink),
           ),
           const SizedBox(height: 4),
-          Text(label, style: const TextStyle(color: _muted, fontSize: 11)),
+          AdminLocalizedText(
+            label,
+            style: const TextStyle(color: _muted, fontSize: 11),
+          ),
         ],
       ),
     );
@@ -4180,9 +4267,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         children: [
           Row(
             children: [
-              Text('$count'),
+              AdminLocalizedText('$count'),
               const Spacer(),
-              Text(_text(item['serviceType'], fallback: 'Service')),
+              AdminLocalizedText(
+                _text(item['serviceType'], fallback: 'Service'),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -4202,7 +4291,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: _line),
         boxShadow: _shadow,
@@ -4229,9 +4318,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               width: 96,
               child: ChoiceChip(
                 selected: selected,
-                label: Center(child: Text(entry.value)),
+                label: Center(child: AdminLocalizedText(entry.value)),
                 selectedColor: _teal,
-                backgroundColor: Colors.white,
+                backgroundColor: _surface,
                 labelStyle: TextStyle(
                   color: selected ? Colors.white : _ink,
                   fontWeight: FontWeight.w700,
@@ -4264,49 +4353,123 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       ),
       (Icons.bar_chart_outlined, Icons.bar_chart_rounded, 'Statistics'),
     ];
-    return Align(
-      alignment: Alignment.bottomCenter,
-      heightFactor: 1,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: _phoneWidth),
-        child: Directionality(
-          textDirection: TextDirection.ltr,
+    return SafeArea(
+      top: false,
+      child: Center(
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _phoneWidth),
           child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: _line)),
+            height: 82,
+            margin: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(32),
+              border: Border.all(color: _surface),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0F766E).withValues(alpha: 0.12),
+                  blurRadius: 24,
+                  offset: const Offset(0, 9),
+                ),
+              ],
             ),
-            child: SafeArea(
-              top: false,
-              child: BottomNavigationBar(
-                currentIndex: _tabIndex,
-                onTap: (index) => setState(() => _tabIndex = index),
-                type: BottomNavigationBarType.fixed,
-                selectedItemColor: _teal,
-                unselectedItemColor: const Color(0xFF5C7180),
-                backgroundColor: Colors.white,
-                elevation: 0,
-                selectedFontSize: 11,
-                unselectedFontSize: 10,
-                iconSize: 22,
-                items: [
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
                   for (var i = 0; i < items.length; i++)
-                    BottomNavigationBarItem(
-                      icon: Container(
-                        width: 34,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: _tabIndex == i
-                              ? _teal.withValues(alpha: 0.12)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Icon(_tabIndex == i ? items[i].$2 : items[i].$1),
+                    Builder(
+                      builder: (itemContext) => _adminNavItem(
+                        icon: items[i].$1,
+                        activeIcon: items[i].$2,
+                        label: items[i].$3,
+                        selected: _tabIndex == i,
+                        onTap: () {
+                          if (_tabIndex == i) return;
+                          setState(() => _tabIndex = i);
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!itemContext.mounted) return;
+                            Scrollable.ensureVisible(
+                              itemContext,
+                              duration: const Duration(milliseconds: 260),
+                              curve: Curves.easeOutCubic,
+                              alignment: 0.5,
+                            );
+                          });
+                        },
                       ),
-                      label: items[i].$3,
                     ),
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _adminNavItem({
+    required IconData icon,
+    required IconData activeIcon,
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final color = selected ? _darkTeal : _palette.navUnselected;
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: label,
+      child: Tooltip(
+        message: label,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          splashColor: _teal.withValues(alpha: 0.10),
+          highlightColor: _teal.withValues(alpha: 0.05),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            width: 74,
+            height: 66,
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            decoration: BoxDecoration(
+              color: selected ? _palette.surfaceSoft : Colors.transparent,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 240),
+                  width: selected ? 34 : 30,
+                  height: selected ? 34 : 30,
+                  decoration: BoxDecoration(
+                    color: selected ? _surface : _palette.surfaceSoft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    selected ? activeIcon : icon,
+                    size: selected ? 21 : 19,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                AdminLocalizedText(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: selected ? 10.5 : 9.5,
+                    fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -4321,11 +4484,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         TextButton.icon(
           onPressed: onTap,
           icon: const Icon(Icons.chevron_left_rounded, size: 18),
-          label: Text(action),
+          label: AdminLocalizedText(action),
           style: TextButton.styleFrom(foregroundColor: _darkTeal),
         ),
         const Spacer(),
-        Text(
+        AdminLocalizedText(
           title,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
         ),
@@ -4337,7 +4500,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
+      child: AdminLocalizedText(
         title,
         textAlign: TextAlign.right,
         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
@@ -4349,7 +4512,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return CircleAvatar(
       radius: 24,
       backgroundColor: color,
-      child: Text(
+      child: AdminLocalizedText(
         text,
         style: const TextStyle(
           color: Colors.white,
@@ -4366,7 +4529,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         color: bg,
         borderRadius: BorderRadius.circular(99),
       ),
-      child: Text(
+      child: AdminLocalizedText(
         text,
         style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w900),
       ),
@@ -4378,10 +4541,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: _muted, size: 14),
+          Icon(icon, color: _palette.inkMuted, size: 14),
           const SizedBox(width: 3),
           Flexible(
-            child: Text(
+            child: AdminLocalizedText(
               text,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: _muted, fontSize: 11),
@@ -4413,9 +4576,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
-          const Icon(Icons.inbox_rounded, color: _muted),
+          Icon(Icons.inbox_rounded, color: _palette.inkMuted),
           const SizedBox(width: 8),
-          Expanded(child: Text(message, textAlign: TextAlign.right)),
+          Expanded(
+            child: AdminLocalizedText(message, textAlign: TextAlign.right),
+          ),
         ],
       ),
     );
@@ -4426,9 +4591,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => Directionality(
-        textDirection: TextDirection.ltr,
+        textDirection: context.adminTextDirection,
         child: AlertDialog(
-          title: Text(_text(provider['fullName'])),
+          title: AdminLocalizedText(_text(provider['fullName'])),
           content: SizedBox(
             width: 420,
             child: Column(
@@ -4463,7 +4628,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
+              child: const AdminLocalizedText('Close'),
             ),
           ],
         ),
@@ -4477,14 +4642,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       child: Row(
         children: [
           Expanded(
-            child: Text(
+            child: AdminLocalizedText(
               value,
               textAlign: TextAlign.right,
               style: const TextStyle(color: _ink, fontWeight: FontWeight.w800),
             ),
           ),
           const SizedBox(width: 12),
-          Text(
+          AdminLocalizedText(
             label,
             style: const TextStyle(
               color: _muted,
@@ -4511,7 +4676,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       await showDialog<void>(
         context: context,
         builder: (context) => Directionality(
-          textDirection: TextDirection.ltr,
+          textDirection: context.adminTextDirection,
           child: Dialog(
             insetPadding: const EdgeInsets.symmetric(
               horizontal: 16,
@@ -4531,15 +4696,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                     Row(
                       children: [
                         IconButton(
-                          tooltip: 'Back',
+                          tooltip: context.adminTr('Back'),
                           onPressed: () => Navigator.pop(context),
-                          icon: const Icon(
-                            Icons.arrow_back_rounded,
-                            color: _teal,
-                          ),
+                          icon: Icon(context.adminBackIcon, color: _teal),
                         ),
                         const Expanded(
-                          child: Text(
+                          child: AdminLocalizedText(
                             'Certification Verification',
                             textAlign: TextAlign.center,
                             style: TextStyle(
@@ -4550,7 +4712,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           ),
                         ),
                         IconButton(
-                          tooltip: 'Language',
+                          tooltip: context.adminTr('Language'),
                           onPressed: () {},
                           icon: const Icon(
                             Icons.language_rounded,
@@ -4569,7 +4731,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
+                              AdminLocalizedText(
                                 _text(provider['fullName']),
                                 style: const TextStyle(
                                   color: _ink,
@@ -4578,7 +4740,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                 ),
                               ),
                               const SizedBox(height: 3),
-                              Text(
+                              AdminLocalizedText(
                                 _roleLabel(_text(provider['role'])),
                                 style: const TextStyle(
                                   color: Color(0xFF6D7F83),
@@ -4587,7 +4749,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                 ),
                               ),
                               const SizedBox(height: 3),
-                              Text(
+                              AdminLocalizedText(
                                 'Applied on ${_shortDate(provider['createdAt'])}',
                                 style: const TextStyle(
                                   color: Color(0xFF9AA8AB),
@@ -4607,7 +4769,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       ],
                     ),
                     const SizedBox(height: 20),
-                    const Text(
+                    const AdminLocalizedText(
                       'Uploaded Documents',
                       style: TextStyle(
                         color: _ink,
@@ -4644,7 +4806,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                               await _setApproval(provider, 'rejected');
                               if (context.mounted) Navigator.pop(context);
                             },
-                            child: const Text(
+                            child: const AdminLocalizedText(
                               'Reject',
                               style: TextStyle(fontWeight: FontWeight.w900),
                             ),
@@ -4665,7 +4827,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                               await _approveReviewedProvider(provider, certs);
                               if (context.mounted) Navigator.pop(context);
                             },
-                            child: const Text(
+                            child: const AdminLocalizedText(
                               'Approve',
                               style: TextStyle(fontWeight: FontWeight.w900),
                             ),
@@ -4702,9 +4864,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE3EFED)),
+        border: Border.all(color: _palette.stroke),
       ),
       child: Row(
         children: [
@@ -4718,7 +4880,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AdminLocalizedText(
                   _text(cert['name'], fallback: 'Document'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -4729,7 +4891,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 3),
-                Text(
+                AdminLocalizedText(
                   fileName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -4751,16 +4913,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 fontWeight: FontWeight.w900,
               ),
             ),
-            child: const Text('View'),
+            child: AdminLocalizedText('View'),
           ),
           IconButton(
-            tooltip: 'Download',
+            tooltip: context.adminTr('Download'),
             onPressed: viewUrl.isEmpty ? null : () => _openUrl(viewUrl),
-            icon: const Icon(
-              Icons.file_download_outlined,
-              color: _teal,
-              size: 18,
-            ),
+            icon: Icon(Icons.file_download_outlined, color: _teal, size: 18),
           ),
         ],
       ),
@@ -4781,13 +4939,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       await showDialog<void>(
         context: context,
         builder: (context) => Directionality(
-          textDirection: TextDirection.ltr,
+          textDirection: context.adminTextDirection,
           child: AlertDialog(
-            title: Text('${_text(provider['fullName'])} Certificates'),
+            title: AdminLocalizedText(
+              '${_text(provider['fullName'])} Certificates',
+            ),
             content: SizedBox(
               width: 520,
               child: certs.isEmpty
-                  ? const Text(
+                  ? AdminLocalizedText(
                       'No certificates were uploaded for this account.',
                     )
                   : ListView(
@@ -4811,8 +4971,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                 : Icons.pending_rounded,
                             color: verified ? _teal : Colors.orange,
                           ),
-                          title: Text(_text(cert['name'])),
-                          subtitle: Text(
+                          title: AdminLocalizedText(_text(cert['name'])),
+                          subtitle: AdminLocalizedText(
                             fileUrl.isEmpty
                                 ? (verified
                                       ? 'Verified'
@@ -4825,7 +4985,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                               if (fileUrl.isNotEmpty)
                                 OutlinedButton(
                                   onPressed: () => _openUrl(viewUrl),
-                                  child: const Text('View file'),
+                                  child: AdminLocalizedText('View file'),
                                 ),
                               if (!verified)
                                 FilledButton(
@@ -4840,7 +5000,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                       Navigator.pop(context);
                                     }
                                   },
-                                  child: const Text('Verify'),
+                                  child: AdminLocalizedText('Verify'),
                                 ),
                             ],
                           ),
@@ -4851,7 +5011,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Close'),
+                child: AdminLocalizedText('Close'),
               ),
             ],
           ),
@@ -4925,7 +5085,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     try {
       final response = await http.put(
         _uri('/admin/providers/${provider['userId']}/approval'),
-        headers: const {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'status': status}),
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -4942,7 +5102,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     try {
       final response = await http.put(
         _uri('/admin/users/${user['userId']}/status'),
-        headers: const {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'isActive': active}),
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -4979,19 +5139,16 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => Directionality(
-        textDirection: TextDirection.ltr,
+        textDirection: context.adminTextDirection,
         child: Dialog(
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 18,
-          ),
+          insetPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 18),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(22),
           ),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 430),
+            constraints: BoxConstraints(maxWidth: 430),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+              padding: EdgeInsets.fromLTRB(18, 16, 18, 18),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -4999,15 +5156,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   Row(
                     children: [
                       IconButton(
-                        tooltip: 'Back',
+                        tooltip: context.adminTr('Back'),
                         onPressed: () => Navigator.pop(context),
-                        icon: const Icon(
-                          Icons.arrow_back_rounded,
-                          color: _teal,
-                        ),
+                        icon: Icon(context.adminBackIcon, color: _teal),
                       ),
-                      const Expanded(
-                        child: Text(
+                      Expanded(
+                        child: AdminLocalizedText(
                           'Payout Approval',
                           textAlign: TextAlign.center,
                           style: TextStyle(
@@ -5017,52 +5171,52 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 48),
+                      SizedBox(width: 48),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   Row(
                     children: [
                       CircleAvatar(
                         radius: 25,
                         backgroundColor: _teal.withValues(alpha: 0.13),
-                        child: Text(
+                        child: AdminLocalizedText(
                           _initials(payout['providerName']),
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _teal,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            AdminLocalizedText(
                               _text(
                                 payout['providerName'],
                                 fallback: 'Provider',
                               ),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _ink,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
-                            Text(
+                            AdminLocalizedText(
                               _text(payout['providerRole'], fallback: 'Nurse'),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: Color(0xFF718388),
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            Text(
+                            AdminLocalizedText(
                               'Request ID: ${_text(payout['payoutId'])}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: Color(0xFF9AA8AB),
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
@@ -5074,11 +5228,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       _financeSmallStatus('Pending'),
                     ],
                   ),
-                  const SizedBox(height: 18),
+                  SizedBox(height: 18),
                   _payoutSummaryBox(payout),
-                  const SizedBox(height: 14),
+                  SizedBox(height: 14),
                   _payoutBreakdownBox(payout),
-                  const SizedBox(height: 18),
+                  SizedBox(height: 18),
                   Row(
                     children: [
                       Expanded(
@@ -5086,7 +5240,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           style: FilledButton.styleFrom(
                             backgroundColor: _teal,
                             foregroundColor: Colors.white,
-                            minimumSize: const Size.fromHeight(46),
+                            minimumSize: Size.fromHeight(46),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -5096,19 +5250,19 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                             await _setPayoutStatus(payout, 'pay');
                             if (mounted) _showPaymentSuccess(payout);
                           },
-                          child: const Text(
+                          child: AdminLocalizedText(
                             'Approve & Pay',
                             style: TextStyle(fontWeight: FontWeight.w900),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 14),
+                      SizedBox(width: 14),
                       Expanded(
                         child: OutlinedButton(
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFFE04F5F),
-                            side: const BorderSide(color: Color(0xFFFFCBD2)),
-                            minimumSize: const Size.fromHeight(46),
+                            foregroundColor: Color(0xFFE04F5F),
+                            side: BorderSide(color: Color(0xFFFFCBD2)),
+                            minimumSize: Size.fromHeight(46),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -5117,7 +5271,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                             Navigator.pop(context);
                             await _setPayoutStatus(payout, 'reject');
                           },
-                          child: const Text(
+                          child: AdminLocalizedText(
                             'Reject',
                             style: TextStyle(fontWeight: FontWeight.w900),
                           ),
@@ -5136,11 +5290,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   Widget _payoutSummaryBox(Map<String, dynamic> payout) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7FBFA),
+        color: _palette.surfaceSoft,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE3F0EE)),
+        border: Border.all(color: _palette.stroke),
       ),
       child: Column(
         children: [
@@ -5158,11 +5312,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   Widget _payoutBreakdownBox(Map<String, dynamic> payout) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE3F0EE)),
+        border: Border.all(color: _palette.stroke),
       ),
       child: Column(
         children: [
@@ -5177,26 +5331,29 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => Directionality(
-        textDirection: TextDirection.ltr,
+        textDirection: context.adminTextDirection,
         child: AlertDialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(22),
           ),
-          title: const Text('Payment Receipt', textAlign: TextAlign.center),
+          title: AdminLocalizedText(
+            'Payment Receipt',
+            textAlign: TextAlign.center,
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               CircleAvatar(
                 radius: 34,
-                backgroundColor: const Color(0xFFE5F8EF),
-                child: const Icon(
+                backgroundColor: Color(0xFFE5F8EF),
+                child: Icon(
                   Icons.check_rounded,
                   color: Color(0xFF1E9D69),
                   size: 38,
                 ),
               ),
-              const SizedBox(height: 14),
-              const Text(
+              SizedBox(height: 14),
+              AdminLocalizedText(
                 'Payment Successful!',
                 style: TextStyle(
                   color: Color(0xFF1E9D69),
@@ -5204,13 +5361,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
+              SizedBox(height: 8),
+              AdminLocalizedText(
                 'The payment has been sent to ${_text(payout['providerName'], fallback: 'Provider')}',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: _muted, fontSize: 12),
+                style: TextStyle(color: _muted, fontSize: 12),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               _receiptLine(
                 'Amount Paid',
                 _money(payout['amount']),
@@ -5229,7 +5386,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: _teal),
               onPressed: () => Navigator.pop(context),
-              child: const Text('Download Receipt (PDF)'),
+              child: AdminLocalizedText('Download Receipt (PDF)'),
             ),
           ],
         ),
@@ -5242,7 +5399,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        title: const Text('Payment Receipt', textAlign: TextAlign.center),
+        title: AdminLocalizedText(
+          'Payment Receipt',
+          textAlign: TextAlign.center,
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -5261,7 +5421,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: AdminLocalizedText('Close'),
           ),
         ],
       ),
@@ -5275,25 +5435,25 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     bool green = false,
   }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Text(
+          AdminLocalizedText(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: Color(0xFF718388),
               fontSize: 11,
               fontWeight: FontWeight.w800,
             ),
           ),
-          const Spacer(),
+          Spacer(),
           Flexible(
-            child: Text(
+            child: AdminLocalizedText(
               value,
               textAlign: TextAlign.right,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: green ? const Color(0xFF1E9D69) : _ink,
+                color: green ? Color(0xFF1E9D69) : _ink,
                 fontSize: strong ? 12.5 : 11.5,
                 fontWeight: strong || green ? FontWeight.w900 : FontWeight.w800,
               ),
@@ -5366,10 +5526,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return Align(
       alignment: Alignment.centerRight,
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(
+        padding: EdgeInsets.only(bottom: 6),
+        child: AdminLocalizedText(
           text,
-          style: const TextStyle(
+          style: TextStyle(
             color: _ink,
             fontSize: 14,
             fontWeight: FontWeight.w900,
@@ -5389,19 +5549,19 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       suffixText: suffixText,
       prefixIcon: Icon(icon, color: _teal, size: 21),
       filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+      fillColor: _surface,
+      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 15),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _line),
+        borderSide: BorderSide(color: _line),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _line),
+        borderSide: BorderSide(color: _line),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _teal, width: 1.4),
+        borderSide: BorderSide(color: _teal, width: 1.4),
       ),
     );
   }
@@ -5463,26 +5623,23 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             selectedSpecialization = _providerSpecialization(selectedProvider);
           }
           return Dialog(
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 20,
-            ),
+            insetPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 20),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 470),
+              constraints: BoxConstraints(maxWidth: 470),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+                padding: EdgeInsets.fromLTRB(18, 18, 18, 20),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Center(
-                            child: Text(
+                            child: AdminLocalizedText(
                               'Service Pricing & Commission',
                               style: TextStyle(
                                 color: _ink,
@@ -5493,24 +5650,30 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           ),
                         ),
                         IconButton(
-                          tooltip: 'Close',
+                          tooltip: context.adminTr('Close'),
                           onPressed: () => Navigator.pop(context, false),
-                          icon: const Icon(Icons.close_rounded, color: _muted),
+                          icon: Icon(
+                            Icons.close_rounded,
+                            color: _palette.inkMuted,
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
+                    SizedBox(height: 6),
                     _pricingLabel('Service type'),
                     DropdownButtonFormField<String>(
                       initialValue: serviceType,
                       decoration: _pricingInputDecoration(
                         icon: Icons.medical_services_outlined,
                       ),
-                      items: const [
-                        DropdownMenuItem(value: 'nurse', child: Text('Nurse')),
+                      items: [
+                        DropdownMenuItem(
+                          value: 'nurse',
+                          child: AdminLocalizedText('Nurse'),
+                        ),
                         DropdownMenuItem(
                           value: 'doctor',
-                          child: Text('Doctor'),
+                          child: AdminLocalizedText('Doctor'),
                         ),
                       ],
                       onChanged: (value) {
@@ -5524,23 +5687,23 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         });
                       },
                     ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: 16),
                     _pricingLabel('Provider name'),
                     DropdownButtonFormField<String?>(
                       initialValue: validSelectedProviderId,
                       decoration: _pricingInputDecoration(
                         icon: Icons.person_outline_rounded,
-                        hintText: 'Select provider',
+                        hintText: context.adminTr('Select provider'),
                       ),
                       items: [
-                        const DropdownMenuItem(
+                        DropdownMenuItem(
                           value: null,
-                          child: Text('Select provider'),
+                          child: AdminLocalizedText('Select provider'),
                         ),
                         for (final provider in providers)
                           DropdownMenuItem(
                             value: _text(provider['userId'], fallback: ''),
-                            child: Text(
+                            child: AdminLocalizedText(
                               _text(provider['fullName'], fallback: 'Provider'),
                             ),
                           ),
@@ -5558,8 +5721,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       },
                     ),
                     if (serviceType == 'doctor') ...[
-                      const Center(
-                        child: Text(
+                      Center(
+                        child: AdminLocalizedText(
                           'Optional for commission-only specialization',
                           style: TextStyle(
                             color: Color(0xFF7A8A99),
@@ -5568,7 +5731,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      SizedBox(height: 6),
                       _pricingLabel('Specialization'),
                       if (selectedProvider != null)
                         TextField(
@@ -5593,7 +5756,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                             for (final specialization in specializations)
                               DropdownMenuItem(
                                 value: specialization,
-                                child: Text(specialization),
+                                child: AdminLocalizedText(specialization),
                               ),
                           ],
                           onChanged: (value) {
@@ -5604,17 +5767,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                             }
                           },
                         ),
-                      const SizedBox(height: 6),
+                      SizedBox(height: 6),
                     ],
-                    Text(
+                    AdminLocalizedText(
                       _providerExperienceLabel(selectedProvider),
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Color(0xFF7A8A99),
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: 16),
                     _pricingLabel('Provider rate (per hour)'),
                     TextField(
                       controller: providerRate,
@@ -5624,12 +5787,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         icon: Icons.attach_money_rounded,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: 16),
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.all(12),
+                      padding: EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFE8F7F4),
+                        color: _palette.surfaceSoft,
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: _line),
                       ),
@@ -5639,7 +5802,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           Row(
                             children: [
                               Material(
-                                color: Colors.white,
+                                color: _surface,
                                 borderRadius: BorderRadius.circular(14),
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(14),
@@ -5660,7 +5823,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                       borderRadius: BorderRadius.circular(14),
                                       border: Border.all(color: _line),
                                     ),
-                                    child: const Icon(
+                                    child: Icon(
                                       Icons.add_rounded,
                                       color: _teal,
                                       size: 26,
@@ -5668,7 +5831,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 10),
+                              SizedBox(width: 10),
                               Expanded(
                                 child: TextField(
                                   controller: commissionPercent,
@@ -5679,14 +5842,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                                       commissionPercent.text = '20';
                                       commissionPercent.selection =
                                           TextSelection.fromPosition(
-                                            const TextPosition(offset: 2),
+                                            TextPosition(offset: 2),
                                           );
                                     }
                                     setDialogState(() {});
                                   },
                                   decoration: _pricingInputDecoration(
                                     icon: Icons.percent_rounded,
-                                    hintText: '20',
+                                    hintText: context.adminTr('20'),
                                     suffixText: '%',
                                   ),
                                 ),
@@ -5696,7 +5859,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    SizedBox(height: 20),
                     Row(
                       children: [
                         Expanded(
@@ -5704,32 +5867,32 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                             style: FilledButton.styleFrom(
                               backgroundColor: _teal,
                               foregroundColor: Colors.white,
-                              minimumSize: const Size.fromHeight(50),
+                              minimumSize: Size.fromHeight(50),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
                             onPressed: () => Navigator.pop(context, true),
-                            icon: const Icon(Icons.save_rounded, size: 18),
-                            label: const Text(
+                            icon: Icon(Icons.save_rounded, size: 18),
+                            label: AdminLocalizedText(
                               'Save',
                               style: TextStyle(fontWeight: FontWeight.w900),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        SizedBox(width: 12),
                         Expanded(
                           child: OutlinedButton(
                             style: OutlinedButton.styleFrom(
                               foregroundColor: _teal,
-                              side: const BorderSide(color: _teal),
-                              minimumSize: const Size.fromHeight(50),
+                              side: BorderSide(color: _teal),
+                              minimumSize: Size.fromHeight(50),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
                             onPressed: () => Navigator.pop(context, false),
-                            child: const Text(
+                            child: AdminLocalizedText(
                               'Cancel',
                               style: TextStyle(fontWeight: FontWeight.w900),
                             ),
@@ -5760,7 +5923,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       );
       final response = await http.put(
         _uri('/admin/finance/pricing'),
-        headers: const {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'providerId': selectedProviderId.trim(),
           'specialization': specializationForSave,
@@ -5794,9 +5957,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final save = await showDialog<bool>(
       context: context,
       builder: (context) => Directionality(
-        textDirection: TextDirection.ltr,
+        textDirection: context.adminTextDirection,
         child: AlertDialog(
-          title: Text('Edit ${_text(user['fullName'])}'),
+          title: AdminLocalizedText('Edit ${_text(user['fullName'])}'),
           content: SizedBox(
             width: 520,
             child: Column(
@@ -5804,30 +5967,36 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               children: [
                 TextField(
                   controller: name,
-                  decoration: const InputDecoration(labelText: 'Full name'),
+                  decoration: InputDecoration(
+                    labelText: context.adminTr('Full name'),
+                  ),
                 ),
                 TextField(
                   controller: phone,
-                  decoration: const InputDecoration(labelText: 'Phone number'),
+                  decoration: InputDecoration(
+                    labelText: context.adminTr('Phone number'),
+                  ),
                 ),
                 if (_text(user['role']) != 'patient') ...[
                   TextField(
                     controller: specialization,
-                    decoration: const InputDecoration(
-                      labelText: 'Specialization',
+                    decoration: InputDecoration(
+                      labelText: context.adminTr('Specialization'),
                     ),
                   ),
                   TextField(
                     controller: serviceType,
-                    decoration: const InputDecoration(
-                      labelText: 'Service type',
+                    decoration: InputDecoration(
+                      labelText: context.adminTr('Service type'),
                     ),
                   ),
                 ],
                 if (_text(user['role']) == 'patient')
                   TextField(
                     controller: address,
-                    decoration: const InputDecoration(labelText: 'Address'),
+                    decoration: InputDecoration(
+                      labelText: context.adminTr('Address'),
+                    ),
                   ),
               ],
             ),
@@ -5835,12 +6004,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: AdminLocalizedText('Cancel'),
             ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: _teal),
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Save'),
+              child: AdminLocalizedText('Save'),
             ),
           ],
         ),
@@ -5852,7 +6021,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     try {
       final response = await http.put(
         _uri('/admin/users/${user['userId']}'),
-        headers: const {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'fullName': name.text,
           'phone': phone.text,
@@ -5904,7 +6073,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       case 'This Week':
         final today = DateTime(now.year, now.month, now.day);
         start = today.subtract(Duration(days: today.weekday - 1));
-        end = start.add(const Duration(days: 7));
+        end = start.add(Duration(days: 7));
         break;
       case 'This Year':
         start = DateTime(now.year);
@@ -6074,13 +6243,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Color _serviceStatusColor(String group) {
     switch (group) {
       case 'completed':
-        return const Color(0xFF1E9D69);
+        return Color(0xFF1E9D69);
       case 'in_progress':
-        return const Color(0xFFD28A00);
+        return Color(0xFFD28A00);
       case 'cancelled':
-        return const Color(0xFFD83A59);
+        return Color(0xFFD83A59);
       default:
-        return const Color(0xFF0A84D6);
+        return Color(0xFF0A84D6);
     }
   }
 
@@ -6098,11 +6267,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Color _roleColor(String role) {
     switch (role) {
       case 'doctor':
-        return const Color(0xFFE35D6A);
+        return Color(0xFFE35D6A);
       case 'nurse':
-        return const Color(0xFF0AA0B8);
+        return Color(0xFF0AA0B8);
       case 'patient':
-        return const Color(0xFF9B6AD6);
+        return Color(0xFF9B6AD6);
       default:
         return _teal;
     }
@@ -6111,22 +6280,22 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Color _statusBg(String status) {
     switch (status) {
       case 'approved':
-        return const Color(0xFFE3F8EF);
+        return Color(0xFFE3F8EF);
       case 'rejected':
-        return const Color(0xFFFFE6ED);
+        return Color(0xFFFFE6ED);
       default:
-        return const Color(0xFFFFF1D8);
+        return Color(0xFFFFF1D8);
     }
   }
 
   Color _statusFg(String status) {
     switch (status) {
       case 'approved':
-        return const Color(0xFF1E9D69);
+        return Color(0xFF1E9D69);
       case 'rejected':
-        return const Color(0xFFD83A59);
+        return Color(0xFFD83A59);
       default:
-        return const Color(0xFFAC6B00);
+        return Color(0xFFAC6B00);
     }
   }
 
@@ -6135,7 +6304,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.fixed,
-        content: Text(message.replaceFirst('Exception: ', '')),
+        content: AdminLocalizedText(message.replaceFirst('Exception: ', '')),
       ),
     );
   }
@@ -6148,14 +6317,14 @@ List<Map<String, dynamic>> _list(dynamic value) {
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
   }
-  return const [];
+  return [];
 }
 
 List<BoxShadow> get _shadow => [
   BoxShadow(
     color: Colors.black.withValues(alpha: 0.04),
     blurRadius: 10,
-    offset: const Offset(0, 5),
+    offset: Offset(0, 5),
   ),
 ];
 
@@ -6163,12 +6332,12 @@ List<BoxShadow> get _softDashboardShadow => [
   BoxShadow(
     color: Colors.black.withValues(alpha: 0.035),
     blurRadius: 18,
-    offset: const Offset(0, 8),
+    offset: Offset(0, 8),
   ),
 ];
 
 class _StatusSlice {
-  const _StatusSlice(this.label, this.value, this.color);
+  _StatusSlice(this.label, this.value, this.color);
 
   final String label;
   final int value;
@@ -6176,7 +6345,7 @@ class _StatusSlice {
 }
 
 class _DonutChartPainter extends CustomPainter {
-  const _DonutChartPainter(this.slices);
+  _DonutChartPainter(this.slices);
 
   final List<_StatusSlice> slices;
 
@@ -6191,7 +6360,7 @@ class _DonutChartPainter extends CustomPainter {
       ..strokeCap = StrokeCap.butt;
 
     if (total <= 0) {
-      paint.color = const Color(0xFFE8EEF0);
+      paint.color = Color(0xFFE8EEF0);
       canvas.drawArc(
         rect.deflate(strokeWidth / 2),
         -math.pi / 2,
@@ -6218,7 +6387,7 @@ class _DonutChartPainter extends CustomPainter {
 }
 
 class _LineChartPainter extends CustomPainter {
-  const _LineChartPainter(this.values, this.color);
+  _LineChartPainter(this.values, this.color);
 
   final List<double> values;
   final Color color;
@@ -6226,14 +6395,14 @@ class _LineChartPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final gridPaint = Paint()
-      ..color = const Color(0xFFEAF0F2)
+      ..color = Color(0xFFEAF0F2)
       ..strokeWidth = 1;
     for (var i = 1; i <= 3; i++) {
       final y = size.height * i / 4;
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
 
-    final safeValues = values.isEmpty ? const [0.0] : values;
+    final safeValues = values.isEmpty ? [0.0] : values;
     final maxValue = safeValues.reduce(math.max);
     final minValue = safeValues.reduce(math.min);
     final range = (maxValue - minValue).abs() < 0.01
@@ -6301,22 +6470,21 @@ class _ErrorState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.error_outline_rounded,
-              size: 44,
-              color: Colors.red,
+            Icon(Icons.error_outline_rounded, size: 44, color: Colors.red),
+            SizedBox(height: 12),
+            AdminLocalizedText(
+              context.adminError(message),
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             FilledButton.icon(
               onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Retry'),
+              icon: Icon(Icons.refresh_rounded),
+              label: AdminLocalizedText('Retry'),
             ),
           ],
         ),

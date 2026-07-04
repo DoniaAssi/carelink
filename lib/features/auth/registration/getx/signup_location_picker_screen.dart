@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
+import 'package:carelink/shared/widgets/carelink_responsive.dart';
 
 class SignupLocationResult {
   const SignupLocationResult({
@@ -219,140 +220,162 @@ class _SignupLocationPickerScreenState
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        title: Text(
-          context.tr('booking.location.chooseAddress'),
-          style: TextStyle(
-            color: colorScheme.onSurface,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        iconTheme: IconThemeData(color: colorScheme.onSurface),
+    return CarelinkResponsiveScope(
+      child: Scaffold(
         backgroundColor: colorScheme.surface,
-        elevation: 0,
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-          child: FilledButton(
-            onPressed: _canConfirm ? _confirm : null,
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            child: Text(
-              context.tr('booking.location.useThisAddress'),
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(
+          title: Text(
+            context.tr('booking.location.chooseAddress'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.bold,
             ),
           ),
+          iconTheme: IconThemeData(color: colorScheme.onSurface),
+          backgroundColor: colorScheme.surface,
+          elevation: 0,
         ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: SizedBox(
-              height: 380,
-              child: Stack(
-                children: [
-                  FlutterMap(
-                    mapController: _mapController,
-                    options: MapOptions(
-                      initialCenter: _marker,
-                      initialZoom: _zoom,
-                      onTap: (_, point) {
-                        setState(() => _marker = point);
-                        _resolveAddress(point);
-                      },
-                    ),
-                    children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'carelink.app',
-                      ),
-                      MarkerLayer(
-                        markers: [
-                          Marker(
-                            point: _marker,
-                            width: 42,
-                            height: 42,
-                            child: const Icon(
-                              Icons.location_pin,
-                              color: AppColors.primary,
-                              size: 42,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  Positioned(
-                    right: 12,
-                    top: 12,
-                    child: _MapButton(
-                      icon: Icons.my_location_rounded,
-                      onTap: _useCurrentLocation,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _addressController,
-            minLines: 2,
-            maxLines: 4,
-            onChanged: (_) => setState(() {}),
-            style: TextStyle(color: colorScheme.onSurface),
-            decoration: InputDecoration(
-              labelText: context.tr('booking.location.address'),
-              labelStyle: TextStyle(
-                color: colorScheme.onSurface.withValues(alpha: 0.8),
-              ),
-              prefixIcon: Icon(
-                Icons.location_on_outlined,
-                color: colorScheme.primary,
-              ),
-              suffixIcon: _isResolving
-                  ? Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: colorScheme.primary,
-                        ),
-                      ),
-                    )
-                  : null,
-              filled: true,
-              fillColor: colorScheme.surface,
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(
-                  color: colorScheme.outline.withValues(alpha: 0.3),
+        bottomNavigationBar: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+            child: FilledButton(
+              onPressed: _canConfirm ? _confirm : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  context.tr('booking.location.useThisAddress'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
               ),
             ),
           ),
-        ],
+        ),
+        body: ListView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsets.fromLTRB(
+            CarelinkResponsiveScope.horizontalPadding(context),
+            8,
+            CarelinkResponsiveScope.horizontalPadding(context),
+            18,
+          ),
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: SizedBox(
+                height: 380,
+                child: Stack(
+                  children: [
+                    FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: _marker,
+                        initialZoom: _zoom,
+                        onTap: (_, point) {
+                          setState(() => _marker = point);
+                          _resolveAddress(point);
+                        },
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'carelink.app',
+                        ),
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: _marker,
+                              width: 42,
+                              height: 42,
+                              child: const Icon(
+                                Icons.location_pin,
+                                color: AppColors.primary,
+                                size: 42,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    Positioned(
+                      right: 12,
+                      top: 12,
+                      child: _MapButton(
+                        icon: Icons.my_location_rounded,
+                        onTap: _useCurrentLocation,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _addressController,
+              minLines: 2,
+              maxLines: 4,
+              onChanged: (_) => setState(() {}),
+              style: TextStyle(color: colorScheme.onSurface),
+              decoration: InputDecoration(
+                labelText: context.tr('booking.location.address'),
+                labelStyle: TextStyle(
+                  color: colorScheme.onSurface.withValues(alpha: 0.8),
+                ),
+                prefixIcon: Icon(
+                  Icons.location_on_outlined,
+                  color: colorScheme.primary,
+                ),
+                suffixIcon: _isResolving
+                    ? Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                      )
+                    : null,
+                filled: true,
+                fillColor: colorScheme.surface,
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: colorScheme.outline.withValues(alpha: 0.3),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: colorScheme.primary,
+                    width: 1.5,
+                  ),
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

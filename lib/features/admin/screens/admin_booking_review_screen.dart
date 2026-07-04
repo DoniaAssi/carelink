@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/features/admin/widgets/admin_ui_support.dart';
 
 class AdminBookingReviewItem {
   const AdminBookingReviewItem({
@@ -88,19 +90,21 @@ class AdminBookingReviewScreen extends StatefulWidget {
 }
 
 class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
-  static const _bg = Color(0xFFF1FAF9);
   static const _teal = Color(0xFF039D98);
   static const _darkTeal = Color(0xFF007B78);
-  static const _mint = Color(0xFFE7F6F3);
   static const _ink = Color(0xFF0D1B2A);
   static const _muted = Color(0xFF6B7C86);
   static const _line = Color(0xFFD8E9E6);
+
+  CarelinkPalette get _palette => CarelinkPalette.of(context);
+  Color get _surface => _palette.surface;
+  Color get _softSurface => _palette.surfaceSoft;
 
   bool _loading = true;
   bool _saving = false;
   String? _error;
   AdminBookingReviewStatus? _filter;
-  List<AdminBookingReviewItem> _items = const [];
+  List<AdminBookingReviewItem> _items = [];
 
   @override
   void initState() {
@@ -125,7 +129,7 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
         throw Exception(_message(response));
       }
       final decoded = jsonDecode(response.body);
-      final list = decoded is List ? decoded : const [];
+      final list = decoded is List ? decoded : [];
       final items = list
           .whereType<Map>()
           .map(
@@ -167,60 +171,113 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: _bg,
-        body: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 430),
-              child: RefreshIndicator(
-                color: _teal,
-                onRefresh: _load,
-                child: _loading
-                    ? const Center(
-                        child: CircularProgressIndicator(color: _teal),
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
-                        children: [
-                          _topBar(),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Booking Review',
-                            style: TextStyle(
-                              color: _ink,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w900,
+    return ListenableBuilder(
+      listenable: adminUiSettings,
+      builder: (context, _) => _buildReviewScreen(context),
+    );
+  }
+
+  Widget _buildReviewScreen(BuildContext context) {
+    final baseTheme = Theme.of(context);
+    final p = _palette;
+    return Theme(
+      data: baseTheme.copyWith(
+        scaffoldBackgroundColor: p.pageBg,
+        cardColor: p.surface,
+        canvasColor: p.surface,
+        dividerColor: p.stroke,
+        colorScheme: baseTheme.colorScheme.copyWith(
+          surface: p.surface,
+          onSurface: p.inkDark,
+          primary: _darkTeal,
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: p.surface,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+        ),
+        inputDecorationTheme: baseTheme.inputDecorationTheme.copyWith(
+          filled: true,
+          fillColor: p.surface,
+          hintStyle: TextStyle(color: p.inkMuted),
+          labelStyle: TextStyle(color: p.inkMuted),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: _darkTeal,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _darkTeal,
+            side: BorderSide(color: _line),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+      ),
+      child: Directionality(
+        textDirection: context.adminTextDirection,
+        child: Scaffold(
+          backgroundColor: p.pageBg,
+          body: SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 430),
+                child: RefreshIndicator(
+                  color: _teal,
+                  onRefresh: _load,
+                  child: _loading
+                      ? Center(child: CircularProgressIndicator(color: _teal))
+                      : ListView(
+                          padding: EdgeInsets.fromLTRB(18, 12, 18, 32),
+                          children: [
+                            AdminGlobalControls(),
+                            SizedBox(height: 10),
+                            _topBar(),
+                            SizedBox(height: 16),
+                            AdminLocalizedText(
+                              'Booking Review',
+                              style: TextStyle(
+                                color: _ink,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Review nurse bookings that need an admin decision after the appointment time has passed.',
-                            style: TextStyle(
-                              color: _muted,
-                              height: 1.4,
-                              fontWeight: FontWeight.w700,
+                            SizedBox(height: 8),
+                            AdminLocalizedText(
+                              'Review nurse bookings that need an admin decision after the appointment time has passed.',
+                              style: TextStyle(
+                                color: _muted,
+                                height: 1.4,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 14),
-                          _logicNotice(),
-                          if (_error != null) ...[
-                            const SizedBox(height: 12),
-                            _errorBox(_error!),
+                            SizedBox(height: 14),
+                            _logicNotice(),
+                            if (_error != null) ...[
+                              SizedBox(height: 12),
+                              _errorBox(_error!),
+                            ],
+                            SizedBox(height: 18),
+                            _summaryGrid(),
+                            SizedBox(height: 18),
+                            _filters(),
+                            SizedBox(height: 16),
+                            if (_visibleItems.isEmpty)
+                              _empty()
+                            else
+                              ..._visibleItems.map(_bookingCard),
                           ],
-                          const SizedBox(height: 18),
-                          _summaryGrid(),
-                          const SizedBox(height: 18),
-                          _filters(),
-                          const SizedBox(height: 16),
-                          if (_visibleItems.isEmpty)
-                            _empty()
-                          else
-                            ..._visibleItems.map(_bookingCard),
-                        ],
-                      ),
+                        ),
+                ),
               ),
             ),
           ),
@@ -232,13 +289,13 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
   Widget _topBar() {
     return Row(
       children: [
-        IconButton(
-          tooltip: 'Back',
+        _topBarAction(
+          tooltip: context.adminTr('Back'),
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_rounded, color: _teal),
+          icon: context.adminBackIcon,
         ),
-        const Spacer(),
-        const Text(
+        Spacer(),
+        AdminLocalizedText(
           'Admin Review',
           style: TextStyle(
             color: _ink,
@@ -246,31 +303,48 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
-        const Spacer(),
-        IconButton(
-          tooltip: 'Refresh',
+        Spacer(),
+        _topBarAction(
+          tooltip: context.adminTr('Refresh'),
           onPressed: _load,
-          icon: const Icon(Icons.refresh_rounded, color: _teal),
+          icon: Icons.refresh_rounded,
         ),
       ],
     );
   }
 
+  Widget _topBarAction({
+    required String tooltip,
+    required VoidCallback onPressed,
+    required IconData icon,
+  }) {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(color: _softSurface, shape: BoxShape.circle),
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: Icon(icon, color: _darkTeal, size: 20),
+      ),
+    );
+  }
+
   Widget _logicNotice() {
     return Container(
-      padding: const EdgeInsets.all(13),
+      padding: EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _line),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _shadow,
       ),
-      child: const Row(
+      child: Row(
         children: [
           Icon(Icons.link_rounded, color: _darkTeal, size: 20),
           SizedBox(width: 10),
           Expanded(
-            child: Text(
+            child: AdminLocalizedText(
               'Admin decisions are saved for nurse bookings only. Missed appointments are not treated as patient cancellations.',
               style: TextStyle(
                 color: _muted,
@@ -286,41 +360,50 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
   }
 
   Widget _summaryGrid() {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 10,
-      crossAxisSpacing: 10,
-      childAspectRatio: 1.72,
-      children: [
-        _summaryCard('Under Review', _items.length, Icons.fact_check_outlined),
-        _summaryCard(
-          'Missed',
-          _count(AdminBookingReviewStatus.missedAppointment),
-          Icons.event_busy_rounded,
-        ),
-        _summaryCard(
-          'Expired',
-          _count(AdminBookingReviewStatus.requestExpired),
-          Icons.hourglass_empty_rounded,
-        ),
-        _summaryCard(
-          'Disputes',
-          _count(AdminBookingReviewStatus.dispute),
-          Icons.report_problem_outlined,
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 330;
+        return GridView.count(
+          crossAxisCount: compact ? 1 : 2,
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: compact ? 3.5 : 1.72,
+          children: [
+            _summaryCard(
+              'Under Review',
+              _items.length,
+              Icons.fact_check_outlined,
+            ),
+            _summaryCard(
+              'Missed',
+              _count(AdminBookingReviewStatus.missedAppointment),
+              Icons.event_busy_rounded,
+            ),
+            _summaryCard(
+              'Expired',
+              _count(AdminBookingReviewStatus.requestExpired),
+              Icons.hourglass_empty_rounded,
+            ),
+            _summaryCard(
+              'Disputes',
+              _count(AdminBookingReviewStatus.dispute),
+              Icons.report_problem_outlined,
+            ),
+          ],
+        );
+      },
     );
   }
 
   Widget _summaryCard(String label, int value, IconData icon) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _line),
+        color: _surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _shadow,
       ),
       child: Row(
@@ -329,30 +412,30 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: _mint,
+              color: _softSurface,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: _teal, size: 20),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
+                AdminLocalizedText(
                   '$value',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _ink,
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                Text(
+                AdminLocalizedText(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _muted,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
@@ -380,7 +463,7 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
         children: [
           for (final option in options) ...[
             _filterChip(option.$1, option.$2),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
           ],
         ],
       ),
@@ -393,14 +476,14 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
       borderRadius: BorderRadius.circular(16),
       onTap: () => setState(() => _filter = value),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+        duration: Duration(milliseconds: 160),
+        padding: EdgeInsets.symmetric(horizontal: 13, vertical: 9),
         decoration: BoxDecoration(
-          color: selected ? _teal : Colors.white,
+          color: selected ? _teal : _surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: selected ? _teal : _line),
         ),
-        child: Text(
+        child: AdminLocalizedText(
           label,
           style: TextStyle(
             color: selected ? Colors.white : _teal,
@@ -414,12 +497,12 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
 
   Widget _bookingCard(AdminBookingReviewItem item) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _line),
+        color: _surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _shadow,
       ),
       child: Column(
@@ -428,35 +511,32 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
             children: [
               CircleAvatar(
                 radius: 23,
-                backgroundColor: _mint,
-                child: Text(
+                backgroundColor: _softSurface,
+                child: AdminLocalizedText(
                   _initials(item.patientName),
-                  style: const TextStyle(
-                    color: _teal,
-                    fontWeight: FontWeight.w900,
-                  ),
+                  style: TextStyle(color: _teal, fontWeight: FontWeight.w900),
                 ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    AdminLocalizedText(
                       item.patientName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _ink,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
+                    SizedBox(height: 4),
+                    AdminLocalizedText(
                       item.providerName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _muted,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -465,11 +545,11 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: 10),
               _statusBadge(item.status),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           _infoRow(
             Icons.medical_services_outlined,
             'Service',
@@ -478,20 +558,20 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
           _infoRow(Icons.schedule_rounded, 'Time', _dateTime(item.scheduledAt)),
           _infoRow(Icons.payments_outlined, 'Paid', _money(item.amount)),
           _infoRow(Icons.lock_outline_rounded, 'Payment', item.paymentStatus),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: _teal,
-                side: const BorderSide(color: _line),
+                side: BorderSide(color: _line),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(14),
                 ),
               ),
               onPressed: _saving ? null : () => _openReview(item),
-              icon: const Icon(Icons.manage_search_rounded, size: 18),
-              label: const Text(
+              icon: Icon(Icons.manage_search_rounded, size: 18),
+              label: AdminLocalizedText(
                 'Review',
                 style: TextStyle(fontWeight: FontWeight.w900),
               ),
@@ -504,26 +584,26 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
 
   Widget _infoRow(IconData icon, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(top: 7),
+      padding: EdgeInsets.only(top: 7),
       child: Row(
         children: [
           Icon(icon, color: _teal, size: 16),
-          const SizedBox(width: 7),
-          Text(
+          SizedBox(width: 7),
+          AdminLocalizedText(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: _muted,
               fontSize: 11,
               fontWeight: FontWeight.w800,
             ),
           ),
-          const Spacer(),
+          Spacer(),
           Flexible(
-            child: Text(
+            child: AdminLocalizedText(
               value,
               textAlign: TextAlign.right,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: _ink,
                 fontSize: 11.5,
                 fontWeight: FontWeight.w900,
@@ -538,12 +618,12 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
   Widget _statusBadge(AdminBookingReviewStatus status) {
     final color = _statusColor(status);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      padding: EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(
+      child: AdminLocalizedText(
         _statusLabel(status),
         style: TextStyle(
           color: color,
@@ -564,9 +644,9 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
         minChildSize: 0.48,
         maxChildSize: 0.94,
         builder: (context, controller) => Container(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 20),
-          decoration: const BoxDecoration(
-            color: Colors.white,
+          padding: EdgeInsets.fromLTRB(18, 12, 18, 20),
+          decoration: BoxDecoration(
+            color: _surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
           ),
           child: ListView(
@@ -577,13 +657,13 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
                   width: 44,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: _line,
+                    color: _palette.stroke,
                     borderRadius: BorderRadius.circular(99),
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              const Text(
+              SizedBox(height: 16),
+              AdminLocalizedText(
                 'Review Details',
                 style: TextStyle(
                   color: _ink,
@@ -591,7 +671,7 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: 12),
               _reviewBlock('Patient', item.patientName),
               _reviewBlock('Nurse', item.providerName),
               _reviewBlock('Service', item.serviceType),
@@ -599,12 +679,12 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
               _reviewBlock('Paid Amount', _money(item.amount)),
               _reviewBlock('Reason', item.reason),
               _reviewBlock('System Notes', item.systemNotes),
-              const SizedBox(height: 16),
-              const Text(
+              SizedBox(height: 16),
+              AdminLocalizedText(
                 'Admin Decisions',
                 style: TextStyle(fontWeight: FontWeight.w900, color: _ink),
               ),
-              const SizedBox(height: 10),
+              SizedBox(height: 10),
               _decisionButton(
                 item,
                 'Confirm Service Completed',
@@ -654,28 +734,28 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
 
   Widget _reviewBlock(String label, String value) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(13),
+      margin: EdgeInsets.only(bottom: 10),
+      padding: EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: _bg,
+        color: _softSurface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _line),
+        border: Border.all(color: _palette.stroke),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          AdminLocalizedText(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: _muted,
               fontSize: 11,
               fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 5),
-          Text(
+          SizedBox(height: 5),
+          AdminLocalizedText(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: _ink,
               height: 1.35,
               fontWeight: FontWeight.w900,
@@ -695,7 +775,7 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
     IconData icon,
   ) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 9),
+      padding: EdgeInsets.only(bottom: 9),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: _saving
@@ -703,32 +783,32 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
             : () =>
                   _confirmDecision(item, label, description, effect, decision),
         child: Container(
-          padding: const EdgeInsets.all(13),
+          padding: EdgeInsets.all(13),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: _surface,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: _line),
+            border: Border.all(color: _palette.stroke),
           ),
           child: Row(
             children: [
               Icon(icon, size: 21, color: _darkTeal),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    AdminLocalizedText(
                       label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _darkTeal,
                         fontSize: 13.5,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
+                    SizedBox(height: 4),
+                    AdminLocalizedText(
                       description,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _muted,
                         fontSize: 11.5,
                         height: 1.35,
@@ -738,8 +818,8 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              const Icon(Icons.chevron_right_rounded, color: _darkTeal),
+              SizedBox(width: 8),
+              Icon(Icons.chevron_right_rounded, color: _darkTeal),
             ],
           ),
         ),
@@ -764,7 +844,7 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(label),
+        title: AdminLocalizedText(label),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -775,16 +855,16 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
               TextField(
                 controller: refundController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Refund amount',
+                decoration: InputDecoration(
+                  labelText: context.adminTr('Refund amount'),
                   prefixText: 'ILS ',
                 ),
               ),
             TextField(
               controller: notesController,
               maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Admin notes (optional)',
+              decoration: InputDecoration(
+                labelText: context.adminTr('Admin notes (optional)'),
               ),
             ),
           ],
@@ -792,12 +872,12 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
+            child: AdminLocalizedText('Cancel'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: _teal),
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Apply Decision'),
+            child: AdminLocalizedText('Apply Decision'),
           ),
         ],
       ),
@@ -830,7 +910,7 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
     try {
       final response = await http.put(
         _uri('/admin/booking-review/${Uri.encodeComponent(item.id)}/decision'),
-        headers: const {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'decision': decision,
           if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
@@ -844,14 +924,20 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Decision saved: ${decision.replaceAll('_', ' ')}'),
+          content: AdminLocalizedText(
+            'Decision saved: ${decision.replaceAll('_', ' ')}',
+          ),
         ),
       );
       await _load();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(
+          content: AdminLocalizedText(
+            e.toString().replaceFirst('Exception: ', ''),
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -860,13 +946,13 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
 
   Widget _empty() {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _line),
+        border: Border.all(color: _palette.stroke),
       ),
-      child: const Text(
+      child: AdminLocalizedText(
         'No nurse bookings need admin review right now.',
         textAlign: TextAlign.center,
         style: TextStyle(color: _muted, fontWeight: FontWeight.w800),
@@ -876,17 +962,14 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
 
   Widget _errorBox(String message) {
     return Container(
-      padding: const EdgeInsets.all(13),
+      padding: EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFE8EE),
+        color: _palette.isDark ? Color(0xFF3A1722) : Color(0xFFFFE8EE),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Text(
-        message,
-        style: const TextStyle(
-          color: Color(0xFFD83A59),
-          fontWeight: FontWeight.w800,
-        ),
+      child: AdminLocalizedText(
+        context.adminError(message),
+        style: TextStyle(color: Color(0xFFD83A59), fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -913,13 +996,13 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
   Color _statusColor(AdminBookingReviewStatus status) {
     switch (status) {
       case AdminBookingReviewStatus.missedAppointment:
-        return const Color(0xFFE07A1F);
+        return Color(0xFFE07A1F);
       case AdminBookingReviewStatus.requestExpired:
-        return const Color(0xFFD83A59);
+        return Color(0xFFD83A59);
       case AdminBookingReviewStatus.waitingCompletion:
-        return const Color(0xFF1D7BC7);
+        return Color(0xFF1D7BC7);
       case AdminBookingReviewStatus.dispute:
-        return const Color(0xFF8A5BC9);
+        return Color(0xFF8A5BC9);
       case AdminBookingReviewStatus.underReview:
         return _darkTeal;
     }
@@ -1044,6 +1127,6 @@ List<BoxShadow> get _shadow => [
   BoxShadow(
     color: Colors.black.withValues(alpha: 0.04),
     blurRadius: 14,
-    offset: const Offset(0, 7),
+    offset: Offset(0, 7),
   ),
 ];

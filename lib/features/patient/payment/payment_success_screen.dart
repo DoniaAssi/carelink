@@ -67,6 +67,8 @@ class PaymentSuccessScreen extends StatelessWidget {
               Text(
                 context.tr('payment.success'),
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
@@ -77,6 +79,8 @@ class PaymentSuccessScreen extends StatelessWidget {
               Text(
                 context.tr('payment.bookingConfirmed'),
                 textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: p.inkMuted, fontSize: 14, height: 1.4),
               ),
               const SizedBox(height: 24),

@@ -17,14 +17,15 @@ class ApiServiceException implements Exception {
 
 class ApiService {
   // غيّري هذا الـ IP إلى IPv4 تبع جهازك إذا كنتِ تشغلين التطبيق على هاتف حقيقي
-  // static const String _machineIp = '192.168.1.5';
+  static const String _machineIp = '192.168.1.5';
 
-  static const String _machineIp = '192.168.0.101';
+  // static const String _machineIp = '192.168.0.101';
+  // static const String _machineIp = '192.168.1.15';
 
   // إذا كنتِ تستخدمين Android Emulator خليها true.
   // إذا كنتِ تستخدمين جهاز حقيقي، ضعيها false وحددي عنوان IP صحيح في _machineIp.
-  //static const bool _useAndroidEmulator = true;
-   static const bool _useAndroidEmulator = false;
+  static const bool _useAndroidEmulator = true;
+  // static const bool _useAndroidEmulator = false;
 
   static const String _androidEmulatorBase = 'http://10.0.2.2:3000';
   static const String _webBase = 'http://localhost:3000';
@@ -44,8 +45,8 @@ class ApiService {
     if (_envBaseUrl.isNotEmpty) {
       rawUrl = _envBaseUrl;
     } else if (kIsWeb) {
-      // rawUrl = _webBase;
-        rawUrl = _realDeviceBase;
+      rawUrl = _webBase;
+      // rawUrl = _realDeviceBase;
     } else {
       switch (defaultTargetPlatform) {
         case TargetPlatform.android:
@@ -1263,10 +1264,15 @@ class ApiService {
     required String patientUserId,
     String? reason,
   }) async {
+    final headers = <String, String>{
+      ..._jsonHeaders,
+      'x-user-id': patientUserId,
+      'x-user-role': 'patient',
+    };
     final response = await _sendRequest(
       http.put(
         _endpoint('/patient/appointments/$appointmentId/cancel'),
-        headers: _jsonHeaders,
+        headers: headers,
         body: jsonEncode({
           'patientUserId': patientUserId,
           'reason': reason ?? '',
@@ -1280,6 +1286,42 @@ class ApiService {
 
     throw Exception(
       _extractErrorMessage(response, 'Failed to cancel appointment'),
+    );
+  }
+
+  Future<Map<String, dynamic>> getCancellationSummary({
+    required String appointmentId,
+    required String patientUserId,
+  }) async {
+    final uri = _endpoint(
+      '/patient/appointments/$appointmentId/cancellation-summary'
+      '?patientUserId=${Uri.encodeQueryComponent(patientUserId)}',
+    );
+    final headers = <String, String>{
+      ..._jsonHeaders,
+      'x-user-id': patientUserId,
+      'x-user-role': 'patient',
+    };
+    if (kDebugMode) {
+      debugPrint(
+        '[CancellationSummary] request '
+        'method=GET url=$uri appointmentId=$appointmentId '
+        'patientUserId=$patientUserId headers=$headers',
+      );
+    }
+    final response = await _sendRequest(http.get(uri, headers: headers));
+    if (kDebugMode) {
+      debugPrint(
+        '[CancellationSummary] response status=${response.statusCode} '
+        'body=${response.body}',
+      );
+    }
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to load cancellation summary'),
     );
   }
 

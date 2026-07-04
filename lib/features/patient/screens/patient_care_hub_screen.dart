@@ -7,7 +7,6 @@ import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
-import 'package:carelink/shared/services/medical_record_service.dart';
 import 'package:carelink/features/patient/screens/chat_screen.dart';
 import 'package:carelink/shared/services/patient_recent_chats_service.dart';
 import 'package:carelink/features/patient/screens/messages_screen.dart';
@@ -16,7 +15,6 @@ import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/features/ai/provider_smart_match.dart';
 import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/shared/services/location_service.dart';
-import 'package:carelink/shared/services/patient_favorites_service.dart';
 import 'provider_details_screen.dart';
 
 class PatientCareHubScreen extends StatefulWidget {
@@ -30,18 +28,15 @@ class PatientCareHubScreen extends StatefulWidget {
 
 class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
   final ApiService _api = ApiService();
-  final MedicalRecordService _recordService = MedicalRecordService();
 
   bool _loading = true;
   List<AppointmentModel> _activeBookings = [];
-  List<Map<String, dynamic>> _myFavorites = [];
   // Cached for future recent-conversation summaries on this screen.
   // ignore: unused_field
   List<Map<String, dynamic>> _recentChats = [];
-  Map<String, dynamic>? _latestVisitReport;
   ProviderModel? _recommendedProvider;
   String? _careError;
-  
+
   @override
   void initState() {
     super.initState();
@@ -53,7 +48,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
       setState(() {
         _loading = true;
         _careError = null;
-        });
+      });
     }
 
     final patientId = widget.patientUserId.trim();
@@ -65,14 +60,13 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
           'Your session is missing. Please sign in again.',
           'بيانات الجلسة غير متوفرة. يرجى تسجيل الدخول مرة أخرى.',
         );
-        });
+      });
       return;
     }
 
     var activeBookings = <AppointmentModel>[];
     ProviderModel? recommendedProvider;
     String? careError;
-    Map<String, dynamic>? latestProviderRecord;
     var recentChats = <Map<String, dynamic>>[];
 
     try {
@@ -132,50 +126,13 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
     }
 
     try {
-      final rawRecords = await _recordService.listForPatient(
-        patientId,
-        requesterUserId: patientId,
-        requesterRole: 'patient',
-      );
-
-      rawRecords.sort((a, b) {
-        final ta =
-            DateTime.tryParse(a['createdAt']?.toString() ?? '') ??
-            DateTime.fromMillisecondsSinceEpoch(0);
-        final tb =
-            DateTime.tryParse(b['createdAt']?.toString() ?? '') ??
-            DateTime.fromMillisecondsSinceEpoch(0);
-        return tb.compareTo(ta);
-      });
-
-      final providerRecords = rawRecords
-          .where(
-            (record) => const {
-              'doctor',
-              'nurse',
-            }.contains(record['creatorRole']?.toString().trim().toLowerCase()),
-          )
-          .toList();
-      latestProviderRecord = providerRecords.isEmpty
-          ? null
-          : providerRecords.first;
-    } catch (error) {
-          }
-
-    try {
       recentChats = await PatientRecentChatsService.getRecentChats();
-    } catch (_) {}
-
-    try {
-      final favs = await PatientFavoritesService.getFavorites(patientId);
-      _myFavorites = favs;
     } catch (_) {}
 
     if (!mounted) return;
     setState(() {
       _activeBookings = activeBookings;
       _recommendedProvider = recommendedProvider;
-      _latestVisitReport = latestProviderRecord;
       _recentChats = recentChats;
       _careError = careError;
       _loading = false;
@@ -258,41 +215,49 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
           );
         },
       ),
-      body: RefreshIndicator(
-        color: AppColors.primary,
-        onRefresh: () => _loadData(silent: true),
-        child: _loading
-            ? _buildSkeleton(p)
-            : SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (_careError != null) ...[
-                      _buildLoadErrorCard(p, _careError!),
-                      const SizedBox(height: 20),
-                    ] else if (_activeBookings.isEmpty) ...[
-                      if (_recommendedProvider != null) ...[
-                        _buildRecommendedProviderCard(p),
+      body: SafeArea(
+        top: false,
+        child: RefreshIndicator(
+          color: AppColors.primary,
+          onRefresh: () => _loadData(silent: true),
+          child: _loading
+              ? _buildSkeleton(p)
+              : SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    12,
+                    16,
+                    MediaQuery.paddingOf(context).bottom + 120,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_careError != null) ...[
+                        _buildLoadErrorCard(p, _careError!),
                         const SizedBox(height: 20),
+                      ] else if (_activeBookings.isEmpty) ...[
+                        if (_recommendedProvider != null) ...[
+                          _buildRecommendedProviderCard(p),
+                          const SizedBox(height: 20),
+                        ] else ...[
+                          _buildEmptyStateCard(p),
+                          const SizedBox(height: 20),
+                        ],
                       ] else ...[
-                        _buildEmptyStateCard(p),
+                        _buildUpcomingCareCard(p, _activeBookings.first),
+                        const SizedBox(height: 20),
+
+                        _buildCurrentCarePlanCard(p, _activeBookings.first),
+                        const SizedBox(height: 20),
+
+                        _buildRecentCareActivities(p),
                         const SizedBox(height: 20),
                       ],
-                    ] else ...[
-                      _buildUpcomingCareCard(p, _activeBookings.first),
-                      const SizedBox(height: 20),
-
-                      _buildCurrentCarePlanCard(p, _activeBookings.first),
-                      const SizedBox(height: 20),
-
-                      _buildRecentCareActivities(p),
-                      const SizedBox(height: 20),
                     ],
-                  ],
+                  ),
                 ),
-              ),
+        ),
       ),
     );
   }
@@ -327,10 +292,6 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
       ),
     );
   }
-
-  
-
-  
 
   // ==========================================
   // SECTION 2: ACTIVE CARE CARD
@@ -541,8 +502,6 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
     );
   }
 
-  
-
   Widget _infoBadge(
     CarelinkPalette p,
     String text,
@@ -576,22 +535,10 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
   // ==========================================
   // SECTION 3: CURRENT CARE PLAN
   // ==========================================
-  
-
-  
-
-  
-
-  
-
-  
 
   // ==========================================
   // SECTION 7: AI CARE INSIGHT
   // ==========================================
-  
-
-  
 
   Widget _buildSkeleton(CarelinkPalette p) {
     return SingleChildScrollView(
@@ -620,21 +567,21 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
     );
   }
   // Helper for generic section cards
-  
-
 
   BoxShadow _cardShadow(CarelinkPalette p) => BoxShadow(
     color: Colors.black.withValues(alpha: p.isDark ? 0.28 : 0.05),
     blurRadius: p.isDark ? 18 : 12,
     offset: const Offset(0, 8),
   );
-// ==========================================
+  // ==========================================
   // NEW SECTION: UPCOMING CARE CARD
   // ==========================================
   Widget _buildUpcomingCareCard(CarelinkPalette p, AppointmentModel b) {
-    final spec = '${b.specialization}'.trim();
-    final role = '${b.providerRole}'.trim();
-    final service = (spec != '' && spec != 'null' && spec != 'undefined') ? spec : role;
+    final spec = b.specialization.trim();
+    final role = b.providerRole.trim();
+    final service = (spec != '' && spec != 'null' && spec != 'undefined')
+        ? spec
+        : role;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -646,8 +593,8 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 _t('Upcoming Care', 'الموعد القادم'),
@@ -657,8 +604,17 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                   color: p.inkDark,
                 ),
               ),
-              if ('${b.status}'.trim() != '' && '${b.status}' != 'null' && '${b.status}' != 'undefined')
-                _infoBadge(p, _translateStatus(b.status), const Color(0xFF0E8A78), Colors.white),
+              if (b.status.trim() != '' &&
+                  b.status != 'null' &&
+                  b.status != 'undefined') ...[
+                const SizedBox(height: 10),
+                _infoBadge(
+                  p,
+                  _translateStatus(b.status),
+                  const Color(0xFF0E8A78),
+                  Colors.white,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 20),
@@ -669,10 +625,16 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                 width: 50,
                 height: 50,
                 decoration: BoxDecoration(
-                  color: p.isDark ? const Color(0xFF0D3841) : const Color(0xFFE7F8F6),
+                  color: p.isDark
+                      ? const Color(0xFF0D3841)
+                      : const Color(0xFFE7F8F6),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.calendar_month_outlined, color: Color(0xFF0E8A78), size: 26),
+                child: const Icon(
+                  Icons.calendar_month_outlined,
+                  color: Color(0xFF0E8A78),
+                  size: 26,
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -681,12 +643,20 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.calendar_today_rounded, size: 16, color: Color(0xFF0E8A78)),
+                        const Icon(
+                          Icons.calendar_today_rounded,
+                          size: 16,
+                          color: Color(0xFF0E8A78),
+                        ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             _formatDate(b.scheduledAt).split(' ')[0],
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: p.inkDark),
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: p.inkDark,
+                            ),
                           ),
                         ),
                       ],
@@ -694,11 +664,17 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Icon(Icons.access_time_rounded, size: 16, color: Color(0xFF0E8A78)),
+                        const Icon(
+                          Icons.access_time_rounded,
+                          size: 16,
+                          color: Color(0xFF0E8A78),
+                        ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            b.scheduledAt != null ? '${b.scheduledAt!.hour.toString().padLeft(2, '0')}:${b.scheduledAt!.minute.toString().padLeft(2, '0')}' : '',
+                            b.scheduledAt != null
+                                ? '${b.scheduledAt!.hour.toString().padLeft(2, '0')}:${b.scheduledAt!.minute.toString().padLeft(2, '0')}'
+                                : '',
                             style: TextStyle(fontSize: 14, color: p.inkMuted),
                           ),
                         ),
@@ -707,7 +683,11 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Icon(Icons.person_outline_rounded, size: 16, color: Color(0xFF0E8A78)),
+                        const Icon(
+                          Icons.person_outline_rounded,
+                          size: 16,
+                          color: Color(0xFF0E8A78),
+                        ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
@@ -725,12 +705,13 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
-            height: 48,
             child: OutlinedButton.icon(
-              onPressed: () => _handleMessageProvider(b.providerUserId, b.providerName),
+              onPressed: () =>
+                  _handleMessageProvider(b.providerUserId, b.providerName),
               icon: const Icon(Icons.chat_bubble_outline_rounded, size: 20),
               label: Text(_t('Message Provider', 'مراسلة مقدم الرعاية')),
               style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
                 foregroundColor: const Color(0xFF0E8A78),
                 side: const BorderSide(color: Color(0xFF0E8A78), width: 1.5),
                 shape: RoundedRectangleBorder(
@@ -748,10 +729,12 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
   // NEW SECTION: CURRENT CARE PLAN CARD
   // ==========================================
   Widget _buildCurrentCarePlanCard(CarelinkPalette p, AppointmentModel b) {
-    final spec = '${b.specialization}'.trim();
-    final role = '${b.providerRole}'.trim();
-    final service = (spec != '' && spec != 'null' && spec != 'undefined') ? spec : role;
-    
+    final spec = b.specialization.trim();
+    final role = b.providerRole.trim();
+    final service = (spec != '' && spec != 'null' && spec != 'undefined')
+        ? spec
+        : role;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -778,10 +761,16 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: p.isDark ? const Color(0xFF0D3841) : const Color(0xFFE7F8F6),
+                  color: p.isDark
+                      ? const Color(0xFF0D3841)
+                      : const Color(0xFFE7F8F6),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.health_and_safety_rounded, color: Color(0xFF0E8A78), size: 24),
+                child: const Icon(
+                  Icons.health_and_safety_rounded,
+                  color: Color(0xFF0E8A78),
+                  size: 24,
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -789,12 +778,19 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      service.isEmpty ? _t('General Care', 'رعاية عامة') : service,
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0E8A78)),
+                      service.isEmpty
+                          ? _t('General Care', 'رعاية عامة')
+                          : service,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF0E8A78),
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _t('Start Date: ', 'بداية الخطة: ') + _formatDate(b.scheduledAt).split(' ')[0],
+                      _t('Start Date: ', 'بداية الخطة: ') +
+                          _formatDate(b.scheduledAt).split(' ')[0],
                       style: TextStyle(fontSize: 13, color: p.inkMuted),
                     ),
                   ],
@@ -804,23 +800,50 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
           ),
           const SizedBox(height: 20),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _carePlanStatItem(p, Icons.fact_check_outlined, _t('Tasks', 'المهام'), _t('4 Tasks', '4 مهام')),
-              _carePlanStatItem(p, Icons.medication_outlined, _t('Medications', 'الأدوية'), _t('2 Meds', '2 أدوية')),
-              _carePlanStatItem(p, Icons.assignment_outlined, _t('Instructions', 'التعليمات'), _t('5 Inst.', '5 تعليمات')),
-              _carePlanStatItem(p, Icons.flag_outlined, _t('Goals', 'الأهداف'), _t('3 Goals', '3 أهداف')),
+              Expanded(
+                child: _carePlanStatItem(
+                  p,
+                  Icons.fact_check_outlined,
+                  _t('Tasks', 'المهام'),
+                  _t('4 Tasks', '4 مهام'),
+                ),
+              ),
+              Expanded(
+                child: _carePlanStatItem(
+                  p,
+                  Icons.medication_outlined,
+                  _t('Medications', 'الأدوية'),
+                  _t('2 Meds', '2 أدوية'),
+                ),
+              ),
+              Expanded(
+                child: _carePlanStatItem(
+                  p,
+                  Icons.assignment_outlined,
+                  _t('Instructions', 'التعليمات'),
+                  _t('5 Inst.', '5 تعليمات'),
+                ),
+              ),
+              Expanded(
+                child: _carePlanStatItem(
+                  p,
+                  Icons.flag_outlined,
+                  _t('Goals', 'الأهداف'),
+                  _t('3 Goals', '3 أهداف'),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
-            height: 44,
             child: OutlinedButton.icon(
               onPressed: () {}, // Future endpoint for full care plan
               icon: const Icon(Icons.chevron_left_rounded, size: 20),
               label: Text(_t('View Plan', 'عرض الخطة')),
               style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
                 foregroundColor: const Color(0xFF0E8A78),
                 side: const BorderSide(color: Color(0xFF0E8A78), width: 1.0),
                 shape: RoundedRectangleBorder(
@@ -834,18 +857,33 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
     );
   }
 
-  Widget _carePlanStatItem(CarelinkPalette p, IconData icon, String title, String subtitle) {
+  Widget _carePlanStatItem(
+    CarelinkPalette p,
+    IconData icon,
+    String title,
+    String subtitle,
+  ) {
     return Column(
       children: [
         Icon(icon, color: const Color(0xFF0E8A78), size: 24),
         const SizedBox(height: 8),
         Text(
           title,
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: p.inkDark),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: p.inkDark,
+          ),
         ),
         const SizedBox(height: 4),
         Text(
           subtitle,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
           style: TextStyle(fontSize: 11, color: p.inkMuted),
         ),
       ],
@@ -858,16 +896,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
   Widget _buildRecentCareActivities(CarelinkPalette p) {
     // Generate dummy activities based on latest records + bookings
     final activities = <Map<String, dynamic>>[];
-    
-    if (_latestVisitReport != null) {
-      activities.add({
-        'title': _t('New note', 'ملاحظة جديدة'),
-        'source': _latestVisitReport!['creatorName'] ?? _t('Provider', 'مقدم الرعاية'),
-        'date': _latestVisitReport!['createdAt'] ?? '',
-        'icon': Icons.note_alt_outlined,
-        'color': Colors.amber,
-      });
-    }
+
     if (_activeBookings.isNotEmpty) {
       activities.add({
         'title': _t('Status update', 'تحديث حالة'),
@@ -887,7 +916,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
       }
     }
 
-    if (activities.length == 0) return const SizedBox.shrink();
+    if (activities.isEmpty) return const SizedBox.shrink();
 
     return Container(
       width: double.infinity,
@@ -924,7 +953,11 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                           color: (act['color'] as Color).withValues(alpha: 0.1),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(act['icon'] as IconData, color: act['color'] as Color, size: 20),
+                        child: Icon(
+                          act['icon'] as IconData,
+                          color: act['color'] as Color,
+                          size: 20,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -933,7 +966,11 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                           children: [
                             Text(
                               act['title'] as String,
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: p.inkDark),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: p.inkDark,
+                              ),
                             ),
                             Text(
                               act['source'] as String,
@@ -947,7 +984,11 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                         children: [
                           Text(
                             '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF0E8A78)),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF0E8A78),
+                            ),
                           ),
                           Text(
                             '${dt.day} ${_t('May', 'مايو')} ${dt.year}', // Simple mock date for demo
@@ -956,13 +997,20 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                         ],
                       ),
                       const SizedBox(width: 8),
-                      Icon(Icons.chevron_right_rounded, color: p.inkMuted, size: 20),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: p.inkMuted,
+                        size: 20,
+                      ),
                     ],
                   ),
                   if (index < activities.length - 1)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Divider(color: p.stroke.withValues(alpha: 0.5), height: 1),
+                      child: Divider(
+                        color: p.stroke.withValues(alpha: 0.5),
+                        height: 1,
+                      ),
                     ),
                 ],
               );
@@ -1042,7 +1090,9 @@ class _ExpandableSectionCardState extends State<_ExpandableSectionCard> {
           const SizedBox(height: 10),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 200),
-            crossFadeState: _expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            crossFadeState: _expanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
             firstChild: Text(
               widget.content,
               maxLines: 2,
@@ -1069,7 +1119,7 @@ class _ExpandableSectionCardState extends State<_ExpandableSectionCard> {
             GestureDetector(
               onTap: () => setState(() => _expanded = !_expanded),
               child: Text(
-                _expanded 
+                _expanded
                     ? (isArabic ? 'إخفاء التفاصيل' : 'Show less')
                     : (isArabic ? 'عرض المزيد' : 'Show more'),
                 style: const TextStyle(
@@ -1079,10 +1129,9 @@ class _ExpandableSectionCardState extends State<_ExpandableSectionCard> {
                 ),
               ),
             ),
-          ]
+          ],
         ],
       ),
     );
   }
 }
-

@@ -141,10 +141,10 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                       Text(
                         context.tr('booking.success.title'),
                         textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: p.isDark
-                              ? p.inkDark
-                              : const Color(0xFF0F172A),
+                          color: p.isDark ? p.inkDark : const Color(0xFF0F172A),
                           fontSize: 25,
                           fontWeight: FontWeight.w900,
                           height: 1.22,
@@ -154,6 +154,8 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
                       Text(
                         context.tr('booking.success.subtitle'),
                         textAlign: TextAlign.center,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: p.isDark
                               ? p.inkMuted

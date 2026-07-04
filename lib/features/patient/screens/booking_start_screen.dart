@@ -166,6 +166,8 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
       appBar: PatientAppBar(
         titleWidget: Text(
           _isArabic ? 'احجز موعد' : 'Book Appointment',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: Color(0xFF0B7A75),
             fontSize: 23,
@@ -190,9 +192,11 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
             const SizedBox(height: 28),
             Text(
               _isArabic ? 'اختر مقدم الرعاية' : 'Choose Provider',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: p.inkDark,
-                fontSize: 30,
+                fontSize: 26,
                 height: 1.15,
                 fontWeight: FontWeight.w900,
               ),

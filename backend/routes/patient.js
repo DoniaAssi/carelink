@@ -2306,6 +2306,93 @@ router.delete('/appointments/:appointmentId', async (req, res) => {
   }
 });
 
+router.get('/appointments/:appointmentId/cancellation-summary', async (req, res) => {
+  const { appointmentId } = req.params;
+  const patientUserId = (req.query.patientUserId || '').toString().trim();
+  if (!patientUserId) {
+    return res.status(400).json({ error: 'patientUserId is required' });
+  }
+
+  try {
+    await reconcilePastPatientAppointments({ patientUserId, appointmentId });
+    const [rows] = await db.query(
+      `SELECT sr.status AS bookingStatus,
+              (sr.scheduledAt <= NOW()) AS appointmentPassed,
+              p.paymentId, p.amount, p.final_amount AS finalAmount,
+              p.paymentStatus, p.paymentMethod
+       FROM servicerequest sr
+       LEFT JOIN payment p ON BINARY p.requestId = BINARY sr.requestId
+       WHERE BINARY sr.requestId = BINARY ?
+         AND BINARY sr.patientUserId = BINARY ?`,
+      [appointmentId, patientUserId],
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Appointment not found' });
+
+    const current = rows[0];
+    const bookingStatus = (current.bookingStatus || '').toString().trim().toLowerCase();
+    if (['cancelled', 'canceled'].includes(bookingStatus)) {
+      return res.status(409).json({ error: 'Appointment is already cancelled' });
+    }
+    if (COMPLETED_BOOKING_STATUSES.has(bookingStatus)) {
+      return res.status(409).json({ error: 'Completed visits cannot be cancelled or refunded' });
+    }
+    if (Number(current.appointmentPassed) === 1 ||
+        ['expired', 'missed', 'pending_completion'].includes(bookingStatus)) {
+      return res.status(409).json({ error: 'This appointment can no longer be cancelled' });
+    }
+    if (!BEFORE_PROVIDER_APPROVAL_STATUSES.has(bookingStatus) &&
+        !AFTER_PROVIDER_APPROVAL_STATUSES.has(bookingStatus)) {
+      return res.status(409).json({
+        error: `Booking status '${bookingStatus || 'unknown'}' cannot be cancelled`,
+      });
+    }
+
+    const totalCents = Math.max(
+      0,
+      Math.round(Number(current.finalAmount ?? current.amount ?? 0) * 100),
+    );
+    const paid = Boolean(current.paymentId) &&
+      (current.paymentStatus || '').toString().trim().toLowerCase() === 'paid';
+    let refundCents = 0;
+    let feeCents = 0;
+    let explanation = 'No payment was captured for this booking.';
+    let explanationAr = 'لم يتم تحصيل أي دفعة لهذا الحجز.';
+    if (paid) {
+      const providerFeeCents = Math.round(totalCents * 0.10);
+      const platformFeeCents = Math.round(totalCents * 0.10);
+      feeCents = providerFeeCents + platformFeeCents;
+      refundCents = Math.max(0, totalCents - feeCents);
+      explanation = 'The refund and cancellation fee were calculated automatically under the platform cancellation policy.';
+      explanationAr = 'تم احتساب مبلغ الاسترداد ورسوم الإلغاء تلقائياً وفق سياسة الإلغاء الخاصة بالمنصة.';
+    }
+
+    const summary = {
+      appointmentId,
+      currency: process.env.PAYMENT_CURRENCY || 'ILS',
+      totalPaid: paid ? totalCents / 100 : 0,
+      refundAmount: refundCents / 100,
+      cancellationFee: feeCents / 100,
+      explanation,
+      explanationAr,
+      paymentMethod: current.paymentMethod || null,
+      refundDestination: paid
+        ? (current.paymentMethod || 'Original payment method')
+        : 'No payment method charged',
+    };
+    console.info('[CancellationSummary]', {
+      method: req.method,
+      url: req.originalUrl,
+      appointmentId,
+      patientUserId,
+      status: 200,
+      response: summary,
+    });
+    return res.json(summary);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.put('/appointments/:appointmentId/cancel', async (req, res) => {
   const { appointmentId } = req.params;
   const { patientUserId, reason } = req.body;

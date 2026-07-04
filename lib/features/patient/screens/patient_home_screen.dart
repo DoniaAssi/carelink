@@ -28,6 +28,7 @@ import 'package:carelink/features/ai/care_intent_parser.dart';
 import 'package:carelink/shared/services/medical_record_service.dart';
 import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
+import 'package:carelink/features/patient/widgets/visit_rating_dialog.dart';
 import 'package:carelink/features/patient/services/patient_care_summary.dart';
 import 'package:carelink/features/ai/provider_smart_match.dart';
 import 'booking_details_screen.dart';
@@ -1622,7 +1623,17 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                   ),
                   if (_ratingPromptAppointment != null &&
                       !_ratingBannerHiddenThisSession)
-                    _buildRatingBannerOverlay(_ratingPromptAppointment!),
+                    VisitRatingDialog(
+                      appointment: _ratingPromptAppointment!,
+                      isArabic: _ar,
+                      isSubmitting: _submittingPromptRating,
+                      onLater: _hideRatingBannerTemporarily,
+                      onSubmit: (stars, comment) => _submitPromptRating(
+                        _ratingPromptAppointment!,
+                        stars,
+                        comment: comment,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -2020,8 +2031,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
 
   Future<void> _submitPromptRating(
     AppointmentModel appointment,
-    int stars,
-  ) async {
+    int stars, {
+    String? comment,
+  }) async {
     final id = widget.userId?.trim();
     if (id == null || id.isEmpty) return;
     setState(() => _submittingPromptRating = true);
@@ -2030,6 +2042,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
         appointmentId: appointment.appointmentId,
         patientUserId: id,
         stars: stars,
+        comment: comment,
       );
       if (!mounted) return;
       setState(() {
@@ -2039,10 +2052,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _homeText(
-              'Thanks! Your rating was submitted.',
-              'شكراً! تم إرسال تقييمك.',
-            ),
+            _homeText('Thank you for your feedback', 'شكراً لمشاركة تقييمك'),
           ),
           behavior: SnackBarBehavior.floating,
         ),
@@ -2381,17 +2391,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
         InkWell(
           onTap: _openNotifications,
           customBorder: const CircleBorder(),
-          child: Container(
+          child: SizedBox(
             width: 42,
             height: 42,
-            decoration: BoxDecoration(
-              color: _p.surface,
-              shape: BoxShape.circle,
-              border: Border.all(color: _p.stroke),
-            ),
             child: Icon(
               Icons.notifications_none_rounded,
-              color: _p.inkDark,
+              color: AppColors.primary,
               size: 22,
             ),
           ),
@@ -2434,17 +2439,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
         );
       },
       customBorder: const CircleBorder(),
-      child: Container(
+      child: SizedBox(
         width: 42,
         height: 42,
-        decoration: BoxDecoration(
-          color: _p.surface,
-          shape: BoxShape.circle,
-          border: Border.all(color: _p.stroke),
-        ),
         child: Icon(
           Icons.chat_bubble_outline_rounded,
-          color: _p.inkDark,
+          color: AppColors.primary,
           size: 22,
         ),
       ),
@@ -2810,131 +2810,132 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
       child: LayoutBuilder(
         builder: (context, constraints) {
           final imageWidth = constraints.maxWidth < 350 ? 104.0 : 126.0;
-          return IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  width: imageWidth,
-                  child: ColoredBox(
-                    color: AppColors.primary.withValues(alpha: 0.09),
-                    child: profileAvatarOrPlaceholder(
-                      imageUrl: provider.profileImageUrl,
-                      size: imageWidth,
-                      placeholderColor: AppColors.primary,
-                      placeholderIcon: Icons.medical_services_outlined,
-                      iconSize: 44,
-                    ),
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: imageWidth,
+                child: ColoredBox(
+                  color: AppColors.primary.withValues(alpha: 0.09),
+                  child: profileAvatarOrPlaceholder(
+                    imageUrl: provider.profileImageUrl,
+                    size: imageWidth,
+                    placeholderColor: AppColors.primary,
+                    placeholderIcon: Icons.medical_services_outlined,
+                    iconSize: 44,
                   ),
                 ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.workspace_premium_rounded,
-                              size: 16,
-                              color: AppColors.primary,
-                            ),
-                            const SizedBox(width: 5),
-                            Expanded(
-                              child: Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: AppColors.primary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 9),
-                        Text(
-                          name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: _p.inkDark,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.workspace_premium_rounded,
+                            size: 16,
+                            color: AppColors.primary,
                           ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          service,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: _p.inkMuted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 4,
-                          children: [
-                            _homeProviderMeta(
-                              Icons.star_rounded,
-                              provider.overallRating.toStringAsFixed(1),
-                              const Color(0xFFFFB020),
-                            ),
-                            _homeProviderMeta(
-                              Icons.circle,
-                              provider.isAvailable
-                                  ? context.tr('patient.home.availableToday')
-                                  : _homeText('By appointment', 'حسب الموعد'),
-                              provider.isAvailable
-                                  ? const Color(0xFF21A35B)
-                                  : _p.inkMuted,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 38,
-                          child: FilledButton(
-                            onPressed: onTap,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
+                          const SizedBox(width: 5),
+                          Expanded(
                             child: Text(
-                              actionLabel,
+                              title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
+                                color: AppColors.primary,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 9),
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _p.inkDark,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        service,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _p.inkMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 4,
+                        children: [
+                          _homeProviderMeta(
+                            Icons.star_rounded,
+                            provider.overallRating.toStringAsFixed(1),
+                            const Color(0xFFFFB020),
+                          ),
+                          _homeProviderMeta(
+                            Icons.circle,
+                            provider.isAvailable
+                                ? context.tr('patient.home.availableToday')
+                                : _homeText('By appointment', 'حسب الموعد'),
+                            provider.isAvailable
+                                ? const Color(0xFF21A35B)
+                                : _p.inkMuted,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: onTap,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 7,
+                            ),
+                            minimumSize: const Size.fromHeight(34),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            actionLabel,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           );
         },
       ),
@@ -3308,7 +3309,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
             width: double.infinity,
             height: 38,
             child: FilledButton(
-              onPressed: () => _bookProvider(provider),
+              onPressed: () => _openProviderDetails(provider),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -4558,7 +4559,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
             height: 38,
             width: double.infinity,
             child: FilledButton(
-              onPressed: () => _bookProvider(provider),
+              onPressed: () => _openProviderDetails(provider),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -6633,6 +6634,28 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   }
 
   void _bookProvider(ProviderModel provider) {
+    final patientId = widget.userId?.trim() ?? '';
+    if (patientId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _homeText('Please sign in first.', 'يرجى تسجيل الدخول أولاً.'),
+          ),
+        ),
+      );
+      return;
+    }
+    final request = BookingServiceHelper.createRequestForProvider(
+      provider: provider,
+      patientId: patientId,
+    );
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => BookingScreen(request: request)),
+    );
+  }
+
+  void _openProviderDetails(ProviderModel provider) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -6892,7 +6915,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _bookProvider(provider),
+        onTap: () => _openProviderDetails(provider),
         borderRadius: BorderRadius.circular(16),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 360),

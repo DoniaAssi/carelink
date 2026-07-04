@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:pinput/pinput.dart';
 
 import 'package:carelink/core/app_colors.dart';
@@ -19,6 +20,7 @@ import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/auth_service.dart';
 import 'package:carelink/shared/widgets/carelink_brand_logo.dart';
 import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
+import 'package:carelink/shared/widgets/carelink_responsive.dart';
 import 'package:carelink/features/auth/registration/getx/signup_location_picker_screen.dart';
 
 class Country {
@@ -272,9 +274,13 @@ class _SignupScreenState extends State<SignupScreen> {
   int _resendSecondsRemaining = 0;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  Uint8List? _profilePhotoBytes;
 
   bool get _isDark => themeController.isDark;
   bool get _showLegacyDoctorSpecialtyField => false;
+
+  double get _responsiveFontScale =>
+      MediaQuery.sizeOf(context).width < 360 ? 0.92 : 1;
 
   @override
   void initState() {
@@ -599,7 +605,6 @@ class _SignupScreenState extends State<SignupScreen> {
     return Padding(
       padding: const EdgeInsets.only(top: 4, bottom: 2),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             isMet
@@ -609,12 +614,15 @@ class _SignupScreenState extends State<SignupScreen> {
             color: isMet ? Colors.green.shade600 : p.inkMuted,
           ),
           const SizedBox(width: 6),
-          Text(
-            text,
-            style: GoogleFonts.inter(
-              fontSize: 12.5,
-              color: isMet ? Colors.green.shade700 : p.inkMuted,
-              fontWeight: isMet ? FontWeight.bold : FontWeight.normal,
+          Expanded(
+            child: Text(
+              text,
+              softWrap: true,
+              style: GoogleFonts.inter(
+                fontSize: 12.5 * _responsiveFontScale,
+                color: isMet ? Colors.green.shade700 : p.inkMuted,
+                fontWeight: isMet ? FontWeight.bold : FontWeight.normal,
+              ),
             ),
           ),
         ],
@@ -1185,74 +1193,71 @@ class _SignupScreenState extends State<SignupScreen> {
     return Column(
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(steps.length, (index) {
+          children: List.generate(steps.length * 2 - 1, (itemIndex) {
+            if (itemIndex.isOdd) {
+              final index = itemIndex ~/ 2;
+              return Expanded(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 6),
+                  height: 2,
+                  color: _stepIndex > index ? AppColors.primary : p.stroke,
+                ),
+              );
+            }
+            final index = itemIndex ~/ 2;
             final isCompleted = _stepIndex > index;
             final isCurrent = _stepIndex == index;
-            return Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isCompleted
-                          ? AppColors.primary
-                          : (isCurrent ? AppColors.primary : p.stroke),
-                      border: isCurrent
-                          ? Border.all(color: Colors.white, width: 2)
-                          : null,
-                    ),
-                    child: Center(
-                      child: isCompleted
-                          ? const Icon(
-                              Icons.check,
-                              size: 16,
-                              color: Colors.white,
-                            )
-                          : Text(
-                              '${index + 1}',
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: isCurrent || isCompleted
-                                    ? Colors.white
-                                    : p.inkMuted,
-                              ),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      steps[index],
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: isCurrent
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        color: isCurrent ? p.inkDark : p.inkMuted,
+            return Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isCompleted || isCurrent ? AppColors.primary : p.stroke,
+                border: isCurrent
+                    ? Border.all(color: Colors.white, width: 2)
+                    : null,
+              ),
+              child: Center(
+                child: isCompleted
+                    ? const Icon(Icons.check, size: 16, color: Colors.white)
+                    : Text(
+                        '${index + 1}',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: isCurrent || isCompleted
+                              ? Colors.white
+                              : p.inkMuted,
+                        ),
                       ),
-                    ),
-                  ),
-                  if (index < steps.length - 1)
-                    Expanded(
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
-                        height: 2,
-                        color: _stepIndex > index
-                            ? AppColors.primary
-                            : p.stroke,
-                      ),
-                    ),
-                ],
               ),
             );
           }),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: List.generate(
+            steps.length,
+            (index) => Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Text(
+                  steps[index],
+                  textAlign: TextAlign.center,
+                  softWrap: true,
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5 * _responsiveFontScale,
+                    height: 1.25,
+                    fontWeight: _stepIndex == index
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                    color: _stepIndex == index ? p.inkDark : p.inkMuted,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
         const SizedBox(height: 16),
         LinearProgressIndicator(
@@ -1272,6 +1277,10 @@ class _SignupScreenState extends State<SignupScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_selectedRole == 'patient') ...[
+            _buildProfilePhotoPicker(p),
+            const SizedBox(height: 18),
+          ],
           // Name Field
           _buildTextField(
             p,
@@ -1559,6 +1568,112 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
+  Future<void> _pickProfilePhoto() async {
+    try {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 82,
+        maxWidth: 1200,
+      );
+      if (image == null) return;
+      final bytes = await image.readAsBytes();
+      if (!mounted) return;
+      setState(() => _profilePhotoBytes = bytes);
+    } catch (_) {
+      if (mounted) {
+        _showMessage(
+          CarelinkL10n.of(context).isArabic
+              ? 'تعذّر اختيار الصورة'
+              : 'Could not select the photo',
+          color: Colors.red.shade700,
+        );
+      }
+    }
+  }
+
+  Widget _buildProfilePhotoPicker(CarelinkPalette p) {
+    final isAr = CarelinkL10n.of(context).isArabic;
+    return Semantics(
+      button: true,
+      label: isAr
+          ? 'اختيار صورة شخصية اختيارية'
+          : 'Choose an optional profile photo',
+      child: InkWell(
+        onTap: _pickProfilePhoto,
+        borderRadius: BorderRadius.circular(60),
+        child: Column(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 92,
+                  height: 92,
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: p.surface,
+                    border: Border.all(color: AppColors.primary, width: 2),
+                  ),
+                  child: ClipOval(
+                    child: _profilePhotoBytes == null
+                        ? Container(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            child: const Icon(
+                              Icons.person_rounded,
+                              size: 50,
+                              color: AppColors.primary,
+                            ),
+                          )
+                        : Image.memory(
+                            _profilePhotoBytes!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(
+                                  Icons.person_rounded,
+                                  size: 50,
+                                  color: AppColors.primary,
+                                ),
+                          ),
+                  ),
+                ),
+                PositionedDirectional(
+                  end: -2,
+                  bottom: 2,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.primary,
+                      border: Border.all(color: p.surface, width: 3),
+                    ),
+                    child: const Icon(
+                      Icons.camera_alt_rounded,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isAr ? 'الصورة الشخصية (اختيارية)' : 'Profile photo (optional)',
+              textAlign: TextAlign.center,
+              softWrap: true,
+              style: GoogleFonts.inter(
+                fontSize: 12.5 * _responsiveFontScale,
+                color: p.inkMuted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildFieldWrapper(
     CarelinkPalette p, {
     required String label,
@@ -1572,7 +1687,7 @@ class _SignupScreenState extends State<SignupScreen> {
           Text(
             label,
             style: GoogleFonts.inter(
-              fontSize: 13,
+              fontSize: 13 * _responsiveFontScale,
               fontWeight: FontWeight.bold,
               color: p.inkDark,
             ),
@@ -1611,7 +1726,7 @@ class _SignupScreenState extends State<SignupScreen> {
         inputFormatters: formatters,
         style: GoogleFonts.inter(
           color: p.inkDark,
-          fontSize: 15,
+          fontSize: 15 * _responsiveFontScale,
           fontWeight: FontWeight.w500,
         ),
         cursorColor: AppColors.primary,
@@ -1620,7 +1735,7 @@ class _SignupScreenState extends State<SignupScreen> {
           hintStyle: GoogleFonts.inter(
             color: p.inkMuted,
             fontWeight: FontWeight.w500,
-            fontSize: 14.5,
+            fontSize: 14.5 * _responsiveFontScale,
           ),
           prefixIcon: Icon(icon, color: p.inkMuted, size: 22),
           suffixIcon: suffixIcon,
@@ -1654,7 +1769,7 @@ class _SignupScreenState extends State<SignupScreen> {
             borderSide: BorderSide(color: Colors.red.shade600, width: 1.5),
           ),
           errorStyle: GoogleFonts.inter(
-            fontSize: 12,
+            fontSize: 12 * _responsiveFontScale,
             color: Colors.red.shade600,
           ),
         ),
@@ -2489,109 +2604,117 @@ class _SignupScreenState extends State<SignupScreen> {
     final viewInsets = MediaQuery.viewInsetsOf(context).bottom;
     final isAr = CarelinkL10n.of(context).isArabic;
 
-    return Scaffold(
-      backgroundColor: p.pageBg,
-      resizeToAvoidBottomInset: true,
-      body: Directionality(
-        textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-        child: Stack(
-          children: [
-            // Healthcare background custom painter
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _SignupBackdropPainter(isDark: _isDark),
+    return CarelinkResponsiveScope(
+      child: Scaffold(
+        backgroundColor: p.pageBg,
+        resizeToAvoidBottomInset: true,
+        body: Directionality(
+          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+          child: Stack(
+            children: [
+              // Healthcare background custom painter
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _SignupBackdropPainter(isDark: _isDark),
+                ),
               ),
-            ),
 
-            SafeArea(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Custom Back Button Header
-                  SizedBox(
-                    height: 56,
-                    child: Row(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: IconButton(
-                            icon: const Icon(Icons.arrow_back_rounded),
-                            color: p.inkDark,
-                            onPressed: () {
-                              if (_stepIndex > 0) {
-                                setState(() {
-                                  _stepIndex--;
-                                });
-                              } else {
-                                Navigator.pop(context);
-                              }
-                            },
-                          ),
-                        ),
-                        const Spacer(),
-                        const CarelinkBrandLogo(height: 28),
-                        const Spacer(),
-                        PatientHeaderActions(color: AppColors.primary),
-                        const SizedBox(width: 8),
-                      ],
-                    ),
-                  ),
-
-                  // Form Container Card
-                  Expanded(
-                    child: Center(
-                      child: SingleChildScrollView(
-                        padding: EdgeInsets.fromLTRB(
-                          20,
-                          0,
-                          20,
-                          20 + viewInsets,
-                        ),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 460),
-                          child: Container(
-                            padding: const EdgeInsets.all(24),
-                            decoration: BoxDecoration(
-                              color: p.surface.withValues(
-                                alpha: _isDark ? 0.94 : 1.0,
-                              ),
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(
-                                color: p.stroke.withValues(alpha: 0.7),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(
-                                    alpha: _isDark ? 0.4 : 0.06,
-                                  ),
-                                  blurRadius: 36,
-                                  offset: const Offset(0, 16),
-                                ),
-                              ],
+              SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Custom Back Button Header
+                    SizedBox(
+                      height: 56,
+                      child: Row(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: IconButton(
+                              icon: const Icon(Icons.arrow_back_rounded),
+                              color: p.inkDark,
+                              onPressed: () {
+                                if (_stepIndex > 0) {
+                                  setState(() {
+                                    _stepIndex--;
+                                  });
+                                } else {
+                                  Navigator.pop(context);
+                                }
+                              },
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _buildStepIndicator(p),
-                                const SizedBox(height: 24),
-                                if (_stepIndex == 0)
-                                  _buildStep1BasicInfo(p)
-                                else if (_stepIndex == 1)
-                                  _buildStep2RoleDetails(p)
-                                else if (_stepIndex == 2)
-                                  _buildStep3VerifyOtp(p),
-                              ],
+                          ),
+                          const Spacer(),
+                          const CarelinkBrandLogo(height: 28),
+                          const Spacer(),
+                          PatientHeaderActions(color: AppColors.primary),
+                          const SizedBox(width: 8),
+                        ],
+                      ),
+                    ),
+
+                    // Form Container Card
+                    Expanded(
+                      child: Center(
+                        child: SingleChildScrollView(
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: EdgeInsets.fromLTRB(
+                            CarelinkResponsiveScope.horizontalPadding(context),
+                            0,
+                            CarelinkResponsiveScope.horizontalPadding(context),
+                            20 + viewInsets,
+                          ),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 460),
+                            child: Container(
+                              padding: EdgeInsets.all(
+                                CarelinkResponsiveScope.isCompact(context)
+                                    ? 18
+                                    : 24,
+                              ),
+                              decoration: BoxDecoration(
+                                color: p.surface.withValues(
+                                  alpha: _isDark ? 0.94 : 1.0,
+                                ),
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                  color: p.stroke.withValues(alpha: 0.7),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(
+                                      alpha: _isDark ? 0.4 : 0.06,
+                                    ),
+                                    blurRadius: 36,
+                                    offset: const Offset(0, 16),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _buildStepIndicator(p),
+                                  const SizedBox(height: 24),
+                                  if (_stepIndex == 0)
+                                    _buildStep1BasicInfo(p)
+                                  else if (_stepIndex == 1)
+                                    _buildStep2RoleDetails(p)
+                                  else if (_stepIndex == 2)
+                                    _buildStep3VerifyOtp(p),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

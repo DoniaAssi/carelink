@@ -250,6 +250,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
         appBar: PatientAppBar(
           titleWidget: Text(
             _t('Messages', 'الرسائل'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: Color(0xFF0F766E),
               fontSize: 23,

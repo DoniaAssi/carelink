@@ -181,6 +181,18 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
   Future<void> _cancel() async {
     setState(() => isCancelling = true);
+    final isAr = localeController.isArabic;
+    unawaited(
+      _showPremiumCancellationModal<void>(
+        barrierDismissible: false,
+        builder: (_) => _cancellationStateDialog(
+          icon: Icons.hourglass_top_rounded,
+          color: const Color(0xFFD93636),
+          title: isAr ? 'جارٍ إلغاء الحجز...' : 'Cancelling booking...',
+          loading: true,
+        ),
+      ),
+    );
     try {
       final result = await _api.cancelAppointment(
         appointmentId: widget.appointmentId,
@@ -188,24 +200,57 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         reason: 'Cancelled from mobile app',
       );
       if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
       final refundApplied = result['refundApplied'] == true;
       final refundAmount = double.tryParse(
         (result['refundAmount'] ?? '').toString(),
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            refundApplied && refundAmount != null
-                ? 'Booking cancelled. Refund: ${refundAmount.toStringAsFixed(2)} ILS.'
-                : 'Appointment cancelled successfully',
-          ),
+      final currency = (result['currency'] ?? 'ILS').toString();
+      await _showPremiumCancellationModal<void>(
+        barrierDismissible: false,
+        builder: (dialogContext) => _cancellationStateDialog(
+          icon: Icons.check_rounded,
+          color: const Color(0xFF22A06B),
+          title: isAr ? 'تم إلغاء الحجز' : 'Booking Cancelled',
+          subtitle: isAr
+              ? 'تم إلغاء حجزك بنجاح.'
+              : 'Your booking has been cancelled successfully.',
+          details: refundApplied && refundAmount != null
+              ? [
+                  (
+                    isAr ? 'الاسترداد' : 'Refund',
+                    '${refundAmount.toStringAsFixed(2)} $currency',
+                  ),
+                  (
+                    isAr ? 'موعد الوصول المتوقع' : 'Estimated arrival',
+                    isAr ? '3–5 أيام عمل' : '3–5 business days',
+                  ),
+                ]
+              : null,
+          buttonLabel: isAr ? 'تم' : 'Done',
+          onPressed: () => Navigator.pop(dialogContext),
         ),
       );
       await _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.userMessage(e))),
+      Navigator.of(context, rootNavigator: true).pop();
+      final reason = _cancellationFailureReason(e, isAr);
+      await _showPremiumCancellationModal<void>(
+        barrierDismissible: false,
+        builder: (dialogContext) => _cancellationStateDialog(
+          icon: Icons.close_rounded,
+          color: const Color(0xFFD93636),
+          title: isAr ? 'فشل الإلغاء' : 'Cancellation Failed',
+          subtitle: reason,
+          secondaryLabel: isAr ? 'إغلاق' : 'Close',
+          onSecondary: () => Navigator.pop(dialogContext),
+          buttonLabel: isAr ? 'إعادة المحاولة' : 'Retry',
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            _cancel();
+          },
+        ),
       );
     } finally {
       if (mounted) setState(() => isCancelling = false);
@@ -1373,15 +1418,15 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
               : 'No automatic refund applies to a missed appointment; payment remains held for admin review.')
         : hasRetainedCancellationShares
         ? (isAr
-              ? 'سياسة الاسترجاع: استرداد 80٪، و10٪ لمقدم الخدمة، و10٪ للمنصة.'
-              : 'Refund Policy: 80% refund, 10% to the provider, and 10% to the platform.')
+              ? 'تم احتساب الاسترداد وفق سياسة الإلغاء الخاصة بالمنصة.'
+              : 'The refund was calculated according to the platform cancellation policy.')
         : hasRefundedPayment && isExpiredRequest
         ? (isAr
               ? 'سياسة الاسترجاع: استرداد كامل لانتهاء الطلب دون موافقة مقدم الخدمة.'
               : 'Refund Policy: Full refund because the request expired without provider approval.')
         : (isAr
-              ? 'سياسة الاسترجاع: استرداد 80٪، و10٪ لمقدم الخدمة، و10٪ للمنصة.'
-              : 'Refund Policy: 80% refund, 10% to the provider, and 10% to the platform.');
+              ? 'يتم احتساب أي استرداد وفق سياسة الإلغاء الخاصة بالمنصة.'
+              : 'Any refund is calculated according to the platform cancellation policy.');
 
     final st = _ledgerPaymentStatus(appointment!);
 
@@ -1966,82 +2011,526 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
   Future<void> _showCancelConfirmationDialog() async {
     final isAr = localeController.isArabic;
-    final p = CarelinkPalette.of(context);
-    final refundPolicy = isAr
-        ? 'ستحصل على استرداد بنسبة 80٪. تذهب 10٪ لمقدم الخدمة و10٪ للمنصة.'
-        : 'You will receive an 80% refund. 10% goes to the provider and 10% to the platform.';
-    return showDialog<void>(
-      context: context,
+    final shouldContinue = await _showPremiumCancellationModal<bool>(
       barrierDismissible: true,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          backgroundColor: p.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+      builder: (dialogContext) {
+        return _cancellationDialog(
+          icon: Icons.warning_amber_rounded,
+          title: isAr ? 'إلغاء الحجز؟' : 'Cancel Booking?',
+          subtitle: isAr
+              ? 'هل أنت متأكد من أنك تريد إلغاء هذا الحجز؟'
+              : 'Are you sure you want to cancel this booking?',
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _cancellationInfoCard(isAr),
+              const SizedBox(height: 12),
+              _refundPreviewFallback(isAr),
+            ],
           ),
-          title: Text(
-            isAr ? 'إلغاء الحجز؟' : 'Cancel Booking?',
-            style: TextStyle(
-              color: p.inkDark,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
-          ),
-          content: Text(
-            '${isAr ? 'هل أنت متأكد من أنك تريد إلغاء هذا الحجز؟ لا يمكن التراجع عن هذا الإجراء.' : 'Are you sure you want to cancel this booking? This action cannot be undone.'}\n\n$refundPolicy',
-            style: TextStyle(color: p.inkMuted, fontSize: 14, height: 1.4),
-          ),
-          actions: <Widget>[
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                side: BorderSide(color: p.stroke),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: Text(
-                isAr ? 'الاحتفاظ بالحجز' : 'Keep Booking',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-              },
-            ),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFD93636),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-              ),
-              icon: const Icon(Icons.delete_outline_rounded, size: 18),
-              label: Text(
-                isAr ? 'نعم، إلغاء الحجز' : 'Yes, Cancel',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                _cancel();
-              },
-            ),
-          ],
+          secondaryLabel: isAr ? 'الاحتفاظ بالحجز' : 'Keep Booking',
+          primaryLabel: isAr ? 'متابعة' : 'Continue',
+          onSecondary: () => Navigator.pop(dialogContext, false),
+          onPrimary: () => Navigator.pop(dialogContext, true),
         );
       },
+    );
+    if (shouldContinue != true || !mounted) return;
+
+    setState(() => isCancelling = true);
+    Map<String, dynamic> summary;
+    try {
+      summary = await _api.getCancellationSummary(
+        appointmentId: widget.appointmentId,
+        patientUserId: widget.patientUserId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final reason = _cancellationFailureReason(e, isAr);
+      await _showPremiumCancellationModal<void>(
+        barrierDismissible: false,
+        builder: (dialogContext) => _cancellationStateDialog(
+          icon: Icons.close_rounded,
+          color: const Color(0xFFD93636),
+          title: isAr ? 'تعذر تحميل ملخص الإلغاء' : 'Cancellation Failed',
+          subtitle: reason,
+          secondaryLabel: isAr ? 'إغلاق' : 'Close',
+          onSecondary: () => Navigator.pop(dialogContext),
+          buttonLabel: isAr ? 'إعادة المحاولة' : 'Retry',
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            _showCancelConfirmationDialog();
+          },
+        ),
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => isCancelling = false);
+    }
+    if (!mounted) return;
+
+    final confirmed = await _showPremiumCancellationModal<bool>(
+      barrierDismissible: false,
+      builder: (dialogContext) => _cancellationDialog(
+        icon: Icons.receipt_long_rounded,
+        title: isAr ? 'ملخص الإلغاء' : 'Cancellation Summary',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _summaryRow(
+              isAr ? 'مبلغ الاسترداد' : 'Refund amount',
+              _summaryMoney(summary, 'refundAmount'),
+              Icons.account_balance_wallet_outlined,
+            ),
+            _summaryRow(
+              isAr ? 'رسوم الإلغاء' : 'Cancellation fee',
+              _summaryMoney(summary, 'cancellationFee'),
+              Icons.money_off_csred_outlined,
+            ),
+            _summaryRow(
+              isAr ? 'وجهة الاسترداد' : 'Refund destination',
+              (summary['refundDestination'] ?? '—').toString(),
+              Icons.credit_card_rounded,
+            ),
+            const SizedBox(height: 12),
+            _summaryExplanation(
+              (summary[isAr ? 'explanationAr' : 'explanation'] ?? '—')
+                  .toString(),
+            ),
+          ],
+        ),
+        secondaryLabel: isAr ? 'رجوع' : 'Back',
+        primaryLabel: isAr ? 'تأكيد الإلغاء' : 'Confirm Cancellation',
+        onSecondary: () => Navigator.pop(dialogContext, false),
+        onPrimary: () => Navigator.pop(dialogContext, true),
+      ),
+    );
+    if (!mounted) return;
+    if (confirmed == true) {
+      await _cancel();
+    } else if (confirmed == false) {
+      await _showCancelConfirmationDialog();
+    }
+  }
+
+  String _summaryMoney(Map<String, dynamic> summary, String key) {
+    final raw = summary[key];
+    if (raw == null) return '—';
+    final amount = num.tryParse(raw.toString());
+    final value = amount == null ? raw.toString() : amount.toStringAsFixed(2);
+    final currency = (summary['currency'] ?? '').toString().trim();
+    return currency.isEmpty ? value : '$value $currency';
+  }
+
+  String _cancellationFailureReason(Object error, bool isAr) {
+    final raw = error
+        .toString()
+        .replaceFirst(RegExp(r'^(Exception|ApiServiceException):\s*'), '')
+        .trim();
+    if (raw.isNotEmpty) return raw;
+    return isAr
+        ? 'حدث خطأ ما. يرجى المحاولة مرة أخرى.'
+        : 'Something went wrong. Please try again.';
+  }
+
+  Widget _summaryRow(String label, String value, IconData icon) {
+    final p = CarelinkPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.primary, size: 21),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(label, style: TextStyle(color: p.inkMuted)),
+          ),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: TextStyle(color: p.inkDark, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryExplanation(String text) {
+    final p = CarelinkPalette.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Text(text, style: TextStyle(color: p.inkMuted, height: 1.4)),
+    );
+  }
+
+  Widget _cancellationInfoCard(bool isAr) {
+    final p = CarelinkPalette.of(context);
+    final bullets = isAr
+        ? const [
+            'سيتم احتساب رسوم الإلغاء تلقائياً عند انطباقها.',
+            'سيظهر مبلغ الاسترداد قبل التأكيد.',
+            'لا يمكن التراجع عن هذا الإجراء.',
+          ]
+        : const [
+            'Cancellation fees (if applicable) will be calculated automatically.',
+            'Your refund amount will be shown before confirmation.',
+            'This action cannot be undone.',
+          ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: p.surfaceSoft,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: p.stroke.withValues(alpha: .7)),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < bullets.length; i++) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Icon(Icons.circle, size: 6, color: Color(0xFFD93636)),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    bullets[i],
+                    style: TextStyle(color: p.inkMuted, height: 1.4),
+                  ),
+                ),
+              ],
+            ),
+            if (i < bullets.length - 1) const SizedBox(height: 9),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _refundPreviewFallback(bool isAr) {
+    final p = CarelinkPalette.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: .07),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.account_balance_wallet_outlined,
+            color: AppColors.primary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              isAr
+                  ? 'سيتم احتساب مبلغ الاسترداد تلقائياً.'
+                  : 'Refund amount will be calculated automatically.',
+              style: TextStyle(color: p.inkDark, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<T?> _showPremiumCancellationModal<T>({
+    required WidgetBuilder builder,
+    required bool barrierDismissible,
+  }) {
+    return showGeneralDialog<T>(
+      context: context,
+      barrierDismissible: barrierDismissible,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.black.withValues(alpha: .35),
+      transitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: .92, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _cancellationStateDialog({
+    required IconData icon,
+    required Color color,
+    required String title,
+    String? subtitle,
+    List<(String, String)>? details,
+    bool loading = false,
+    String? secondaryLabel,
+    VoidCallback? onSecondary,
+    String? buttonLabel,
+    VoidCallback? onPressed,
+  }) {
+    final p = CarelinkPalette.of(context);
+    final width = (MediaQuery.sizeOf(context).width * .88).clamp(0.0, 440.0);
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+      child: Container(
+        width: width,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: p.surface,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: p.isDark ? .30 : .14),
+              blurRadius: 32,
+              offset: const Offset(0, 14),
+            ),
+          ],
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TweenAnimationBuilder<double>(
+                tween: Tween(begin: .7, end: 1),
+                duration: const Duration(milliseconds: 360),
+                curve: Curves.easeOutBack,
+                builder: (context, value, child) =>
+                    Transform.scale(scale: value, child: child),
+                child: Container(
+                  width: 70,
+                  height: 70,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: .12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: loading
+                      ? Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: color,
+                          ),
+                        )
+                      : Icon(icon, color: color, size: 38),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: p.inkDark,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: p.inkMuted, height: 1.45),
+                ),
+              ],
+              if (details != null && details.isNotEmpty) ...[
+                const SizedBox(height: 18),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: p.surfaceSoft,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    children: [
+                      for (final detail in details)
+                        _summaryRow(
+                          detail.$1,
+                          detail.$2,
+                          Icons.check_circle_outline_rounded,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+              if (!loading && buttonLabel != null) ...[
+                const SizedBox(height: 22),
+                Row(
+                  children: [
+                    if (secondaryLabel != null) ...[
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: onSecondary,
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(52),
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(color: AppColors.primary),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: Text(secondaryLabel),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: onPressed,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          backgroundColor: color,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: Text(buttonLabel, textAlign: TextAlign.center),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _cancellationDialog({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required Widget content,
+    required String secondaryLabel,
+    required String primaryLabel,
+    required VoidCallback onSecondary,
+    required VoidCallback onPrimary,
+  }) {
+    final p = CarelinkPalette.of(context);
+    const danger = Color(0xFFD93636);
+    final dialogWidth = (MediaQuery.sizeOf(context).width * .88).clamp(
+      0.0,
+      460.0,
+    );
+    return Dialog(
+      backgroundColor: p.surface,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      elevation: 0,
+      child: Container(
+        width: dialogWidth,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * .88,
+        ),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: p.surface,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: p.isDark ? .28 : .12),
+              blurRadius: 30,
+              offset: const Offset(0, 14),
+            ),
+          ],
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: danger.withValues(alpha: .10),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: danger, size: 29),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: p.inkDark,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: p.inkMuted,
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              DefaultTextStyle(
+                style: TextStyle(color: p.inkMuted, fontSize: 14, height: 1.45),
+                textAlign: TextAlign.center,
+                child: content,
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: onSecondary,
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(secondaryLabel, textAlign: TextAlign.center),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: onPrimary,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                        backgroundColor: danger,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(primaryLabel, textAlign: TextAlign.center),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -2106,16 +2595,14 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.tr('patient.rating.thanks')),
-        ),
+        SnackBar(content: Text(context.tr('patient.rating.thanks'))),
       );
       await _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.l10n.userMessage(e))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(context.l10n.userMessage(e))));
       }
     } finally {
       if (mounted) setState(() => _ratingBusy = false);

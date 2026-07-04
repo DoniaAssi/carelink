@@ -142,6 +142,8 @@ class _PatientNavigationShellState extends State<PatientNavigationShell> {
   }
 
   Widget _buildFloatingBottomNav(CarelinkPalette p) {
+    final compact = MediaQuery.sizeOf(context).width < 360;
+    final navHeight = compact ? 62.0 : 68.0;
     final items = [
       _PatientNavItem(
         icon: Icons.home_rounded,
@@ -173,8 +175,8 @@ class _PatientNavigationShellState extends State<PatientNavigationShell> {
     return SafeArea(
       top: false,
       child: Container(
-        height: 68,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        height: navHeight,
+        margin: EdgeInsets.fromLTRB(compact ? 8 : 16, 0, compact ? 8 : 16, 12),
         decoration: BoxDecoration(
           color: p.isDark ? p.navBackground : Colors.white,
           borderRadius: BorderRadius.circular(34),
@@ -193,11 +195,12 @@ class _PatientNavigationShellState extends State<PatientNavigationShell> {
             final visualIndex = _isArabic
                 ? count - 1 - currentIndex
                 : currentIndex;
-            
+
             // Smaller pill width for elegance
             final pillWidth = itemWidth * 0.75;
-            final pillHeight = 48.0;
-            final leftOffset = (visualIndex * itemWidth) + ((itemWidth - pillWidth) / 2);
+            final pillHeight = compact ? 44.0 : 48.0;
+            final leftOffset =
+                (visualIndex * itemWidth) + ((itemWidth - pillWidth) / 2);
 
             return Stack(
               alignment: Alignment.center,
@@ -206,14 +209,14 @@ class _PatientNavigationShellState extends State<PatientNavigationShell> {
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeOutCubic,
                   left: leftOffset,
-                  top: (68 - pillHeight) / 2,
+                  top: (navHeight - pillHeight) / 2,
                   width: pillWidth,
                   height: pillHeight,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0F766E).withValues(
-                        alpha: p.isDark ? 0.15 : 0.08,
-                      ),
+                      color: const Color(
+                        0xFF0F766E,
+                      ).withValues(alpha: p.isDark ? 0.15 : 0.08),
                       borderRadius: BorderRadius.circular(24),
                     ),
                   ),
