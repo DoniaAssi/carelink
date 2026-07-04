@@ -1006,6 +1006,9 @@ router.get('/requests', async (req, res) => {
 
   try {
     const initialDiagnosisSelect = await initialDiagnosisSelectSql();
+    const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
+    const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
+    const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
 
     let query = `
       SELECT 
@@ -1021,6 +1024,9 @@ router.get('/requests', async (req, res) => {
         sr.completedAt,
         sr.patientUserId,
         sr.providerUserId,
+        ${hasVisitLatitude ? 'sr.visitLatitude' : 'NULL AS visitLatitude'},
+        ${hasVisitLongitude ? 'sr.visitLongitude' : 'NULL AS visitLongitude'},
+        ${hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress"},
         u.fullName as patientName,
         u.phone as patientPhone,
         u.email as patientEmail,
@@ -1095,6 +1101,9 @@ router.get('/requests/:requestId', async (req, res) => {
 
   try {
     const initialDiagnosisSelect = await initialDiagnosisSelectSql();
+    const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
+    const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
+    const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
 
     const [rows] = await db.query(
       `
@@ -1111,6 +1120,9 @@ router.get('/requests/:requestId', async (req, res) => {
         sr.completedAt,
         sr.patientUserId,
         sr.providerUserId,
+        ${hasVisitLatitude ? 'sr.visitLatitude' : 'NULL AS visitLatitude'},
+        ${hasVisitLongitude ? 'sr.visitLongitude' : 'NULL AS visitLongitude'},
+        ${hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress"},
         u.fullName as patientName,
         u.phone as patientPhone,
         u.email as patientEmail,

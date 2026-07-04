@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/app_colors.dart';
 import '../../../services/doctor_service.dart';
 import 'doctor_ui_constants.dart';
+import 'doctor_visit_tracking_screen.dart';
 import 'initial_diagnosis_report_screen.dart';
 import 'medical_record_screen.dart';
 import 'medical_report_form.dart';
@@ -357,9 +358,9 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
     return result;
   }
 
-  Future<void> _completeRequest(dynamic request) async {
+  Future<bool> _completeRequest(dynamic request) async {
     final requestId = _requestIdOf(request);
-    if (requestId.isEmpty || _busyRequestId != null) return;
+    if (requestId.isEmpty || _busyRequestId != null) return false;
 
     setState(() => _busyRequestId = requestId);
 
@@ -368,7 +369,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
       final doctorId = prefs.getString('doctor_userId') ?? '';
       await _doctorService.completeRequest(requestId, doctorId);
 
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Visit marked completed'),
@@ -376,11 +377,14 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
         ),
       );
       await _loadRequests();
+      return true;
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error completing visit: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error completing visit: $e')));
+      }
+      return false;
     } finally {
       if (mounted) setState(() => _busyRequestId = null);
     }
@@ -806,9 +810,21 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: ElevatedButton.icon(
-              onPressed: isBusy ? null : () => _completeRequest(request),
-              icon: const Icon(Icons.done_all, size: 18),
-              label: const Text('Complete'),
+              onPressed: isBusy
+                  ? null
+                  : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => DoctorVisitTrackingScreen(
+                            requestData: Map<String, dynamic>.from(request),
+                            onCompleteVisit: () => _completeRequest(request),
+                          ),
+                        ),
+                      );
+                    },
+              icon: const Icon(Icons.directions_car_outlined, size: 18),
+              label: const Text('On The Way'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.success,
                 foregroundColor: Colors.white,

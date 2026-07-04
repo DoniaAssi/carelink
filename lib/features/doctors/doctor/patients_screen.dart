@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:carelink/core/profile_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -880,6 +882,27 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
   static const _textDark = Color(0xFF101828);
   static const _textMuted = Color(0xFF667085);
 
+  String _localNotesKey(String doctorId) =>
+      'doctor_patient_notes_${doctorId}_${widget.patientId}';
+
+  List<Map<String, dynamic>> _localNotes(
+    SharedPreferences preferences,
+    String doctorId,
+  ) {
+    final encoded = preferences.getString(_localNotesKey(doctorId));
+    if (encoded == null || encoded.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! List) return [];
+      return decoded
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -895,9 +918,10 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
         widget.patientId,
         doctorId: doctorId,
       );
+      final savedLocally = _localNotes(prefs, doctorId);
       if (!mounted) return;
       setState(() {
-        _notes = _listOf(record['clinicalNotes']);
+        _notes = [...savedLocally, ..._listOf(record['clinicalNotes'])];
         _isLoading = false;
       });
     } catch (e) {
@@ -907,6 +931,76 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error loading notes: $e')));
     }
+  }
+
+  Future<void> _showAddNoteDialog() async {
+    final formKey = GlobalKey<FormState>();
+    var draftNote = '';
+    final noteText = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Add Note'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            autofocus: true,
+            minLines: 4,
+            maxLines: 7,
+            maxLength: 1000,
+            onChanged: (value) => draftNote = value,
+            decoration: const InputDecoration(
+              labelText: 'Note',
+              hintText: 'Enter patient note...',
+              alignLabelWithHint: true,
+              border: OutlineInputBorder(),
+            ),
+            validator: (value) => value == null || value.trim().isEmpty
+                ? 'Please enter a note.'
+                : null,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() != true) return;
+              Navigator.pop(dialogContext, draftNote.trim());
+            },
+            style: FilledButton.styleFrom(backgroundColor: _primary),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (noteText == null || noteText.isEmpty) return;
+
+    final preferences = await SharedPreferences.getInstance();
+    final doctorId = preferences.getString('doctor_userId') ?? '';
+    final doctorName = preferences.getString('doctor_fullName') ?? 'Doctor';
+    final note = <String, dynamic>{
+      'noteId': 'local_${DateTime.now().microsecondsSinceEpoch}',
+      'noteText': noteText,
+      'authorName': doctorName,
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+      'isLocal': true,
+    };
+    final savedNotes = _localNotes(preferences, doctorId)..insert(0, note);
+    await preferences.setString(
+      _localNotesKey(doctorId),
+      jsonEncode(savedNotes),
+    );
+
+    if (!mounted) return;
+    setState(() => _notes.insert(0, note));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Note saved successfully.'),
+        backgroundColor: _primary,
+      ),
+    );
   }
 
   @override
@@ -923,7 +1017,7 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
         ),
         child: IconButton(
           padding: EdgeInsets.zero,
-          onPressed: () {},
+          onPressed: _showAddNoteDialog,
           icon: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
         ),
       ),
