@@ -105,6 +105,22 @@ async function ensureAuxTables() {
   }
 }
 
+async function ensureNurseEditableProfileColumns() {
+  const additions = [
+    ['years_experience', 'INT NULL'],
+    ['biography', 'TEXT NULL'],
+    ['service_areas', 'TEXT NULL'],
+  ];
+
+  for (const [column, definition] of additions) {
+    if (await hasColumn('careprovider', column)) continue;
+    try {
+      await db.query(`ALTER TABLE careprovider ADD COLUMN ${column} ${definition}`);
+      columnCache.set(`careprovider.${column}`, true);
+    } catch (_) {}
+  }
+}
+
 async function ensureAvailabilitySlotTable() {
   await db.query(`
     CREATE TABLE IF NOT EXISTS availabilityslot (
@@ -1999,12 +2015,14 @@ router.get('/profile/:providerId', async (req, res) => {
   try {
     await ensureProviderWorkColumns();
     await ensureProviderRateAcceptanceColumns();
+    await ensureNurseEditableProfileColumns();
     await ensureAuxTables();
     const hasExp = await hasColumn('careprovider', 'experienceYears');
     const hasYearsSnake = await hasColumn('careprovider', 'years_experience');
     const hasExperienceTier = await hasColumn('careprovider', 'experience_tier');
     const hasExperienceLevel = await hasColumn('careprovider', 'experience_level');
     const hasServiceAreas = await hasColumn('careprovider', 'serviceAreas');
+    const hasServiceAreasSnake = await hasColumn('careprovider', 'service_areas');
     const hasBiography = await hasColumn('careprovider', 'biography');
     const hasServiceType = await hasColumn('careprovider', 'serviceType');
     const hasHourly = await hasColumn('careprovider', 'hourlyRate');
@@ -2025,9 +2043,14 @@ router.get('/profile/:providerId', async (req, res) => {
           : hasExperienceLevel
             ? "COALESCE(NULLIF(c.experience_level, ''), 'junior') AS experienceTier"
             : "'junior' AS experienceTier";
-    const serviceAreasSel = hasServiceAreas
-      ? "COALESCE(c.serviceAreas, '') AS serviceAreas"
-      : "'' AS serviceAreas";
+    const serviceAreasSel =
+      hasServiceAreas && hasServiceAreasSnake
+        ? "COALESCE(NULLIF(c.serviceAreas, ''), NULLIF(c.service_areas, ''), '') AS serviceAreas"
+        : hasServiceAreas
+          ? "COALESCE(c.serviceAreas, '') AS serviceAreas"
+          : hasServiceAreasSnake
+            ? "COALESCE(c.service_areas, '') AS serviceAreas"
+            : "'' AS serviceAreas";
     const bioSel =
       hasBiography && hasServiceType
         ? "COALESCE(NULLIF(c.biography, ''), NULLIF(c.serviceType, ''), '') AS bio"
@@ -2111,11 +2134,15 @@ router.put('/profile/:providerId', async (req, res) => {
   const { providerId } = req.params;
   const b = req.body || {};
   try {
+    await ensureNurseEditableProfileColumns();
     const fullName = (b.fullName || '').toString().trim();
     const email = (b.email || '').toString().trim();
     const phone = (b.phone || '').toString().trim();
     const specialization = (b.specialization || '').toString().trim();
     const bio = (b.bio || '').toString().trim();
+    const serviceAreas = (b.serviceAreas || b.service_areas || '')
+      .toString()
+      .trim();
     const experienceYears = Number(b.experienceYears || 0);
     const isAvailable =
       b.isAvailable === true || b.isAvailable === 1 || b.isAvailable === '1';
@@ -2140,18 +2167,42 @@ router.put('/profile/:providerId', async (req, res) => {
     }
 
     const hasExp = await hasColumn('careprovider', 'experienceYears');
+    const hasYearsSnake = await hasColumn('careprovider', 'years_experience');
+    const hasServiceAreas = await hasColumn('careprovider', 'serviceAreas');
+    const hasServiceAreasSnake = await hasColumn(
+      'careprovider',
+      'service_areas',
+    );
+    const hasBiography = await hasColumn('careprovider', 'biography');
+    const hasServiceType = await hasColumn('careprovider', 'serviceType');
     const sets = ['isAvailable = ?'];
     const vals = [isAvailable ? 1 : 0];
     if (specialization) {
       sets.push('specialization = ?');
       vals.push(specialization);
     }
-    if (bio || specialization) {
+    if (hasBiography) {
+      sets.push('biography = ?');
+      vals.push(bio);
+    }
+    if (hasServiceAreas) {
+      sets.push('serviceAreas = ?');
+      vals.push(serviceAreas);
+    }
+    if (hasServiceAreasSnake) {
+      sets.push('service_areas = ?');
+      vals.push(serviceAreas);
+    }
+    if (hasServiceType && (bio || specialization)) {
       sets.push('serviceType = ?');
       vals.push(bio || specialization);
     }
     if (hasExp) {
       sets.push('experienceYears = ?');
+      vals.push(Number.isFinite(experienceYears) ? experienceYears : 0);
+    }
+    if (hasYearsSnake) {
+      sets.push('years_experience = ?');
       vals.push(Number.isFinite(experienceYears) ? experienceYears : 0);
     }
     vals.push(providerId);
