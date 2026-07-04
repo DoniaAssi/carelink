@@ -87,7 +87,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
   @override
   Widget build(BuildContext context) {
     return NurseUi.reactive(
-      (context) => Container(
+      (context) => Material(
         color: _background,
         child: SafeArea(
           child: isLoading

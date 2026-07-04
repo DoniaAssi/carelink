@@ -233,6 +233,44 @@ async function assertProviderCanWork(providerId) {
   return eligibility;
 }
 
+function minutesFromScheduleTime(value) {
+  const parts = String(value || '').trim().split(':');
+  if (parts.length < 2) return null;
+  const hour = Number(parts[0]);
+  const minute = Number(parts[1]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function scheduleTimeFromMinutes(totalMinutes) {
+  const hour = Math.floor(totalMinutes / 60);
+  const minute = totalMinutes % 60;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`;
+}
+
+function expandDoctorScheduleSlot({ day, startTime, endTime }) {
+  const startMinutes = minutesFromScheduleTime(startTime);
+  const endMinutes = minutesFromScheduleTime(endTime);
+
+  if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) {
+    const err = new Error('End time must be after start time');
+    err.status = 400;
+    throw err;
+  }
+
+  const slots = [];
+  for (let current = startMinutes; current < endMinutes; current += 60) {
+    const next = Math.min(current + 60, endMinutes);
+    slots.push({
+      day,
+      startTime: scheduleTimeFromMinutes(current),
+      endTime: scheduleTimeFromMinutes(next),
+    });
+  }
+  return slots;
+}
+
 async function ensureMedicalAccessLogTable() {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS medicalrecordaccesslog (
@@ -968,6 +1006,9 @@ router.get('/requests', async (req, res) => {
 
   try {
     const initialDiagnosisSelect = await initialDiagnosisSelectSql();
+    const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
+    const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
+    const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
 
     let query = `
       SELECT 
@@ -983,6 +1024,9 @@ router.get('/requests', async (req, res) => {
         sr.completedAt,
         sr.patientUserId,
         sr.providerUserId,
+        ${hasVisitLatitude ? 'sr.visitLatitude' : 'NULL AS visitLatitude'},
+        ${hasVisitLongitude ? 'sr.visitLongitude' : 'NULL AS visitLongitude'},
+        ${hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress"},
         u.fullName as patientName,
         u.phone as patientPhone,
         u.email as patientEmail,
@@ -1057,6 +1101,9 @@ router.get('/requests/:requestId', async (req, res) => {
 
   try {
     const initialDiagnosisSelect = await initialDiagnosisSelectSql();
+    const hasVisitLatitude = await hasColumn('servicerequest', 'visitLatitude');
+    const hasVisitLongitude = await hasColumn('servicerequest', 'visitLongitude');
+    const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
 
     const [rows] = await db.query(
       `
@@ -1073,6 +1120,9 @@ router.get('/requests/:requestId', async (req, res) => {
         sr.completedAt,
         sr.patientUserId,
         sr.providerUserId,
+        ${hasVisitLatitude ? 'sr.visitLatitude' : 'NULL AS visitLatitude'},
+        ${hasVisitLongitude ? 'sr.visitLongitude' : 'NULL AS visitLongitude'},
+        ${hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress"},
         u.fullName as patientName,
         u.phone as patientPhone,
         u.email as patientEmail,
@@ -2114,7 +2164,9 @@ router.post('/schedule/:doctorId', async (req, res) => {
   const { day, startTime, endTime } = req.body;
 
   if (!day || !startTime || !endTime) {
-    return res.status(400).json({ error: 'Day, startTime, and endTime are required' });
+    return res
+      .status(400)
+      .json({ error: 'Day, startTime, and endTime are required' });
   }
 
   try {
@@ -2126,16 +2178,26 @@ router.post('/schedule/:doctorId', async (req, res) => {
         eligibility: err.eligibility || null,
       });
     }
-    const slotId = `slot-${doctorId.substring(0, 4)}-${randomUUID().substring(0, 8)}`;
-    
-    await db.query(
-      'INSERT INTO availabilityslot (slot_id, day, startTime, endTime, providerUserId) VALUES (?, ?, ?, ?, ?)',
-      [slotId, day, startTime, endTime, doctorId]
-    );
+    const hourlySlots = expandDoctorScheduleSlot({ day, startTime, endTime });
+    const savedSlots = [];
 
-    res.json({ success: true, message: 'Availability slot added', slotId });
+    for (const slot of hourlySlots) {
+      const slotId = `slot-${doctorId.substring(0, 4)}-${randomUUID().substring(0, 8)}`;
+      await db.query(
+        'INSERT INTO availabilityslot (slot_id, day, startTime, endTime, providerUserId) VALUES (?, ?, ?, ?, ?)',
+        [slotId, slot.day, slot.startTime, slot.endTime, doctorId]
+      );
+      savedSlots.push({ slot_id: slotId, ...slot, providerUserId: doctorId });
+    }
+
+    res.json({
+      success: true,
+      message: 'Availability slots added',
+      slotId: savedSlots[0]?.slot_id,
+      slots: savedSlots,
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -2161,18 +2223,48 @@ router.put('/schedule/:doctorId/:slotId', async (req, res) => {
         eligibility: err.eligibility || null,
       });
     }
-    const [result] = await db.query(
-      `UPDATE availabilityslot
-       SET day = ?, startTime = ?, endTime = ?
-       WHERE slot_id = ? AND providerUserId = ?`,
-      [day, startTime, endTime, slotId, doctorId],
-    );
-    if (!result.affectedRows) {
-      return res.status(404).json({ error: 'Availability slot not found' });
+    const hourlySlots = expandDoctorScheduleSlot({ day, startTime, endTime });
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [deleted] = await conn.query(
+        'DELETE FROM availabilityslot WHERE slot_id = ? AND providerUserId = ?',
+        [slotId, doctorId]
+      );
+      if (!deleted.affectedRows) {
+        await conn.rollback();
+        conn.release();
+        return res.status(404).json({ error: 'Availability slot not found' });
+      }
+
+      const savedSlots = [];
+      for (const slot of hourlySlots) {
+        const nextSlotId = `slot-${doctorId.substring(0, 4)}-${randomUUID().substring(0, 8)}`;
+        await conn.query(
+          'INSERT INTO availabilityslot (slot_id, day, startTime, endTime, providerUserId) VALUES (?, ?, ?, ?, ?)',
+          [nextSlotId, slot.day, slot.startTime, slot.endTime, doctorId]
+        );
+        savedSlots.push({
+          slot_id: nextSlotId,
+          ...slot,
+          providerUserId: doctorId,
+        });
+      }
+
+      await conn.commit();
+      conn.release();
+      return res.json({
+        success: true,
+        message: 'Availability slots updated',
+        slots: savedSlots,
+      });
+    } catch (err) {
+      await conn.rollback();
+      conn.release();
+      throw err;
     }
-    res.json({ success: true, message: 'Availability slot updated' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

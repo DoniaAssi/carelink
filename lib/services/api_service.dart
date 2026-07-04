@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   // غيّري هذا الـ IP إلى IPv4 تبع جهازك إذا كنتِ تشغلين التطبيق على هاتف حقيقي
-  static const String _machineIp = '192.168.1.3';
+  static const String _machineIp = '192.168.1.15';
 
   // إذا كنتِ تستخدمين Android Emulator خليها true
   static const bool _useAndroidEmulator = false;

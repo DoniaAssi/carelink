@@ -18,6 +18,7 @@ import 'package:carelink/shared/services/report_service.dart';
 import 'package:carelink/shared/services/service_request_service.dart';
 
 import 'nurse_visit_reports.dart';
+import 'nurse_visit_tracking_screen.dart';
 import 'nurse_ui.dart';
 
 class NurseScheduleScreen extends StatefulWidget {
@@ -1049,7 +1050,7 @@ class _NurseSetAvailabilityScreenState
         ),
       ),
     );
-      if (success) Navigator.pop(context, hourlySlots);
+    if (success) Navigator.pop(context, hourlySlots);
   }
 
   Future<void> _saveLocalSlots(List<Map<String, dynamic>> value) async {
@@ -1886,7 +1887,7 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
           ),
           InkWell(
             borderRadius: BorderRadius.circular(999),
-            onTap: isSaving || !canStart ? null : _confirmStartVisit,
+            onTap: isSaving || !canStart ? null : _openVisitTracking,
             child: Container(
               width: 46,
               height: 46,
@@ -1983,9 +1984,9 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
           child: SizedBox(
             height: 54,
             child: ElevatedButton.icon(
-              onPressed: isSaving ? null : _confirmStartVisit,
-              icon: const Icon(Icons.play_arrow_rounded),
-              label: Text(isSaving ? 'Starting...' : 'Start Visit'),
+              onPressed: isSaving ? null : _openVisitTracking,
+              icon: const Icon(Icons.directions_car_outlined),
+              label: Text(isSaving ? 'Starting...' : 'On The Way'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -2050,7 +2051,7 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
     return null;
   }
 
-  Future<void> _confirmStartVisit() async {
+  Future<void> _openVisitTracking() async {
     if (!_canStartVisit(request.status)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -2059,34 +2060,27 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
       );
       return;
     }
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Start visit'),
-        content: const Text('Are you sure you want to start this visit?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Start Visit'),
-          ),
-        ],
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NurseVisitTrackingScreen(
+          request: request,
+          onStartVisit: _startVerifiedVisit,
+        ),
       ),
     );
-    if (ok != true) return;
-    final startTime = DateTime.now();
+  }
+
+  Future<bool> _startVerifiedVisit(DateTime startTime) async {
     setState(() => isSaving = true);
     try {
       final success = await ServiceRequestService.startVisit(
         request.id,
         providerUserId: widget.user.userId,
       );
-      if (!success) return;
+      if (!success) return false;
       await widget.onChanged();
-      if (!mounted) return;
+      if (!mounted) return false;
       final startedRequest = ServiceRequest.fromJson({
         ...request.toJson(),
         'status': 'in_progress',
@@ -2103,11 +2097,14 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
           ),
         ),
       );
+      return true;
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+      return false;
     } finally {
       if (mounted) setState(() => isSaving = false);
     }
@@ -2325,6 +2322,10 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _visitTrackingProgress(),
+              const SizedBox(height: 16),
+              _visitInProgressBanner(),
+              const SizedBox(height: 16),
               _timerCard(),
               const SizedBox(height: 16),
               Row(
@@ -2445,6 +2446,103 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
             child: const Icon(
               Icons.pause_rounded,
               color: AppColors.primaryDark,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _visitTrackingProgress() {
+    const labels = ['On The Way', 'Arrived', 'In Progress'];
+    const icons = [
+      Icons.directions_car,
+      Icons.location_on,
+      Icons.medical_services_outlined,
+    ];
+    return Row(
+      children: List.generate(labels.length, (index) {
+        return Expanded(
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icons[index], color: Colors.white, size: 21),
+                    ),
+                    const SizedBox(height: 7),
+                    FittedBox(
+                      child: Text(
+                        labels[index],
+                        style: const TextStyle(
+                          color: AppColors.primaryDark,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (index < labels.length - 1)
+                Container(
+                  width: 24,
+                  height: 1.5,
+                  margin: const EdgeInsets.only(bottom: 25),
+                  color: AppColors.primary,
+                ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _visitInProgressBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFDDF3EE),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFC5E8E0)),
+      ),
+      child: const Row(
+        children: [
+          CircleAvatar(
+            radius: 23,
+            backgroundColor: Colors.white,
+            child: Icon(
+              Icons.medical_services_outlined,
+              color: AppColors.primaryDark,
+            ),
+          ),
+          SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Visit In Progress',
+                  style: TextStyle(
+                    color: AppColors.primaryDark,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Care session is currently in progress',
+                  style: TextStyle(color: Color(0xFF667085)),
+                ),
+              ],
             ),
           ),
         ],

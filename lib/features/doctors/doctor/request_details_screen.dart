@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/doctor_service.dart';
 import '../../../core/app_colors.dart';
 import 'doctor_ui_constants.dart';
+import 'doctor_visit_tracking_screen.dart';
 import 'initial_diagnosis_report_screen.dart';
 import 'medical_record_screen.dart';
 import 'medical_report_form.dart';
@@ -150,7 +151,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     }
   }
 
-  Future<void> _completeRequest() async {
+  Future<bool> _completeRequest() async {
     try {
       final response = await _doctorService.completeRequest(
         widget.requestId,
@@ -165,6 +166,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
             ),
           );
           _loadRequestDetails();
+          return true;
         }
       }
     } catch (e) {
@@ -174,6 +176,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
         );
       }
     }
+    return false;
   }
 
   Future<void> _openReportForRequest() async {
@@ -384,9 +387,19 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(
-                      onPressed: _completeRequest,
-                      icon: const Icon(Icons.done_all),
-                      label: const Text('Mark Visit Completed'),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => DoctorVisitTrackingScreen(
+                              requestData: Map<String, dynamic>.from(_request),
+                              onCompleteVisit: _completeRequest,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.directions_car_outlined),
+                      label: const Text('On The Way'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.success,
                         foregroundColor: Colors.white,

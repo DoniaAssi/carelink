@@ -135,11 +135,13 @@ class ContactPatientScreen extends StatelessWidget {
 class PatientMessageScreen extends StatefulWidget {
   final ServiceRequest request;
   final String currentUserId;
+  final List<ChatConversation> threadConversations;
 
   const PatientMessageScreen({
     super.key,
     required this.request,
     required this.currentUserId,
+    this.threadConversations = const <ChatConversation>[],
   });
 
   @override
@@ -166,6 +168,17 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
   }
 
   String get patientId => widget.request.patientId.trim();
+
+  List<ChatConversation> get _activeConversations {
+    final items = widget.threadConversations
+        .where((item) => item.conversationId.trim().isNotEmpty)
+        .toList();
+    if (items.isEmpty) {
+      final c = conversation;
+      return c == null ? const <ChatConversation>[] : <ChatConversation>[c];
+    }
+    return items;
+  }
 
   @override
   void initState() {
@@ -195,6 +208,24 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
       return;
     }
     try {
+      if (widget.threadConversations.isNotEmpty) {
+        final sorted = [...widget.threadConversations]
+          ..sort((a, b) {
+            final aTime =
+                a.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final bTime =
+                b.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return bTime.compareTo(aTime);
+          });
+        setState(() => conversation = sorted.first);
+        await _refreshMessages(scrollToBottom: true);
+        await _markRead();
+        pollTimer = Timer.periodic(
+          const Duration(seconds: 3),
+          (_) => _refreshMessages(),
+        );
+        return;
+      }
       final loadedConversation = await repository.getOrCreateConversation(
         nurseId: nurseId,
         patientId: patientId,
@@ -220,13 +251,19 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
   }
 
   Future<void> _refreshMessages({bool scrollToBottom = false}) async {
-    final c = conversation;
-    if (c == null) return;
+    final active = _activeConversations;
+    if (active.isEmpty) return;
     try {
-      final loaded = await repository.loadMessages(
-        conversationId: c.conversationId,
-        viewerId: nurseId,
+      final loadedGroups = await Future.wait(
+        active.map(
+          (c) => repository.loadMessages(
+            conversationId: c.conversationId,
+            viewerId: nurseId,
+          ),
+        ),
       );
+      final loaded = loadedGroups.expand((group) => group).toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
       if (!mounted) return;
       final existingOlder = messages.where((m) {
         if (loaded.any((next) => next.messageId == m.messageId)) return false;
@@ -300,12 +337,16 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
   }
 
   Future<void> _markRead() async {
-    final c = conversation;
-    if (c == null) return;
+    final active = _activeConversations;
+    if (active.isEmpty) return;
     try {
-      await repository.markConversationRead(
-        conversationId: c.conversationId,
-        readerId: nurseId,
+      await Future.wait(
+        active.map(
+          (c) => repository.markConversationRead(
+            conversationId: c.conversationId,
+            readerId: nurseId,
+          ),
+        ),
       );
     } catch (_) {}
   }

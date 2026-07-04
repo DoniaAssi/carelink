@@ -9,6 +9,7 @@ import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/chat_repository.dart';
 
+import 'nurse_conversation_threads.dart';
 import 'nurse_contact_patient_flow.dart';
 import 'nurse_service_requests.dart';
 import 'nurse_ui.dart';
@@ -266,22 +267,24 @@ class _ActivityScreenState extends State<ActivityScreen> {
   }
 
   Widget _messagesList() {
-    if (messages.isEmpty) {
+    final threads = groupNurseConversationsByPatient(messages);
+    if (threads.isEmpty) {
       return _emptyList(Icons.chat_bubble_outline_rounded, 'No messages yet');
     }
     return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(18, 4, 18, 112),
-      itemCount: messages.length,
+      itemCount: threads.length,
       separatorBuilder: (context, index) => const SizedBox(height: 12),
-      itemBuilder: (context, index) => _messageCard(messages[index]),
+      itemBuilder: (context, index) => _messageCard(threads[index]),
     );
   }
 
-  Widget _messageCard(ChatConversation conversation) {
-    final name = conversation.patientName.trim().isEmpty
+  Widget _messageCard(NurseConversationThread thread) {
+    final conversation = thread.latest;
+    final name = thread.patientName.trim().isEmpty
         ? 'Patient'
-        : conversation.patientName.trim();
+        : thread.patientName.trim();
     return _activityCard(
       onTap: () {
         Navigator.push(
@@ -300,6 +303,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 createdAt: DateTime.now(),
               ),
               currentUserId: widget.user.userId,
+              threadConversations: thread.conversations,
             ),
           ),
         ).then((_) => _load(silent: true));
@@ -340,9 +344,9 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 ),
                 const SizedBox(height: 7),
                 Text(
-                  conversation.lastMessage.trim().isEmpty
+                  thread.lastMessage.trim().isEmpty
                       ? 'No messages yet'
-                      : conversation.lastMessage.trim(),
+                      : thread.lastMessage.trim(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -354,8 +358,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
             ),
           ),
           const SizedBox(width: 10),
-          if (conversation.unreadCount > 0)
-            _greenBadge(conversation.unreadCount),
+          if (thread.unreadCount > 0) _greenBadge(thread.unreadCount),
           const SizedBox(width: 8),
           const Icon(
             Icons.arrow_forward_ios_rounded,

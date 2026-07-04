@@ -7,6 +7,7 @@ import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/chat_repository.dart';
 
+import 'nurse_conversation_threads.dart';
 import 'nurse_contact_patient_flow.dart';
 import 'nurse_ui.dart';
 
@@ -109,7 +110,8 @@ class _NurseMessagesScreenState extends State<NurseMessagesScreen> {
         ],
       );
     }
-    if (conversations.isEmpty) {
+    final threads = groupNurseConversationsByPatient(conversations);
+    if (threads.isEmpty) {
       return ListView(
         padding: const EdgeInsets.all(24),
         children: const [
@@ -138,18 +140,19 @@ class _NurseMessagesScreenState extends State<NurseMessagesScreen> {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
-      itemCount: conversations.length,
-      itemBuilder: (context, index) => _conversationTile(conversations[index]),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      itemCount: threads.length,
+      itemBuilder: (context, index) => _conversationTile(threads[index]),
     );
   }
 
-  Widget _conversationTile(ChatConversation conversation) {
-    final patientName = conversation.patientName.trim().isEmpty
+  Widget _conversationTile(NurseConversationThread thread) {
+    final conversation = thread.latest;
+    final patientName = thread.patientName.trim().isEmpty
         ? 'Patient'
-        : conversation.patientName.trim();
+        : thread.patientName.trim();
     return InkWell(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(22),
       onTap: () {
         Navigator.push(
           context,
@@ -167,6 +170,7 @@ class _NurseMessagesScreenState extends State<NurseMessagesScreen> {
                 createdAt: DateTime.now(),
               ),
               currentUserId: widget.user.userId,
+              threadConversations: thread.conversations,
             ),
           ),
         ).then((_) => _load(silent: true));
@@ -176,7 +180,8 @@ class _NurseMessagesScreenState extends State<NurseMessagesScreen> {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.045),
@@ -226,9 +231,9 @@ class _NurseMessagesScreenState extends State<NurseMessagesScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    conversation.lastMessage.isEmpty
+                    thread.lastMessage.isEmpty
                         ? 'No messages yet'
-                        : conversation.lastMessage,
+                        : thread.lastMessage,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -239,10 +244,16 @@ class _NurseMessagesScreenState extends State<NurseMessagesScreen> {
                 ],
               ),
             ),
-            if (conversation.unreadCount > 0) ...[
+            if (thread.unreadCount > 0) ...[
               const SizedBox(width: 10),
-              UnreadBadge(count: conversation.unreadCount),
+              UnreadBadge(count: thread.unreadCount),
             ],
+            const SizedBox(width: 10),
+            const Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: AppColors.primaryDark,
+              size: 16,
+            ),
           ],
         ),
       ),
