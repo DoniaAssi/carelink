@@ -2,10 +2,16 @@ const express = require('express');
 const { randomUUID } = require('crypto');
 const db = require('../db');
 const { insertNotification } = require('../notifications');
+const {
+  ensureRefundRequestsTable,
+  listRefundRequests,
+} = require('../services/refundRequestService');
 
 const router = express.Router();
 
 const cache = new Map();
+let adminColumnsPromise = null;
+let financeTablesPromise = null;
 
 async function hasTable(tableName) {
   const key = `table.${tableName}`;
@@ -37,7 +43,7 @@ async function hasColumn(tableName, columnName) {
   }
 }
 
-async function ensureAdminColumns() {
+async function ensureAdminColumnsImpl() {
   if (!(await hasColumn('user', 'isActive'))) {
     await db.query(
       'ALTER TABLE user ADD COLUMN isActive TINYINT(1) NOT NULL DEFAULT 1',
@@ -145,6 +151,16 @@ async function ensureAdminColumns() {
   }
 }
 
+async function ensureAdminColumns() {
+  if (!adminColumnsPromise) {
+    adminColumnsPromise = ensureAdminColumnsImpl().catch((error) => {
+      adminColumnsPromise = null;
+      throw error;
+    });
+  }
+  return adminColumnsPromise;
+}
+
 function num(value) {
   return Number(value || 0);
 }
@@ -223,8 +239,13 @@ async function getMetrics() {
 
 async function getRegistrationRequests() {
   const hasUserCreatedAt = await hasColumn('user', 'createdAt');
+  const hasProfileImageUrl = await hasColumn('user', 'profileImageUrl');
   const userCreatedAtSelect = hasUserCreatedAt ? 'u.createdAt' : 'NULL AS createdAt';
   const userCreatedAtGroup = hasUserCreatedAt ? ', u.createdAt' : '';
+  const profileImageSelect = hasProfileImageUrl
+    ? 'u.profileImageUrl'
+    : 'NULL AS profileImageUrl';
+  const profileImageGroup = hasProfileImageUrl ? ', u.profileImageUrl' : '';
 
   const [rows] = await db.query(`
     SELECT
@@ -233,6 +254,7 @@ async function getRegistrationRequests() {
       u.email,
       u.phone,
       u.role,
+      ${profileImageSelect},
       ${userCreatedAtSelect},
       COALESCE(u.isActive, 1) AS isActive,
       cp.specialization,
@@ -259,7 +281,7 @@ async function getRegistrationRequests() {
     LEFT JOIN provider_documents pd ON BINARY pd.providerUserId = BINARY u.userId
     WHERE BINARY CAST(u.role AS CHAR) IN (BINARY 'nurse', BINARY 'doctor')
     GROUP BY
-      u.userId, u.fullName, u.email, u.phone, u.role${userCreatedAtGroup}, u.isActive,
+      u.userId, u.fullName, u.email, u.phone, u.role${profileImageGroup}${userCreatedAtGroup}, u.isActive,
       cp.specialization, cp.experienceYears, cp.years_experience,
       cp.experience_tier, cp.experience_level, cp.serviceType,
       cp.licenseNumber, cp.license_number, cp.serviceAreas, cp.biography,
@@ -295,6 +317,9 @@ async function getUsers(role = 'all') {
   const userCreatedAtSelect = (await hasColumn('user', 'createdAt'))
     ? 'u.createdAt'
     : 'NULL AS createdAt';
+  const profileImageSelect = (await hasColumn('user', 'profileImageUrl'))
+    ? 'u.profileImageUrl'
+    : 'NULL AS profileImageUrl';
   const params = [];
   let where = "WHERE BINARY CAST(u.role AS CHAR) IN (BINARY 'patient', BINARY 'nurse', BINARY 'doctor')";
   if (['patient', 'nurse', 'doctor'].includes(role)) {
@@ -310,6 +335,7 @@ async function getUsers(role = 'all') {
       u.email,
       u.phone,
       u.role,
+      ${profileImageSelect},
       ${userCreatedAtSelect},
       COALESCE(u.isActive, 1) AS isActive,
       cp.specialization,
@@ -538,6 +564,7 @@ function extensionFromMimeOrValue(mimeType, value) {
 
 async function getRatings() {
   if (!(await hasTable('providervisitrating'))) return [];
+  const hasProfileImageUrl = await hasColumn('user', 'profileImageUrl');
   const [rows] = await db.query(`
     SELECT
       r.ratingId,
@@ -546,6 +573,7 @@ async function getRatings() {
       r.comment,
       r.createdAt,
       pu.fullName AS patientName,
+      ${hasProfileImageUrl ? 'pu.profileImageUrl' : 'NULL'} AS profileImageUrl,
       pr.fullName AS providerName,
       pr.role AS providerRole,
       sr.serviceType
@@ -563,6 +591,7 @@ async function getPerformance() {
   const hasVisitAddress = await hasColumn('servicerequest', 'visitAddress');
   const hasLocationNote = await hasColumn('servicerequest', 'locationNote');
   const hasCreatedAt = await hasColumn('servicerequest', 'createdAt');
+  const hasProfileImageUrl = await hasColumn('user', 'profileImageUrl');
   const requestLocationSelect = hasVisitAddress
     ? "COALESCE(NULLIF(sr.visitAddress, ''), NULLIF(sr.location, ''), NULLIF(sr.notes, ''), '')"
     : hasLocationNote
@@ -616,6 +645,7 @@ async function getPerformance() {
       COALESCE(p.final_amount, p.amount, 0) AS paidAmount,
       COALESCE(p.paymentStatus, 'pending') AS paymentStatus,
       pu.fullName AS patientName,
+      ${hasProfileImageUrl ? 'pu.profileImageUrl' : 'NULL'} AS profileImageUrl,
       pr.fullName AS providerName,
       pr.role AS providerRole
     FROM servicerequest sr
@@ -654,7 +684,7 @@ async function getProviderDocuments(providerId) {
   return rows;
 }
 
-async function ensureFinanceTables() {
+async function ensureFinanceTablesImpl() {
   await db.query(`
     CREATE TABLE IF NOT EXISTS admin_commission (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -800,22 +830,24 @@ async function ensureFinanceTables() {
     ['Home Nursing Care', 'nurse', 6],
   ];
   for (const row of defaults) {
-    const [[existing]] = await db.query(
-      `SELECT id FROM admin_commission
-       WHERE CONVERT(specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci =
-             CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
-         AND BINARY CAST(serviceType AS CHAR) = BINARY ?
-       LIMIT 1`,
-      [row[0], row[1]],
+    await db.query(
+      `INSERT INTO admin_commission
+         (specialization, serviceType, commission_amount)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE id = id`,
+      row,
     );
-    if (!existing) {
-      await db.query(
-        `INSERT INTO admin_commission (specialization, serviceType, commission_amount)
-         VALUES (?, ?, ?)`,
-        row,
-      );
-    }
   }
+}
+
+async function ensureFinanceTables() {
+  if (!financeTablesPromise) {
+    financeTablesPromise = ensureFinanceTablesImpl().catch((error) => {
+      financeTablesPromise = null;
+      throw error;
+    });
+  }
+  return financeTablesPromise;
 }
 
 async function syncFinanceLedger() {
@@ -1154,6 +1186,7 @@ function bookingReviewNotes(reviewStatus) {
 
 async function getBookingReviewItems() {
   await ensureAdminColumns();
+  const hasProfileImageUrl = await hasColumn('user', 'profileImageUrl');
   const [rows] = await db.query(`
     SELECT
       sr.requestId,
@@ -1167,6 +1200,7 @@ async function getBookingReviewItems() {
       sr.adminReviewNotes,
       sr.adminReviewedAt,
       pu.fullName AS patientName,
+      ${hasProfileImageUrl ? 'pu.profileImageUrl' : 'NULL'} AS profileImageUrl,
       pr.fullName AS providerName,
       pr.role AS providerRole,
       COALESCE(p.paymentId, '') AS paymentId,
@@ -1201,6 +1235,7 @@ async function getBookingReviewItems() {
         patientUserId: row.patientUserId,
         providerUserId: row.providerUserId,
         patientName: row.patientName || 'Patient',
+        profileImageUrl: row.profileImageUrl || null,
         providerName: row.providerName || 'Nurse',
         providerRole: 'nurse',
         serviceType: row.serviceType || 'Nursing Service',
@@ -1426,6 +1461,124 @@ async function adjustFinanceLedgerForReview({
       [Math.max(0, adminDelta), adminDelta],
     );
   }
+}
+
+async function applyRefundRequestDecision(refundRequestId, body = {}) {
+  await ensureRefundRequestsTable();
+  await ensureFinanceTables();
+  const decision = (body.decision || '').toString().trim().toLowerCase();
+  const adminNote = (body.adminNote || body.notes || '').toString().trim();
+  const adminId = (body.adminId || body.reviewedByAdminId || '').toString().trim();
+  if (!['approved', 'rejected'].includes(decision)) {
+    const error = new Error('decision must be approved or rejected');
+    error.status = 400;
+    throw error;
+  }
+
+  const connection = await db.getConnection();
+  let walletAdjustment = null;
+  let patientId = '';
+  let bookingId = '';
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.query(
+      `SELECT rr.*, sr.providerUserId,
+              p.provider_amount AS oldProviderAmount,
+              p.admin_amount AS oldAdminAmount
+       FROM refund_requests rr
+       LEFT JOIN servicerequest sr ON BINARY sr.requestId = BINARY rr.bookingId
+       LEFT JOIN payment p ON BINARY p.paymentId = BINARY rr.paymentId
+       WHERE BINARY rr.id = BINARY ?
+       FOR UPDATE`,
+      [refundRequestId],
+    );
+    if (!rows.length) {
+      const error = new Error('Refund request not found');
+      error.status = 404;
+      throw error;
+    }
+    const request = rows[0];
+    patientId = request.patientId;
+    bookingId = request.bookingId;
+    if (request.status !== 'pending') {
+      const error = new Error(`Refund request is already ${request.status}`);
+      error.status = 409;
+      throw error;
+    }
+
+    if (decision === 'rejected') {
+      await connection.query(
+        `UPDATE refund_requests
+         SET status = 'rejected', adminNote = ?, reviewedAt = NOW(),
+             reviewedByAdminId = ?
+         WHERE BINARY id = BINARY ?`,
+        [adminNote || 'Refund request rejected by admin.', adminId || null, refundRequestId],
+      );
+    } else {
+      if (!request.paymentId) {
+        const error = new Error('Refund request has no payment to process');
+        error.status = 409;
+        throw error;
+      }
+      await connection.query(
+        `UPDATE payment
+         SET paymentStatus = 'refunded', status = 'refunded',
+             final_amount = ?, provider_amount = ?, admin_amount = ?, updatedAt = NOW()
+         WHERE BINARY paymentId = BINARY ?`,
+        [request.totalPaid, request.providerCompensation, request.platformFee, request.paymentId],
+      );
+      await connection.query(
+        `UPDATE servicerequest SET paymentStatus = 'refunded'
+         WHERE BINARY requestId = BINARY ?`,
+        [request.bookingId],
+      );
+      await connection.query(
+        `UPDATE refund_requests
+         SET status = 'processed', adminNote = ?, reviewedAt = NOW(),
+             processedAt = NOW(), reviewedByAdminId = ?
+         WHERE BINARY id = BINARY ?`,
+        [adminNote || 'Refund approved and processed by admin.', adminId || null, refundRequestId],
+      );
+      await connection.query(
+        `INSERT INTO transaction_log
+           (transactionId, providerId, patientId, total_amount,
+            admin_share, provider_share, type, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, 'payment', NOW())
+         ON DUPLICATE KEY UPDATE admin_share = VALUES(admin_share),
+           provider_share = VALUES(provider_share), total_amount = VALUES(total_amount)`,
+        [request.paymentId, request.providerUserId, request.patientId,
+          request.totalPaid, request.platformFee, request.providerCompensation],
+      );
+      walletAdjustment = {
+        providerId: request.providerUserId,
+        oldProviderAmount: request.oldProviderAmount,
+        newProviderAmount: request.providerCompensation,
+        oldAdminAmount: request.oldAdminAmount,
+        newAdminAmount: request.platformFee,
+      };
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+
+  if (walletAdjustment) await adjustFinanceLedgerForReview(walletAdjustment);
+  try {
+    await insertNotification({
+      userId: patientId,
+      type: 'refund_request',
+      title: decision === 'approved' ? 'Refund approved' : 'Refund rejected',
+      body: adminNote || (decision === 'approved'
+        ? 'Your refund request was approved and processed.'
+        : 'Your refund request was rejected.'),
+      relatedRequestId: bookingId,
+    });
+  } catch (_) {}
+  return { success: true, id: refundRequestId, decision,
+    status: decision === 'approved' ? 'processed' : 'rejected' };
 }
 
 async function upsertFinancePricing(body) {
@@ -1675,6 +1828,22 @@ router.get('/booking-review', async (req, res) => {
 router.put('/booking-review/:requestId/decision', async (req, res) => {
   try {
     res.json(await applyBookingReviewDecision(req.params.requestId, req.body || {}));
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.get('/refund-requests', async (req, res) => {
+  try {
+    res.json(await listRefundRequests((req.query.status || 'all').toString()));
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.put('/refund-requests/:refundRequestId/decision', async (req, res) => {
+  try {
+    res.json(await applyRefundRequestDecision(req.params.refundRequestId, req.body || {}));
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }

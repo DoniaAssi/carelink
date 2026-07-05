@@ -7,6 +7,16 @@ const db = require('../db');
 const { insertNotification } = require('../notifications');
 const visitRatingService = require('../services/visitRatingService');
 const bookingPaymentService = require('../services/bookingPaymentService');
+const {
+  ensureRefundRequestsTable,
+  createPendingRefundRequest,
+  getPatientRefundRequest,
+} = require('../services/refundRequestService');
+const {
+  BEFORE_ACCEPTANCE_STATUSES: BEFORE_PROVIDER_APPROVAL_STATUSES,
+  AFTER_ACCEPTANCE_STATUSES: AFTER_PROVIDER_APPROVAL_STATUSES,
+  calculateCancellationRefund,
+} = require('../services/cancellationRefundPolicyService');
 
 const router = express.Router();
 const chatUploadsDir = path.join(__dirname, '..', 'uploads', 'chat');
@@ -45,6 +55,8 @@ const {
 
 const BOOKING_STATUSES = [
   'pending_provider_approval',
+  'waiting_for_approval',
+  'waiting for approval',
   'pending',
   'pending_payment',
   'payment_pending',
@@ -56,31 +68,12 @@ const BOOKING_STATUSES = [
   'pending_completion',
 ];
 const PAYMENT_STATUSES = ['unpaid', 'pending', 'paid', 'failed', 'refunded'];
-const BEFORE_PROVIDER_APPROVAL_STATUSES = new Set([
-  'pending_provider_approval',
-  'waiting',
-  'pending',
-  'awaiting_provider_approval',
-  'waiting_provider_response',
-  'waiting response',
-  'requested',
-  'request_sent',
-  'new',
-  'pending_payment',
-  'payment_pending',
-]);
-const AFTER_PROVIDER_APPROVAL_STATUSES = new Set([
-  'accepted',
-  'confirmed',
-  'paid',
-  'in_progress',
-  'provider_approved',
-  'approved',
-  'scheduled',
-]);
 const COMPLETED_BOOKING_STATUSES = new Set(['completed', 'done']);
+
 const EXPIRING_REQUEST_STATUSES = new Set([
   'pending_provider_approval',
+  'waiting_for_approval',
+  'waiting for approval',
   'waiting',
   'pending',
   'awaiting_provider_approval',
@@ -94,6 +87,7 @@ const MISSABLE_BOOKING_STATUSES = new Set([
   'pending_payment',
   'payment_pending',
   'accepted',
+  'provider_accepted',
   'confirmed',
   'paid',
   'provider_approved',
@@ -2331,10 +2325,19 @@ router.get('/appointments/:appointmentId/cancellation-summary', async (req, res)
     const current = rows[0];
     const bookingStatus = (current.bookingStatus || '').toString().trim().toLowerCase();
     if (['cancelled', 'canceled'].includes(bookingStatus)) {
-      return res.status(409).json({ error: 'Appointment is already cancelled' });
+      const refundRequest = await getPatientRefundRequest(appointmentId, patientUserId);
+      return res.status(409).json({
+        error: 'This booking is already cancelled.',
+        canCancel: false,
+        refundRequest,
+        refundRequestStatus: refundRequest?.status || null,
+      });
     }
     if (COMPLETED_BOOKING_STATUSES.has(bookingStatus)) {
-      return res.status(409).json({ error: 'Completed visits cannot be cancelled or refunded' });
+      return res.status(409).json({
+        error: 'Completed appointments cannot be cancelled.',
+        canCancel: false,
+      });
     }
     if (Number(current.appointmentPassed) === 1 ||
         ['expired', 'missed', 'pending_completion'].includes(bookingStatus)) {
@@ -2353,27 +2356,26 @@ router.get('/appointments/:appointmentId/cancellation-summary', async (req, res)
     );
     const paid = Boolean(current.paymentId) &&
       (current.paymentStatus || '').toString().trim().toLowerCase() === 'paid';
-    let refundCents = 0;
-    let feeCents = 0;
-    let explanation = 'No payment was captured for this booking.';
-    let explanationAr = 'لم يتم تحصيل أي دفعة لهذا الحجز.';
-    if (paid) {
-      const providerFeeCents = Math.round(totalCents * 0.10);
-      const platformFeeCents = Math.round(totalCents * 0.10);
-      feeCents = providerFeeCents + platformFeeCents;
-      refundCents = Math.max(0, totalCents - feeCents);
-      explanation = 'The refund and cancellation fee were calculated automatically under the platform cancellation policy.';
-      explanationAr = 'تم احتساب مبلغ الاسترداد ورسوم الإلغاء تلقائياً وفق سياسة الإلغاء الخاصة بالمنصة.';
-    }
+    const policy = calculateCancellationRefund({
+      bookingStatus,
+      totalPaid: totalCents / 100,
+      paymentCaptured: paid,
+    });
 
     const summary = {
       appointmentId,
       currency: process.env.PAYMENT_CURRENCY || 'ILS',
-      totalPaid: paid ? totalCents / 100 : 0,
-      refundAmount: refundCents / 100,
-      cancellationFee: feeCents / 100,
-      explanation,
-      explanationAr,
+      totalPaid: policy.totalPaid,
+      refundAmount: policy.refundAmount,
+      providerCompensation: policy.providerCompensation,
+      platformFee: policy.platformFee,
+      cancellationFee: policy.cancellationFee,
+      refundPercentage: policy.refundPercentage,
+      reason: policy.reason,
+      reasonAr: policy.reasonAr,
+      explanation: policy.reason,
+      explanationAr: policy.reasonAr,
+      canCancel: policy.canCancel,
       paymentMethod: current.paymentMethod || null,
       refundDestination: paid
         ? (current.paymentMethod || 'Original payment method')
@@ -2393,6 +2395,20 @@ router.get('/appointments/:appointmentId/cancellation-summary', async (req, res)
   }
 });
 
+router.get('/appointments/:appointmentId/refund-request', async (req, res) => {
+  const { appointmentId } = req.params;
+  const patientUserId = (req.query.patientUserId || '').toString().trim();
+  if (!patientUserId) {
+    return res.status(400).json({ error: 'patientUserId is required' });
+  }
+  try {
+    const request = await getPatientRefundRequest(appointmentId, patientUserId);
+    return res.json({ exists: Boolean(request), request });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.put('/appointments/:appointmentId/cancel', async (req, res) => {
   const { appointmentId } = req.params;
   const { patientUserId, reason } = req.body;
@@ -2403,6 +2419,7 @@ router.put('/appointments/:appointmentId/cancel', async (req, res) => {
 
   try {
     await reconcilePastPatientAppointments({ patientUserId, appointmentId });
+    await ensureRefundRequestsTable();
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -2444,46 +2461,22 @@ router.put('/appointments/:appointmentId/cancel', async (req, res) => {
       0,
       Math.round(Number(current.finalAmount ?? current.amount ?? 0) * 100),
     );
-    const existingProviderCents = Math.max(
-      0,
-      Math.round(Number(current.providerAmount || 0) * 100),
-    );
-    const existingAdminCents = Math.max(
-      0,
-      Math.round(Number(current.adminAmount || 0) * 100),
-    );
-
-    const responseForExistingCancellation = () => {
-      const providerShare = existingProviderCents / 100;
-      const adminShare = existingAdminCents / 100;
-      const refundAmount = Math.max(
-        0,
-        (totalCents - existingProviderCents - existingAdminCents) / 100,
-      );
-      return {
-        success: true,
-        alreadyCancelled: true,
-        appointmentId,
-        bookingStatus: 'cancelled',
-        paymentStatus: current.paymentStatus || null,
-        totalAmount: totalCents / 100,
-        refundAmount: paymentStatus === 'refunded' ? refundAmount : 0,
-        providerShare: paymentStatus === 'refunded' ? providerShare : 0,
-        adminShare: paymentStatus === 'refunded' ? adminShare : 0,
-        refundApplied: paymentStatus === 'refunded',
-        message: 'Appointment was already cancelled',
-      };
-    };
-
     if (bookingStatus === 'cancelled' || bookingStatus === 'canceled') {
-      await connection.commit();
-      return res.json(responseForExistingCancellation());
+      await connection.rollback();
+      const refundRequest = await getPatientRefundRequest(appointmentId, patientUserId);
+      return res.status(409).json({
+        error: 'This booking is already cancelled.',
+        canCancel: false,
+        refundRequest,
+        refundRequestStatus: refundRequest?.status || null,
+      });
     }
 
     if (COMPLETED_BOOKING_STATUSES.has(bookingStatus)) {
       await connection.rollback();
       return res.status(409).json({
-        error: 'Completed visits cannot be cancelled or refunded',
+        error: 'Completed appointments cannot be cancelled.',
+        canCancel: false,
       });
     }
 
@@ -2513,8 +2506,14 @@ router.put('/appointments/:appointmentId/cancel', async (req, res) => {
     const cancellationNote = reason
       ? `\nCancelled: ${reason}`
       : '\nCancelled by patient';
+    const paymentCaptured = Boolean(current.paymentId) && paymentStatus === 'paid';
+    const policy = calculateCancellationRefund({
+      bookingStatus,
+      totalPaid: totalCents / 100,
+      paymentCaptured,
+    });
 
-    if (!current.paymentId || paymentStatus !== 'paid') {
+    if (!paymentCaptured) {
       await connection.execute(
         `UPDATE servicerequest
          SET status = 'cancelled',
@@ -2530,161 +2529,66 @@ router.put('/appointments/:appointmentId/cancel', async (req, res) => {
         bookingStatus: 'cancelled',
         paymentStatus: current.paymentStatus || null,
         totalAmount: totalCents / 100,
-        refundAmount: 0,
-        providerShare: 0,
-        adminShare: 0,
+        totalPaid: policy.totalPaid,
+        refundAmount: policy.refundAmount,
+        providerCompensation: policy.providerCompensation,
+        platformFee: policy.platformFee,
+        cancellationFee: policy.cancellationFee,
+        refundPercentage: policy.refundPercentage,
+        reason: policy.reason,
+        canCancel: false,
+        providerShare: policy.providerCompensation,
+        adminShare: policy.platformFee,
         refundApplied: false,
         message: 'Appointment cancelled; no paid payment required a refund',
       });
     }
 
-    // Patient cancellation before the appointment: 80% patient refund,
-    // 10% provider fee, and 10% admin fee. Expired requests are reconciled
-    // separately above and always receive a full refund with no fee split.
-    const targetProviderCents = Math.round(totalCents * 0.10);
-    const targetAdminCents = Math.round(totalCents * 0.10);
-    const refundCents = Math.max(
-      0,
-      totalCents - targetProviderCents - targetAdminCents,
-    );
-    const targetProviderShare = targetProviderCents / 100;
-    const targetAdminShare = targetAdminCents / 100;
-
-    const [ledgerRows] = await connection.query(
-      `SELECT provider_share AS providerShare, admin_share AS adminShare
-       FROM transaction_log
-       WHERE BINARY transactionId = BINARY ?
-       FOR UPDATE`,
-      [current.paymentId],
-    );
-    const escrowStatus = (current.escrowStatus || '').toString().trim().toLowerCase();
-    const financeWasCredited =
-      ledgerRows.length > 0 ||
-      escrowStatus === 'paid_to_admin' ||
-      escrowStatus === 'transferred_to_provider';
-    const creditedProviderCents = financeWasCredited
-      ? Math.max(
-          0,
-          Math.round(
-            Number(
-              ledgerRows[0]?.providerShare ?? current.providerAmount ?? 0,
-            ) * 100,
-          ),
-        )
-      : 0;
-    const creditedAdminCents = financeWasCredited
-      ? Math.max(
-          0,
-          Math.round(
-            Number(ledgerRows[0]?.adminShare ?? current.adminAmount ?? 0) * 100,
-          ),
-        )
-      : 0;
-    const providerDelta = (targetProviderCents - creditedProviderCents) / 100;
-    const adminDelta = (targetAdminCents - creditedAdminCents) / 100;
-
-    await connection.execute(
-      `INSERT INTO provider_wallet
-         (providerId, total_earned, pending_amount, paid_amount)
-       VALUES (?, 0, 0, 0)
-       ON DUPLICATE KEY UPDATE providerId = VALUES(providerId)`,
-      [current.providerUserId],
-    );
-    if (escrowStatus === 'transferred_to_provider') {
-      await connection.execute(
-        `UPDATE provider_wallet
-         SET total_earned = GREATEST(0, total_earned + ?),
-             paid_amount = GREATEST(0, paid_amount + ?)
-         WHERE BINARY providerId = BINARY ?`,
-        [providerDelta, providerDelta, current.providerUserId],
-      );
-    } else {
-      await connection.execute(
-        `UPDATE provider_wallet
-         SET total_earned = GREATEST(0, total_earned + ?),
-             pending_amount = GREATEST(0, pending_amount + ?)
-         WHERE BINARY providerId = BINARY ?`,
-        [providerDelta, providerDelta, current.providerUserId],
-      );
+    const refundRequestResult = await createPendingRefundRequest(connection, {
+      patientId: patientUserId,
+      bookingId: appointmentId,
+      paymentId: current.paymentId,
+      totalPaid: policy.totalPaid,
+      refundAmount: policy.refundAmount,
+      providerCompensation: policy.providerCompensation,
+      platformFee: policy.platformFee,
+      refundPercentage: policy.refundPercentage,
+      reason: policy.reason,
+    });
+    if (!refundRequestResult.created) {
+      await connection.rollback();
+      return res.status(409).json({
+        error: 'A refund request already exists for this booking.',
+        refundRequest: refundRequestResult.request,
+      });
     }
-
-    await connection.execute(
-      `INSERT INTO admin_wallet (id, total_income)
-       VALUES (1, 0)
-       ON DUPLICATE KEY UPDATE id = VALUES(id)`,
-    );
-    await connection.execute(
-      `UPDATE admin_wallet
-       SET total_income = GREATEST(0, total_income + ?)
-       WHERE id = 1`,
-      [adminDelta],
-    );
-
-    await connection.execute(
-      `INSERT INTO transaction_log
-         (transactionId, providerId, patientId, total_amount,
-          admin_share, provider_share, type, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, 'payment', NOW())
-       ON DUPLICATE KEY UPDATE
-         providerId = VALUES(providerId),
-         patientId = VALUES(patientId),
-         total_amount = VALUES(total_amount),
-         admin_share = VALUES(admin_share),
-         provider_share = VALUES(provider_share)`,
-      [
-        current.paymentId,
-        current.providerUserId,
-        patientUserId,
-        totalCents / 100,
-        targetAdminShare,
-        targetProviderShare,
-      ],
-    );
-
-    await connection.execute(
-      `UPDATE payment
-       SET paymentStatus = 'refunded',
-           final_amount = ?,
-           provider_amount = ?,
-           admin_amount = ?,
-           status = ?,
-           updatedAt = NOW()
-       WHERE BINARY paymentId = BINARY ?`,
-      [
-        totalCents / 100,
-        targetProviderShare,
-        targetAdminShare,
-        targetProviderCents > 0 || targetAdminCents > 0
-          ? 'paid_to_admin'
-          : 'pending',
-        current.paymentId,
-      ],
-    );
     await connection.execute(
       `UPDATE servicerequest
        SET status = 'cancelled',
            cancelledAt = COALESCE(cancelledAt, NOW()),
-           paymentStatus = 'refunded',
            notes = CONCAT(COALESCE(notes, ''), ?)
        WHERE BINARY requestId = BINARY ?`,
       [cancellationNote, appointmentId],
     );
-
     await connection.commit();
     return res.json({
       success: true,
       appointmentId,
       originalBookingStatus: bookingStatus,
       bookingStatus: 'cancelled',
-      paymentStatus: 'refunded',
-      refundPolicy: 'patient_cancellation_80_percent',
-      totalAmount: totalCents / 100,
-      refundAmount: refundCents / 100,
-      providerShare: targetProviderShare,
-      adminShare: targetAdminShare,
-      refundApplied: true,
-      message: 'Appointment cancelled and refund recorded successfully',
+      paymentStatus: current.paymentStatus,
+      totalPaid: policy.totalPaid,
+      refundAmount: policy.refundAmount,
+      providerCompensation: policy.providerCompensation,
+      platformFee: policy.platformFee,
+      cancellationFee: policy.cancellationFee,
+      refundPercentage: policy.refundPercentage,
+      reason: policy.reason,
+      refundApplied: false,
+      refundRequest: refundRequestResult.request,
+      message: 'Cancellation submitted. Your refund request is pending admin review.',
     });
+
   } catch (err) {
     try {
       await connection.rollback();

@@ -16,10 +16,9 @@ class ApiServiceException implements Exception {
 }
 
 class ApiService {
-  // غيّري هذا الـ IP إلى IPv4 تبع جهازك إذا كنتِ تشغلين التطبيق على هاتف حقيقي
-  static const String _machineIp = '192.168.1.5';
+  // static const String _machineIp = '192.168.1.5';
 
-  // static const String _machineIp = '192.168.0.101';
+  static const String _machineIp = '192.168.0.101';
   // static const String _machineIp = '192.168.1.15';
 
   // إذا كنتِ تستخدمين Android Emulator خليها true.
@@ -32,7 +31,6 @@ class ApiService {
   static const String _desktopBase = 'http://127.0.0.1:3000';
   static const String _realDeviceBase = 'http://$_machineIp:3000';
 
-  // ممكن تمرري الرابط وقت التشغيل:
   // flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:3000
   static const String _envBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
@@ -1322,6 +1320,31 @@ class ApiService {
     }
     throw Exception(
       _extractErrorMessage(response, 'Failed to load cancellation summary'),
+    );
+  }
+
+  Future<Map<String, dynamic>> getRefundRequest({
+    required String appointmentId,
+    required String patientUserId,
+  }) async {
+    final response = await _sendRequest(
+      http.get(
+        _endpoint(
+          '/patient/appointments/$appointmentId/refund-request'
+          '?patientUserId=${Uri.encodeQueryComponent(patientUserId)}',
+        ),
+        headers: {
+          ..._jsonHeaders,
+          'x-user-id': patientUserId,
+          'x-user-role': 'patient',
+        },
+      ),
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception(
+      _extractErrorMessage(response, 'Failed to load refund request'),
     );
   }
 

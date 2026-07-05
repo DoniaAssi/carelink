@@ -48,6 +48,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   AppointmentModel? appointment;
   ProviderModel? provider;
   Map<String, dynamic>? _paymentOverview;
+  Map<String, dynamic>? _refundRequest;
 
   Timer? _pollTimer;
   int _draftStars = 0;
@@ -107,6 +108,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         isLoading = false;
       });
       await _refreshPaymentOverview();
+      await _refreshRefundRequest();
       _setPolling();
     } catch (e) {
       if (!mounted) return;
@@ -128,6 +130,23 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _paymentOverview = null);
+    }
+  }
+
+  Future<void> _refreshRefundRequest() async {
+    try {
+      final data = await _api.getRefundRequest(
+        appointmentId: widget.appointmentId,
+        patientUserId: widget.patientUserId,
+      );
+      if (!mounted) return;
+      setState(
+        () => _refundRequest = data['request'] is Map
+            ? Map<String, dynamic>.from(data['request'] as Map)
+            : null,
+      );
+    } catch (_) {
+      if (mounted) setState(() => _refundRequest = null);
     }
   }
 
@@ -159,6 +178,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     }
     return const {
       'pending_provider_approval',
+      'waiting_for_approval',
+      'waiting for approval',
       'waiting',
       'pending',
       'awaiting_provider_approval',
@@ -170,6 +191,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       'pending_payment',
       'payment_pending',
       'accepted',
+      'provider_accepted',
       'confirmed',
       'paid',
       'in_progress',
@@ -201,7 +223,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       );
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
-      final refundApplied = result['refundApplied'] == true;
       final refundAmount = double.tryParse(
         (result['refundAmount'] ?? '').toString(),
       );
@@ -211,19 +232,15 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         builder: (dialogContext) => _cancellationStateDialog(
           icon: Icons.check_rounded,
           color: const Color(0xFF22A06B),
-          title: isAr ? 'تم إلغاء الحجز' : 'Booking Cancelled',
+          title: isAr ? 'تم إرسال طلب الإلغاء' : 'Cancellation submitted',
           subtitle: isAr
-              ? 'تم إلغاء حجزك بنجاح.'
-              : 'Your booking has been cancelled successfully.',
-          details: refundApplied && refundAmount != null
+              ? 'تم إلغاء الحجز. طلب الاسترداد قيد مراجعة الإدارة.'
+              : 'Cancellation submitted. Your refund request is pending admin review.',
+          details: result['refundRequest'] != null && refundAmount != null
               ? [
                   (
-                    isAr ? 'الاسترداد' : 'Refund',
+                    isAr ? 'المبلغ المطلوب' : 'Requested refund',
                     '${refundAmount.toStringAsFixed(2)} $currency',
-                  ),
-                  (
-                    isAr ? 'موعد الوصول المتوقع' : 'Estimated arrival',
-                    isAr ? '3–5 أيام عمل' : '3–5 business days',
                   ),
                 ]
               : null,
@@ -533,6 +550,11 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                                 _buildStatusBannerSection(p),
                                 const SizedBox(height: 12),
 
+                                if (_refundRequest != null) ...[
+                                  _buildRefundRequestStatusCard(p),
+                                  const SizedBox(height: 12),
+                                ],
+
                                 _buildVisitRatingSection(p, appointment!),
                               ],
                             ),
@@ -710,6 +732,53 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRefundRequestStatusCard(CarelinkPalette p) {
+    final isAr = localeController.isArabic;
+    final status = (_refundRequest?['status'] ?? 'pending').toString();
+    final color = status == 'rejected'
+        ? const Color(0xFFD93636)
+        : status == 'processed' || status == 'approved'
+        ? const Color(0xFF15803D)
+        : const Color(0xFFF59E0B);
+    final label = status == 'rejected'
+        ? (isAr ? 'تم رفض طلب الاسترداد' : 'Refund Rejected')
+        : status == 'processed' || status == 'approved'
+        ? (isAr ? 'تمت الموافقة على الاسترداد' : 'Refund Approved')
+        : (isAr ? 'طلب الاسترداد قيد المراجعة' : 'Refund Request Pending');
+    final note = (_refundRequest?['adminNote'] ?? '').toString().trim();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .09),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: .24)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.account_balance_wallet_outlined, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(color: color, fontWeight: FontWeight.w800),
+                ),
+                if (note.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(note, style: TextStyle(color: p.inkMuted, height: 1.35)),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -2078,6 +2147,11 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _summaryRow(
+              isAr ? 'إجمالي المدفوع' : 'Total paid',
+              _summaryMoney(summary, 'totalPaid'),
+              Icons.payments_outlined,
+            ),
+            _summaryRow(
               isAr ? 'مبلغ الاسترداد' : 'Refund amount',
               _summaryMoney(summary, 'refundAmount'),
               Icons.account_balance_wallet_outlined,
@@ -2088,19 +2162,47 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
               Icons.money_off_csred_outlined,
             ),
             _summaryRow(
-              isAr ? 'وجهة الاسترداد' : 'Refund destination',
-              (summary['refundDestination'] ?? '—').toString(),
+              isAr ? 'تعويض مقدم الرعاية' : 'Provider compensation',
+              _summaryMoney(summary, 'providerCompensation'),
+              Icons.medical_services_outlined,
+            ),
+            _summaryRow(
+              isAr ? 'رسوم المنصة' : 'Platform fee',
+              _summaryMoney(summary, 'platformFee'),
+              Icons.account_balance_outlined,
+            ),
+            _summaryRow(
+              isAr ? 'نسبة الاسترداد' : 'Refund percentage',
+              summary['refundPercentage'] == null
+                  ? '—'
+                  : '${summary['refundPercentage']}%',
+              Icons.percent_rounded,
+            ),
+            _summaryRow(
+              isAr ? 'طريقة الاسترداد' : 'Refund method',
+              isAr ? 'طريقة الدفع الأصلية' : 'Original payment method',
               Icons.credit_card_rounded,
+            ),
+            _summaryRow(
+              isAr ? 'حالة الاسترداد' : 'Refund status',
+              isAr ? 'طلب الاسترداد قيد المراجعة' : 'Pending admin review',
+              Icons.hourglass_top_rounded,
             ),
             const SizedBox(height: 12),
             _summaryExplanation(
-              (summary[isAr ? 'explanationAr' : 'explanation'] ?? '—')
+              (summary[isAr ? 'reasonAr' : 'reason'] ??
+                      summary[isAr ? 'explanationAr' : 'explanation'] ??
+                      '—')
                   .toString(),
             ),
+            const SizedBox(height: 12),
+            _refundProcessInfoBox(isAr),
           ],
         ),
         secondaryLabel: isAr ? 'رجوع' : 'Back',
-        primaryLabel: isAr ? 'تأكيد الإلغاء' : 'Confirm Cancellation',
+        primaryLabel: isAr
+            ? 'إرسال طلب الإلغاء'
+            : 'Submit Cancellation Request',
         onSecondary: () => Navigator.pop(dialogContext, false),
         onPrimary: () => Navigator.pop(dialogContext, true),
       ),
@@ -2166,6 +2268,35 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         borderRadius: BorderRadius.circular(14),
       ),
       child: Text(text, style: TextStyle(color: p.inkMuted, height: 1.4)),
+    );
+  }
+
+  Widget _refundProcessInfoBox(bool isAr) {
+    final p = CarelinkPalette.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.surfaceSoft,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: p.stroke),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isAr ? 'عملية الاسترداد' : 'Refund Process',
+            style: TextStyle(color: p.inkDark, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            isAr
+                ? 'بعد تأكيد الإلغاء، سيتم إرسال طلب الاسترداد إلى الإدارة للمراجعة. وبعد الموافقة، ستتم معالجة الاسترداد وفق سياسة الإلغاء.'
+                : 'After confirming the cancellation, a refund request will be sent to the administrator for review. Once approved, the refund will be processed according to the cancellation policy.',
+            style: TextStyle(color: p.inkMuted, height: 1.4),
+          ),
+        ],
+      ),
     );
   }
 

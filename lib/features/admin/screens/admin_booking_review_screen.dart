@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/features/admin/widgets/admin_ui_support.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 
 class AdminBookingReviewItem {
   const AdminBookingReviewItem({
@@ -21,6 +23,7 @@ class AdminBookingReviewItem {
     required this.paymentStatus,
     required this.reason,
     required this.systemNotes,
+    this.profileImageUrl,
   });
 
   final String id;
@@ -33,6 +36,7 @@ class AdminBookingReviewItem {
   final String paymentStatus;
   final String reason;
   final String systemNotes;
+  final String? profileImageUrl;
 
   factory AdminBookingReviewItem.fromJson(Map<String, dynamic> json) {
     return AdminBookingReviewItem(
@@ -52,6 +56,7 @@ class AdminBookingReviewItem {
         json['systemNotes'],
         fallback: 'Funds stay held until the admin decision is saved.',
       ),
+      profileImageUrl: _text(json['profileImageUrl'], fallback: ''),
     );
   }
 
@@ -67,6 +72,7 @@ class AdminBookingReviewItem {
       paymentStatus: _text(row['paymentStatus'], fallback: 'Held for review'),
       reason: 'This past nurse booking needs an admin decision.',
       systemNotes: 'Loaded from the current admin dashboard data.',
+      profileImageUrl: _text(row['profileImageUrl'], fallback: ''),
     );
   }
 }
@@ -99,12 +105,15 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
   CarelinkPalette get _palette => CarelinkPalette.of(context);
   Color get _surface => _palette.surface;
   Color get _softSurface => _palette.surfaceSoft;
+  Color get _onPrimary => Theme.of(context).colorScheme.onPrimary;
 
   bool _loading = true;
   bool _saving = false;
   String? _error;
   AdminBookingReviewStatus? _filter;
+  int _reviewTab = 0;
   List<AdminBookingReviewItem> _items = [];
+  List<Map<String, dynamic>> _refundRequests = [];
 
   @override
   void initState() {
@@ -124,9 +133,16 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
       _error = null;
     });
     try {
-      final response = await http.get(_uri('/admin/booking-review'));
+      final responses = await Future.wait([
+        http.get(_uri('/admin/booking-review')),
+        http.get(_uri('/admin/refund-requests')),
+      ]);
+      final response = responses[0];
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw Exception(_message(response));
+      }
+      if (responses[1].statusCode < 200 || responses[1].statusCode >= 300) {
+        throw Exception(_message(responses[1]));
       }
       final decoded = jsonDecode(response.body);
       final list = decoded is List ? decoded : [];
@@ -138,8 +154,18 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
             ),
           )
           .toList();
+      final refundDecoded = jsonDecode(responses[1].body);
+      final refundRequests = refundDecoded is List
+          ? refundDecoded
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList()
+          : <Map<String, dynamic>>[];
       if (!mounted) return;
-      setState(() => _items = items);
+      setState(() {
+        _items = items;
+        _refundRequests = refundRequests;
+      });
     } catch (e) {
       final fallback = _fallbackItems();
       if (!mounted) return;
@@ -178,103 +204,54 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
   }
 
   Widget _buildReviewScreen(BuildContext context) {
-    final baseTheme = Theme.of(context);
     final p = _palette;
     return Theme(
-      data: baseTheme.copyWith(
-        scaffoldBackgroundColor: p.pageBg,
-        cardColor: p.surface,
-        canvasColor: p.surface,
-        dividerColor: p.stroke,
-        colorScheme: baseTheme.colorScheme.copyWith(
-          surface: p.surface,
-          onSurface: p.inkDark,
-          primary: _darkTeal,
-        ),
-        dialogTheme: DialogThemeData(
-          backgroundColor: p.surface,
-          surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-        ),
-        inputDecorationTheme: baseTheme.inputDecorationTheme.copyWith(
-          filled: true,
-          fillColor: p.surface,
-          hintStyle: TextStyle(color: p.inkMuted),
-          labelStyle: TextStyle(color: p.inkMuted),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: _darkTeal,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-        outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: _darkTeal,
-            side: BorderSide(color: _line),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-      ),
+      data: adminCareTheme(context),
       child: Directionality(
         textDirection: context.adminTextDirection,
-        child: Scaffold(
-          backgroundColor: p.pageBg,
+        child: PatientScaffold(
+          backgroundColor: p.surface,
+          enabled: false,
           body: SafeArea(
             child: Center(
               child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: 430),
+                constraints: const BoxConstraints(maxWidth: 1100),
                 child: RefreshIndicator(
                   color: _teal,
                   onRefresh: _load,
                   child: _loading
-                      ? Center(child: CircularProgressIndicator(color: _teal))
+                      ? const AdminLoadingState()
                       : ListView(
-                          padding: EdgeInsets.fromLTRB(18, 12, 18, 32),
+                          padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
                           children: [
-                            AdminGlobalControls(),
-                            SizedBox(height: 10),
                             _topBar(),
-                            SizedBox(height: 16),
-                            AdminLocalizedText(
-                              'Booking Review',
-                              style: TextStyle(
-                                color: _ink,
-                                fontSize: 24,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            SizedBox(height: 8),
-                            AdminLocalizedText(
-                              'Review nurse bookings that need an admin decision after the appointment time has passed.',
-                              style: TextStyle(
-                                color: _muted,
-                                height: 1.4,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            SizedBox(height: 14),
-                            _logicNotice(),
+                            const SizedBox(height: 10),
+                            _reviewTabs(),
                             if (_error != null) ...[
-                              SizedBox(height: 12),
+                              const SizedBox(height: 10),
                               _errorBox(_error!),
                             ],
-                            SizedBox(height: 18),
-                            _summaryGrid(),
-                            SizedBox(height: 18),
-                            _filters(),
-                            SizedBox(height: 16),
-                            if (_visibleItems.isEmpty)
-                              _empty()
-                            else
-                              ..._visibleItems.map(_bookingCard),
+                            const SizedBox(height: 12),
+                            if (_reviewTab == 0) ...[
+                              if (_visibleItems.isEmpty)
+                                _empty()
+                              else
+                                ..._visibleItems.map(_bookingCard),
+                            ] else ...[
+                              _refundSummaryGrid(),
+                              const SizedBox(height: 14),
+                              if (_refundRequests.isEmpty)
+                                const AdminEmptyState(
+                                  message: 'No refund requests yet',
+                                )
+                              else
+                                ..._refundRequests.map(_refundRequestCard),
+                            ],
+                            const SizedBox(height: 6),
+                            OutlinedButton(
+                              onPressed: _load,
+                              child: const AdminLocalizedText('View All'),
+                            ),
                           ],
                         ),
                 ),
@@ -287,49 +264,167 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
   }
 
   Widget _topBar() {
-    return Row(
-      children: [
-        _topBarAction(
-          tooltip: context.adminTr('Back'),
-          onPressed: () => Navigator.pop(context),
-          icon: context.adminBackIcon,
-        ),
-        Spacer(),
-        AdminLocalizedText(
-          'Admin Review',
-          style: TextStyle(
-            color: _ink,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
+    return SizedBox(
+      height: 48,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: IconButton(
+              tooltip: context.adminTr('Back'),
+              onPressed: () => Navigator.pop(context),
+              icon: Icon(
+                context.adminBackIcon,
+                color: _palette.inkDark,
+                size: 23,
+              ),
+            ),
           ),
-        ),
-        Spacer(),
-        _topBarAction(
-          tooltip: context.adminTr('Refresh'),
-          onPressed: _load,
-          icon: Icons.refresh_rounded,
-        ),
-      ],
-    );
-  }
-
-  Widget _topBarAction({
-    required String tooltip,
-    required VoidCallback onPressed,
-    required IconData icon,
-  }) {
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(color: _softSurface, shape: BoxShape.circle),
-      child: IconButton(
-        tooltip: tooltip,
-        onPressed: onPressed,
-        icon: Icon(icon, color: _darkTeal, size: 20),
+          const Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: PatientHeaderActions(),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 92),
+            child: AdminLocalizedText(
+              'Booking Review',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: _palette.inkDark,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
+  Widget _reviewTabs() {
+    final tabs = [
+      ('Under Review', _items.length),
+      ('Refund Requests', _refundRequests.length),
+    ];
+    return Row(
+      textDirection: TextDirection.ltr,
+      children: [
+        for (var index = 0; index < tabs.length; index++) ...[
+          if (index > 0) const SizedBox(width: 8),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => setState(() => _reviewTab = index),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.transparent,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: _reviewTab == index ? _teal : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                ),
+                child: AdminLocalizedText(
+                  tabs[index].$1,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _reviewTab == index ? _teal : _palette.inkMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _refundSummaryGrid() {
+    int count(String status) => _refundRequests
+        .where((item) => _text(item['status']).toLowerCase() == status)
+        .length;
+    final items = [
+      (Icons.schedule_rounded, 'Pending', count('pending'), adminSuccess),
+      (
+        Icons.hourglass_top_rounded,
+        'Under Review',
+        count('approved'),
+        adminWarning,
+      ),
+      (
+        Icons.check_circle_outline_rounded,
+        'Approved',
+        count('processed'),
+        const Color(0xFF6657D9),
+      ),
+      (Icons.cancel_outlined, 'Rejected', count('rejected'), adminDanger),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: items.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            crossAxisSpacing: 7,
+            mainAxisSpacing: 0,
+            childAspectRatio: constraints.maxWidth < 500 ? 1.05 : 1.35,
+          ),
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
+              decoration: BoxDecoration(
+                color: _surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _palette.stroke),
+                boxShadow: _shadow,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(item.$1, color: item.$4, size: 19),
+                  const SizedBox(height: 3),
+                  AdminLocalizedText(
+                    '${item.$3}',
+                    style: TextStyle(
+                      color: _palette.inkDark,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  AdminLocalizedText(
+                    item.$2,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: item.$4,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Kept for the expanded review layout.
+  // ignore: unused_element
   Widget _logicNotice() {
     return Container(
       padding: EdgeInsets.all(13),
@@ -359,6 +454,7 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _summaryGrid() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -449,6 +545,7 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _filters() {
     final options = [
       (null, 'All'),
@@ -486,7 +583,7 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
         child: AdminLocalizedText(
           label,
           style: TextStyle(
-            color: selected ? Colors.white : _teal,
+            color: selected ? _onPrimary : _teal,
             fontSize: 11.5,
             fontWeight: FontWeight.w900,
           ),
@@ -497,27 +594,25 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
 
   Widget _bookingCard(AdminBookingReviewItem item) {
     return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: _surface,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(15),
         border: Border.all(color: _palette.stroke),
         boxShadow: _shadow,
       ),
       child: Column(
         children: [
           Row(
+            textDirection: TextDirection.ltr,
             children: [
-              CircleAvatar(
-                radius: 23,
-                backgroundColor: _softSurface,
-                child: AdminLocalizedText(
-                  _initials(item.patientName),
-                  style: TextStyle(color: _teal, fontWeight: FontWeight.w900),
-                ),
+              AdminAvatar(
+                data: {'profileImageUrl': item.profileImageUrl},
+                name: item.patientName,
+                size: 44,
               ),
-              SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -527,55 +622,86 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: _ink,
+                        color: _palette.inkDark,
+                        fontSize: 12.5,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     AdminLocalizedText(
-                      item.providerName,
+                      '${item.serviceType} - ${item.providerName}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: _muted,
-                        fontSize: 12,
+                        color: _palette.inkMuted,
+                        fontSize: 10.5,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
                 ),
               ),
-              SizedBox(width: 10),
+              const SizedBox(width: 8),
               _statusBadge(item.status),
             ],
           ),
-          SizedBox(height: 12),
-          _infoRow(
-            Icons.medical_services_outlined,
-            'Service',
-            item.serviceType,
-          ),
-          _infoRow(Icons.schedule_rounded, 'Time', _dateTime(item.scheduledAt)),
-          _infoRow(Icons.payments_outlined, 'Paid', _money(item.amount)),
-          _infoRow(Icons.lock_outline_rounded, 'Payment', item.paymentStatus),
-          SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _teal,
-                side: BorderSide(color: _line),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+          const SizedBox(height: 6),
+          Row(
+            textDirection: TextDirection.ltr,
+            children: [
+              Icon(Icons.schedule_rounded, color: _teal, size: 13),
+              const SizedBox(width: 4),
+              Expanded(
+                child: AdminLocalizedText(
+                  _dateTime(item.scheduledAt),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: _palette.inkMuted, fontSize: 9.5),
                 ),
               ),
-              onPressed: _saving ? null : () => _openReview(item),
-              icon: Icon(Icons.manage_search_rounded, size: 18),
-              label: AdminLocalizedText(
-                'Review',
-                style: TextStyle(fontWeight: FontWeight.w900),
+              AdminLocalizedText(
+                _money(item.amount),
+                style: TextStyle(
+                  color: _palette.inkDark,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
-            ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 36,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: _saving ? null : () => _openReview(item),
+                    child: const AdminLocalizedText('Approve'),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SizedBox(
+                  height: 36,
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: _saving ? null : () => _openReview(item),
+                    child: const AdminLocalizedText('Details'),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -592,21 +718,24 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
           AdminLocalizedText(
             label,
             style: TextStyle(
-              color: _muted,
+              color: _palette.inkMuted,
               fontSize: 11,
               fontWeight: FontWeight.w800,
             ),
           ),
           Spacer(),
           Flexible(
-            child: AdminLocalizedText(
-              value,
-              textAlign: TextAlign.right,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: _ink,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w900,
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: AdminLocalizedText(
+                value,
+                textAlign: TextAlign.end,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _palette.inkDark,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
           ),
@@ -747,7 +876,7 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
           AdminLocalizedText(
             label,
             style: TextStyle(
-              color: _muted,
+              color: _palette.inkMuted,
               fontSize: 11,
               fontWeight: FontWeight.w800,
             ),
@@ -756,7 +885,7 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
           AdminLocalizedText(
             value,
             style: TextStyle(
-              color: _ink,
+              color: _palette.inkDark,
               height: 1.35,
               fontWeight: FontWeight.w900,
             ),
@@ -944,19 +1073,605 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
     }
   }
 
-  Widget _empty() {
+  Widget _refundRequestCard(Map<String, dynamic> request) {
+    final status = _text(request['status'], fallback: 'pending');
+    final patient = _text(request['patientName'], fallback: 'Patient');
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => _showRefundRequestDetails(request),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 124),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _palette.stroke),
+          boxShadow: _shadow,
+        ),
+        child: Row(
+          children: [
+            AdminAvatar(data: request, name: patient, size: 50),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AdminLocalizedText(
+                    patient,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _palette.inkDark,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  AdminLocalizedText(
+                    _text(request['providerName'], fallback: 'Provider'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _palette.inkMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.calendar_today_outlined,
+                        color: _palette.inkMuted,
+                        size: 13,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: AdminLocalizedText(
+                          _dateTime(
+                            DateTime.tryParse(_text(request['scheduledAt'])),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _palette.inkMuted,
+                            fontSize: 9.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _refundStatusBadge(status),
+                const SizedBox(height: 10),
+                AdminLocalizedText(
+                  _money(_num(request['refundAmount'])),
+                  style: TextStyle(
+                    color: _palette.inkDark,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const AdminLocalizedText(
+                      'View Details',
+                      style: TextStyle(
+                        color: _teal,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      context.adminTextDirection == TextDirection.rtl
+                          ? Icons.chevron_left_rounded
+                          : Icons.chevron_right_rounded,
+                      color: _teal,
+                      size: 16,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _refundStatusBadge(String status) {
+    return AdminStatusBadge(status: status);
+  }
+
+  // Kept for the wide, expanded refund presentation.
+  // ignore: unused_element
+  Widget _refundDetails(Map<String, dynamic> request) {
+    return Column(
+      children: [
+        _infoRow(
+          Icons.person_outline_rounded,
+          'Provider Name',
+          _text(request['providerName'], fallback: 'Provider'),
+        ),
+        _infoRow(
+          Icons.event_outlined,
+          'Booking Date',
+          _dateTime(DateTime.tryParse(_text(request['scheduledAt']))),
+        ),
+        _infoRow(
+          Icons.cancel_schedule_send_outlined,
+          'Cancellation Time',
+          _dateTime(DateTime.tryParse(_text(request['createdAt']))),
+        ),
+        _infoRow(
+          Icons.credit_card_rounded,
+          'Payment Method',
+          _paymentMethodLabel(request['paymentMethod']),
+        ),
+        _infoRow(
+          Icons.payments_outlined,
+          'Total paid',
+          _money(_num(request['totalPaid'])),
+        ),
+        _infoRow(
+          Icons.replay_rounded,
+          'Refund',
+          _money(_num(request['refundAmount'])),
+        ),
+        _infoRow(
+          Icons.medical_services_outlined,
+          'Provider compensation',
+          _money(_num(request['providerCompensation'])),
+        ),
+        _infoRow(
+          Icons.account_balance_outlined,
+          'Platform',
+          _money(_num(request['platformFee'])),
+        ),
+        _infoRow(
+          Icons.percent_rounded,
+          'Refund percentage',
+          '${_num(request['refundPercentage']).toStringAsFixed(0)}%',
+        ),
+      ],
+    );
+  }
+
+  Widget _refundReason(Map<String, dynamic> request) {
+    final status = _text(request['status']).toLowerCase();
+    final processed = status == 'processed' || status == 'approved';
+    final message = processed
+        ? 'Refund request processed successfully.'
+        : status == 'rejected'
+        ? _text(request['adminNote'], fallback: _text(request['reason']))
+        : _text(request['reason']);
     return Container(
-      padding: EdgeInsets.all(18),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(18),
+        color: _softSurface,
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _palette.stroke),
       ),
-      child: AdminLocalizedText(
-        'No nurse bookings need admin review right now.',
-        textAlign: TextAlign.center,
-        style: TextStyle(color: _muted, fontWeight: FontWeight.w800),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            processed ? Icons.check_circle_rounded : Icons.info_rounded,
+            color: _teal,
+            size: 21,
+          ),
+          const SizedBox(height: 10),
+          AdminLocalizedText(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _palette.inkDark,
+              height: 1.45,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Future<void> _showRefundRequestDetails(Map<String, dynamic> request) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: _palette.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: .78,
+          minChildSize: .45,
+          maxChildSize: .94,
+          builder: (context, controller) => ListView(
+            controller: controller,
+            padding: EdgeInsets.fromLTRB(18, 4, 18, 24),
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: context.adminTr('Close'),
+                    onPressed: () => Navigator.pop(sheetContext),
+                    icon: Icon(Icons.close_rounded, color: _palette.inkDark),
+                  ),
+                  Expanded(
+                    child: AdminLocalizedText(
+                      'Refund Request Details',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _palette.inkDark,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: _softSurface,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(
+                      Icons.receipt_long_outlined,
+                      color: _teal,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _softSurface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _palette.stroke),
+                ),
+                child: Row(
+                  children: [
+                    AdminAvatar(
+                      data: request,
+                      name: _text(request['patientName'], fallback: 'Patient'),
+                      size: 58,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AdminLocalizedText(
+                            _text(request['patientName'], fallback: 'Patient'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: _palette.inkDark,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          AdminLocalizedText(
+                            '${_text(request['serviceType'], fallback: 'Service')} - ${_text(request['providerName'], fallback: 'Provider')}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: _palette.inkMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _refundStatusBadge(
+                      _text(request['status'], fallback: 'pending'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              AdminLocalizedText(
+                'Booking Information',
+                style: TextStyle(
+                  color: _palette.inkDark,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              _refundBookingGrid(request),
+              const SizedBox(height: 16),
+              AdminLocalizedText(
+                'Financial Summary',
+                style: TextStyle(
+                  color: _palette.inkDark,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              _refundFinancialGrid(request),
+              _reviewBlock('Reason', _text(request['reason'])),
+              _reviewBlock('Refund Explanation', _text(request['reason'])),
+              if (_text(request['adminNote']).isNotEmpty)
+                _reviewBlock('Admin Note', _text(request['adminNote'])),
+              const SizedBox(height: 14),
+              _refundReason(request),
+              if (_text(request['status'], fallback: 'pending') ==
+                  'pending') ...[
+                const SizedBox(height: 16),
+                AdminResponsiveActions(
+                  children: [
+                    SizedBox(
+                      height: 52,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: adminDanger,
+                          side: const BorderSide(color: adminDanger),
+                        ),
+                        onPressed: _saving
+                            ? null
+                            : () {
+                                Navigator.pop(sheetContext);
+                                _reviewRefundRequest(request, 'rejected');
+                              },
+                        icon: const Icon(Icons.close_rounded),
+                        label: const AdminLocalizedText('Reject'),
+                      ),
+                    ),
+                    SizedBox(
+                      height: 52,
+                      child: FilledButton.icon(
+                        onPressed: _saving
+                            ? null
+                            : () {
+                                Navigator.pop(sheetContext);
+                                _reviewRefundRequest(request, 'approved');
+                              },
+                        icon: const Icon(Icons.check_rounded),
+                        label: const AdminLocalizedText('Approve'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _refundBookingGrid(Map<String, dynamic> request) {
+    return _refundSheetGrid([
+      (
+        Icons.person_outline_rounded,
+        'Provider Name',
+        _text(request['providerName'], fallback: 'Provider'),
+      ),
+      (
+        Icons.medical_services_outlined,
+        'Service Type',
+        _text(request['serviceType'], fallback: 'Service'),
+      ),
+      (
+        Icons.event_outlined,
+        'Booking Date',
+        _dateTime(DateTime.tryParse(_text(request['scheduledAt']))),
+      ),
+      (
+        Icons.timer_outlined,
+        'Cancellation Time',
+        _dateTime(DateTime.tryParse(_text(request['createdAt']))),
+      ),
+      (
+        Icons.credit_card_rounded,
+        'Payment Method',
+        _paymentMethodLabel(request['paymentMethod']),
+      ),
+      (
+        Icons.info_outline_rounded,
+        'Refund Status',
+        _text(request['status'], fallback: 'pending'),
+      ),
+    ]);
+  }
+
+  Widget _refundFinancialGrid(Map<String, dynamic> request) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _softSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _palette.stroke),
+      ),
+      child: _refundSheetGrid([
+        (
+          Icons.payments_outlined,
+          'Total Paid',
+          _money(_num(request['totalPaid'])),
+        ),
+        (
+          Icons.currency_exchange_rounded,
+          'Refund Amount',
+          _money(_num(request['refundAmount'])),
+        ),
+        (
+          Icons.medical_services_outlined,
+          'Provider Compensation',
+          _money(_num(request['providerCompensation'])),
+        ),
+        (
+          Icons.account_balance_outlined,
+          'Platform Fee',
+          _money(_num(request['platformFee'])),
+        ),
+        (
+          Icons.percent_rounded,
+          'Refund Percentage',
+          '${_num(request['refundPercentage']).toStringAsFixed(0)}%',
+        ),
+      ]),
+    );
+  }
+
+  Widget _refundSheetGrid(List<(IconData, String, String)> items) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 620 ? 2 : 1;
+        final width = columns == 2
+            ? (constraints.maxWidth - 10) / 2
+            : constraints.maxWidth;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final item in items)
+              SizedBox(
+                width: width,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(13),
+                    border: Border.all(color: _palette.stroke),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: _softSurface,
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Icon(item.$1, color: _teal, size: 19),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            AdminLocalizedText(
+                              item.$2,
+                              style: TextStyle(
+                                color: _palette.inkMuted,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            AdminLocalizedText(
+                              item.$3,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _palette.inkDark,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _reviewRefundRequest(
+    Map<String, dynamic> request,
+    String decision,
+  ) async {
+    final note = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: AdminLocalizedText(
+          decision == 'approved' ? 'Approve Refund' : 'Reject Refund',
+        ),
+        content: TextField(
+          controller: note,
+          maxLines: 3,
+          decoration: InputDecoration(
+            labelText: context.adminTr('Admin notes (optional)'),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: AdminLocalizedText('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: AdminLocalizedText('Apply Decision'),
+          ),
+        ],
+      ),
+    );
+    final adminNote = note.text.trim();
+    note.dispose();
+    if (confirmed != true) return;
+    setState(() => _saving = true);
+    try {
+      final response = await http.put(
+        _uri(
+          '/admin/refund-requests/${Uri.encodeComponent(_text(request['id']))}/decision',
+        ),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'decision': decision,
+          if (adminNote.isNotEmpty) 'adminNote': adminNote,
+        }),
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(_message(response));
+      }
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Widget _empty() {
+    return const AdminEmptyState(
+      message: 'No nurse bookings need admin review right now.',
+      icon: Icons.event_available_rounded,
     );
   }
 
@@ -1010,6 +1725,13 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
 
   String _dateTime(DateTime? date) {
     if (date == null) return 'Not scheduled';
+    if (context.adminTextDirection == TextDirection.rtl) {
+      final month = date.month.toString().padLeft(2, '0');
+      final day = date.day.toString().padLeft(2, '0');
+      final hour = date.hour.toString().padLeft(2, '0');
+      final minute = date.minute.toString().padLeft(2, '0');
+      return '${date.year}/$month/$day - $hour:$minute';
+    }
     const months = [
       'Jan',
       'Feb',
@@ -1042,7 +1764,20 @@ class _AdminBookingReviewScreenState extends State<AdminBookingReviewScreen> {
     final text = amount % 1 == 0
         ? amount.toStringAsFixed(0)
         : amount.toStringAsFixed(2);
-    return '$text ILS';
+    return context.adminTextDirection == TextDirection.rtl
+        ? '$text ش.ج'
+        : '$text ILS';
+  }
+
+  String _paymentMethodLabel(dynamic value) {
+    final method = _text(value).toLowerCase();
+    if (method.isEmpty ||
+        method == 'mock_card' ||
+        method == 'mock card' ||
+        method == 'card') {
+      return 'Original payment method';
+    }
+    return _text(value);
   }
 
   Uri _uri(String path) => Uri.parse('${ApiService.baseUrl}$path');
@@ -1116,6 +1851,7 @@ double _num(dynamic value) {
   return double.tryParse('${value ?? ''}') ?? 0;
 }
 
+// ignore: unused_element
 String _initials(String name) {
   final parts = name.trim().split(RegExp(r'\s+'));
   if (parts.isEmpty || parts.first.isEmpty) return '?';
@@ -1125,7 +1861,7 @@ String _initials(String name) {
 
 List<BoxShadow> get _shadow => [
   BoxShadow(
-    color: Colors.black.withValues(alpha: 0.04),
+    color: const Color(0xFF002B28).withValues(alpha: 0.05),
     blurRadius: 14,
     offset: Offset(0, 7),
   ),

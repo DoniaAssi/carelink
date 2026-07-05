@@ -38,9 +38,30 @@ class _PatientPaymentHistoryScreenState
     });
     try {
       final list = await _api.getPatientPaymentsApi(widget.patientUserId);
+      final enriched = await Future.wait(
+        list.map((item) async {
+          final row = Map<String, dynamic>.from(item as Map);
+          final appointmentId = (row['appointmentId'] ?? row['bookingId'] ?? '')
+              .toString();
+          if (appointmentId.isNotEmpty) {
+            try {
+              final result = await _api.getRefundRequest(
+                appointmentId: appointmentId,
+                patientUserId: widget.patientUserId,
+              );
+              if (result['request'] is Map) {
+                row['refundRequest'] = Map<String, dynamic>.from(
+                  result['request'] as Map,
+                );
+              }
+            } catch (_) {}
+          }
+          return row;
+        }),
+      );
       if (!mounted) return;
       setState(() {
-        _rows = list;
+        _rows = enriched;
         _loading = false;
       });
     } catch (e) {
@@ -131,6 +152,11 @@ class _PatientPaymentHistoryScreenState
                                 .toString();
                         final method = (r['paymentMethod'] ?? '').toString();
                         final st = _statusLabel(r['paymentStatus']);
+                        final refundRequest = r['refundRequest'] is Map
+                            ? Map<String, dynamic>.from(
+                                r['refundRequest'] as Map,
+                              )
+                            : null;
                         final amtStr = amt == null
                             ? '—'
                             : '${amt is num ? amt.toStringAsFixed(2) : amt} ${cur.trim()}';
@@ -162,6 +188,14 @@ class _PatientPaymentHistoryScreenState
                                 ),
                               ),
                               const SizedBox(height: 8),
+                              if (refundRequest != null) ...[
+                                _refundBadge(
+                                  p,
+                                  (refundRequest['status'] ?? 'pending')
+                                      .toString(),
+                                ),
+                                const SizedBox(height: 8),
+                              ],
                               Wrap(
                                 spacing: 10,
                                 runSpacing: 6,
@@ -201,6 +235,44 @@ class _PatientPaymentHistoryScreenState
         border: Border.all(color: p.stroke),
       ),
       child: Text('$k: $v', style: TextStyle(fontSize: 12, color: p.inkMuted)),
+    );
+  }
+
+  Widget _refundBadge(CarelinkPalette p, String status) {
+    final isAr = context.l10n.isArabic;
+    final normalized = status.toLowerCase();
+    final rejected = normalized == 'rejected';
+    final approved = normalized == 'approved' || normalized == 'processed';
+    final color = rejected
+        ? const Color(0xFFD93636)
+        : approved
+        ? const Color(0xFF15803D)
+        : const Color(0xFFF59E0B);
+    final label = rejected
+        ? (isAr ? 'تم رفض طلب الاسترداد' : 'Refund Rejected')
+        : approved
+        ? (isAr ? 'تمت الموافقة على الاسترداد' : 'Refund Approved')
+        : (isAr ? 'طلب الاسترداد قيد المراجعة' : 'Refund Request Pending');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: .24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.account_balance_wallet_outlined, color: color, size: 16),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(color: color, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

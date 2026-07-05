@@ -7,10 +7,15 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:carelink/core/app_nav.dart';
 import 'package:carelink/core/carelink_palette.dart';
+import 'package:carelink/core/locale_controller.dart';
+import 'package:carelink/core/theme_controller.dart';
 import 'package:carelink/features/admin/screens/admin_booking_review_screen.dart';
 import 'package:carelink/features/admin/widgets/admin_ui_support.dart';
+import 'package:carelink/features/notifications/notifications_screen.dart';
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
+import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key, required this.user});
@@ -27,10 +32,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   static const _ink = Color(0xFF0D1B2A);
   static const _muted = Color(0xFF6B7C86);
   static const _line = Color(0xFFD7E7E5);
-  static const double _phoneWidth = 430;
 
   CarelinkPalette get _palette => CarelinkPalette.of(context);
   Color get _surface => _palette.surface;
+  Color get _onPrimary => Theme.of(context).colorScheme.onPrimary;
 
   bool _loading = true;
   String? _error;
@@ -38,9 +43,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   String _requestFilter = 'all';
   String _requestQuery = '';
   String _providerFilter = 'all';
+  String? _providerQuery;
   String _userFilter = 'all';
   String _userQuery = '';
   String _ratingFilter = 'all';
+  bool _showAllRatings = false;
   int _financeTab = 0;
   String _transactionFilter = 'all';
   String _payoutFilter = 'all';
@@ -104,71 +111,24 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _buildAdminScreen(BuildContext context) {
-    final baseTheme = Theme.of(context);
     final p = _palette;
     return Theme(
-      data: baseTheme.copyWith(
-        scaffoldBackgroundColor: p.pageBg,
-        cardColor: p.surface,
-        canvasColor: p.surface,
-        dividerColor: p.stroke,
-        colorScheme: baseTheme.colorScheme.copyWith(
-          surface: p.surface,
-          onSurface: p.inkDark,
-          primary: _darkTeal,
-        ),
-        dialogTheme: DialogThemeData(
-          backgroundColor: p.surface,
-          surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-        ),
-        inputDecorationTheme: baseTheme.inputDecorationTheme.copyWith(
-          filled: true,
-          fillColor: p.surface,
-          hintStyle: TextStyle(color: p.inkMuted),
-          labelStyle: TextStyle(color: p.inkMuted),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: p.stroke),
-          ),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: _darkTeal,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-        outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: _darkTeal,
-            side: BorderSide(color: _line),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-      ),
+      data: adminCareTheme(context),
       child: Directionality(
         textDirection: context.adminTextDirection,
-        child: Scaffold(
-          backgroundColor: p.pageBg,
+        child: PatientScaffold(
+          extendBody: true,
+          enabled: false,
+          backgroundColor: p.surface,
           body: SafeArea(
             child: Center(
               child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: _phoneWidth),
+                constraints: const BoxConstraints(maxWidth: 1100),
                 child: Column(
                   children: [
-                    AdminGlobalControls(),
                     Expanded(
                       child: _loading
-                          ? Center(
-                              child: CircularProgressIndicator(color: _teal),
-                            )
+                          ? const AdminLoadingState()
                           : _error != null
                           ? _ErrorState(message: _error!, onRetry: _load)
                           : RefreshIndicator(
@@ -190,7 +150,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ),
             ),
           ),
-          bottomNavigationBar: _bottomNav(),
+          bottomNavigationBar: _tabIndex == 7 ? null : _bottomNav(),
         ),
       ),
     );
@@ -210,69 +170,32 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         return _financePage();
       case 6:
         return _statisticsPage();
+      case 7:
+        return _adminSettingsPage();
       default:
         return _dashboardPage();
     }
   }
 
   Widget _dashboardPage() {
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final textScale = MediaQuery.textScalerOf(context).scale(1);
-    final compact = screenWidth < 360;
-    final metricCardHeight =
-        (compact ? 132.0 : 124.0) + math.max(0, textScale - 1) * 22;
-    return ListView(
-      padding: EdgeInsets.fromLTRB(18, 12, 18, 28),
-      children: [
-        _adminTopBar(),
-        SizedBox(height: 20),
-        _adminWelcomeCard(),
-        SizedBox(height: 16),
-        _bookingReviewShortcut(),
-        SizedBox(height: 22),
-        _dashboardSectionTitle('Users'),
-        SizedBox(height: 10),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          mainAxisExtent: metricCardHeight,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final horizontal = constraints.maxWidth < 360 ? 10.0 : 14.0;
+        return ListView(
+          padding: EdgeInsets.fromLTRB(horizontal, 8, horizontal, 24),
           children: [
-            _dashboardMetricCard(
-              title: 'Users',
-              value: _compactNumber(_metrics['totalUsers']),
-              trend: '+ 12%',
-              positive: true,
-            ),
-            _dashboardMetricCard(
-              title: 'Providers',
-              value: _compactNumber(
-                _int(_metrics['nurses']) + _int(_metrics['doctors']),
-              ),
-              trend: '+ 8%',
-              positive: true,
-            ),
-            _dashboardMetricCard(
-              title: 'Service Requests',
-              value: _compactNumber(_metrics['totalRequests']),
-              trend: '+ 15%',
-              positive: true,
-            ),
-            _dashboardMetricCard(
-              title: 'Pending Approvals',
-              value: _compactNumber(_metrics['pendingProviders']),
-              trend: '- 23%',
-              positive: false,
-            ),
+            _adminTopBar(),
+            const SizedBox(height: 10),
+            _dashboardHeroCard(),
+            const SizedBox(height: 10),
+            _bookingReviewShortcut(),
+            const SizedBox(height: 10),
+            _dashboardRecentActivities(),
+            const SizedBox(height: 10),
+            _dashboardQuickActionsPanel(),
           ],
-        ),
-        SizedBox(height: 22),
-        _financeOverviewCard(),
-        SizedBox(height: 22),
-        _requestsByStatusCard(),
-      ],
+        );
+      },
     );
   }
 
@@ -288,63 +211,76 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }).toList();
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(18, 12, 18, 28),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
       children: [
-        _requestsTopBar('Service Requests'),
-        SizedBox(height: 18),
-        _requestSearchRow(),
-        SizedBox(height: 16),
+        _requestCompactHeader(),
+        const SizedBox(height: 12),
         _serviceRequestStatusTabs(),
-        SizedBox(height: 16),
-        _bookingReviewInlineCard(),
-        SizedBox(height: 16),
+        const SizedBox(height: 12),
         if (filtered.isEmpty)
           _empty('No service requests match this filter')
         else
           ...filtered.map(_serviceRequestTile),
-        SizedBox(height: 18),
-        _requestsTopBar('Reports & Complaints', compact: true),
-        SizedBox(height: 12),
-        _reportsComplaintTabs(),
-        SizedBox(height: 14),
-        if (_ratings.isEmpty)
-          _empty('No reports or feedback yet')
-        else
-          ..._ratings.take(6).map(_reportComplaintTile),
       ],
     );
   }
 
-  Widget _requestsTopBar(String title, {bool compact = false}) {
-    return Row(
-      children: [
-        IconButton(
-          tooltip: context.adminTr('Back'),
-          onPressed: () => setState(() => _tabIndex = 0),
-          icon: Icon(context.adminBackIcon, color: _teal, size: 21),
-        ),
-        Expanded(
-          child: AdminLocalizedText(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _ink,
-              fontSize: compact ? 15 : 16,
-              fontWeight: FontWeight.w900,
+  Widget _requestCompactHeader() {
+    return SizedBox(
+      height: 48,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: IconButton(
+              tooltip: context.adminTr('Back'),
+              onPressed: () => setState(() => _tabIndex = 0),
+              icon: Icon(
+                context.adminBackIcon,
+                color: _palette.inkDark,
+                size: 23,
+              ),
             ),
           ),
+          const Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: PatientHeaderActions(),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 92),
+            child: AdminLocalizedText(
+              'Service Requests',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: _palette.inkDark,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Kept for the existing reports/complaints view variants.
+  // ignore: unused_element
+  Widget _requestsTopBar(String title, {bool compact = false}) {
+    if (compact) {
+      return AdminLocalizedText(
+        title,
+        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+          color: _palette.inkDark,
+          fontWeight: FontWeight.w800,
         ),
-        IconButton(
-          tooltip: context.adminTr('Language'),
-          onPressed: () {},
-          icon: Icon(Icons.language_rounded, color: _teal, size: 20),
-        ),
-        IconButton(
-          tooltip: context.adminTr('Theme'),
-          onPressed: () {},
-          icon: Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
-        ),
-      ],
+      );
+    }
+    return AdminPageHeader(
+      title: title,
+      onBack: () => setState(() => _tabIndex = 0),
+      onRefresh: _load,
     );
   }
 
@@ -358,6 +294,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     if (mounted) await _load();
   }
 
+  // ignore: unused_element
   Widget _bookingReviewInlineCard() {
     final count = _bookingReviewItems.length;
     if (count == 0) {
@@ -443,6 +380,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _requestSearchRow() {
     return Row(
       children: [
@@ -505,15 +443,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             .length,
       ),
       (
-        'in_progress',
-        'In Progress',
-        _serviceRequests
-            .where(
-              (r) => _serviceStatusGroup(_text(r['status'])) == 'in_progress',
-            )
-            .length,
-      ),
-      (
         'completed',
         'Completed',
         _serviceRequests
@@ -522,17 +451,25 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             )
             .length,
       ),
-    ];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final option in options) ...[
-            _serviceRequestChip(option.$1, '${option.$2} (${option.$3})'),
-            SizedBox(width: 8),
-          ],
-        ],
+      (
+        'cancelled',
+        'Cancelled',
+        _serviceRequests
+            .where(
+              (r) => _serviceStatusGroup(_text(r['status'])) == 'cancelled',
+            )
+            .length,
       ),
+    ];
+    return Row(
+      children: [
+        for (var index = 0; index < options.length; index++) ...[
+          if (index > 0) const SizedBox(width: 7),
+          Expanded(
+            child: _serviceRequestChip(options[index].$1, options[index].$2),
+          ),
+        ],
+      ],
     );
   }
 
@@ -543,17 +480,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       onTap: () => setState(() => _requestFilter = value),
       child: AnimatedContainer(
         duration: Duration(milliseconds: 160),
-        padding: EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? _teal : Color(0xFFE9F8F6),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: selected ? _teal : Color(0xFFD9EEEC)),
+          color: selected ? _teal : _palette.surfaceSoft,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? _teal : _palette.stroke),
         ),
         child: AdminLocalizedText(
           label,
           style: TextStyle(
-            color: selected ? Colors.white : _teal,
-            fontSize: 11.5,
+            color: selected ? _onPrimary : _teal,
+            fontSize: 12,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -565,8 +502,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final status = _text(request['status'], fallback: 'pending');
     final patientName = _text(request['patientName'], fallback: 'Patient');
     return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.fromLTRB(12, 12, 12, 12),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(18),
@@ -575,60 +512,46 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 23,
-            backgroundColor: _teal.withValues(alpha: 0.14),
-            child: AdminLocalizedText(
-              _initials(patientName),
-              style: TextStyle(
-                color: _teal,
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          SizedBox(width: 12),
+          AdminAvatar(data: request, name: patientName, size: 54),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 AdminLocalizedText(
-                  patientName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: _ink,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                SizedBox(height: 4),
-                AdminLocalizedText(
                   _text(request['serviceType'], fallback: 'Service request'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Color(0xFF64787C),
-                    fontSize: 11.5,
+                    color: _palette.inkDark,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                AdminLocalizedText(
+                  patientName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _palette.inkMuted,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                SizedBox(height: 7),
+                const SizedBox(height: 4),
                 Row(
                   children: [
-                    Icon(Icons.location_on_rounded, color: _teal, size: 14),
-                    SizedBox(width: 4),
+                    Icon(Icons.schedule_rounded, color: _teal, size: 14),
+                    const SizedBox(width: 4),
                     Expanded(
                       child: AdminLocalizedText(
-                        _text(
-                          request['location'],
-                          fallback: 'Location not set',
-                        ),
+                        '${_shortDate(request['scheduledAt'] ?? request['createdAt'])}  ${_shortTime(request['scheduledAt'] ?? request['createdAt'])}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Color(0xFF6F8589),
-                          fontSize: 10.5,
+                          color: _palette.inkMuted,
+                          fontSize: 11,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -638,36 +561,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ],
             ),
           ),
-          SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              AdminLocalizedText(
-                _shortDate(request['scheduledAt'] ?? request['createdAt']),
-                style: TextStyle(
-                  color: _ink,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              SizedBox(height: 5),
-              AdminLocalizedText(
-                _shortTime(request['scheduledAt'] ?? request['createdAt']),
-                style: TextStyle(
-                  color: Color(0xFF6F8589),
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              SizedBox(height: 10),
-              _serviceStatusPill(status),
-            ],
-          ),
+          const SizedBox(width: 8),
+          _serviceStatusPill(status),
         ],
       ),
     );
   }
 
+  // ignore: unused_element
   Widget _reportsComplaintTabs() {
     return Row(
       children: [
@@ -688,7 +589,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       child: AdminLocalizedText(
         label,
         style: TextStyle(
-          color: selected ? Colors.white : _teal,
+          color: selected ? _onPrimary : _teal,
           fontSize: 11.5,
           fontWeight: FontWeight.w900,
         ),
@@ -696,6 +597,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _reportComplaintTile(Map<String, dynamic> item) {
     final status = _int(item['stars']) <= 2
         ? 'New'
@@ -713,17 +615,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: Color(0xFF0AA0B8).withValues(alpha: 0.14),
-            child: AdminLocalizedText(
-              _initials(item['patientName']),
-              style: TextStyle(
-                color: Color(0xFF0AA0B8),
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
+          AdminAvatar(
+            data: item,
+            name: _text(item['patientName'], fallback: 'Patient'),
+            size: 44,
           ),
           SizedBox(width: 12),
           Expanded(
@@ -862,19 +757,29 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _providersPage() {
+    final q = (_providerQuery ?? '').trim().toLowerCase();
     final providers = _requests.where((provider) {
       final status = _text(provider['approvalStatus'], fallback: 'pending');
-      if (_providerFilter == 'all') return true;
-      return status == _providerFilter;
+      final haystack =
+          '${provider['fullName']} ${provider['email']} '
+                  '${provider['specialization']} ${provider['serviceType']} ${provider['role']}'
+              .toLowerCase();
+      return (_providerFilter == 'all' || status == _providerFilter) &&
+          (q.isEmpty || haystack.contains(q));
     }).toList();
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(18, 12, 18, 28),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
       children: [
         _providersTopBar(),
-        SizedBox(height: 18),
+        const SizedBox(height: 14),
+        _directorySearchField(
+          hint: 'Search provider...',
+          onChanged: (value) => setState(() => _providerQuery = value),
+        ),
+        const SizedBox(height: 12),
         _providerStatusTabs(),
-        SizedBox(height: 16),
+        const SizedBox(height: 14),
         if (providers.isEmpty)
           _empty('No providers match this filter')
         else
@@ -894,67 +799,461 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }).toList();
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(18, 12, 18, 28),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
       children: [
         _usersTopBar(),
-        SizedBox(height: 18),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                onChanged: (v) => setState(() => _userQuery = v),
-                decoration: InputDecoration(
-                  hintText: context.adminTr('Search user...'),
-                  hintStyle: TextStyle(
-                    color: Color(0xFFB5C2C4),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  prefixIcon: Icon(
-                    Icons.search_rounded,
-                    color: Color(0xFFB5C2C4),
-                    size: 20,
-                  ),
-                  filled: true,
-                  fillColor: _surface,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-            ),
-            SizedBox(width: 12),
-            TextButton.icon(
-              onPressed: () => setState(() {
-                _userFilter = _userFilter == 'all' ? 'nurse' : 'all';
-              }),
-              icon: Icon(Icons.filter_list_rounded, size: 18),
-              label: AdminLocalizedText('Filter'),
-              style: TextButton.styleFrom(
-                foregroundColor: _teal,
-                textStyle: TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
-          ],
+        const SizedBox(height: 14),
+        _directorySearchField(
+          hint: 'Search user...',
+          onChanged: (value) => setState(() => _userQuery = value),
         ),
-        SizedBox(height: 16),
+        const SizedBox(height: 12),
         _usersRoleTabs(),
-        SizedBox(height: 16),
+        const SizedBox(height: 14),
         if (filtered.isEmpty)
           _empty('No users match your search')
         else
           ...filtered.map(_userListRow),
       ],
     );
+  }
+
+  Widget _adminSettingsPage() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+      children: [
+        SizedBox(
+          height: 48,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: IconButton(
+                  tooltip: context.adminTr('Back'),
+                  onPressed: () => setState(() => _tabIndex = 0),
+                  icon: Icon(
+                    context.adminBackIcon,
+                    color: _palette.inkDark,
+                    size: 23,
+                  ),
+                ),
+              ),
+              AdminLocalizedText(
+                'Settings',
+                style: TextStyle(
+                  color: _palette.inkDark,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _palette.stroke),
+            boxShadow: _softDashboardShadow,
+          ),
+          child: Row(
+            children: [
+              AdminAvatar(
+                data: const {},
+                name: widget.user.fullName.isEmpty
+                    ? 'Admin'
+                    : widget.user.fullName,
+                size: 52,
+                icon: Icons.person_rounded,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AdminLocalizedText(
+                      widget.user.fullName.isEmpty
+                          ? 'Admin'
+                          : widget.user.fullName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _palette.inkDark,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    AdminLocalizedText(
+                      widget.user.email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: _palette.inkMuted, fontSize: 11),
+                    ),
+                    const SizedBox(height: 3),
+                    const AdminLocalizedText(
+                      'System Administrator',
+                      style: TextStyle(
+                        color: _teal,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _palette.stroke),
+            boxShadow: _softDashboardShadow,
+          ),
+          child: Column(
+            children: [
+              _settingsRow(
+                icon: Icons.person_rounded,
+                title: 'Account Information',
+                onTap: _showAdminAccountInfo,
+              ),
+              _settingsDivider(),
+              _settingsRow(
+                icon: Icons.lock_rounded,
+                title: 'Change Password',
+                onTap: () => _toast(
+                  'Use the password reset option on the login screen.',
+                ),
+              ),
+              _settingsDivider(),
+              _settingsRow(
+                icon: Icons.notifications_rounded,
+                title: 'Notifications',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => NotificationsScreen(
+                      userId: widget.user.userId,
+                      userRole: 'admin',
+                    ),
+                  ),
+                ),
+              ),
+              _settingsDivider(),
+              _settingsRow(
+                icon: Icons.language_rounded,
+                title: 'Language',
+                trailing: AdminLocalizedText(
+                  localeController.isArabic ? 'Arabic' : 'English',
+                  style: TextStyle(
+                    color: _palette.inkMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                onTap: localeController.toggle,
+              ),
+              _settingsDivider(),
+              _settingsRow(
+                icon: Icons.dark_mode_rounded,
+                title: 'Dark Mode',
+                trailing: Switch.adaptive(
+                  value: themeController.isDark,
+                  activeTrackColor: _teal,
+                  onChanged: (_) => themeController.toggle(),
+                ),
+                onTap: themeController.toggle,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Container(
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _palette.stroke),
+            boxShadow: _softDashboardShadow,
+          ),
+          child: _settingsRow(
+            icon: Icons.logout_rounded,
+            title: 'Log out',
+            color: adminDanger,
+            showChevron: false,
+            onTap: () => appNavigatorKey.currentState?.pushNamedAndRemoveUntil(
+              '/login',
+              (route) => false,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _settingsRow({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Widget? trailing,
+    Color? color,
+    bool showChevron = true,
+  }) {
+    final foreground = color ?? _palette.inkDark;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        child: Row(
+          children: [
+            Icon(icon, color: foreground, size: 19),
+            const SizedBox(width: 11),
+            Expanded(
+              child: AdminLocalizedText(
+                title,
+                style: TextStyle(
+                  color: foreground,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            ?trailing,
+            if (showChevron) ...[
+              const SizedBox(width: 6),
+              Icon(
+                context.adminTextDirection == TextDirection.rtl
+                    ? Icons.chevron_left_rounded
+                    : Icons.chevron_right_rounded,
+                color: _palette.inkMuted,
+                size: 19,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsDivider() =>
+      Divider(height: 1, indent: 14, endIndent: 14, color: _palette.stroke);
+
+  Future<void> _showAdminAccountInfo() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const AdminLocalizedText('Account Information'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AdminLocalizedText(widget.user.fullName),
+            const SizedBox(height: 8),
+            AdminLocalizedText(widget.user.email),
+            const SizedBox(height: 8),
+            AdminLocalizedText(widget.user.phone),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const AdminLocalizedText('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openAdminNotifications() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            NotificationsScreen(userId: widget.user.userId, userRole: 'admin'),
+      ),
+    );
+  }
+
+  // Kept as an optional compact preview; Admin currently uses the exact
+  // shared Patient notifications screen above.
+  // ignore: unused_element
+  Future<void> _openAdminNotificationsPreview() async {
+    final notifications = ApiService()
+        .getNotifications(widget.user.userId)
+        .then(
+          (items) => items
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList(),
+        );
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        backgroundColor: _surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      tooltip: context.adminTr('Close'),
+                      onPressed: () => Navigator.pop(dialogContext),
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: _palette.inkDark,
+                        size: 20,
+                      ),
+                    ),
+                    Expanded(
+                      child: AdminLocalizedText(
+                        'Notifications',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: _palette.inkDark,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.expand_more_rounded, color: _palette.inkMuted),
+                    const SizedBox(width: 10),
+                  ],
+                ),
+                Divider(height: 1, color: _palette.stroke),
+                FutureBuilder<List<Map<String, dynamic>>>(
+                  future: notifications,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: CircularProgressIndicator(color: _teal),
+                      );
+                    }
+                    final items = snapshot.data ?? const [];
+                    if (items.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.all(22),
+                        child: AdminLocalizedText('No notifications yet'),
+                      );
+                    }
+                    return Column(
+                      children: [
+                        for (
+                          var index = 0;
+                          index < items.take(3).length;
+                          index++
+                        ) ...[
+                          _adminNotificationRow(items[index]),
+                          if (index < items.take(3).length - 1)
+                            Divider(height: 1, color: _palette.stroke),
+                        ],
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  height: 42,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => NotificationsScreen(
+                            userId: widget.user.userId,
+                            userRole: 'admin',
+                          ),
+                        ),
+                      );
+                    },
+                    child: const AdminLocalizedText('View All'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _adminNotificationRow(Map<String, dynamic> item) {
+    final title = _text(
+      item['title'] ?? item['subject'],
+      fallback: 'Notification',
+    );
+    final body = _text(
+      item['body'] ?? item['message'] ?? item['text'],
+      fallback: '-',
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Row(
+        children: [
+          AdminAvatar(data: item, name: title, size: 36),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AdminLocalizedText(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _palette.inkDark,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                AdminLocalizedText(
+                  body,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: _palette.inkMuted, fontSize: 9.5),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          AdminLocalizedText(
+            _notificationTime(item['createdAt'] ?? item['timestamp']),
+            maxLines: 1,
+            style: TextStyle(
+              color: _palette.inkMuted,
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _notificationTime(dynamic value) {
+    final date = DateTime.tryParse(_text(value, fallback: ''));
+    if (date == null) return '';
+    final difference = DateTime.now().difference(date.toLocal());
+    if (difference.inMinutes < 1) return context.adminTr('Just now');
+    if (difference.inHours < 1) {
+      return context.adminTr('${difference.inMinutes} minutes ago');
+    }
+    if (difference.inDays < 1) {
+      return context.adminTr('${difference.inHours} hours ago');
+    }
+    return _shortDate(date.toIso8601String());
   }
 
   Widget _ratingsPage() {
@@ -966,136 +1265,140 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }).toList();
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(18, 12, 18, 28),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
       children: [
         _ratingsTopBar(),
-        SizedBox(height: 18),
+        const SizedBox(height: 10),
         _ratingsSummaryCard(),
-        SizedBox(height: 14),
-        _ratingFilterTabs(),
-        SizedBox(height: 16),
+        const SizedBox(height: 12),
         if (filtered.isEmpty)
           _empty('No ratings in the database yet')
         else
-          ...filtered.map(_ratingCard),
+          ...(_showAllRatings ? filtered : filtered.take(3)).map(_ratingCard),
+        if (filtered.length > 3) ...[
+          const SizedBox(height: 2),
+          OutlinedButton(
+            onPressed: () => setState(() => _showAllRatings = true),
+            child: AdminLocalizedText(
+              _showAllRatings ? 'All Ratings' : 'View All',
+            ),
+          ),
+        ],
       ],
     );
   }
 
   Widget _ratingsTopBar() {
-    return Row(
-      children: [
-        IconButton(
-          tooltip: context.adminTr('Back'),
-          onPressed: () => setState(() => _tabIndex = 0),
-          icon: Icon(context.adminBackIcon, color: _teal, size: 21),
-        ),
-        Spacer(),
-        AdminLocalizedText(
-          'Service Ratings',
-          style: TextStyle(
-            color: _ink,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        Spacer(),
-        IconButton(
-          tooltip: context.adminTr('Language'),
-          onPressed: () {},
-          icon: Icon(Icons.language_rounded, color: _teal, size: 20),
-        ),
-        IconButton(
-          tooltip: context.adminTr('Theme'),
-          onPressed: () {},
-          icon: Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
-        ),
-      ],
+    return AdminPageHeader(
+      title: 'Ratings',
+      onBack: () => setState(() => _tabIndex = 0),
+      onRefresh: _load,
     );
   }
 
   Widget _ratingsSummaryCard() {
-    final excellent = _ratings.where((r) => _int(r['stars']) >= 5).length;
-    final low = _ratings.where((r) => _int(r['stars']) <= 2).length;
+    final total = _ratings.length;
+    final average = total == 0
+        ? 0.0
+        : _ratings.fold<double>(0, (sum, item) => sum + _int(item['stars'])) /
+              total;
     return Container(
-      padding: EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: _surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(15),
         border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
-      child: Column(
+      child: Row(
+        textDirection: TextDirection.ltr,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: _palette.surfaceSoft,
-                  borderRadius: BorderRadius.circular(16),
+          SizedBox(
+            width: 105,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                AdminLocalizedText(
+                  average.toStringAsFixed(1),
+                  style: TextStyle(
+                    color: _palette.inkDark,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-                child: Icon(
-                  Icons.star_rounded,
-                  color: Color(0xFFF1A72E),
-                  size: 31,
+                const SizedBox(height: 3),
+                _stars(average.round(), size: 14),
+                const SizedBox(height: 4),
+                AdminLocalizedText(
+                  '($total reviews)',
+                  style: TextStyle(color: _palette.inkMuted, fontSize: 9),
                 ),
-              ),
-              SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AdminLocalizedText(
-                      'Average Rating',
-                      style: TextStyle(
-                        color: Color(0xFF718388),
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Row(
-                      children: [
-                        AdminLocalizedText(
-                          _decimal('averageStars'),
-                          style: TextStyle(
-                            color: _ink,
-                            fontSize: 26,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        SizedBox(width: 8),
-                        _stars(_num(_metrics['averageStars']).round()),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              AdminLocalizedText(
-                '${_int(_metrics['totalRatings'])}',
-                style: TextStyle(
-                  color: _teal,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          Divider(height: 24, color: _palette.stroke),
-          Row(
-            children: [
-              _ratingSummaryMini('Excellent', excellent, Color(0xFF1E9D69)),
-              _ratingSummaryMini('Low', low, Color(0xFFD83A59)),
-              _ratingSummaryMini('Total', _ratings.length, _teal),
-            ],
+          Container(width: 1, height: 90, color: _palette.stroke),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              children: [
+                for (var stars = 5; stars >= 1; stars--)
+                  _ratingDistributionRow(stars, total),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
+  Widget _ratingDistributionRow(int stars, int total) {
+    final count = _ratings.where((item) => _int(item['stars']) == stars).length;
+    final value = total == 0 ? 0.0 : count / total;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        textDirection: TextDirection.ltr,
+        children: [
+          SizedBox(
+            width: 20,
+            child: AdminLocalizedText(
+              '$stars',
+              style: TextStyle(
+                color: _palette.inkDark,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const Icon(Icons.star_rounded, color: Color(0xFFF1A72E), size: 11),
+          const SizedBox(width: 4),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                value: value,
+                minHeight: 6,
+                color: _teal,
+                backgroundColor: _palette.surfaceSoft,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 28,
+            child: AdminLocalizedText(
+              '${(value * 100).round()}%',
+              textAlign: TextAlign.end,
+              style: TextStyle(color: _palette.inkMuted, fontSize: 9),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Kept for the expanded ratings layout.
+  // ignore: unused_element
   Widget _ratingSummaryMini(String label, int value, Color color) {
     return Expanded(
       child: Column(
@@ -1122,6 +1425,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _ratingFilterTabs() {
     final options = [
       ('all', 'All (${_ratings.length})'),
@@ -1160,7 +1464,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         child: AdminLocalizedText(
           label,
           style: TextStyle(
-            color: selected ? Colors.white : _teal,
+            color: selected ? _onPrimary : _teal,
             fontSize: 11.5,
             fontWeight: FontWeight.w900,
           ),
@@ -1171,15 +1475,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   Widget _financePage() {
     return ListView(
-      padding: EdgeInsets.fromLTRB(18, 12, 18, 28),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
       children: [
         _financeTopBar(),
-        SizedBox(height: 16),
-        _financeSummaryStrip(),
-        SizedBox(height: 16),
+        const SizedBox(height: 10),
         _financeSectionTabs(),
-        SizedBox(height: 16),
-        if (_financeTab == 0) ..._financePricingSection(),
+        const SizedBox(height: 12),
+        if (_financeTab == 0) ...[
+          _financeOverviewDashboard(),
+          const SizedBox(height: 16),
+          ..._financePricingSection(),
+        ],
         if (_financeTab == 1) ..._financeTransactionsSection(),
         if (_financeTab == 2) ..._financePayoutsSection(),
         if (_financeTab == 3) ..._financeWalletsSection(),
@@ -1188,38 +1494,47 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _financeTopBar() {
-    return Row(
-      children: [
-        IconButton(
-          tooltip: context.adminTr('Back'),
-          onPressed: () => setState(() => _tabIndex = 0),
-          icon: Icon(context.adminBackIcon, color: _teal, size: 21),
-        ),
-        Expanded(
-          child: AdminLocalizedText(
-            _financeTitle(),
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _ink,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
+    return SizedBox(
+      height: 48,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: IconButton(
+              tooltip: context.adminTr('Back'),
+              onPressed: () => setState(() => _tabIndex = 0),
+              icon: Icon(
+                context.adminBackIcon,
+                color: _palette.inkDark,
+                size: 23,
+              ),
             ),
           ),
-        ),
-        IconButton(
-          tooltip: context.adminTr('Language'),
-          onPressed: () {},
-          icon: Icon(Icons.language_rounded, color: _teal, size: 20),
-        ),
-        IconButton(
-          tooltip: context.adminTr('Theme'),
-          onPressed: () {},
-          icon: Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
-        ),
-      ],
+          const Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: PatientHeaderActions(),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 92),
+            child: AdminLocalizedText(
+              'Finance',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: _palette.inkDark,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
+  // Kept for the detailed finance sub-page variants.
+  // ignore: unused_element
   String _financeTitle() {
     switch (_financeTab) {
       case 1:
@@ -1233,6 +1548,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
   }
 
+  // ignore: unused_element
   Widget _financeSummaryStrip() {
     return Container(
       padding: EdgeInsets.all(14),
@@ -1292,21 +1608,18 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   Widget _financeSectionTabs() {
     final tabs = [
-      ('Active Services', Icons.sell_outlined),
+      ('Overview', Icons.dashboard_outlined),
       ('Transactions', Icons.receipt_long_outlined),
-      ('Requests', Icons.payments_outlined),
+      ('Payouts', Icons.payments_outlined),
       ('Earnings', Icons.account_balance_wallet_outlined),
     ];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (var i = 0; i < tabs.length; i++) ...[
-            _financeTabChip(i, tabs[i].$1, tabs[i].$2),
-            SizedBox(width: 8),
-          ],
+    return Row(
+      children: [
+        for (var i = 0; i < tabs.length; i++) ...[
+          if (i > 0) const SizedBox(width: 6),
+          Expanded(child: _financeTabChip(i, tabs[i].$1, tabs[i].$2)),
         ],
-      ),
+      ],
     );
   }
 
@@ -1317,27 +1630,211 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       onTap: () => setState(() => _financeTab = index),
       child: AnimatedContainer(
         duration: Duration(milliseconds: 160),
-        padding: EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
         decoration: BoxDecoration(
           color: selected ? _teal : _surface,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: selected ? _teal : Color(0xFFDCEDEB)),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        child: AdminLocalizedText(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: selected ? _onPrimary : _palette.inkDark,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _financeOverviewDashboard() {
+    final revenue = _num(_financeOverview['totalRevenue']);
+    final profit = _num(_financeOverview['platformProfit']);
+    final pending = _payouts.where((item) {
+      final status = _text(item['status']).toLowerCase();
+      return status == 'requested' || status == 'pending';
+    }).length;
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _palette.stroke),
+            boxShadow: _softDashboardShadow,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AdminLocalizedText(
+                      'Total Revenue',
+                      style: TextStyle(
+                        color: _palette.inkMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    AdminLocalizedText(
+                      _money(revenue),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _palette.inkDark,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.calendar_today_outlined,
+                          color: adminSuccess,
+                          size: 13,
+                        ),
+                        const SizedBox(width: 2),
+                        AdminLocalizedText(
+                          'This Month',
+                          style: const TextStyle(
+                            color: adminSuccess,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: _palette.surfaceSoft,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.account_balance_wallet_outlined,
+                  color: _darkTeal,
+                  size: 27,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
           children: [
-            Icon(icon, size: 16, color: selected ? Colors.white : _teal),
-            SizedBox(width: 6),
-            AdminLocalizedText(
-              label,
-              style: TextStyle(
-                color: selected ? Colors.white : _ink,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w900,
+            Expanded(
+              child: _financeOverviewMini(
+                'Platform Profit',
+                _money(profit),
+                'Net earnings',
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _financeOverviewMini(
+                'Withdrawal Requests',
+                '$pending',
+                'Pending review',
               ),
             ),
           ],
         ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _palette.stroke),
+            boxShadow: _softDashboardShadow,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AdminLocalizedText(
+                'Revenue',
+                style: TextStyle(
+                  color: _palette.inkDark,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 12),
+              AspectRatio(
+                aspectRatio: 2.15,
+                child: CustomPaint(
+                  painter: _LineChartPainter(
+                    _trendPoints(revenue <= 0 ? 1 : revenue),
+                    _darkTeal,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _financeOverviewMini(String label, String value, String subtitle) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _palette.stroke),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AdminLocalizedText(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: _palette.inkMuted,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          AdminLocalizedText(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: _palette.inkDark,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          AdminLocalizedText(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: adminSuccess,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1360,7 +1857,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           FilledButton.icon(
             style: FilledButton.styleFrom(
               backgroundColor: _teal,
-              foregroundColor: Colors.white,
+              foregroundColor: _onPrimary,
               visualDensity: VisualDensity.compact,
             ),
             onPressed: () => _editPricing(),
@@ -1489,7 +1986,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 child: AdminLocalizedText(
                   option.$2,
                   style: TextStyle(
-                    color: selected == option.$1 ? Colors.white : _teal,
+                    color: selected == option.$1 ? _onPrimary : _teal,
                     fontSize: 10.5,
                     fontWeight: FontWeight.w900,
                   ),
@@ -1565,7 +2062,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 (route) => false,
               );
             },
-            icon: Icon(Icons.logout_rounded, color: Colors.white),
+            icon: Icon(Icons.logout_rounded, color: _onPrimary),
           ),
           Spacer(),
           Column(
@@ -1573,31 +2070,34 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             children: [
               AdminLocalizedText(
                 'CareLink - Admin Dashboard',
-                style: TextStyle(color: Colors.white70, fontSize: 12),
+                style: TextStyle(
+                  color: _onPrimary.withValues(alpha: .72),
+                  fontSize: 12,
+                ),
               ),
               AdminLocalizedText(
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Colors.white,
+                  color: _onPrimary,
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
                 ),
               ),
               AdminLocalizedText(
                 subtitle,
-                style: TextStyle(color: Colors.white, fontSize: 13),
+                style: TextStyle(color: _onPrimary, fontSize: 13),
               ),
             ],
           ),
           SizedBox(width: 18),
           CircleAvatar(
-            backgroundColor: Colors.white.withValues(alpha: 0.16),
+            backgroundColor: _onPrimary.withValues(alpha: 0.16),
             child: IconButton(
               tooltip: context.adminTr('Refresh'),
               onPressed: _load,
-              icon: Icon(Icons.notifications_none_rounded, color: Colors.white),
+              icon: Icon(Icons.notifications_none_rounded, color: _onPrimary),
             ),
           ),
         ],
@@ -1606,32 +2106,226 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _adminTopBar() {
+    Map<String, dynamic> adminData = {
+      'fullName': widget.user.fullName,
+      'userId': widget.user.userId,
+    };
+    for (final user in _users) {
+      final sameId =
+          widget.user.userId.isNotEmpty &&
+          _text(user['userId'], fallback: '') == widget.user.userId;
+      final sameEmail =
+          widget.user.email.isNotEmpty &&
+          _text(user['email'], fallback: '') == widget.user.email;
+      if (sameId || sameEmail) {
+        adminData = user;
+        break;
+      }
+    }
+    final notificationCount =
+        _bookingReviewItems.length + _int(_metrics['pendingProviders']);
+    final firstName = widget.user.fullName.trim().isEmpty
+        ? 'Admin'
+        : widget.user.fullName.trim().split(RegExp(r'\s+')).first;
     return Row(
       children: [
         IconButton(
           tooltip: context.adminTr('Menu'),
-          onPressed: () {},
-          icon: Icon(Icons.menu_rounded, color: _teal, size: 20),
+          onPressed: () => setState(() => _tabIndex = 7),
+          icon: Icon(Icons.menu_rounded, color: _palette.inkDark, size: 25),
         ),
-        Spacer(),
-        AdminLocalizedText(
-          'Admin Dashboard',
-          style: TextStyle(
-            color: _ink,
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
+        const SizedBox(width: 6),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AdminLocalizedText(
+                'Admin Dashboard',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _palette.inkDark,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 2),
+              AdminLocalizedText(
+                'Welcome, $firstName',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _palette.inkMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
         ),
-        Spacer(),
-        IconButton(
-          tooltip: context.adminTr('Refresh'),
-          onPressed: _load,
-          icon: Icon(Icons.notifications_none_rounded, color: _teal),
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              tooltip: context.adminTr('Notifications'),
+              onPressed: _openAdminNotifications,
+              icon: const Icon(
+                Icons.notifications_none_rounded,
+                color: _darkTeal,
+                size: 22,
+              ),
+            ),
+            if (notificationCount > 0)
+              PositionedDirectional(
+                top: 2,
+                end: 1,
+                child: Container(
+                  constraints: const BoxConstraints(
+                    minWidth: 17,
+                    minHeight: 17,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: const BoxDecoration(
+                    color: adminDanger,
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    notificationCount > 9 ? '9+' : '$notificationCount',
+                    style: TextStyle(
+                      color: _onPrimary,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const PatientHeaderActions(),
+        const SizedBox(width: 4),
+        AdminAvatar(
+          data: adminData,
+          name: widget.user.fullName.isEmpty ? 'Admin' : widget.user.fullName,
+          size: 38,
+          icon: Icons.admin_panel_settings_rounded,
         ),
       ],
     );
   }
 
+  Widget _dashboardHeroCard() {
+    final revenue = _num(_financeOverview['totalRevenue']);
+    final values = [
+      (
+        Icons.groups_2_outlined,
+        _compactNumber(_metrics['totalUsers']),
+        'Users',
+      ),
+      (
+        Icons.event_available_rounded,
+        _compactNumber(_metrics['totalRequests']),
+        'Bookings',
+      ),
+      (
+        Icons.manage_accounts_outlined,
+        _compactNumber(_metrics['pendingProviders']),
+        'Pending Requests',
+      ),
+      (
+        Icons.admin_panel_settings_outlined,
+        '${_compactNumber(revenue)} ILS',
+        'Revenue',
+      ),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _palette.stroke),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AdminLocalizedText(
+            "Today's overview",
+            style: TextStyle(
+              color: _palette.inkDark,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 9),
+          Row(
+            textDirection: TextDirection.ltr,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var index = 0; index < values.length; index++) ...[
+                Expanded(
+                  child: _dashboardKpiChip(
+                    icon: values[index].$1,
+                    value: values[index].$2,
+                    label: values[index].$3,
+                  ),
+                ),
+                if (index != values.length - 1) const SizedBox(width: 6),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashboardKpiChip({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      decoration: BoxDecoration(
+        color: _palette.surfaceSoft,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: _darkTeal, size: 20),
+          const SizedBox(height: 5),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: AdminLocalizedText(
+              value,
+              maxLines: 1,
+              style: TextStyle(
+                color: _palette.inkDark,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          AdminLocalizedText(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _palette.inkMuted,
+              fontSize: 9.5,
+              height: 1.15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
   Widget _adminWelcomeCard() {
     final firstName = widget.user.fullName.trim().isEmpty
         ? 'Admin'
@@ -1706,139 +2400,109 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _bookingReviewShortcut() {
-    final count = _bookingReviewItems.length;
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: _openBookingReview,
-      child: Container(
-        padding: EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: _surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Color(0xFFDDEDEA)),
-          boxShadow: _softDashboardShadow,
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: _palette.surfaceSoft,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(Icons.gavel_rounded, color: _darkTeal),
-            ),
-            SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AdminLocalizedText(
-                    'Booking Review',
-                    style: TextStyle(
-                      color: _ink,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  AdminLocalizedText(
-                    count == 0
-                        ? 'Nurse review queue is clear'
-                        : '$count nurse booking${count == 1 ? '' : 's'} need action',
-                    style: TextStyle(
-                      color: Color(0xFF6B7C86),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (count > 0) ...[
-              _pill('$count', Color(0xFFE7FAF4), _teal),
-              SizedBox(width: 8),
-            ],
-            Icon(Icons.chevron_right_rounded, color: _darkTeal),
-          ],
-        ),
+    final waitingRefunds = _transactions.where((item) {
+      final status = _text(item['paymentStatus']).toLowerCase();
+      final escrow = _text(item['escrowStatus']).toLowerCase();
+      return status.contains('refund') || escrow.contains('refund');
+    }).length;
+    final metrics = [
+      (
+        Icons.manage_accounts_outlined,
+        'Pending Reviews',
+        _bookingReviewItems.length,
       ),
-    );
-  }
-
-  Widget _dashboardSectionTitle(String title) {
-    return AdminLocalizedText(
-      title,
-      style: TextStyle(color: _ink, fontSize: 13, fontWeight: FontWeight.w900),
-    );
-  }
-
-  Widget _dashboardMetricCard({
-    required String title,
-    required String value,
-    required String trend,
-    required bool positive,
-  }) {
-    final compact = MediaQuery.sizeOf(context).width < 360;
-    final trendColor = positive ? Color(0xFF14A56A) : Color(0xFFE03131);
+      (Icons.currency_exchange_rounded, 'Waiting Refunds', waitingRefunds),
+    ];
     return Container(
-      padding: EdgeInsets.all(compact ? 12 : 15),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: _surface,
-        borderRadius: BorderRadius.circular(13),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _palette.stroke),
         boxShadow: _softDashboardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          AdminLocalizedText(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Color(0xFF6E7D83),
-              fontSize: 10.5,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          SizedBox(height: compact ? 8 : 10),
-          AdminLocalizedText(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: _ink,
-              fontSize: 21,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          SizedBox(height: compact ? 5 : 7),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: AlignmentDirectional.centerStart,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  positive
-                      ? Icons.arrow_upward_rounded
-                      : Icons.arrow_downward_rounded,
-                  color: trendColor,
-                  size: 13,
-                ),
-                const SizedBox(width: 3),
-                AdminLocalizedText(
-                  trend,
-                  maxLines: 1,
+          Row(
+            children: [
+              Expanded(
+                child: AdminLocalizedText(
+                  'Booking Review',
                   style: TextStyle(
-                    color: trendColor,
-                    fontSize: 11,
+                    color: _palette.inkDark,
+                    fontSize: 15,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
+              ),
+              IconButton(
+                tooltip: context.adminTr('View All'),
+                onPressed: _openBookingReview,
+                icon: Icon(
+                  context.adminTextDirection == TextDirection.rtl
+                      ? Icons.chevron_left_rounded
+                      : Icons.chevron_right_rounded,
+                  color: _darkTeal,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              for (var index = 0; index < metrics.length; index++) ...[
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _palette.surfaceSoft,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(metrics[index].$1, color: _darkTeal, size: 24),
+                        const SizedBox(width: 8),
+                        Column(
+                          children: [
+                            AdminLocalizedText(
+                              '${metrics[index].$3}',
+                              style: const TextStyle(
+                                color: _darkTeal,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            AdminLocalizedText(
+                              metrics[index].$2,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: _palette.inkMuted,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (index != metrics.length - 1) const SizedBox(width: 8),
               ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _openBookingReview,
+              icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+              label: const AdminLocalizedText('Open Review'),
             ),
           ),
         ],
@@ -1846,6 +2510,795 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
+  Widget _dashboardMetricCard({
+    required IconData icon,
+    required String title,
+    required String value,
+    required String trend,
+    required bool positive,
+  }) {
+    final trendColor = positive ? Color(0xFF14A56A) : Color(0xFFE03131);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _palette.stroke),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: _palette.surfaceSoft,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: _darkTeal, size: 22),
+          ),
+          const SizedBox(height: 12),
+          AdminLocalizedText(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: _palette.inkDark,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          AdminLocalizedText(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: _palette.inkMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                positive
+                    ? Icons.arrow_upward_rounded
+                    : Icons.arrow_downward_rounded,
+                color: trendColor,
+                size: 13,
+              ),
+              const SizedBox(width: 3),
+              Flexible(
+                child: AdminLocalizedText(
+                  trend,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: trendColor,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Widget _dashboardResponsivePair({
+    required bool tablet,
+    required Widget first,
+    required Widget second,
+  }) {
+    if (!tablet) {
+      return Column(children: [first, const SizedBox(height: 16), second]);
+    }
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: first),
+          const SizedBox(width: 16),
+          Expanded(child: second),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashboardPanel({
+    required String title,
+    required Widget child,
+    VoidCallback? onViewAll,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _palette.stroke),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: AdminLocalizedText(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _palette.inkDark,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (onViewAll != null)
+                TextButton(
+                  onPressed: onViewAll,
+                  child: const AdminLocalizedText('View All'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Widget _dashboardRevenueCard() {
+    final revenue = _num(_financeOverview['totalRevenue']);
+    return _dashboardPanel(
+      title: 'Total Revenue',
+      onViewAll: () => setState(() => _tabIndex = 5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AdminLocalizedText(
+            _money(revenue),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: _palette.inkDark,
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          AdminLocalizedText(
+            'This Month',
+            style: TextStyle(
+              color: _palette.inkMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          AspectRatio(
+            aspectRatio: 2.2,
+            child: CustomPaint(
+              painter: _LineChartPainter(
+                _trendPoints(revenue <= 0 ? 1 : revenue),
+                _darkTeal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashboardRecentActivities() {
+    final items = _serviceRequests.take(3).toList();
+    return _dashboardPanel(
+      title: 'Recent Activities',
+      onViewAll: () => setState(() => _tabIndex = 1),
+      child: items.isEmpty
+          ? const AdminEmptyState(message: 'No recent activities')
+          : Column(
+              children: [
+                for (var index = 0; index < items.length; index++) ...[
+                  _dashboardActivityRow(
+                    items[index],
+                    isLast: index == items.length - 1,
+                  ),
+                ],
+              ],
+            ),
+    );
+  }
+
+  Widget _dashboardActivityRow(
+    Map<String, dynamic> item, {
+    required bool isLast,
+  }) {
+    final patient = _text(item['patientName'], fallback: 'Patient');
+    return Row(
+      children: [
+        AdminAvatar(data: item, name: patient, size: 34),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AdminLocalizedText(
+                  _text(item['serviceType'], fallback: 'Service Request'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _palette.inkDark,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                AdminLocalizedText(
+                  patient,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: _palette.inkMuted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        AdminLocalizedText(
+          _shortDate(item['createdAt'] ?? item['scheduledAt']),
+          maxLines: 1,
+          style: TextStyle(color: _palette.inkMuted, fontSize: 10),
+        ),
+      ],
+    );
+  }
+
+  // ignore: unused_element
+  Widget _dashboardPendingApprovals() {
+    final pending = _requests
+        .where(
+          (provider) =>
+              _text(provider['approvalStatus'], fallback: 'pending') ==
+              'pending',
+        )
+        .take(6)
+        .toList();
+    return _dashboardPanel(
+      title: 'Pending Approvals',
+      onViewAll: () => setState(() => _tabIndex = 2),
+      child: pending.isEmpty
+          ? const AdminEmptyState(message: 'No pending provider approvals')
+          : SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  for (var index = 0; index < pending.length; index++) ...[
+                    SizedBox(
+                      width: math.min(
+                        280,
+                        MediaQuery.sizeOf(context).width * .76,
+                      ),
+                      child: _dashboardApprovalCard(pending[index]),
+                    ),
+                    if (index != pending.length - 1) const SizedBox(width: 12),
+                  ],
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _dashboardApprovalCard(Map<String, dynamic> provider) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _palette.surfaceSoft,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _palette.stroke),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _providerPhoto(provider),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AdminLocalizedText(
+                      _text(provider['fullName'], fallback: 'Provider'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _palette.inkDark,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    AdminLocalizedText(
+                      _text(provider['specialization'], fallback: 'Provider'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: _palette.inkMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const AdminStatusBadge(status: 'pending', label: 'Pending'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          AdminLocalizedText(
+            _shortDate(provider['createdAt']),
+            style: TextStyle(color: _palette.inkMuted, fontSize: 10.5),
+          ),
+          const SizedBox(height: 12),
+          AdminResponsiveActions(
+            children: [
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: adminDanger,
+                  side: const BorderSide(color: adminDanger),
+                ),
+                onPressed: () => _setApproval(provider, 'rejected'),
+                child: const AdminLocalizedText('Reject'),
+              ),
+              FilledButton(
+                onPressed: () => _setApproval(provider, 'approved'),
+                child: const AdminLocalizedText('Approve'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Widget _dashboardRefundList() {
+    final refunds = _transactions
+        .where((item) {
+          final paymentStatus = _text(item['paymentStatus']).toLowerCase();
+          final escrowStatus = _text(item['escrowStatus']).toLowerCase();
+          return paymentStatus.contains('refund') ||
+              escrowStatus.contains('refund');
+        })
+        .take(5)
+        .toList();
+    return _dashboardPanel(
+      title: 'Refund Requests',
+      onViewAll: () {
+        setState(() {
+          _tabIndex = 5;
+          _financeTab = 1;
+          _transactionFilter = 'refunds';
+        });
+      },
+      child: refunds.isEmpty
+          ? const AdminEmptyState(message: 'No refund requests yet')
+          : Column(
+              children: [
+                for (var index = 0; index < refunds.length; index++) ...[
+                  _dashboardRefundListRow(refunds[index]),
+                  if (index != refunds.length - 1)
+                    Divider(height: 20, color: _palette.stroke),
+                ],
+              ],
+            ),
+    );
+  }
+
+  Widget _dashboardRefundListRow(Map<String, dynamic> item) {
+    final patient = _text(item['patientName'], fallback: 'Patient');
+    final status = _text(
+      item['paymentStatus'] ?? item['escrowStatus'],
+      fallback: 'pending',
+    );
+    return Row(
+      children: [
+        AdminAvatar(data: item, name: patient, size: 40),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AdminLocalizedText(
+                patient,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _palette.inkDark,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 3),
+              AdminLocalizedText(
+                'Booking ${_text(item['requestId'], fallback: '-')}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: _palette.inkMuted, fontSize: 10.5),
+              ),
+              const SizedBox(height: 3),
+              AdminLocalizedText(
+                _money(item['totalAmount'] ?? item['amount']),
+                style: const TextStyle(
+                  color: _darkTeal,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            AdminStatusBadge(status: status, label: status),
+            const SizedBox(height: 6),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _tabIndex = 5;
+                  _financeTab = 1;
+                  _transactionFilter = 'refunds';
+                });
+              },
+              child: const AdminLocalizedText('Review'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ignore: unused_element
+  Widget _dashboardLatestBookings() {
+    final items = _serviceRequests.take(3).toList();
+    return _dashboardPanel(
+      title: 'Latest Bookings',
+      onViewAll: () => setState(() => _tabIndex = 1),
+      child: items.isEmpty
+          ? const AdminEmptyState(message: 'No bookings yet')
+          : Column(
+              children: [
+                for (var index = 0; index < items.length; index++) ...[
+                  _dashboardBookingRow(items[index]),
+                  if (index != items.length - 1)
+                    Divider(height: 20, color: _palette.stroke),
+                ],
+              ],
+            ),
+    );
+  }
+
+  Widget _dashboardBookingRow(Map<String, dynamic> item) {
+    final patient = _text(item['patientName'], fallback: 'Patient');
+    final provider = _text(item['providerName'], fallback: 'Provider');
+    final status = _text(item['status'], fallback: 'pending');
+    return Row(
+      children: [
+        AdminAvatar(data: item, name: patient, size: 38),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AdminLocalizedText(
+                patient,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _palette.inkDark,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 3),
+              AdminLocalizedText(
+                provider,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: _palette.inkMuted, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Flexible(child: AdminStatusBadge(status: status)),
+        const SizedBox(width: 4),
+        Icon(
+          context.adminTextDirection == TextDirection.rtl
+              ? Icons.chevron_left_rounded
+              : Icons.chevron_right_rounded,
+          color: _palette.inkMuted,
+          size: 20,
+        ),
+      ],
+    );
+  }
+
+  // ignore: unused_element
+  Widget _dashboardRefundRequests(List<Map<String, dynamic>> items) {
+    return _dashboardPanel(
+      title: 'Refund Requests',
+      onViewAll: () {
+        setState(() {
+          _tabIndex = 5;
+          _financeTab = 1;
+          _transactionFilter = 'refunds';
+        });
+      },
+      child: items.isEmpty
+          ? const AdminEmptyState(message: 'No refund requests yet')
+          : Column(
+              children: [
+                for (var index = 0; index < items.take(4).length; index++) ...[
+                  _dashboardRefundRow(items[index]),
+                  if (index != items.take(4).length - 1)
+                    Divider(height: 20, color: _palette.stroke),
+                ],
+              ],
+            ),
+    );
+  }
+
+  Widget _dashboardRefundRow(Map<String, dynamic> item) {
+    final patient = _text(item['patientName'], fallback: 'Patient');
+    return Row(
+      children: [
+        AdminAvatar(data: item, name: patient, size: 38),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AdminLocalizedText(
+                patient,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _palette.inkDark,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 3),
+              AdminLocalizedText(
+                _money(item['totalAmount'] ?? item['amount']),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: _palette.inkMuted, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        const Flexible(
+          child: AdminStatusBadge(status: 'processed', label: 'Refunded'),
+        ),
+      ],
+    );
+  }
+
+  Widget _dashboardQuickActionsPanel() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _palette.stroke),
+        boxShadow: _softDashboardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AdminLocalizedText(
+            'Quick Actions',
+            style: TextStyle(
+              color: _palette.inkDark,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _dashboardQuickActions(),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashboardQuickActions() {
+    final actions = <(IconData, String, VoidCallback)>[
+      (
+        Icons.person_add_alt_rounded,
+        'Users',
+        () => setState(() => _tabIndex = 3),
+      ),
+      (
+        Icons.group_add_outlined,
+        'Providers',
+        () => setState(() => _tabIndex = 2),
+      ),
+      (
+        Icons.receipt_long_outlined,
+        'Finance',
+        () => setState(() => _tabIndex = 5),
+      ),
+      (
+        Icons.rule_folder_outlined,
+        'Requests',
+        () => setState(() => _tabIndex = 1),
+      ),
+      (
+        Icons.add_circle_outline_rounded,
+        'Booking Review',
+        () => _openBookingReview(),
+      ),
+      (
+        Icons.bar_chart_rounded,
+        'Statistics',
+        () => setState(() => _tabIndex = 6),
+      ),
+      (Icons.star_rounded, 'Ratings', () => setState(() => _tabIndex = 4)),
+      (Icons.tune_rounded, 'Settings', () => setState(() => _tabIndex = 7)),
+    ];
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: actions.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 1,
+      ),
+      itemBuilder: (context, index) {
+        final action = actions[index];
+        return InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: action.$3,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
+            decoration: BoxDecoration(
+              color: _palette.surfaceSoft,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Icon(action.$1, color: _darkTeal, size: 19),
+                ),
+                const SizedBox(height: 7),
+                AdminLocalizedText(
+                  action.$2,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _palette.inkDark,
+                    fontSize: 9.5,
+                    height: 1.15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ignore: unused_element
+  Widget _dashboardFinanceCompact() {
+    final revenue = _num(_financeOverview['totalRevenue']);
+    final refunds = _transactions.where((item) {
+      final paymentStatus = _text(item['paymentStatus']).toLowerCase();
+      final escrowStatus = _text(item['escrowStatus']).toLowerCase();
+      return paymentStatus.contains('refund') ||
+          escrowStatus.contains('refund');
+    }).length;
+    final metrics = [
+      ('Revenue', _money(revenue)),
+      ('Bookings', _compactNumber(_metrics['totalRequests'])),
+      ('Refunds', _compactNumber(refunds)),
+      ('Monthly Income', _money(_financeOverview['platformProfit'])),
+    ];
+    return _dashboardPanel(
+      title: 'Finance Overview',
+      onViewAll: () => setState(() => _tabIndex = 5),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var index = 0; index < metrics.length; index++) ...[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AdminLocalizedText(
+                        metrics[index].$1,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _palette.inkMuted,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: AdminLocalizedText(
+                          metrics[index].$2,
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: _palette.inkDark,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (index != metrics.length - 1)
+                  Container(
+                    width: 1,
+                    height: 42,
+                    margin: const EdgeInsets.symmetric(horizontal: 5),
+                    color: _palette.stroke,
+                  ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 14),
+          AspectRatio(
+            aspectRatio: 2.8,
+            child: CustomPaint(
+              painter: _LineChartPainter(
+                _trendPoints(revenue <= 0 ? 1 : revenue),
+                _darkTeal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
   Widget _financeOverviewCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1984,6 +3437,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _requestsByStatusCard() {
     final completed = _int(_metrics['completedRequests']);
     final pending = _int(_metrics['pendingRequests']);
@@ -2163,44 +3617,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _statisticsTopBar() {
-    return Row(
-      children: [
-        IconButton(
-          tooltip: context.adminTr('Menu'),
-          onPressed: () {},
-          icon: const Icon(Icons.menu_rounded, color: _teal, size: 22),
-        ),
-        const SizedBox(width: 8),
-        const Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AdminLocalizedText(
-                'Statistics',
-                style: TextStyle(
-                  color: _ink,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              SizedBox(height: 2),
-              AdminLocalizedText(
-                'Overview & key metrics',
-                style: TextStyle(
-                  color: _muted,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-        IconButton(
-          tooltip: context.adminTr('Refresh'),
-          onPressed: _load,
-          icon: Icon(Icons.notifications_none_rounded, color: _palette.inkDark),
-        ),
-      ],
+    return AdminPageHeader(
+      title: 'Statistics',
+      subtitle: 'Overview & key metrics',
+      onBack: () => setState(() => _tabIndex = 0),
+      onRefresh: _load,
     );
   }
 
@@ -2316,7 +3737,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _ink,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
@@ -2394,8 +3815,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ),
                 child: AdminLocalizedText(
                   'This Month\n${_money(revenue)}',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: _onPrimary,
                     fontSize: 10,
                     height: 1.3,
                     fontWeight: FontWeight.w900,
@@ -2922,14 +4343,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.monitor_heart_rounded, color: Colors.white),
+              Icon(Icons.monitor_heart_rounded, color: _onPrimary),
               Spacer(),
               AdminLocalizedText(
                 'Performance Indicators',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: _onPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
                 ),
@@ -2956,15 +4377,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.18),
+          color: _onPrimary.withValues(alpha: 0.18),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Column(
           children: [
             AdminLocalizedText(
               value,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: _onPrimary,
                 fontWeight: FontWeight.w900,
                 fontSize: 17,
               ),
@@ -2972,7 +4393,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             const SizedBox(height: 5),
             AdminLocalizedText(
               label,
-              style: const TextStyle(color: Colors.white, fontSize: 11),
+              style: TextStyle(color: _onPrimary, fontSize: 11),
             ),
           ],
         ),
@@ -3023,50 +4444,45 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ],
             ),
             const Divider(height: 24, color: _line),
-            Row(
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              alignment: WrapAlignment.spaceBetween,
               children: [
                 _smallMeta(
                   Icons.location_on_outlined,
                   _text(item['providerAddress'], fallback: 'Not set'),
                 ),
-                const Spacer(),
                 _smallMeta(
                   Icons.workspace_premium_outlined,
                   '$verified of $total certificates',
                 ),
-                const Spacer(),
                 _smallMeta(Icons.description_outlined, '$documents docs'),
-                const Spacer(),
                 _smallMeta(Icons.trending_up_rounded, tier.toUpperCase()),
               ],
             ),
             const SizedBox(height: 12),
-            Row(
+            AdminResponsiveActions(
               children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _showCertifications(item),
-                    child: const AdminLocalizedText('Certificates'),
-                  ),
+                OutlinedButton(
+                  onPressed: () => _showCertifications(item),
+                  child: const AdminLocalizedText('Certificates'),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: status == 'rejected'
-                        ? null
-                        : () => _setApproval(item, 'rejected'),
-                    child: const AdminLocalizedText('Reject'),
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: adminDanger,
+                    side: const BorderSide(color: adminDanger),
                   ),
+                  onPressed: status == 'rejected'
+                      ? null
+                      : () => _setApproval(item, 'rejected'),
+                  child: const AdminLocalizedText('Reject'),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: _teal),
-                    onPressed: status == 'approved'
-                        ? null
-                        : () => _setApproval(item, 'approved'),
-                    child: const AdminLocalizedText('Approve'),
-                  ),
+                FilledButton(
+                  onPressed: status == 'approved'
+                      ? null
+                      : () => _setApproval(item, 'approved'),
+                  child: const AdminLocalizedText('Approve'),
                 ),
               ],
             ),
@@ -3077,34 +4493,96 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _providersTopBar() {
-    return Row(
-      children: [
-        IconButton(
-          tooltip: context.adminTr('Back'),
-          onPressed: () => setState(() => _tabIndex = 0),
-          icon: Icon(context.adminBackIcon, color: _teal, size: 21),
-        ),
-        const Spacer(),
-        const AdminLocalizedText(
-          'Provider Requests',
-          style: TextStyle(
-            color: _ink,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
+    return _directoryHeader('Providers');
+  }
+
+  Widget _directoryHeader(String title) {
+    return SizedBox(
+      height: 52,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 82,
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: IconButton(
+                tooltip: context.adminTr('Back'),
+                onPressed: () => setState(() => _tabIndex = 0),
+                icon: Icon(
+                  context.adminBackIcon,
+                  color: _palette.inkDark,
+                  size: 25,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: AdminLocalizedText(
+              title,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: _palette.inkDark,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 82,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                CarelinkLocaleIconButton(color: _teal),
+                CarelinkThemeIconButton(color: _teal),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _directorySearchField({
+    required String hint,
+    required ValueChanged<String> onChanged,
+  }) {
+    return SizedBox(
+      height: 50,
+      child: TextField(
+        onChanged: onChanged,
+        style: TextStyle(color: _palette.inkDark, fontSize: 14),
+        decoration: InputDecoration(
+          hintText: context.adminTr(hint),
+          hintStyle: TextStyle(
+            color: _palette.inkMuted.withValues(alpha: .72),
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+          ),
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            color: _palette.inkMuted,
+            size: 21,
+          ),
+          prefixIconConstraints: const BoxConstraints(minWidth: 48),
+          filled: true,
+          fillColor: _surface,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: BorderSide(color: _palette.stroke),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: BorderSide(color: _palette.stroke),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: const BorderSide(color: _teal, width: 1.4),
           ),
         ),
-        const Spacer(),
-        IconButton(
-          tooltip: context.adminTr('Language'),
-          onPressed: () {},
-          icon: const Icon(Icons.language_rounded, color: _teal, size: 20),
-        ),
-        IconButton(
-          tooltip: context.adminTr('Theme'),
-          onPressed: () {},
-          icon: const Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
-        ),
-      ],
+      ),
     );
   }
 
@@ -3142,16 +4620,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             .length,
       ),
     ];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final option in options) ...[
-            _providerStatusChip(option.$1, '${option.$2} (${option.$3})'),
-            const SizedBox(width: 8),
-          ],
+    return Row(
+      children: [
+        for (var index = 0; index < options.length; index++) ...[
+          if (index > 0) const SizedBox(width: 7),
+          Expanded(
+            child: _providerStatusChip(options[index].$1, options[index].$2),
+          ),
         ],
-      ),
+      ],
     );
   }
 
@@ -3162,17 +4639,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       onTap: () => setState(() => _providerFilter = value),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? _teal : const Color(0xFFE9F8F6),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: selected ? _teal : const Color(0xFFD9EEEC)),
+          color: selected ? _teal : _palette.surfaceSoft,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? _teal : _palette.stroke),
         ),
         child: AdminLocalizedText(
           label,
           style: TextStyle(
-            color: selected ? Colors.white : _teal,
-            fontSize: 11.5,
+            color: selected ? _onPrimary : _teal,
+            fontSize: 12,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -3183,23 +4660,31 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Widget _providerRequestTile(Map<String, dynamic> provider) {
     final role = _text(provider['role']);
     final status = _text(provider['approvalStatus'], fallback: 'pending');
-    final rating = _num(provider['overallRating']);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _palette.stroke),
-        boxShadow: _softDashboardShadow,
-      ),
-      child: Column(
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final specialty = _text(
+      provider['specialization'],
+      fallback: _text(provider['serviceType'], fallback: _roleLabel(role)),
+    );
+    return Material(
+      color: _surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: status == 'pending'
+            ? () => _showProviderReview(provider)
+            : () => _showProviderDetails(provider),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _palette.stroke),
+            boxShadow: _softDashboardShadow,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               _providerPhoto(provider),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -3208,145 +4693,65 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       _text(provider['fullName']),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 13.5,
+                      style: TextStyle(
+                        color: _palette.inkDark,
+                        fontSize: 14.5,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
+                    AdminLocalizedText(
+                      specialty,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _palette.inkMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
                     AdminLocalizedText(
                       _roleLabel(role),
-                      style: const TextStyle(
-                        color: Color(0xFF63777B),
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.star_rounded,
-                          color: Color(0xFFF2B134),
-                          size: 15,
-                        ),
-                        const SizedBox(width: 3),
-                        AdminLocalizedText(
-                          rating.toStringAsFixed(1),
-                          style: const TextStyle(
-                            color: _ink,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    AdminLocalizedText(
-                      'Applied on ${_shortDate(provider['createdAt'])}',
-                      style: const TextStyle(
-                        color: Color(0xFF9AA8AB),
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: _palette.inkMuted, fontSize: 11),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
               _providerStatusPill(status),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _teal,
-                    side: const BorderSide(color: Color(0xFFCDE7E4)),
-                    textStyle: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: () => _showProviderDetails(provider),
-                  child: const AdminLocalizedText('View Details'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _teal,
-                    foregroundColor: Colors.white,
-                    textStyle: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: () => _showProviderReview(provider),
-                  child: const AdminLocalizedText('Review'),
-                ),
+              const SizedBox(width: 3),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: _palette.inkMuted,
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _providerPhoto(Map<String, dynamic> provider) {
-    final role = _text(provider['role']);
-    return CircleAvatar(
-      radius: 24,
-      backgroundColor: _roleColor(role).withValues(alpha: 0.15),
-      child: AdminLocalizedText(
-        _initials(provider['fullName']),
-        style: TextStyle(
-          color: _roleColor(role),
-          fontSize: 13,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
+    return AdminAvatar(
+      data: provider,
+      name: _text(provider['fullName'], fallback: 'Provider'),
+      size: 54,
+      icon: Icons.medical_services_rounded,
     );
   }
 
   Widget _providerStatusPill(String status) {
-    final pending = status == 'pending';
-    final approved = status == 'approved';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: approved
-            ? const Color(0xFFE3F8EF)
-            : pending
-            ? const Color(0xFFFFF5DA)
-            : const Color(0xFFFFE8EE),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: AdminLocalizedText(
-        approved
-            ? 'Approved'
-            : pending
-            ? 'Pending'
-            : 'Rejected',
-        style: TextStyle(
-          color: approved
-              ? const Color(0xFF1E9D69)
-              : pending
-              ? const Color(0xFFD28A00)
-              : const Color(0xFFD83A59),
-          fontSize: 10.5,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
+    return AdminStatusBadge(
+      status: status,
+      label: status == 'approved'
+          ? 'Approved'
+          : status == 'pending'
+          ? 'Pending'
+          : 'Rejected',
     );
   }
 
@@ -3419,35 +4824,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _usersTopBar() {
-    return Row(
-      children: [
-        IconButton(
-          tooltip: context.adminTr('Back'),
-          onPressed: () => setState(() => _tabIndex = 0),
-          icon: Icon(context.adminBackIcon, color: _teal, size: 21),
-        ),
-        const Spacer(),
-        const AdminLocalizedText(
-          'Users Management',
-          style: TextStyle(
-            color: _ink,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const Spacer(),
-        IconButton(
-          tooltip: context.adminTr('Language'),
-          onPressed: () {},
-          icon: const Icon(Icons.language_rounded, color: _teal, size: 20),
-        ),
-        IconButton(
-          tooltip: context.adminTr('Theme'),
-          onPressed: () {},
-          icon: const Icon(Icons.dark_mode_rounded, color: _teal, size: 19),
-        ),
-      ],
-    );
+    return _directoryHeader('Users');
   }
 
   Widget _usersRoleTabs() {
@@ -3469,16 +4846,13 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _users.where((u) => _text(u['role']) == 'doctor').length,
       ),
     ];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final option in options) ...[
-            _userRoleChip(option.$1, '${option.$2} (${option.$3})'),
-            const SizedBox(width: 8),
-          ],
+    return Row(
+      children: [
+        for (var index = 0; index < options.length; index++) ...[
+          if (index > 0) const SizedBox(width: 7),
+          Expanded(child: _userRoleChip(options[index].$1, options[index].$2)),
         ],
-      ),
+      ],
     );
   }
 
@@ -3489,18 +4863,18 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       onTap: () => setState(() => _userFilter = value),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
         decoration: BoxDecoration(
           color: selected ? _teal : _surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: selected ? _teal : const Color(0xFFE5F0EF)),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? _teal : _palette.stroke),
           boxShadow: selected ? _softDashboardShadow : null,
         ),
         child: AdminLocalizedText(
           label,
           style: TextStyle(
-            color: selected ? Colors.white : _ink,
-            fontSize: 11.5,
+            color: selected ? _onPrimary : _palette.inkDark,
+            fontSize: 12,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -3511,29 +4885,28 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Widget _userListRow(Map<String, dynamic> user) {
     final active = user['isActive'] == true;
     final role = _text(user['role']);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+    return Material(
+      color: _surface,
+      borderRadius: BorderRadius.circular(18),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         onTap: () => _editUser(user),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _palette.stroke),
+            boxShadow: _softDashboardShadow,
+          ),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: _roleColor(role).withValues(alpha: 0.15),
-                child: AdminLocalizedText(
-                  _initials(user['fullName']),
-                  style: TextStyle(
-                    color: _roleColor(role),
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
-                  ),
-                ),
+              AdminAvatar(
+                data: user,
+                name: _text(user['fullName'], fallback: 'User'),
+                size: 54,
               ),
-              const SizedBox(width: 13),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -3542,18 +4915,31 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       _text(user['fullName']),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 13.5,
+                      style: TextStyle(
+                        color: _palette.inkDark,
+                        fontSize: 14.5,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
+                    AdminLocalizedText(
+                      _text(user['email']),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _palette.inkMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
                     AdminLocalizedText(
                       _roleLabel(role),
-                      style: const TextStyle(
-                        color: Color(0xFF7A8A8E),
-                        fontSize: 11.5,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _palette.inkMuted,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -3561,28 +4947,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              AdminLocalizedText(
-                active ? 'Active' : 'Inactive',
-                style: TextStyle(
-                  color: active
-                      ? const Color(0xFF1E9D69)
-                      : const Color(0xFFD83A59),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                ),
+              AdminStatusBadge(
+                status: active ? 'approved' : 'rejected',
+                label: active ? 'Active' : 'Inactive',
               ),
-              const SizedBox(width: 14),
-              SizedBox(
-                width: 58,
-                child: AdminLocalizedText(
-                  _shortDate(user['createdAt']),
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    color: Color(0xFF9AA8AB),
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+              const SizedBox(width: 3),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: _palette.inkMuted,
               ),
             ],
           ),
@@ -3593,119 +4966,86 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   Widget _ratingCard(Map<String, dynamic> rating) {
     final stars = _int(rating['stars']);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _palette.stroke),
-        boxShadow: _softDashboardShadow,
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: _teal.withValues(alpha: 0.13),
-                child: AdminLocalizedText(
-                  _initials(rating['patientName']),
-                  style: const TextStyle(
-                    color: _teal,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AdminLocalizedText(
-                      _text(rating['providerName'], fallback: 'Provider'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    AdminLocalizedText(
-                      'Patient: ${_text(rating['patientName'], fallback: '-')}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF718388),
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              _stars(stars),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _palette.surfaceSoft,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _palette.stroke),
+    return InkWell(
+      borderRadius: BorderRadius.circular(15),
+      onTap: () => _showRatingDetails(rating),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: _palette.stroke),
+          boxShadow: _softDashboardShadow,
+        ),
+        child: Row(
+          textDirection: TextDirection.ltr,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AdminAvatar(
+              data: rating,
+              name: _text(rating['patientName'], fallback: 'Patient'),
+              size: 40,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.medical_services_outlined,
-                      color: _teal,
-                      size: 15,
-                    ),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: AdminLocalizedText(
-                        _text(rating['serviceType'], fallback: 'Service'),
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _muted,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w800,
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AdminLocalizedText(
+                          _text(rating['providerName'], fallback: 'Provider'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _palette.inkDark,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
-                    ),
-                    AdminLocalizedText(
-                      _shortDate(rating['createdAt']),
-                      style: const TextStyle(
-                        color: Color(0xFF9AA8AB),
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
+                      AdminLocalizedText(
+                        _shortDate(rating['createdAt']),
+                        style: TextStyle(
+                          color: _palette.inkMuted,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 9),
-                AdminLocalizedText(
-                  _text(rating['comment'], fallback: 'No written notes.'),
-                  style: const TextStyle(
-                    color: _ink,
-                    height: 1.35,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  AdminLocalizedText(
+                    _text(rating['serviceType'], fallback: 'Service'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _palette.inkMuted,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  _stars(stars, size: 13),
+                  const SizedBox(height: 3),
+                  AdminLocalizedText(
+                    _text(rating['comment'], fallback: 'No written notes.'),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _palette.inkDark,
+                      height: 1.25,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -3794,17 +5134,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: _teal.withValues(alpha: 0.13),
-            child: AdminLocalizedText(
-              _initials(item['providerName']),
-              style: const TextStyle(
-                color: _teal,
-                fontWeight: FontWeight.w900,
-                fontSize: 12,
-              ),
-            ),
+          AdminAvatar(
+            data: item,
+            name: _text(item['providerName'], fallback: 'Provider'),
+            size: 44,
+            icon: Icons.medical_services_rounded,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -3896,17 +5230,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 23,
-            backgroundColor: _teal.withValues(alpha: 0.13),
-            child: AdminLocalizedText(
-              _initials(item['providerName']),
-              style: const TextStyle(
-                color: _teal,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
+          AdminAvatar(
+            data: item,
+            name: _text(item['providerName'], fallback: 'Provider'),
+            size: 46,
+            icon: Icons.medical_services_rounded,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -3969,7 +5297,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: _teal,
-                    foregroundColor: Colors.white,
+                    foregroundColor: _onPrimary,
                     visualDensity: VisualDensity.compact,
                     textStyle: const TextStyle(
                       fontSize: 10.5,
@@ -4000,17 +5328,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         children: [
           Row(
             children: [
-              CircleAvatar(
-                radius: 23,
-                backgroundColor: _teal.withValues(alpha: 0.13),
-                child: AdminLocalizedText(
-                  _initials(item['providerName']),
-                  style: const TextStyle(
-                    color: _teal,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+              AdminAvatar(
+                data: item,
+                name: _text(item['providerName'], fallback: 'Provider'),
+                size: 46,
+                icon: Icons.medical_services_rounded,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -4055,25 +5377,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   Widget _financeSmallStatus(String text) {
     final lower = text.toLowerCase();
-    final color = lower.contains('reject')
-        ? const Color(0xFFD83A59)
-        : lower.contains('pending') || lower.contains('held')
-        ? const Color(0xFFD28A00)
-        : const Color(0xFF1E9D69);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: AdminLocalizedText(
-        text,
-        style: TextStyle(
-          color: color,
-          fontSize: 10.5,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
+    return AdminStatusBadge(
+      status: lower.contains('reject')
+          ? 'rejected'
+          : lower.contains('pending') || lower.contains('held')
+          ? 'pending'
+          : lower.contains('paid') || lower.contains('transfer')
+          ? 'processed'
+          : 'approved',
+      label: text,
     );
   }
 
@@ -4163,21 +5475,19 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ),
             if (actionable) ...[
               const SizedBox(height: 12),
-              Row(
+              AdminResponsiveActions(
                 children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => _setPayoutStatus(item, 'reject'),
-                      child: const AdminLocalizedText('Reject'),
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: adminDanger,
+                      side: const BorderSide(color: adminDanger),
                     ),
+                    onPressed: () => _setPayoutStatus(item, 'reject'),
+                    child: const AdminLocalizedText('Reject'),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(backgroundColor: _teal),
-                      onPressed: () => _setPayoutStatus(item, 'pay'),
-                      child: const AdminLocalizedText('Transfer'),
-                    ),
+                  FilledButton(
+                    onPressed: () => _setPayoutStatus(item, 'pay'),
+                    child: const AdminLocalizedText('Transfer'),
                   ),
                 ],
               ),
@@ -4322,7 +5632,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 selectedColor: _teal,
                 backgroundColor: _surface,
                 labelStyle: TextStyle(
-                  color: selected ? Colors.white : _ink,
+                  color: selected ? _onPrimary : _ink,
                   fontWeight: FontWeight.w700,
                 ),
                 shape: RoundedRectangleBorder(
@@ -4341,70 +5651,99 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   Widget _bottomNav() {
     final items = const [
-      (Icons.dashboard_outlined, Icons.dashboard_rounded, 'Home'),
-      (Icons.person_add_alt_outlined, Icons.person_add_alt_rounded, 'Requests'),
-      (Icons.groups_outlined, Icons.groups_rounded, 'Providers'),
-      (Icons.people_outline_rounded, Icons.people_alt_rounded, 'Users'),
-      (Icons.star_border_rounded, Icons.star_rounded, 'Ratings'),
+      (Icons.dashboard_outlined, Icons.dashboard_rounded, 'Home', 0),
+      (
+        Icons.person_add_alt_outlined,
+        Icons.person_add_alt_rounded,
+        'Requests',
+        1,
+      ),
+      (Icons.groups_outlined, Icons.groups_rounded, 'Providers', 2),
+      (Icons.people_outline_rounded, Icons.people_alt_rounded, 'Users', 3),
       (
         Icons.account_balance_wallet_outlined,
         Icons.account_balance_wallet_rounded,
         'Finance',
+        5,
       ),
-      (Icons.bar_chart_outlined, Icons.bar_chart_rounded, 'Statistics'),
     ];
+    final compact = MediaQuery.sizeOf(context).width < 360;
+    final navHeight = compact ? 66.0 : 72.0;
+    final selectedPosition = items.indexWhere((item) => item.$4 == _tabIndex);
     return SafeArea(
       top: false,
-      child: Center(
-        heightFactor: 1,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: _phoneWidth),
-          child: Container(
-            height: 82,
-            margin: const EdgeInsets.fromLTRB(16, 6, 16, 14),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(32),
-              border: Border.all(color: _surface),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF0F766E).withValues(alpha: 0.12),
-                  blurRadius: 24,
-                  offset: const Offset(0, 9),
-                ),
-              ],
-            ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              child: Row(
+      child: SizedBox(
+        width: double.infinity,
+        child: Container(
+          height: navHeight,
+          margin: EdgeInsets.fromLTRB(
+            compact ? 8 : 16,
+            4,
+            compact ? 8 : 16,
+            12,
+          ),
+          decoration: BoxDecoration(
+            color: _palette.navBackground,
+            borderRadius: BorderRadius.circular(34),
+            boxShadow: [
+              BoxShadow(
+                color: _palette.cardShadowColor(0.12),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final itemWidth = constraints.maxWidth / items.length;
+              final visualPosition =
+                  context.adminTextDirection == TextDirection.rtl
+                  ? items.length - 1 - selectedPosition
+                  : selectedPosition;
+              final pillWidth = itemWidth * .70;
+              final pillHeight = compact ? 36.0 : 40.0;
+              return Stack(
+                alignment: Alignment.center,
                 children: [
-                  for (var i = 0; i < items.length; i++)
-                    Builder(
-                      builder: (itemContext) => _adminNavItem(
-                        icon: items[i].$1,
-                        activeIcon: items[i].$2,
-                        label: items[i].$3,
-                        selected: _tabIndex == i,
-                        onTap: () {
-                          if (_tabIndex == i) return;
-                          setState(() => _tabIndex = i);
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (!itemContext.mounted) return;
-                            Scrollable.ensureVisible(
-                              itemContext,
-                              duration: const Duration(milliseconds: 260),
-                              curve: Curves.easeOutCubic,
-                              alignment: 0.5,
-                            );
-                          });
-                        },
+                  if (selectedPosition >= 0)
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      left:
+                          visualPosition * itemWidth +
+                          (itemWidth - pillWidth) / 2,
+                      top: (navHeight - pillHeight) / 2,
+                      width: pillWidth,
+                      height: pillHeight,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: adminTeal.withValues(
+                            alpha: _palette.isDark ? .16 : .09,
+                          ),
+                          borderRadius: BorderRadius.circular(22),
+                        ),
                       ),
                     ),
+                  Row(
+                    children: [
+                      for (final item in items)
+                        Expanded(
+                          child: _adminNavItem(
+                            icon: item.$1,
+                            activeIcon: item.$2,
+                            label: item.$3,
+                            selected: _tabIndex == item.$4,
+                            onTap: () {
+                              if (_tabIndex == item.$4) return;
+                              setState(() => _tabIndex = item.$4);
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
-              ),
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -4418,7 +5757,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     required bool selected,
     required VoidCallback onTap,
   }) {
-    final color = selected ? _darkTeal : _palette.navUnselected;
+    final color = selected
+        ? adminTeal
+        : _palette.isDark
+        ? _palette.navUnselected
+        : const Color(0xFF718096);
     return Semantics(
       selected: selected,
       button: true,
@@ -4433,40 +5776,26 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 240),
             curve: Curves.easeOutCubic,
-            width: 74,
-            height: 66,
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            decoration: BoxDecoration(
-              color: selected ? _palette.surfaceSoft : Colors.transparent,
-              borderRadius: BorderRadius.circular(24),
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 240),
-                  width: selected ? 34 : 30,
-                  height: selected ? 34 : 30,
-                  decoration: BoxDecoration(
-                    color: selected ? _surface : _palette.surfaceSoft,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    selected ? activeIcon : icon,
-                    size: selected ? 21 : 19,
-                    color: color,
-                  ),
+                Icon(
+                  selected ? activeIcon : icon,
+                  size: selected ? 23 : 21,
+                  color: color,
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 AdminLocalizedText(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                     color: color,
-                    fontSize: selected ? 10.5 : 9.5,
-                    fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+                    fontSize: selected ? 11.5 : 10.5,
+                    fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
                   ),
                 ),
               ],
@@ -4514,10 +5843,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       backgroundColor: color,
       child: AdminLocalizedText(
         text,
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w900,
-        ),
+        style: TextStyle(color: _onPrimary, fontWeight: FontWeight.w900),
       ),
     );
   }
@@ -4555,7 +5881,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
-  Widget _stars(int stars) {
+  Widget _stars(int stars, {double size = 18}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(
@@ -4563,13 +5889,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         (i) => Icon(
           i < stars ? Icons.star_rounded : Icons.star_border_rounded,
           color: const Color(0xFFF1A72E),
-          size: 18,
+          size: size,
         ),
       ),
     );
   }
 
-  Widget _empty(String message) => _whitePanel(child: _emptyInline(message));
+  Widget _empty(String message) => _whitePanel(
+    child: AdminEmptyState(message: message, icon: Icons.inbox_outlined),
+  );
 
   Widget _emptyInline(String message) {
     return Padding(
@@ -4817,7 +6145,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           child: FilledButton(
                             style: FilledButton.styleFrom(
                               backgroundColor: _teal,
-                              foregroundColor: Colors.white,
+                              foregroundColor: _onPrimary,
                               minimumSize: const Size.fromHeight(46),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
@@ -5120,14 +6448,17 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     String action,
   ) async {
     try {
+      final apiAction = action == 'pay' ? 'approve' : action;
       final response = await http.put(
-        _uri('/admin/finance/payouts/${payout['payoutId']}/$action'),
+        _uri('/admin/finance/payouts/${payout['payoutId']}/$apiAction'),
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw Exception(_message(response));
       }
       _toast(
-        action == 'reject' ? 'Payout request rejected' : 'Payout transferred',
+        apiAction == 'reject'
+            ? 'Payout request rejected'
+            : 'Payout transferred',
       );
       await _load();
     } catch (e) {
@@ -5177,16 +6508,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   SizedBox(height: 12),
                   Row(
                     children: [
-                      CircleAvatar(
-                        radius: 25,
-                        backgroundColor: _teal.withValues(alpha: 0.13),
-                        child: AdminLocalizedText(
-                          _initials(payout['providerName']),
-                          style: TextStyle(
-                            color: _teal,
-                            fontWeight: FontWeight.w900,
-                          ),
+                      AdminAvatar(
+                        data: payout,
+                        name: _text(
+                          payout['providerName'],
+                          fallback: 'Provider',
                         ),
+                        size: 50,
+                        icon: Icons.medical_services_rounded,
                       ),
                       SizedBox(width: 12),
                       Expanded(
@@ -5239,7 +6568,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         child: FilledButton(
                           style: FilledButton.styleFrom(
                             backgroundColor: _teal,
-                            foregroundColor: Colors.white,
+                            foregroundColor: _onPrimary,
                             minimumSize: Size.fromHeight(46),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -5866,7 +7195,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           child: FilledButton.icon(
                             style: FilledButton.styleFrom(
                               backgroundColor: _teal,
-                              foregroundColor: Colors.white,
+                              foregroundColor: _onPrimary,
                               minimumSize: Size.fromHeight(50),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -6322,7 +7651,7 @@ List<Map<String, dynamic>> _list(dynamic value) {
 
 List<BoxShadow> get _shadow => [
   BoxShadow(
-    color: Colors.black.withValues(alpha: 0.04),
+    color: const Color(0xFF002B28).withValues(alpha: 0.05),
     blurRadius: 10,
     offset: Offset(0, 5),
   ),
@@ -6330,7 +7659,7 @@ List<BoxShadow> get _shadow => [
 
 List<BoxShadow> get _softDashboardShadow => [
   BoxShadow(
-    color: Colors.black.withValues(alpha: 0.035),
+    color: const Color(0xFF002B28).withValues(alpha: 0.04),
     blurRadius: 18,
     offset: Offset(0, 8),
   ),
@@ -6468,23 +7797,49 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = CarelinkPalette.of(context);
     return Center(
       child: Padding(
-        padding: EdgeInsets.all(24),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline_rounded, size: 44, color: Colors.red),
-            SizedBox(height: 12),
+            Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                color: Theme.of(
+                  context,
+                ).colorScheme.error.withValues(alpha: .12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.error_outline_rounded,
+                size: 44,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: 20),
             AdminLocalizedText(
-              context.adminError(message),
+              'Something went wrong',
+              style: TextStyle(
+                color: p.inkDark,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
               textAlign: TextAlign.center,
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 8),
+            AdminLocalizedText(
+              context.adminError(message),
+              style: TextStyle(color: p.inkMuted, height: 1.45),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: onRetry,
-              icon: Icon(Icons.refresh_rounded),
-              label: AdminLocalizedText('Retry'),
+              icon: const Icon(Icons.refresh_rounded),
+              label: const AdminLocalizedText('Retry'),
             ),
           ],
         ),
