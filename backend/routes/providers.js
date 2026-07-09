@@ -82,19 +82,46 @@ async function getProviderExtrasProjection() {
   const hasServiceType = await hasColumn('careprovider', 'serviceType');
   const hasConsultationFee = await hasColumn('careprovider', 'consultationFee');
   const hasHourlyRate = await hasColumn('careprovider', 'hourlyRate');
+  const hasHourlyRateSnake = await hasColumn('careprovider', 'hourly_rate');
+  const hasAcceptedPatientRate =
+    (await hasColumn('provider_rates', 'providerId')) &&
+    (await hasColumn('provider_rates', 'patient_rate'));
+  const hasRateAcceptanceStatus = await hasColumn(
+    'provider_rates',
+    'rateAcceptanceStatus',
+  );
 
   const serviceTypeProjection = hasServiceType
     ? 'c.serviceType'
     : "'' AS serviceType";
 
-  let feeProjection = 'NULL AS consultationFee';
-  if (hasConsultationFee && hasHourlyRate) {
-    feeProjection = 'COALESCE(c.consultationFee, c.hourlyRate) AS consultationFee';
-  } else if (hasConsultationFee) {
-    feeProjection = 'c.consultationFee';
-  } else if (hasHourlyRate) {
-    feeProjection = 'c.hourlyRate AS consultationFee';
+  const feeSources = [];
+  if (hasAcceptedPatientRate) {
+    const acceptedCondition = hasRateAcceptanceStatus
+      ? "AND pr.rateAcceptanceStatus = 'accepted'"
+      : '';
+    feeSources.push(`(
+      SELECT NULLIF(pr.patient_rate, 0)
+      FROM provider_rates pr
+      WHERE BINARY pr.providerId = BINARY u.userId
+        ${acceptedCondition}
+      ORDER BY pr.id DESC
+      LIMIT 1
+    )`);
   }
+  if (hasConsultationFee) {
+    feeSources.push('NULLIF(c.consultationFee, 0)');
+  }
+  if (hasHourlyRate) {
+    feeSources.push('NULLIF(c.hourlyRate, 0)');
+  }
+  if (hasHourlyRateSnake) {
+    feeSources.push('NULLIF(c.hourly_rate, 0)');
+  }
+
+  const feeProjection = feeSources.length
+    ? `COALESCE(${feeSources.join(', ')}) AS consultationFee`
+    : 'NULL AS consultationFee';
 
   return `${serviceTypeProjection}, ${feeProjection}`;
 }
@@ -166,11 +193,18 @@ function withBookingEligibility(provider) {
     .toString()
     .trim()
     .toLowerCase();
+  const role = (provider.role || '').toString().toLowerCase();
+  const hasRequiredProfessionalScope =
+    role === 'doctor'
+      ? useful(provider.specialization)
+      : role === 'nurse'
+        ? useful(provider.specialization) || useful(provider.serviceType)
+        : false;
   const isProfileComplete =
     approvalStatus === 'approved' &&
     useful(provider.fullName) &&
-    useful(provider.specialization) &&
-    ['doctor', 'nurse'].includes((provider.role || '').toString().toLowerCase());
+    hasRequiredProfessionalScope &&
+    ['doctor', 'nurse'].includes(role);
 
   return {
     ...provider,
@@ -180,8 +214,23 @@ function withBookingEligibility(provider) {
   };
 }
 
+function resolveProviderPrice(provider) {
+  const candidates = [
+    provider.consultationFee,
+    provider.hourly_rate,
+    provider.hourlyRate,
+    provider.patient_rate,
+    provider.patientRate,
+  ];
+  for (const candidate of candidates) {
+    const price = Number(candidate);
+    if (Number.isFinite(price) && price > 0) return price;
+  }
+  return 0;
+}
+
 function providerCanBeBooked(provider) {
-  const price = Number(provider.consultationFee);
+  const price = resolveProviderPrice(provider);
   const hasValidSlot =
     Array.isArray(provider.availableSlots) &&
     provider.availableSlots.some((slot) => {
@@ -208,7 +257,6 @@ function providerCanBeBooked(provider) {
     provider.isActive === true &&
     provider.isProfileComplete === true &&
     useful(provider.serviceType) &&
-    Number.isFinite(price) &&
     price > 0 &&
     provider.isAvailable === true &&
     hasValidSlot
@@ -870,7 +918,7 @@ router.get('/', async (req, res) => {
     const patientId = req.query.patientId?.toString().trim();
     const isNew = patientId ? await isNewPatient(patientId, db) : false;
 
-    const filteredRows = isNew ? rows.filter(r => (r.role || '').toString().toLowerCase() === 'doctor') : rows;
+    const filteredRows = rows;
 
     if (wantsRealAvailability(req.query.realAvailability)) {
       providersWithSlots = (await attachRealAvailableSlots(filteredRows)).filter(

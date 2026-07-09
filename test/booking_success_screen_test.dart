@@ -16,7 +16,7 @@ void main() {
 
     expect(find.byType(BookingSuccessScreen), findsOneWidget);
     expect(find.byIcon(Icons.check_rounded), findsNWidgets(3));
-    expect(find.textContaining('0.00 ILS'), findsOneWidget);
+    expect(find.text('Not available'), findsWidgets);
     expect(find.text('Payment completed'), findsOneWidget);
     expect(find.text('Request sent'), findsOneWidget);
     expect(find.text('Waiting for approval'), findsOneWidget);

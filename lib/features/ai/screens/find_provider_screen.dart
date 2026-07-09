@@ -8,6 +8,7 @@ import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
 import 'package:carelink/core/locale_controller.dart';
+import 'package:carelink/core/profile_avatar.dart' show profileImageProvider;
 import 'package:carelink/core/theme_controller.dart';
 import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/features/ai/recommendation/ai_recommendation_repository.dart';
@@ -399,6 +400,21 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
     await prefs.setStringList(key, cur.take(8).toList());
   }
 
+  void _safePopOrHome() {
+    final route = ModalRoute.of(context);
+    if (route?.canPop == true) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/patient-home',
+      (route) => false,
+      arguments: {'userId': _activeUserId ?? '', 'initialTab': 0},
+    );
+  }
+
   void _handleBack() {
     if (_aiRunning) {
       setState(() {
@@ -409,7 +425,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
         _showResults = false;
       });
     } else {
-      Navigator.of(context).pop();
+      _safePopOrHome();
     }
   }
 
@@ -540,7 +556,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                     ),
                   ),
                   onPressed: () {
-                    Navigator.of(context).pop();
+                    _safePopOrHome();
                   },
                   child: Text(_t('backToHome')),
                 ),
@@ -596,7 +612,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
             currentIndex: 0,
             onTap: (index) {
               if (index == 0) {
-                Navigator.of(context).pop();
+                _safePopOrHome();
               } else {
                 Navigator.pushNamedAndRemoveUntil(
                   context,
@@ -658,59 +674,92 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
   PreferredSizeWidget _buildResultsAppBar() {
     final p = CarelinkPalette.of(context);
     return PreferredSize(
-      preferredSize: const Size.fromHeight(64),
+      preferredSize: const Size.fromHeight(116),
       child: ColoredBox(
         color: p.pageBg,
         child: SafeArea(
           bottom: false,
-          child: SizedBox(
-            height: 64,
-            child: Stack(
-              alignment: Alignment.center,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
+            child: Row(
               children: [
-                Positioned.fill(
-                  child: PatientTopActions(showBack: true, onBack: _handleBack),
+                _roundIconButton(
+                  icon: Icons.arrow_back_ios_new_rounded,
+                  onTap: _handleBack,
                 ),
-                IgnorePointer(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 96),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _ar
-                              ? 'الذكاء الاصطناعي للرعاية'
-                              : 'AI Care Assistant',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                          ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Find Providers',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: p.inkDark,
+                          fontSize: 30,
+                          fontWeight: FontWeight.w900,
+                          height: 1,
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          _ar
-                              ? 'نوصي لك بأفضل مقدم رعاية بناءً على حالتك واحتياجاتك الطبية'
-                              : 'Care recommendations based on your medical needs',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: p.inkMuted,
-                            fontSize: 8.5,
-                            fontWeight: FontWeight.w600,
-                          ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Find the best care for your needs',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: p.inkMuted,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
+                ),
+                _roundIconButton(
+                  icon: Icons.language_rounded,
+                  onTap: localeController.toggle,
+                ),
+                const SizedBox(width: 10),
+                _roundIconButton(
+                  icon: p.isDark
+                      ? Icons.light_mode_rounded
+                      : Icons.dark_mode_rounded,
+                  onTap: themeController.toggle,
                 ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _roundIconButton({required IconData icon, VoidCallback? onTap}) {
+    final p = CarelinkPalette.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: p.surface,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: p.stroke),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: p.isDark ? 0.20 : 0.05),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Icon(icon, color: AppColors.primary, size: 24),
         ),
       ),
     );
@@ -779,8 +828,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                                         borderRadius: BorderRadius.circular(10),
                                       ),
                                     ),
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(),
+                                    onPressed: _safePopOrHome,
                                     child: Text(_t('backToHome')),
                                   ),
                                   const SizedBox(width: 12),
@@ -823,7 +871,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
               ? TextDirection.rtl
               : TextDirection.ltr,
           child: PopScope(
-            canPop: !_showResults && !_aiRunning,
+            canPop: false,
             onPopInvokedWithResult: (didPop, result) {
               if (didPop) return;
               if (_aiRunning) {
@@ -834,6 +882,8 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                 setState(() {
                   _showResults = false;
                 });
+              } else {
+                _safePopOrHome();
               }
             },
             child: Scaffold(
@@ -1097,25 +1147,6 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
   Widget _resultsBody() {
     final p = CarelinkPalette.of(context);
     final isEmergency = _analysisValue('isEmergency') == 'true';
-    final service =
-        _analysisValue('serviceCategory') ??
-        _analysisValue('service') ??
-        (_ar ? 'رعاية منزلية' : 'Home care');
-    final need =
-        _analysisValue('need') ??
-        _analysisValue('possibleSpecialty') ??
-        (_ar ? 'رعاية صحية' : 'Healthcare');
-    final priority = isEmergency
-        ? (_ar ? 'طارئة' : 'Emergency')
-        : (_analysisValue('priority') ?? (_ar ? 'عادية' : 'Normal'));
-    final confidence =
-        _analysisValue('confidence') ??
-        (_results.isNotEmpty && _results.first.matchPercentage >= 80
-            ? (_ar ? 'مرتفعة' : 'High')
-            : (_ar ? 'جيدة' : 'Good'));
-    final displayedService = _localizeAnalysisValue(service);
-    final displayedNeed = _localizeAnalysisValue(need);
-    final displayedPriority = _localizeAnalysisValue(priority);
 
     return CustomScrollView(
       slivers: [
@@ -1129,10 +1160,10 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                 border: Border.all(color: Colors.red.withValues(alpha: 0.32)),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Row(
+              child: const Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.only(top: 1),
                     child: Icon(
                       Icons.emergency_rounded,
@@ -1140,13 +1171,11 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                       size: 20,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _ar
-                          ? 'يبدو أن هذه حالة طارئة. ننصح بالاتصال بالإسعاف فوراً.'
-                          : 'This appears to be an emergency. Please call emergency services immediately.',
-                      style: const TextStyle(
+                      'This appears to be an emergency. Please call emergency services immediately.',
+                      style: TextStyle(
                         color: Colors.red,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w800,
@@ -1158,21 +1187,51 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
               ),
             ),
           ),
-
-        if (_hasAnalysis() || _results.isNotEmpty)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-              child: _buildAnalysisSummary(
-                service: displayedService,
-                need: displayedNeed,
-                priority: displayedPriority,
-                confidence: confidence,
-                isEmergency: isEmergency,
-              ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
+            child: Row(
+              children: [
+                Expanded(child: _searchBox()),
+                const SizedBox(width: 12),
+                _filterButton(),
+              ],
             ),
           ),
-
+        ),
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height: 54,
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              scrollDirection: Axis.horizontal,
+              children: [
+                _filterChip(
+                  icon: Icons.auto_awesome_rounded,
+                  label: 'Smart match',
+                  selected: true,
+                ),
+                const SizedBox(width: 10),
+                _filterChip(icon: Icons.location_on_outlined, label: 'Nearest'),
+                const SizedBox(width: 10),
+                _filterChip(
+                  icon: Icons.star_border_rounded,
+                  label: 'Top rated',
+                ),
+                const SizedBox(width: 10),
+                _filterChip(icon: Icons.bolt_rounded, label: 'Available now'),
+                const SizedBox(width: 10),
+                _filterChip(icon: Icons.expand_more_rounded, label: 'More'),
+              ],
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+            child: _providersHeroBanner(_results.length),
+          ),
+        ),
         if (_results.isEmpty)
           SliverToBoxAdapter(
             child: Padding(
@@ -1194,9 +1253,7 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    _ar
-                        ? 'لم نجد مقدم رعاية مناسباً لحالتك حالياً.'
-                        : 'We could not find a suitable care provider right now.',
+                    'We could not find a suitable care provider right now.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: p.inkDark,
@@ -1220,11 +1277,9 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      child: Text(
-                        _ar
-                            ? 'عرض جميع مقدمي الرعاية'
-                            : 'View all care providers',
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      child: const Text(
+                        'View all care providers',
+                        style: TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ),
                   ),
@@ -1233,229 +1288,513 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
             ),
           )
         else ...[
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 2, 20, 8),
-              child: Row(
-                children: [
-                  Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: isEmergency ? Colors.red : AppColors.primary,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.star_rounded,
-                      color: Colors.white,
-                      size: 15,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _ar ? 'أفضل تطابق' : 'Best Match',
-                    style: TextStyle(
-                      color: isEmergency ? Colors.red : AppColors.primary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            sliver: SliverList.separated(
+              itemBuilder: (context, index) =>
+                  _providerListCard(_results[index], index),
+              separatorBuilder: (_, _) => const SizedBox(height: 14),
+              itemCount: _results.length,
             ),
           ),
-          // Best Provider
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
-              child: AiProviderRecommendationCard(
-                rank: 1,
-                result: _results[0],
-                highlighted: true,
-                distanceKm: AiProviderRecommendationCard.distanceFrom(
-                  _patLat,
-                  _patLng,
-                  _results[0].provider,
-                ),
-                onTap: () => _openDetails(_results[0]),
-                isArabic: _ar,
-                emergency: isEmergency,
-              ),
-            ),
-          ),
-
-          // Other Providers
-          if (_results.length > 1)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-                child: Text(
-                  _ar ? 'مقدمو رعاية آخرون' : 'Other Care Providers',
-                  style: TextStyle(
-                    color: p.inkDark,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ),
-
-          if (_results.length > 1)
-            SliverPadding(
               padding: EdgeInsets.fromLTRB(
                 20,
-                0,
+                16,
                 20,
                 120 + MediaQuery.paddingOf(context).bottom,
               ),
-              sliver: SliverList.separated(
-                itemBuilder: (context, index) {
-                  final result = _results[index + 1];
-                  return AiProviderRecommendationCard(
-                    rank: index + 2,
-                    result: result,
-                    highlighted: false,
-                    distanceKm: AiProviderRecommendationCard.distanceFrom(
-                      _patLat,
-                      _patLng,
-                      result.provider,
-                    ),
-                    onTap: () => _openDetails(result),
-                    isArabic: _ar,
-                  );
-                },
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemCount: _results.length - 1,
-              ),
+              child: _trustFooter(),
             ),
-          if (_results.length == 1)
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 108 + MediaQuery.paddingOf(context).bottom,
-              ),
-            ),
+          ),
         ],
       ],
     );
   }
 
-  Widget _buildAnalysisSummary({
-    required String service,
-    required String need,
-    required String priority,
-    required String confidence,
-    required bool isEmergency,
+  Widget _filterButton() {
+    return SizedBox(
+      width: 70,
+      height: 58,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF009879), Color(0xFF006F61)],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.22),
+              blurRadius: 22,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.tune_rounded, color: Colors.white, size: 30),
+      ),
+    );
+  }
+
+  Widget _searchBox() {
+    final p = CarelinkPalette.of(context);
+    return TextField(
+      controller: _caseController,
+      textInputAction: TextInputAction.search,
+      onSubmitted: (_) => _analyzeCase(),
+      style: TextStyle(
+        color: p.inkDark,
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+      ),
+      decoration: InputDecoration(
+        hintText: 'Search by name, specialty, or service',
+        hintStyle: TextStyle(color: p.inkMuted, fontWeight: FontWeight.w600),
+        prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primary),
+        filled: true,
+        fillColor: p.surface,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 18,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(22),
+          borderSide: BorderSide(color: p.stroke),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(22),
+          borderSide: BorderSide(color: p.stroke),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(22),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.4),
+        ),
+      ),
+    );
+  }
+
+  Widget _filterChip({
+    required IconData icon,
+    required String label,
+    bool selected = false,
   }) {
     final p = CarelinkPalette.of(context);
-    final score = _results.isEmpty ? null : _results.first.matchPercentage;
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: p.stroke),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: p.isDark ? 0.16 : 0.035),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
+        color: selected ? AppColors.primary : p.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: selected ? AppColors.primary : p.stroke,
+          width: 1.1,
+        ),
+        boxShadow: selected
+            ? [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.20),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 18,
+            color: selected ? Colors.white : AppColors.primary,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : p.inkDark,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    );
+  }
+
+  Widget _providersHeroBanner(int count) {
+    final p = CarelinkPalette.of(context);
+    return Container(
+      height: 116,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            AppColors.primary.withValues(alpha: p.isDark ? 0.20 : 0.08),
+            const Color(0xFFBAEBDD).withValues(alpha: p.isDark ? 0.16 : 0.42),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Stack(
         children: [
-          Row(
+          Positioned(
+            right: 18,
+            bottom: 0,
+            child: Icon(
+              Icons.health_and_safety_rounded,
+              color: AppColors.primary.withValues(alpha: 0.34),
+              size: 92,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(22),
+            child: Row(
+              children: [
+                Container(
+                  width: 62,
+                  height: 62,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(
+                      alpha: p.isDark ? 0.10 : 0.42,
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.medical_services_outlined,
+                    color: AppColors.primary,
+                    size: 30,
+                  ),
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '$count care providers available',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: p.inkDark,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Choose the right provider for your care needs',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: p.inkMuted,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _providerListCard(AIRecommendationResult result, int index) {
+    final p = CarelinkPalette.of(context);
+    final provider = result.provider;
+    final distance = AiProviderRecommendationCard.distanceFrom(
+      _patLat,
+      _patLng,
+      provider,
+    );
+    final fee = provider.consultationFee;
+    final canBook = ProviderBookingEligibility.canBook(provider);
+    final imageProvider = profileImageProvider(provider.profileImageUrl);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: canBook ? () => _openDetails(result) : null,
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: _providerCardDecoration(p),
+          child: Column(
             children: [
-              Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: const Icon(
-                  Icons.analytics_rounded,
-                  color: Colors.white,
-                  size: 16,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      CircleAvatar(
+                        radius: 39,
+                        backgroundColor: AppColors.primary.withValues(
+                          alpha: 0.08,
+                        ),
+                        backgroundImage: imageProvider,
+                        child: imageProvider == null
+                            ? Text(
+                                _initials(provider.fullName),
+                                style: const TextStyle(
+                                  color: AppColors.primary,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              )
+                            : null,
+                      ),
+                      Positioned(
+                        right: -2,
+                        bottom: 4,
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            color: canBook ? AppColors.primary : Colors.grey,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: p.surface, width: 3),
+                          ),
+                          child: Icon(
+                            canBook ? Icons.check_rounded : Icons.close_rounded,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                provider.fullName.isEmpty
+                                    ? 'Care Provider'
+                                    : provider.fullName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: p.inkDark,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            Icon(
+                              index == 1
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              color: index == 1
+                                  ? const Color(0xFFE84E72)
+                                  : p.inkMuted,
+                              size: 27,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          provider.serviceType.trim().isNotEmpty
+                              ? provider.serviceType
+                              : 'Consultation',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _miniPill(
+                              Icons.star_rounded,
+                              provider.overallRating > 0
+                                  ? provider.overallRating.toStringAsFixed(1)
+                                  : '${result.matchPercentage}%',
+                              const Color(0xFFFFB300),
+                            ),
+                            _miniPill(
+                              Icons.location_on_outlined,
+                              distance == null
+                                  ? 'Nearby'
+                                  : '${distance.toStringAsFixed(1)} km',
+                              const Color(0xFF39536D),
+                            ),
+                            _miniPill(
+                              Icons.circle,
+                              canBook ? 'Available' : 'Busy',
+                              canBook ? const Color(0xFF08A657) : Colors.grey,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Text(
-                _ar ? 'تحليل الذكاء الاصطناعي' : 'AI Analysis',
-                style: TextStyle(
-                  color: p.inkDark,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      height: 58,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(
+                          alpha: p.isDark ? 0.13 : 0.07,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: p.surface.withValues(alpha: 0.74),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.credit_card_rounded,
+                              color: AppColors.primary,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  fee == null
+                                      ? 'Fee'
+                                      : '${fee.toStringAsFixed(fee.truncateToDouble() == fee ? 0 : 1)} ILS',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                Text(
+                                  'per visit',
+                                  style: TextStyle(
+                                    color: p.inkMuted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: SizedBox(
+                      height: 58,
+                      child: ElevatedButton(
+                        onPressed: canBook ? () => _openDetails(result) : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: Colors.grey.shade300,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                'View details',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 10),
+                            Icon(Icons.chevron_right_rounded, size: 26),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          _analysisRow(
-            icon: Icons.home_rounded,
-            label: _ar ? 'الخدمة المكتشفة' : 'Detected service',
-            value: service,
-          ),
-          _analysisRow(
-            icon: Icons.medical_services_outlined,
-            label: _ar ? 'الاحتياج الطبي' : 'Medical need',
-            value: need,
-          ),
-          _analysisRow(
-            icon: Icons.flag_rounded,
-            label: _ar ? 'الأولوية' : 'Priority',
-            value: priority,
-            color: isEmergency ? Colors.red : AppColors.primary,
-          ),
-          _analysisRow(
-            icon: Icons.verified_user_rounded,
-            label: _ar ? 'نسبة الثقة' : 'Confidence',
-            value: score == null ? confidence : '$score% ($confidence)',
-            isLast: true,
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _analysisRow({
-    required IconData icon,
-    required String label,
-    required String value,
-    Color color = AppColors.primary,
-    bool isLast = false,
-  }) {
+  BoxDecoration _providerCardDecoration(CarelinkPalette p) {
+    return BoxDecoration(
+      color: p.surface,
+      borderRadius: BorderRadius.circular(22),
+      border: Border.all(
+        color: p.isDark
+            ? const Color(0xFF7CCFC6).withValues(alpha: 0.72)
+            : const Color(0xFF7CCFC6),
+        width: 1.4,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: p.isDark ? 0.16 : 0.035),
+          blurRadius: 12,
+          offset: const Offset(0, 6),
+        ),
+      ],
+    );
+  }
+
+  Widget _miniPill(IconData icon, String label, Color color) {
     final p = CarelinkPalette.of(context);
     return Container(
-      padding: EdgeInsets.only(bottom: isLast ? 0 : 8, top: 4),
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: p.isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : const Color(0xFFF2F6F8),
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(width: 9),
-          SizedBox(
-            width: _ar ? 104 : 112,
-            child: Text(
-              '$label:',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: p.inkMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: color,
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-              ),
+          Icon(icon, size: icon == Icons.circle ? 10 : 18, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: p.inkDark,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],
@@ -1463,15 +1802,78 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
     );
   }
 
-  bool _hasAnalysis() {
-    return [
-      'serviceCategory',
-      'possibleSpecialty',
-      'need',
-      'priority',
-      'note',
-      'isEmergency',
-    ].any((key) => _analysisValue(key) != null);
+  Widget _trustFooter() {
+    final items = [
+      (Icons.verified_user_outlined, 'Verified', 'Trusted providers'),
+      (Icons.schedule_rounded, 'Fast Booking', 'Instant confirmation'),
+      (Icons.lock_outline_rounded, 'Secure', 'Your data is safe'),
+      (Icons.support_agent_rounded, '24/7 Support', 'We are here to help'),
+    ];
+    final p = CarelinkPalette.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
+      decoration: BoxDecoration(
+        color: p.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: p.stroke),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: p.isDark ? 0.16 : 0.045),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            Expanded(
+              child: Column(
+                children: [
+                  Icon(items[i].$1, color: AppColors.primary, size: 26),
+                  const SizedBox(height: 8),
+                  Text(
+                    items[i].$2,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: p.inkDark,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    items[i].$3,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: p.inkMuted,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (i != items.length - 1)
+              Container(width: 1, height: 42, color: p.stroke),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _initials(String value) {
+    final parts = value
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'CL';
+    final first = parts.first.characters.first;
+    final second = parts.length > 1 ? parts.last.characters.first : '';
+    return '$first$second'.toUpperCase();
   }
 
   String _t(String key) {
@@ -1485,29 +1887,6 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
       return null;
     }
     return value;
-  }
-
-  String _localizeAnalysisValue(String value) {
-    if (!_ar) return value;
-    const values = <String, String>{
-      'general': 'رعاية عامة',
-      'general medicine': 'طب عام',
-      'home care': 'رعاية منزلية',
-      'home nursing': 'تمريض منزلي',
-      'nursing': 'تمريض',
-      'wound care': 'رعاية جروح',
-      'cardiology': 'أمراض القلب',
-      'elderly care': 'رعاية كبار السن',
-      'physiotherapy': 'علاج طبيعي',
-      'doctor': 'طبيب',
-      'nurse': 'ممرض/ة',
-      'normal': 'عادية',
-      'urgent': 'عاجلة',
-      'emergency': 'طارئة',
-      'high': 'مرتفعة',
-      'good': 'جيدة',
-    };
-    return values[value.trim().toLowerCase()] ?? value;
   }
 }
 
