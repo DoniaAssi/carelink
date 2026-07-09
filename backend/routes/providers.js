@@ -231,6 +231,13 @@ function resolveProviderPrice(provider) {
 
 function providerCanBeBooked(provider) {
   const price = resolveProviderPrice(provider);
+  const role = (provider.role || '').toString().trim().toLowerCase();
+  const hasRequiredServiceScope =
+    role === 'doctor'
+      ? useful(provider.specialization)
+      : role === 'nurse'
+        ? useful(provider.specialization) || useful(provider.serviceType)
+        : false;
   const hasValidSlot =
     Array.isArray(provider.availableSlots) &&
     provider.availableSlots.some((slot) => {
@@ -256,7 +263,7 @@ function providerCanBeBooked(provider) {
   return (
     provider.isActive === true &&
     provider.isProfileComplete === true &&
-    useful(provider.serviceType) &&
+    hasRequiredServiceScope &&
     price > 0 &&
     provider.isAvailable === true &&
     hasValidSlot

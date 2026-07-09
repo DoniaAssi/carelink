@@ -2190,6 +2190,13 @@ router.post('/schedule/:doctorId', async (req, res) => {
       savedSlots.push({ slot_id: slotId, ...slot, providerUserId: doctorId });
     }
 
+    if (savedSlots.length > 0) {
+      await db.query(
+        'UPDATE careprovider SET isAvailable = 1 WHERE BINARY userId = BINARY ?',
+        [doctorId]
+      );
+    }
+
     res.json({
       success: true,
       message: 'Availability slots added',
