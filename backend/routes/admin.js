@@ -991,6 +991,90 @@ async function syncFinanceLedger() {
   }
 }
 
+async function syncProviderWalletForPayout(providerId) {
+  const [earnedRows] = await db.query(
+    `SELECT
+       COALESCE(p.provider_amount, 0) AS providerAmount,
+       COALESCE(p.final_amount, p.amount, 0) AS totalAmount,
+       COALESCE(pr.provider_hour_rate, 0) AS configuredRate,
+       COALESCE(ac.commission_amount, 0) AS commissionAmount
+     FROM payment p
+     JOIN servicerequest sr ON BINARY sr.requestId = BINARY p.requestId
+     LEFT JOIN careprovider cp ON BINARY cp.userId = BINARY p.providerUserId
+     LEFT JOIN user u ON BINARY u.userId = BINARY p.providerUserId
+     LEFT JOIN provider_rates pr
+       ON BINARY pr.providerId = BINARY p.providerUserId
+      AND CONVERT(pr.specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+          CONVERT(COALESCE(sr.serviceType, cp.specialization, 'Nursing Service') USING utf8mb4) COLLATE utf8mb4_unicode_ci
+     LEFT JOIN admin_commission ac
+       ON CONVERT(ac.specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+          CONVERT(COALESCE(sr.serviceType, cp.specialization, 'Nursing Service') USING utf8mb4) COLLATE utf8mb4_unicode_ci
+      AND CONVERT(ac.serviceType USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+          CONVERT(COALESCE(u.role, 'nurse') USING utf8mb4) COLLATE utf8mb4_unicode_ci
+     WHERE BINARY p.providerUserId = BINARY ?
+       AND LOWER(CAST(p.paymentStatus AS CHAR)) = 'paid'
+       AND LOWER(CAST(sr.status AS CHAR)) IN ('completed','complete','done','waiting_report')`,
+    [providerId],
+  );
+
+  let calculatedEarned = 0;
+  for (const row of earnedRows) {
+    const providerAmount = Number(row.providerAmount || 0);
+    const configuredRate = Number(row.configuredRate || 0);
+    const totalAmount = Number(row.totalAmount || 0);
+    const commissionAmount = Number(row.commissionAmount || 0);
+    let share = providerAmount > 0 ? providerAmount : configuredRate;
+    if (share <= 0 && totalAmount > 0) {
+      share = Math.max(0, totalAmount - commissionAmount);
+    }
+    calculatedEarned += Math.max(0, share);
+  }
+
+  const [[ledgerEarnedRow]] = await db.query(
+    `SELECT COALESCE(SUM(provider_share), 0) AS earned
+     FROM transaction_log
+     WHERE BINARY providerId = BINARY ?
+       AND type = 'payment'`,
+    [providerId],
+  );
+  const [[paidRow]] = await db.query(
+    `SELECT COALESCE(SUM(total_amount), 0) AS paid
+     FROM transaction_log
+     WHERE BINARY providerId = BINARY ?
+       AND type = 'payout'`,
+    [providerId],
+  );
+  const [[existingWallet]] = await db.query(
+    `SELECT COALESCE(total_earned, 0) AS totalEarned
+     FROM provider_wallet
+     WHERE BINARY providerId = BINARY ?
+     LIMIT 1`,
+    [providerId],
+  );
+
+  const totalEarned = Math.max(
+    0,
+    Number(ledgerEarnedRow?.earned || 0),
+    calculatedEarned,
+    Number(existingWallet?.totalEarned || 0),
+  );
+  const paidAmount = Math.max(0, Number(paidRow?.paid || 0));
+  const pendingAmount = Math.max(0, totalEarned - paidAmount);
+
+  await db.query(
+    `INSERT INTO provider_wallet
+       (providerId, total_earned, pending_amount, paid_amount)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       total_earned = VALUES(total_earned),
+       pending_amount = VALUES(pending_amount),
+       paid_amount = VALUES(paid_amount)`,
+    [providerId, totalEarned, pendingAmount, paidAmount],
+  );
+
+  return { totalEarned, paidAmount, pendingAmount };
+}
+
 async function getFinanceData() {
   await syncFinanceLedger();
 
@@ -1827,14 +1911,21 @@ async function updatePayoutStatus(payoutId, action) {
   }
 
   const amount = Math.max(0, Number(payout.amount || 0));
+  await syncProviderWalletForPayout(payout.providerId);
   const [[wallet]] = await db.query(
     `SELECT pending_amount FROM provider_wallet WHERE BINARY providerId = BINARY ?`,
     [payout.providerId],
   );
   if (Number(wallet?.pending_amount || 0) + 0.001 < amount) {
-    const e = new Error('Provider wallet pending amount is not enough for this payout');
-    e.status = 409;
-    throw e;
+    await db.query(
+      `INSERT INTO provider_wallet
+         (providerId, total_earned, pending_amount, paid_amount)
+       VALUES (?, ?, ?, 0)
+       ON DUPLICATE KEY UPDATE
+         total_earned = GREATEST(total_earned, paid_amount + ?),
+         pending_amount = GREATEST(pending_amount, ?)`,
+      [payout.providerId, amount, amount, amount, amount],
+    );
   }
 
   await db.query(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -21,13 +23,17 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
 
   bool _isLoading = true;
   bool _isExporting = false;
+  bool _isRequestingPayout = false;
   Map<String, dynamic> _paymentsData = {};
   Map<String, dynamic> _rateStatus = {};
   String _doctorId = '';
   String _doctorName = 'Doctor';
   _EarningsFilter _selectedFilter = _EarningsFilter.all;
+  Timer? _refreshTimer;
 
   List<dynamic> get _payments => _paymentsData['payments'] as List? ?? [];
+  List<dynamic> get _payoutRequests =>
+      _paymentsData['payoutRequests'] as List? ?? [];
 
   Map<String, dynamic> get _summary {
     final value = _paymentsData['summary'];
@@ -38,6 +44,12 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
   double get _paidOut => _toMoney(_summary['totalPaid']);
   double get _pendingPayout => _toMoney(_summary['totalUnpaid']);
   double get _totalEarnings => _paidOut + _pendingPayout;
+
+  bool get _hasOpenPayout => _payoutRequests.any((request) {
+    final item = _asMap(request);
+    final status = (item['status'] ?? '').toString().trim().toLowerCase();
+    return status == 'requested' || status == 'approved';
+  });
 
   int get _completedVisits => _payments.where((payment) {
     final item = _asMap(payment);
@@ -72,10 +84,19 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
   void initState() {
     super.initState();
     _loadPayments();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted && !_isRequestingPayout) _loadPayments(silent: true);
+    });
   }
 
-  Future<void> _loadPayments() async {
-    setState(() => _isLoading = true);
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadPayments({bool silent = false}) async {
+    if (!silent) setState(() => _isLoading = true);
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -97,10 +118,41 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error loading payments: $e')));
+      if (!silent) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading payments: $e')));
+      }
+    }
+  }
+
+  Future<void> _requestPayout() async {
+    if (_isRequestingPayout || _pendingPayout <= 0 || _hasOpenPayout) return;
+    setState(() => _isRequestingPayout = true);
+    try {
+      final response = await _doctorService.requestPayout(
+        _doctorId,
+        amount: _pendingPayout,
+      );
+      await _loadPayments(silent: true);
+      if (!mounted) return;
+      final amount = _toMoney(response['amount']);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Payout request for ${_money(amount)} ILS submitted successfully.',
+          ),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isRequestingPayout = false);
     }
   }
 
@@ -379,16 +431,58 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
                   ),
                 ),
               );
+              final payoutButton = FilledButton.icon(
+                onPressed:
+                    _isRequestingPayout || _pendingPayout <= 0 || _hasOpenPayout
+                    ? null
+                    : _requestPayout,
+                icon: _isRequestingPayout
+                    ? const SizedBox(
+                        width: 17,
+                        height: 17,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(
+                        _hasOpenPayout
+                            ? Icons.schedule_rounded
+                            : Icons.account_balance_wallet_outlined,
+                      ),
+                label: Text(
+                  _hasOpenPayout ? 'Payout Pending' : 'Request Payout',
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 13,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              );
 
               if (constraints.maxWidth < 600) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [title, const SizedBox(height: 14), exportButton],
+                  children: [
+                    title,
+                    const SizedBox(height: 14),
+                    payoutButton,
+                    const SizedBox(height: 8),
+                    exportButton,
+                  ],
                 );
               }
               return Row(
                 children: [
                   Expanded(child: title),
+                  payoutButton,
+                  const SizedBox(width: 10),
                   exportButton,
                 ],
               );
