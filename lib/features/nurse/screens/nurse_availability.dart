@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/shared/models/user.dart';
@@ -190,7 +190,7 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
               const SizedBox(height: 12),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Start Time'),
+                title: Text(NurseUi.t('Start Time')),
                 subtitle: Text(_formatTime(start)),
                 onTap: () async {
                   final picked = await showTimePicker(
@@ -202,7 +202,7 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('End Time'),
+                title: Text(NurseUi.t('End Time')),
                 subtitle: Text(_formatTime(end)),
                 onTap: () async {
                   final picked = await showTimePicker(
@@ -290,3 +290,4 @@ class _NurseAvailabilityState extends State<NurseAvailability> {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 }
+

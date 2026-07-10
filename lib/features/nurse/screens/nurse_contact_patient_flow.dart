@@ -1125,17 +1125,7 @@ PreferredSizeWidget _contactAppBar(
 }
 
 BoxDecoration _contactCardDecoration() {
-  return BoxDecoration(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(18),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withValues(alpha: 0.045),
-        blurRadius: 18,
-        offset: const Offset(0, 8),
-      ),
-    ],
-  );
+  return NurseUi.cardDecoration();
 }
 
 Widget _acceptedBadge() {

@@ -1184,6 +1184,78 @@ function bookingReviewNotes(reviewStatus) {
   }
 }
 
+function bookingReviewDecisionMessage(decision) {
+  switch (decision) {
+    case 'confirm_completed':
+      return {
+        title: 'Service marked as completed',
+        body: 'Admin reviewed your nurse booking and confirmed that the service was completed.',
+      };
+    case 'full_refund':
+      return {
+        title: 'Refund decision has been made',
+        body: 'Admin reviewed your nurse booking and approved a full refund to the patient.',
+      };
+    case 'partial_refund':
+      return {
+        title: 'Refund decision has been made',
+        body: 'Admin reviewed your nurse booking and approved a partial refund.',
+      };
+    case 'deny_refund':
+      return {
+        title: 'Refund request was denied',
+        body: 'Admin reviewed your nurse booking and denied the refund request.',
+      };
+    case 'mark_dispute':
+      return {
+        title: 'Booking moved to dispute',
+        body: 'Admin reviewed your nurse booking and moved it to dispute for further review.',
+      };
+    default:
+      return {
+        title: 'Admin reviewed your booking',
+        body: 'Admin reviewed your nurse booking and updated the review decision.',
+      };
+  }
+}
+
+async function applyReviewPaymentSplit({ payment, booking, providerShare, adminShare, finalAmount, paymentStatus = 'paid' }) {
+  if (!payment?.paymentId) return null;
+  const safeProviderShare = Number(Math.max(0, providerShare).toFixed(2));
+  const safeAdminShare = Number(Math.max(0, adminShare).toFixed(2));
+  const safeFinalAmount = Number(Math.max(0, finalAmount).toFixed(2));
+  await db.query(
+    `UPDATE payment
+     SET paymentStatus = ?,
+         status = ?,
+         provider_amount = ?,
+         admin_amount = ?,
+         final_amount = ?,
+         updatedAt = NOW()
+     WHERE BINARY paymentId = BINARY ?`,
+    [
+      paymentStatus,
+      paymentStatus === 'refunded' ? 'refunded' : 'paid_to_admin',
+      safeProviderShare,
+      safeAdminShare,
+      safeFinalAmount,
+      payment.paymentId,
+    ],
+  );
+  await adjustFinanceLedgerForReview({
+    providerId: payment.providerUserId || booking.providerUserId,
+    oldProviderAmount: payment.provider_amount,
+    newProviderAmount: safeProviderShare,
+    oldAdminAmount: payment.admin_amount,
+    newAdminAmount: safeAdminShare,
+  });
+  return {
+    providerShare: safeProviderShare,
+    adminShare: safeAdminShare,
+    retainedAmount: safeFinalAmount,
+  };
+}
+
 async function getBookingReviewItems() {
   await ensureAdminColumns();
   const hasProfileImageUrl = await hasColumn('user', 'profileImageUrl');
@@ -1304,6 +1376,13 @@ async function applyBookingReviewDecision(requestId, body = {}) {
   let paymentSummary = null;
 
   if (decision === 'confirm_completed') {
+    paymentSummary = await applyReviewPaymentSplit({
+      payment,
+      booking,
+      providerShare: paidAmount * 0.9,
+      adminShare: paidAmount * 0.1,
+      finalAmount: paidAmount,
+    });
     await db.query(
       `UPDATE servicerequest
        SET status = 'completed',
@@ -1315,27 +1394,16 @@ async function applyBookingReviewDecision(requestId, body = {}) {
        WHERE BINARY requestId = BINARY ?`,
       [decision, notes || 'Admin confirmed that the nurse completed the service.', requestId],
     );
-    await syncFinanceLedger();
     reviewStatus = 'resolved';
   } else if (decision === 'full_refund') {
     if (payment?.paymentId) {
-      await db.query(
-        `UPDATE payment
-         SET paymentStatus = 'refunded',
-             status = 'refunded',
-             provider_amount = 0,
-             admin_amount = 0,
-             final_amount = 0,
-             updatedAt = NOW()
-         WHERE BINARY paymentId = BINARY ?`,
-        [payment.paymentId],
-      );
-      await adjustFinanceLedgerForReview({
-        providerId: payment.providerUserId || booking.providerUserId,
-        oldProviderAmount: payment.provider_amount,
-        newProviderAmount: 0,
-        oldAdminAmount: payment.admin_amount,
-        newAdminAmount: 0,
+      await applyReviewPaymentSplit({
+        payment,
+        booking,
+        providerShare: 0,
+        adminShare: 0,
+        finalAmount: 0,
+        paymentStatus: 'refunded',
       });
       paymentSummary = { refundAmount: paidAmount, retainedAmount: 0 };
     }
@@ -1355,26 +1423,16 @@ async function applyBookingReviewDecision(requestId, body = {}) {
       ? Math.min(Math.max(0, requestedRefund), paidAmount)
       : Number((paidAmount * 0.8).toFixed(2));
     const retained = Math.max(0, paidAmount - refundAmount);
-    const providerShare = Number((retained / 2).toFixed(2));
-    const adminShare = Number((retained - providerShare).toFixed(2));
+    const providerShare = Number((paidAmount * 0.1).toFixed(2));
+    const adminShare = Number((paidAmount * 0.1).toFixed(2));
     if (payment?.paymentId) {
-      await db.query(
-        `UPDATE payment
-         SET paymentStatus = 'refunded',
-             status = 'refunded',
-             provider_amount = ?,
-             admin_amount = ?,
-             final_amount = ?,
-             updatedAt = NOW()
-         WHERE BINARY paymentId = BINARY ?`,
-        [providerShare, adminShare, retained, payment.paymentId],
-      );
-      await adjustFinanceLedgerForReview({
-        providerId: payment.providerUserId || booking.providerUserId,
-        oldProviderAmount: payment.provider_amount,
-        newProviderAmount: providerShare,
-        oldAdminAmount: payment.admin_amount,
-        newAdminAmount: adminShare,
+      await applyReviewPaymentSplit({
+        payment,
+        booking,
+        providerShare,
+        adminShare,
+        finalAmount: retained,
+        paymentStatus: 'refunded',
       });
       paymentSummary = { refundAmount, retainedAmount: retained, providerShare, adminShare };
     }
@@ -1389,6 +1447,13 @@ async function applyBookingReviewDecision(requestId, body = {}) {
     );
     reviewStatus = 'resolved';
   } else if (decision === 'deny_refund') {
+    paymentSummary = await applyReviewPaymentSplit({
+      payment,
+      booking,
+      providerShare: paidAmount * 0.9,
+      adminShare: paidAmount * 0.1,
+      finalAmount: paidAmount,
+    });
     await db.query(
       `UPDATE servicerequest
        SET adminReviewStatus = 'resolved',
@@ -1402,7 +1467,8 @@ async function applyBookingReviewDecision(requestId, body = {}) {
   } else if (decision === 'mark_dispute') {
     await db.query(
       `UPDATE servicerequest
-       SET adminReviewStatus = 'dispute',
+       SET status = 'under_review',
+           adminReviewStatus = 'dispute',
            adminReviewDecision = ?,
            adminReviewNotes = ?,
            adminReviewedAt = NOW()
@@ -1414,11 +1480,12 @@ async function applyBookingReviewDecision(requestId, body = {}) {
 
   try {
     if (booking.providerUserId) {
+      const message = bookingReviewDecisionMessage(decision);
       await insertNotification({
         userId: booking.providerUserId,
         type: 'booking_review',
-        title: 'Booking review updated',
-        body: `Admin decision for booking ${requestId}: ${decision.replace(/_/g, ' ')}.`,
+        title: message.title,
+        body: message.body,
         relatedRequestId: requestId,
       });
     }

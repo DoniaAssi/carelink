@@ -12,6 +12,7 @@ class ProviderProfile {
   final double hourlyRate;
   final double rating;
   final String phone;
+  final String profileImageUrl;
   final bool isAvailable;
   final bool canWork;
   final String workGateMessage;
@@ -36,6 +37,7 @@ class ProviderProfile {
     required this.hourlyRate,
     required this.rating,
     required this.phone,
+    required this.profileImageUrl,
     required this.isAvailable,
     required this.canWork,
     required this.workGateMessage,
@@ -54,8 +56,14 @@ class ProviderProfile {
       email: json['email']?.toString() ?? '',
       bio: json['bio'] ?? '',
       specialization: json['specialization'] ?? '',
-      serviceAreas: (json['serviceAreas'] ?? json['service_areas'] ?? '')
-          .toString(),
+      serviceAreas:
+          (json['serviceAreas'] ??
+                  json['service_areas'] ??
+                  json['serviceArea'] ??
+                  json['service_area'] ??
+                  json['location'] ??
+                  '')
+              .toString(),
       experienceTier:
           (json['experienceTier'] ?? json['experience_tier'] ?? 'junior')
               .toString(),
@@ -66,6 +74,12 @@ class ProviderProfile {
       hourlyRate: _parseDouble(json['hourlyRate']),
       rating: _parseDouble(json['rating'] ?? json['overallRating']),
       phone: json['phone'] ?? '',
+      profileImageUrl:
+          (json['profileImageUrl'] ??
+                  json['profilePictureUrl'] ??
+                  json['profile_image_url'] ??
+                  '')
+              .toString(),
       isAvailable: json['isAvailable'] == 1 || json['isAvailable'] == true,
       canWork: json['canWork'] == true,
       workGateMessage: (json['workGateMessage'] ?? json['reason'] ?? '')
@@ -98,6 +112,7 @@ class ProviderProfile {
       'hourlyRate': hourlyRate,
       'rating': rating,
       'phone': phone,
+      'profileImageUrl': profileImageUrl,
       'isAvailable': isAvailable ? 1 : 0,
       'canWork': canWork,
       'workGateMessage': workGateMessage,

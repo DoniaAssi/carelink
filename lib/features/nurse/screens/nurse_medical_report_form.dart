@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:carelink/core/app_colors.dart';
@@ -104,7 +104,7 @@ class _NurseMedicalReportFormScreenState
     final submit = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Review Report'),
+        title: Text(NurseUi.t('Review Report')),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -801,3 +801,4 @@ class _NurseMedicalReportFormScreenState
         .join('\n');
   }
 }
+

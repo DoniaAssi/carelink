@@ -1,9 +1,11 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
+
+import 'nurse_ui.dart';
 
 enum _NurseNotificationFilter { all, requests, visits, messages, system }
 
@@ -147,47 +149,49 @@ class _NotificationsReadOnlyScreenState
   @override
   Widget build(BuildContext context) {
     final unreadCount = notifications.where((item) => !item.isRead).length;
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4FAF9),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _topBar(unreadCount),
-            _filters(),
-            Expanded(
-              child: isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xFF0F766E),
-                      ),
-                    )
-                  : RefreshIndicator(
-                      color: const Color(0xFF0F766E),
-                      onRefresh: _load,
-                      child: _visibleNotifications.isEmpty
-                          ? _emptyState()
-                          : ListView.separated(
-                              padding: const EdgeInsets.fromLTRB(
-                                16,
-                                14,
-                                16,
-                                112,
+    return NurseUi.reactive(
+      (context) => Scaffold(
+        backgroundColor: NurseUi.background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _topBar(unreadCount),
+              _filters(),
+              Expanded(
+                child: isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF0F766E),
+                        ),
+                      )
+                    : RefreshIndicator(
+                        color: const Color(0xFF0F766E),
+                        onRefresh: _load,
+                        child: _visibleNotifications.isEmpty
+                            ? _emptyState()
+                            : ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  14,
+                                  16,
+                                  112,
+                                ),
+                                itemBuilder: (context, index) {
+                                  return _notificationCard(
+                                    _visibleNotifications[index],
+                                  );
+                                },
+                                separatorBuilder: (context, index) =>
+                                    const SizedBox(height: 12),
+                                itemCount: _visibleNotifications.length,
                               ),
-                              itemBuilder: (context, index) {
-                                return _notificationCard(
-                                  _visibleNotifications[index],
-                                );
-                              },
-                              separatorBuilder: (context, index) =>
-                                  const SizedBox(height: 12),
-                              itemCount: _visibleNotifications.length,
-                            ),
-                    ),
-            ),
-          ],
+                      ),
+              ),
+            ],
+          ),
         ),
+        bottomNavigationBar: _bottomNav(),
       ),
-      bottomNavigationBar: _bottomNav(),
     );
   }
 
@@ -229,12 +233,12 @@ class _NotificationsReadOnlyScreenState
                 ),
             ],
           ),
-          const Expanded(
+          Expanded(
             child: Text(
-              'Notifications',
+              NurseUi.t('Notifications'),
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Color(0xFF0F172A),
+                color: NurseUi.text,
                 fontSize: 24,
                 fontWeight: FontWeight.w900,
               ),
@@ -252,25 +256,25 @@ class _NotificationsReadOnlyScreenState
 
   Widget _filters() {
     final filters = [
-      (_NurseNotificationFilter.all, 'All', notifications.length),
+      (_NurseNotificationFilter.all, NurseUi.t('All'), notifications.length),
       (
         _NurseNotificationFilter.requests,
-        'New Requests',
+        NurseUi.isArabic.value ? 'طلبات جديدة' : 'New Requests',
         _count(_NurseNotificationFilter.requests),
       ),
       (
         _NurseNotificationFilter.visits,
-        'Visit Status',
+        NurseUi.isArabic.value ? 'حالة الزيارة' : 'Visit Status',
         _count(_NurseNotificationFilter.visits),
       ),
       (
         _NurseNotificationFilter.messages,
-        'Messages',
+        NurseUi.t('Messages'),
         _count(_NurseNotificationFilter.messages),
       ),
       (
         _NurseNotificationFilter.system,
-        'System',
+        NurseUi.t('System'),
         _count(_NurseNotificationFilter.system),
       ),
     ];
@@ -292,12 +296,12 @@ class _NotificationsReadOnlyScreenState
               width: index == 0 ? 150 : 178,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: selected ? const Color(0xFF0F766E) : Colors.white,
+                color: selected ? const Color(0xFF0F766E) : NurseUi.surface,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: selected
                       ? const Color(0xFF0F766E)
-                      : const Color(0xFFE5E7EB),
+                      : NurseUi.border,
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -310,7 +314,7 @@ class _NotificationsReadOnlyScreenState
               child: Text(
                 '${filters[index].$2} (${filters[index].$3})',
                 style: TextStyle(
-                  color: selected ? Colors.white : const Color(0xFF0F172A),
+                  color: selected ? Colors.white : NurseUi.text,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -347,8 +351,9 @@ class _NotificationsReadOnlyScreenState
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: NurseUi.border),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.045),
@@ -375,7 +380,7 @@ class _NotificationsReadOnlyScreenState
                   style: TextStyle(
                     color: item.kind == _NurseNotificationKind.reminder
                         ? const Color(0xFFEF4444)
-                        : const Color(0xFF0F172A),
+                        : NurseUi.text,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
@@ -387,8 +392,8 @@ class _NotificationsReadOnlyScreenState
                       : item.description,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF475569),
+                  style: TextStyle(
+                    color: NurseUi.muted,
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     height: 1.35,
@@ -421,8 +426,8 @@ class _NotificationsReadOnlyScreenState
             children: [
               Text(
                 _relativeTime(item.createdAt),
-                style: const TextStyle(
-                  color: Color(0xFF475569),
+                style: TextStyle(
+                  color: NurseUi.muted,
                   fontWeight: FontWeight.w900,
                   fontSize: 12,
                 ),
@@ -465,7 +470,7 @@ class _NotificationsReadOnlyScreenState
             decoration: BoxDecoration(
               color: meta.color,
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 3),
+              border: Border.all(color: NurseUi.surface, width: 3),
             ),
             child: const Icon(
               Icons.check_rounded,
@@ -486,8 +491,8 @@ class _NotificationsReadOnlyScreenState
         color: color,
         borderRadius: BorderRadius.circular(7),
       ),
-      child: const Text(
-        'New',
+      child: Text(
+        NurseUi.isArabic.value ? 'جديد' : 'New',
         style: TextStyle(
           color: Colors.white,
           fontSize: 11,
@@ -505,8 +510,8 @@ class _NotificationsReadOnlyScreenState
         const SizedBox(width: 6),
         Text(
           text,
-          style: const TextStyle(
-            color: Color(0xFF475569),
+          style: TextStyle(
+            color: NurseUi.muted,
             fontWeight: FontWeight.w900,
             fontSize: 13,
           ),
@@ -519,18 +524,18 @@ class _NotificationsReadOnlyScreenState
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(top: 140),
-      children: const [
-        Icon(
+      children: [
+        const Icon(
           Icons.notifications_none_rounded,
           size: 64,
           color: Color(0xFF94A3B8),
         ),
-        SizedBox(height: 14),
+        const SizedBox(height: 14),
         Center(
           child: Text(
-            'No notifications available',
+            NurseUi.isArabic.value ? 'لا توجد إشعارات' : 'No notifications available',
             style: TextStyle(
-              color: Color(0xFF64748B),
+              color: NurseUi.muted,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -540,12 +545,12 @@ class _NotificationsReadOnlyScreenState
   }
 
   Widget _bottomNav() {
-    const items = [
-      (Icons.home_rounded, 'Home'),
-      (Icons.calendar_month_rounded, 'Schedule'),
-      (Icons.groups_rounded, 'Patients'),
-      (Icons.description_rounded, 'Reports'),
-      (Icons.person_rounded, 'Profile'),
+    final items = [
+      (Icons.home_rounded, NurseUi.t('Home')),
+      (Icons.calendar_month_rounded, NurseUi.t('Sessions')),
+      (Icons.groups_rounded, NurseUi.t('Patients')),
+      (Icons.description_rounded, NurseUi.t('Reports')),
+      (Icons.person_rounded, NurseUi.t('Profile')),
     ];
     return SafeArea(
       top: false,
@@ -553,8 +558,9 @@ class _NotificationsReadOnlyScreenState
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: NurseUi.surface,
           borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: NurseUi.border),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.05),
@@ -569,12 +575,12 @@ class _NotificationsReadOnlyScreenState
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(item.$1, color: const Color(0xFF64748B)),
+                Icon(item.$1, color: NurseUi.muted),
                 const SizedBox(height: 3),
                 Text(
                   item.$2,
-                  style: const TextStyle(
-                    color: Color(0xFF475569),
+                  style: TextStyle(
+                    color: NurseUi.muted,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
@@ -703,3 +709,5 @@ class _NotificationMeta {
   final String fallbackTitle;
   final String fallbackDescription;
 }
+
+

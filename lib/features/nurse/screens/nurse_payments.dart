@@ -1,4 +1,4 @@
-// ignore_for_file: unused_element, deprecated_member_use, use_build_context_synchronously
+﻿// ignore_for_file: unused_element, deprecated_member_use, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
 import 'package:carelink/core/app_colors.dart';
@@ -64,7 +64,7 @@ class _NursePaymentsState extends State<NursePayments> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Earnings & Payments'),
+          title: Text(NurseUi.t('Earnings & Payments')),
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
@@ -493,7 +493,7 @@ class _NursePaymentsState extends State<NursePayments> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Payment Method'),
+        title: Text(NurseUi.t('Delete Payment Method')),
         content: Text('Are you sure you want to delete ${method['type']}?'),
         actions: [
           TextButton(
@@ -814,3 +814,4 @@ class _EditPaymentMethodFormState extends State<EditPaymentMethodForm> {
     if (success) Navigator.pop(context);
   }
 }
+

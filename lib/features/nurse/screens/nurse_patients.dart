@@ -132,7 +132,7 @@ class _NursePatientsState extends State<NursePatients> {
 
     return NurseUi.reactive(
       (context) => Container(
-        color: _background,
+        color: NurseUi.background,
         child: SafeArea(
           child: isLoading
               ? const Center(child: CircularProgressIndicator())
@@ -165,24 +165,24 @@ class _NursePatientsState extends State<NursePatients> {
   Widget _header() {
     return Row(
       children: [
-        const Expanded(
+        Expanded(
           child: Text(
-            'My Patients',
+            NurseUi.t('My Patients'),
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w900,
-              color: Color(0xFF111827),
+              color: NurseUi.text,
             ),
           ),
         ),
         Tooltip(
-          message: 'Add patient',
+          message: NurseUi.isArabic.value ? 'إضافة مريض' : 'Add patient',
           child: IconButton(
             onPressed: () {},
             icon: const Icon(Icons.person_add_alt_1_rounded),
             color: _primary,
             style: IconButton.styleFrom(
-              backgroundColor: Colors.white,
+              backgroundColor: NurseUi.surface,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
@@ -198,26 +198,28 @@ class _NursePatientsState extends State<NursePatients> {
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: NurseUi.border),
         boxShadow: _shadow,
       ),
       child: Row(
         children: [
-          const Icon(Icons.search_rounded, color: Color(0xFF6B7280)),
+          Icon(Icons.search_rounded, color: NurseUi.muted),
           const SizedBox(width: 10),
           Expanded(
             child: TextField(
               controller: _searchController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
-                hintText: 'Search patients...',
+                hintText: NurseUi.t('Search patients...'),
+                hintStyle: TextStyle(color: NurseUi.muted),
                 isDense: true,
               ),
-              style: const TextStyle(
-                color: Color(0xFF111827),
+              style: TextStyle(
+                color: NurseUi.text,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -226,9 +228,9 @@ class _NursePatientsState extends State<NursePatients> {
             tooltip: 'Filter',
             visualDensity: VisualDensity.compact,
             onPressed: () {},
-            icon: const Icon(
+            icon: Icon(
               Icons.filter_list_rounded,
-              color: Color(0xFF6B7280),
+              color: NurseUi.muted,
             ),
           ),
         ],
@@ -240,9 +242,9 @@ class _NursePatientsState extends State<NursePatients> {
     return Row(
       children: [
         Text(
-          'Patients ($total)',
-          style: const TextStyle(
-            color: Color(0xFF111827),
+          '${NurseUi.t('Patients')} ($total)',
+          style: TextStyle(
+            color: NurseUi.text,
             fontSize: 18,
             fontWeight: FontWeight.w900,
           ),
@@ -250,9 +252,11 @@ class _NursePatientsState extends State<NursePatients> {
         const Spacer(),
         if (searchQuery.isNotEmpty)
           Text(
-            '${filteredPatients.length} found',
-            style: const TextStyle(
-              color: Color(0xFF6B7280),
+            NurseUi.isArabic.value
+                ? 'تم العثور على ${filteredPatients.length}'
+                : '${filteredPatients.length} found',
+            style: TextStyle(
+              color: NurseUi.muted,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -264,8 +268,9 @@ class _NursePatientsState extends State<NursePatients> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: NurseUi.border),
         boxShadow: _shadow,
       ),
       child: Material(
@@ -292,8 +297,8 @@ class _NursePatientsState extends State<NursePatients> {
                         patient.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF111827),
+                        style: TextStyle(
+                          color: NurseUi.text,
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
                         ),
@@ -303,8 +308,8 @@ class _NursePatientsState extends State<NursePatients> {
                         patient.detailsText,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF6B7280),
+                        style: TextStyle(
+                          color: NurseUi.muted,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -322,8 +327,8 @@ class _NursePatientsState extends State<NursePatients> {
                               patient.locationText,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF6B7280),
+                              style: TextStyle(
+                                color: NurseUi.muted,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -426,13 +431,7 @@ class _NursePatientsState extends State<NursePatients> {
     );
   }
 
-  List<BoxShadow> get _shadow => [
-    BoxShadow(
-      color: Colors.black.withValues(alpha: 0.055),
-      blurRadius: 18,
-      offset: const Offset(0, 8),
-    ),
-  ];
+  List<BoxShadow> get _shadow => NurseUi.softShadow;
 }
 
 class _PatientSummary {
@@ -516,7 +515,7 @@ class NursePatientDetails extends StatelessWidget {
         : request.patientName.trim();
     return NurseUi.reactive(
       (context) => Scaffold(
-        backgroundColor: const Color(0xFFF4FAF9),
+        backgroundColor: NurseUi.background,
         body: SafeArea(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(18, 14, 18, 110),
@@ -589,7 +588,8 @@ class NursePatientDetails extends StatelessWidget {
             children: [
               Text(
                 name,
-                style: const TextStyle(
+                style: TextStyle(
+                  color: NurseUi.text,
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
                 ),
@@ -598,8 +598,8 @@ class NursePatientDetails extends StatelessWidget {
                 request.patientAge > 0
                     ? '${request.patientAge} years'
                     : 'Age not set',
-                style: const TextStyle(
-                  color: Color(0xFF607D8B),
+                style: TextStyle(
+                  color: NurseUi.muted,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -621,9 +621,17 @@ class NursePatientDetails extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
         const Spacer(),
-        const Icon(Icons.language_rounded, color: AppColors.primaryDark),
+        IconButton(
+          icon: const Icon(Icons.language_rounded, color: AppColors.primaryDark),
+          onPressed: () => NurseUi.isArabic.value = !NurseUi.isArabic.value,
+        ),
         const SizedBox(width: 14),
-        const Icon(Icons.dark_mode_rounded, color: AppColors.primaryDark),
+        Switch(
+          value: NurseUi.isDarkMode.value,
+          onChanged: (value) => NurseUi.isDarkMode.value = value,
+          activeThumbColor: Colors.white,
+          activeTrackColor: AppColors.primaryDark,
+        ),
       ],
     );
   }
@@ -641,8 +649,8 @@ class NursePatientDetails extends StatelessWidget {
               value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF607D8B),
+              style: TextStyle(
+                color: NurseUi.muted,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -657,8 +665,9 @@ class NursePatientDetails extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: NurseUi.border),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.055),
@@ -671,7 +680,13 @@ class NursePatientDetails extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+              Text(
+                title,
+                style: TextStyle(
+                  color: NurseUi.text,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 14),

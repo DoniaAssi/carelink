@@ -1125,12 +1125,15 @@ class _SignupScreenState extends State<SignupScreen> {
             ? dateOfBirthController.text.trim()
             : null,
         gender: _selectedRole == 'patient' ? _selectedGender : null,
+        profileImageUrl: _selectedRole == 'nurse'
+            ? _optionalProfilePhotoPayload()
+            : null,
         experienceYears: _selectedRole == 'patient'
             ? null
             : int.tryParse(experienceController.text.trim()),
-        licenseNumber: _selectedRole == 'patient'
-            ? null
-            : licenseController.text.trim(),
+        licenseNumber: _selectedRole == 'doctor'
+            ? licenseController.text.trim()
+            : null,
         serviceType: _selectedRole == 'patient'
             ? null
             : (_selectedRole == 'doctor'
@@ -1277,7 +1280,7 @@ class _SignupScreenState extends State<SignupScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (_selectedRole == 'patient') ...[
+          if (_selectedRole == 'patient' || _selectedRole == 'nurse') ...[
             _buildProfilePhotoPicker(p),
             const SizedBox(height: 18),
           ],
@@ -1589,6 +1592,12 @@ class _SignupScreenState extends State<SignupScreen> {
         );
       }
     }
+  }
+
+  String? _optionalProfilePhotoPayload() {
+    final bytes = _profilePhotoBytes;
+    if (bytes == null || bytes.isEmpty) return null;
+    return 'data:image/jpeg;base64,${base64Encode(bytes)}';
   }
 
   Widget _buildProfilePhotoPicker(CarelinkPalette p) {
@@ -2260,34 +2269,6 @@ class _SignupScreenState extends State<SignupScreen> {
 
           // Role specific Nurse fields
           if (_selectedRole == 'nurse') ...[
-            _buildTextField(
-              p,
-              label: isAr ? 'تخصص التمريض' : 'Nursing Specialty',
-              hint: isAr ? 'مثال: تمريض أطفال' : 'e.g. Pediatric Nurse',
-              icon: Icons.health_and_safety_outlined,
-              controller: specialtyController,
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) {
-                  return isAr ? 'التخصص مطلوب' : 'Specialty is required';
-                }
-                return null;
-              },
-            ),
-            _buildTextField(
-              p,
-              label: context.tr('auth.licenseNumber'),
-              hint: isAr ? 'رقم ترخيص التمريض' : 'Nursing license ID number',
-              icon: Icons.badge_outlined,
-              controller: licenseController,
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) {
-                  return isAr
-                      ? 'رقم الترخيص مطلوب'
-                      : 'License number is required';
-                }
-                return null;
-              },
-            ),
             _buildTextField(
               p,
               label: context.tr('auth.experienceYears'),
@@ -2999,3 +2980,4 @@ class _SignupScreenState extends State<SignupScreen> {
 
   _buildDoctorCvUpload(CarelinkPalette p) {}
 }
+
