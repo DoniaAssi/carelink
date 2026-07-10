@@ -233,6 +233,102 @@ async function assertProviderCanWork(providerId) {
   return eligibility;
 }
 
+async function syncDoctorEarnings(doctorId, approvedRate) {
+  const requiredTables = [
+    'payment',
+    'provider_wallet',
+    'payout_requests',
+    'transaction_log',
+  ];
+  for (const table of requiredTables) {
+    if (!(await hasTable(table))) {
+      const err = new Error(`Finance table ${table} is unavailable`);
+      err.status = 503;
+      throw err;
+    }
+  }
+
+  const rate = Math.round(Math.max(0, Number(approvedRate || 0)) * 100) / 100;
+  const [sessions] = await db.query(
+    `SELECT
+       p.paymentId,
+       p.requestId,
+       p.patientUserId,
+       p.providerUserId,
+       p.paymentMethod,
+       p.paymentStatus AS patientPaymentStatus,
+       COALESCE(CAST(p.status AS CHAR), 'pending') AS escrowStatus,
+       p.createdAt,
+       sr.serviceType,
+       sr.status AS requestStatus,
+       sr.scheduledAt,
+       sr.completedAt,
+       u.fullName AS patientName
+     FROM payment p
+     JOIN servicerequest sr ON BINARY sr.requestId = BINARY p.requestId
+     JOIN user u ON BINARY u.userId = BINARY p.patientUserId
+     WHERE BINARY p.providerUserId = BINARY ?
+       AND LOWER(CAST(p.paymentStatus AS CHAR)) = 'paid'
+       AND LOWER(CAST(sr.status AS CHAR)) IN ('completed','complete','done','waiting_report')
+     ORDER BY COALESCE(sr.completedAt, sr.scheduledAt, p.createdAt) DESC`,
+    [doctorId],
+  );
+
+  const totalEarned = Math.round(sessions.length * rate * 100) / 100;
+  const [[paidRow]] = await db.query(
+    `SELECT COALESCE(SUM(total_amount), 0) AS paid
+     FROM transaction_log
+     WHERE BINARY providerId = BINARY ?
+       AND type = 'payout'`,
+    [doctorId],
+  );
+  const paidAmount = Math.min(
+    totalEarned,
+    Math.max(0, Number(paidRow?.paid || 0)),
+  );
+  const pendingAmount = Math.max(
+    0,
+    Math.round((totalEarned - paidAmount) * 100) / 100,
+  );
+
+  await db.query(
+    `INSERT INTO provider_wallet
+       (providerId, total_earned, pending_amount, paid_amount)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       total_earned = VALUES(total_earned),
+       pending_amount = VALUES(pending_amount),
+       paid_amount = VALUES(paid_amount)`,
+    [doctorId, totalEarned, pendingAmount, paidAmount],
+  );
+
+  return {
+    payments: sessions.map((row) => {
+      const escrowStatus = (row.escrowStatus || '').toString().toLowerCase();
+      return {
+        ...row,
+        amount: rate,
+        agreedRate: rate,
+        providerRate: rate,
+        paymentStatus:
+          escrowStatus === 'transferred_to_provider' ? 'paid' : 'pending',
+      };
+    }),
+    totalEarned,
+    paidAmount,
+    pendingAmount,
+  };
+}
+
+function doctorPayoutLabel(status) {
+  const value = (status || '').toString().trim().toLowerCase();
+  if (value === 'requested') return 'Pending';
+  if (value === 'approved') return 'Approved';
+  if (value === 'paid') return 'Paid';
+  if (value === 'rejected') return 'Rejected';
+  return value || 'Pending';
+}
+
 function minutesFromScheduleTime(value) {
   const parts = String(value || '').trim().split(':');
   if (parts.length < 2) return null;
@@ -2371,47 +2467,107 @@ router.get('/payments/:doctorId', async (req, res) => {
 
   try {
     await assertDoctorUser(doctorId);
+    let eligibility;
     try {
-      await assertProviderCanWork(doctorId);
+      eligibility = await assertProviderCanWork(doctorId);
     } catch (err) {
       return res.status(err.status || 403).json({
         error: err.message,
         eligibility: err.eligibility || null,
       });
     }
-    const [rows] = await db.query(
-      `SELECT 
-        p.*,
-        sr.serviceType,
-        sr.status as requestStatus,
-        sr.scheduledAt,
-        u.fullName as patientName
-      FROM payment p
-      JOIN servicerequest sr ON p.requestId = sr.requestId
-      JOIN user u ON p.patientUserId = u.userId
-      WHERE p.providerUserId = ?
-      ORDER BY p.createdAt DESC`,
-      [doctorId]
+    const synced = await syncDoctorEarnings(
+      doctorId,
+      eligibility.providerRate,
     );
-
-    // Calculate totals
-    const [totals] = await db.query(
-      `SELECT 
-        SUM(CASE WHEN paymentStatus = 'paid' THEN amount ELSE 0 END) as totalPaid,
-        SUM(CASE WHEN paymentStatus = 'unpaid' THEN amount ELSE 0 END) as totalUnpaid,
-        SUM(CASE WHEN paymentStatus = 'refunded' THEN amount ELSE 0 END) as totalRefunded,
-        COUNT(*) as totalPayments
-      FROM payment 
-      WHERE providerUserId = ?`,
-      [doctorId]
+    const [payouts] = await db.query(
+      `SELECT payoutId, amount, status, createdAt
+       FROM payout_requests
+       WHERE BINARY providerId = BINARY ?
+       ORDER BY createdAt DESC
+       LIMIT 50`,
+      [doctorId],
     );
 
     res.json({
-      payments: rows,
-      summary: totals[0]
+      payments: synced.payments,
+      summary: {
+        totalPaid: synced.paidAmount,
+        totalUnpaid: synced.pendingAmount,
+        totalRefunded: 0,
+        totalPayments: synced.payments.length,
+        totalEarnings: synced.totalEarned,
+      },
+      payoutRequests: payouts.map((row) => ({
+        ...row,
+        statusLabel: doctorPayoutLabel(row.status),
+      })),
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.post('/payments/:doctorId/payout', async (req, res) => {
+  const { doctorId } = req.params;
+
+  try {
+    await assertDoctorUser(doctorId);
+    let eligibility;
+    try {
+      eligibility = await assertProviderCanWork(doctorId);
+    } catch (err) {
+      return res.status(err.status || 403).json({
+        error: err.message,
+        eligibility: err.eligibility || null,
+      });
+    }
+
+    const synced = await syncDoctorEarnings(
+      doctorId,
+      eligibility.providerRate,
+    );
+    const requestedAmount = Number(req.body?.amount || synced.pendingAmount);
+    const amount = Math.round(requestedAmount * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'No available balance to request' });
+    }
+    if (amount > synced.pendingAmount + 0.001) {
+      return res.status(409).json({
+        error: 'Requested amount exceeds available balance',
+      });
+    }
+
+    const [[openRequest]] = await db.query(
+      `SELECT payoutId
+       FROM payout_requests
+       WHERE BINARY providerId = BINARY ?
+         AND status IN ('requested','approved')
+       LIMIT 1`,
+      [doctorId],
+    );
+    if (openRequest) {
+      return res.status(409).json({
+        error: 'You already have a pending payout request',
+      });
+    }
+
+    const payoutId = randomUUID();
+    await db.query(
+      `INSERT INTO payout_requests
+         (payoutId, providerId, amount, status, createdAt)
+       VALUES (?, ?, ?, 'requested', NOW())`,
+      [payoutId, doctorId, amount],
+    );
+    res.status(201).json({
+      success: true,
+      payoutId,
+      amount,
+      status: 'requested',
+      statusLabel: 'Pending',
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -2446,11 +2602,11 @@ router.get('/dashboard/:doctorId', async (req, res) => {
       [doctorId]
     );
 
-    // Total earnings
-    const [earningsResult] = await db.query(
-      "SELECT SUM(amount) as total FROM payment WHERE providerUserId = ? AND paymentStatus = 'paid'",
-      [doctorId]
-    );
+    // Total earnings use the doctor-approved per-visit rate.
+    const eligibility = await getProviderWorkEligibility(doctorId);
+    const earnings = eligibility.providerRate > 0
+      ? await syncDoctorEarnings(doctorId, eligibility.providerRate)
+      : { totalEarned: 0 };
 
     let averageRating = 0;
     if (await hasTable('providervisitrating')) {
@@ -2490,7 +2646,7 @@ router.get('/dashboard/:doctorId', async (req, res) => {
       pendingRequests,
       confirmedRequests,
       completedRequests,
-      totalEarnings: earningsResult[0].total || 0,
+      totalEarnings: earnings.totalEarned || 0,
       averageRating,
       todayAppointments: todayResult[0].count || 0,
       totalPatients: patientsResult[0].count || 0,

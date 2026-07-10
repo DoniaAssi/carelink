@@ -502,6 +502,20 @@ class DoctorService {
     }
   }
 
+  Future<Map<String, dynamic>> requestPayout(
+    String doctorId, {
+    double? amount,
+  }) async {
+    try {
+      return await _apiService.post(
+        '${ApiEndpoints.doctorPayments}/$doctorId/payout',
+        {'amount': amount},
+      );
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   // ============================================
   // DOCTOR SERVICE RATE APPROVAL
   // ============================================
