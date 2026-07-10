@@ -337,20 +337,22 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: localeController,
-      builder: (context, _) {
-        return Directionality(
-          textDirection: localeController.isDoctorArabic
-              ? TextDirection.rtl
-              : TextDirection.ltr,
-          child: Scaffold(
-            backgroundColor: _pageColor,
-            body: _buildBody(),
-            bottomNavigationBar: _buildBottomNav(),
-          ),
-        );
-      },
+    return DoctorTypographyScope(
+      child: ListenableBuilder(
+        listenable: localeController,
+        builder: (context, _) {
+          return Directionality(
+            textDirection: localeController.isDoctorArabic
+                ? TextDirection.rtl
+                : TextDirection.ltr,
+            child: Scaffold(
+              backgroundColor: _pageColor,
+              body: _buildBody(),
+              bottomNavigationBar: _buildBottomNav(),
+            ),
+          );
+        },
+      ),
     );
   }
 

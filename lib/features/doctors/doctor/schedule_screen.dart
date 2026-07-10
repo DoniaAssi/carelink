@@ -381,65 +381,67 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: localeController,
-      builder: (context, _) {
-        return Scaffold(
-          backgroundColor: _pageColor,
-          appBar: AppBar(
+    return DoctorTypographyScope(
+      child: ListenableBuilder(
+        listenable: localeController,
+        builder: (context, _) {
+          return Scaffold(
             backgroundColor: _pageColor,
-            surfaceTintColor: _pageColor,
-            elevation: 0,
-            centerTitle: true,
-            leading: IconButton(
-              onPressed: () => Navigator.maybePop(context),
-              icon: const Icon(Icons.arrow_back_rounded),
-              color: _primary,
-            ),
-            title: const Text(
-              'Schedule',
-              style: TextStyle(
-                color: _ink,
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            actions: [
-              IconButton(
-                tooltip: 'Language',
-                onPressed: () => localeController.toggleDoctor(),
-                icon: const Icon(Icons.language_rounded),
+            appBar: AppBar(
+              backgroundColor: _pageColor,
+              surfaceTintColor: _pageColor,
+              elevation: 0,
+              centerTitle: true,
+              leading: IconButton(
+                onPressed: () => Navigator.maybePop(context),
+                icon: const Icon(Icons.arrow_back_rounded),
                 color: _primary,
               ),
-              _notificationButton(),
-              const SizedBox(width: 10),
-            ],
-          ),
-          body: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                  onRefresh: _loadData,
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 760),
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
-                        children: [
-                          _buildTabs(),
-                          const SizedBox(height: 24),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 180),
-                            child: _selectedTab == 0
-                                ? _buildScheduleTab()
-                                : _buildAvailabilityTab(),
-                          ),
-                        ],
+              title: const Text(
+                'Schedule',
+                style: TextStyle(
+                  color: _ink,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              actions: [
+                IconButton(
+                  tooltip: 'Language',
+                  onPressed: () => localeController.toggleDoctor(),
+                  icon: const Icon(Icons.language_rounded),
+                  color: _primary,
+                ),
+                _notificationButton(),
+                const SizedBox(width: 10),
+              ],
+            ),
+            body: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : RefreshIndicator(
+                    onRefresh: _loadData,
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 760),
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
+                          children: [
+                            _buildTabs(),
+                            const SizedBox(height: 24),
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              child: _selectedTab == 0
+                                  ? _buildScheduleTab()
+                                  : _buildAvailabilityTab(),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 

@@ -73,134 +73,139 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: DoctorUiConstants.doctorBackground,
-      appBar: AppBar(
-        title: const Text('Medical Record'),
+    return DoctorTypographyScope(
+      child: Scaffold(
         backgroundColor: DoctorUiConstants.doctorBackground,
-        foregroundColor: AppColors.primary,
-        elevation: 0,
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : !_hasRecordData
-          ? _buildEmptyState()
-          : RefreshIndicator(
-              onRefresh: _loadMedicalRecord,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Basic Info Card
-                    if (_record.keys.any(
-                      (key) =>
-                          key != 'visitReports' &&
-                          key != 'initialDiagnosisReports',
-                    )) ...[
-                      _buildSectionCard('Basic Information', [
-                        _buildInfoRow(
-                          'Date of Birth',
-                          _record['dateOfBirth'] ?? 'Not set',
-                        ),
-                        _buildInfoRow('Gender', _record['gender'] ?? 'Not set'),
-                        _buildInfoRow(
-                          'Blood Type',
-                          _record['bloodType'] ?? 'Not set',
-                        ),
-                      ]),
-                      const SizedBox(height: 16),
-                      // Allergies Card
-                      _buildSectionCard(
-                        'Allergies',
-                        _listOf('allergies').isNotEmpty
-                            ? _listOf(
-                                'allergies',
-                              ).map((a) => _buildAllergyRow(a)).toList()
-                            : [
-                                const Text(
-                                  'No allergies recorded',
-                                  style: TextStyle(
-                                    color: AppColors.textSecondary,
+        appBar: AppBar(
+          title: const Text('Medical Record'),
+          backgroundColor: DoctorUiConstants.doctorBackground,
+          foregroundColor: AppColors.primary,
+          elevation: 0,
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : !_hasRecordData
+            ? _buildEmptyState()
+            : RefreshIndicator(
+                onRefresh: _loadMedicalRecord,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Basic Info Card
+                      if (_record.keys.any(
+                        (key) =>
+                            key != 'visitReports' &&
+                            key != 'initialDiagnosisReports',
+                      )) ...[
+                        _buildSectionCard('Basic Information', [
+                          _buildInfoRow(
+                            'Date of Birth',
+                            _record['dateOfBirth'] ?? 'Not set',
+                          ),
+                          _buildInfoRow(
+                            'Gender',
+                            _record['gender'] ?? 'Not set',
+                          ),
+                          _buildInfoRow(
+                            'Blood Type',
+                            _record['bloodType'] ?? 'Not set',
+                          ),
+                        ]),
+                        const SizedBox(height: 16),
+                        // Allergies Card
+                        _buildSectionCard(
+                          'Allergies',
+                          _listOf('allergies').isNotEmpty
+                              ? _listOf(
+                                  'allergies',
+                                ).map((a) => _buildAllergyRow(a)).toList()
+                              : [
+                                  const Text(
+                                    'No allergies recorded',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                    ),
                                   ),
-                                ),
-                              ],
-                      ),
-                      const SizedBox(height: 16),
-                      // Diseases Card
-                      _buildSectionCard(
-                        'Medical Conditions',
-                        _listOf('diseases').isNotEmpty
-                            ? _listOf(
-                                'diseases',
-                              ).map((d) => _buildDiseaseRow(d)).toList()
-                            : [
-                                const Text(
-                                  'No conditions recorded',
-                                  style: TextStyle(
-                                    color: AppColors.textSecondary,
+                                ],
+                        ),
+                        const SizedBox(height: 16),
+                        // Diseases Card
+                        _buildSectionCard(
+                          'Medical Conditions',
+                          _listOf('diseases').isNotEmpty
+                              ? _listOf(
+                                  'diseases',
+                                ).map((d) => _buildDiseaseRow(d)).toList()
+                              : [
+                                  const Text(
+                                    'No conditions recorded',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                    ),
                                   ),
-                                ),
-                              ],
-                      ),
-                      const SizedBox(height: 16),
-                      // Current Medications
-                      _buildSectionCard('Current Medications', [
-                        Text(
-                          _record['currentMedications'] ??
-                              'No medications recorded',
+                                ],
                         ),
-                      ]),
-                      const SizedBox(height: 16),
-                      // Past Surgeries
-                      _buildSectionCard('Past Surgeries', [
-                        Text(
-                          _record['pastSurgeries'] ?? 'No surgeries recorded',
+                        const SizedBox(height: 16),
+                        // Current Medications
+                        _buildSectionCard('Current Medications', [
+                          Text(
+                            _record['currentMedications'] ??
+                                'No medications recorded',
+                          ),
+                        ]),
+                        const SizedBox(height: 16),
+                        // Past Surgeries
+                        _buildSectionCard('Past Surgeries', [
+                          Text(
+                            _record['pastSurgeries'] ?? 'No surgeries recorded',
+                          ),
+                        ]),
+                        const SizedBox(height: 16),
+                      ],
+                      if (_listOf('initialDiagnosisReports').isNotEmpty) ...[
+                        _buildSectionCard(
+                          'Initial Diagnosis',
+                          _listOf(
+                            'initialDiagnosisReports',
+                          ).map((r) => _buildInitialDiagnosisRow(r)).toList(),
                         ),
-                      ]),
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 16),
+                      ],
+                      if (_listOf('visitReports').isNotEmpty) ...[
+                        _buildSectionCard(
+                          'Medical Reports',
+                          _listOf(
+                            'visitReports',
+                          ).map((r) => _buildVisitReportRow(r)).toList(),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      // Clinical Notes
+                      if (_listOf('clinicalNotes').isNotEmpty) ...[
+                        _buildSectionCard(
+                          'Clinical Notes',
+                          _listOf(
+                            'clinicalNotes',
+                          ).map((n) => _buildNoteRow(n)).toList(),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      // Lab Results
+                      if (_listOf('labResults').isNotEmpty) ...[
+                        _buildSectionCard(
+                          'Lab Results',
+                          _listOf(
+                            'labResults',
+                          ).map((l) => _buildLabResultRow(l)).toList(),
+                        ),
+                      ],
                     ],
-                    if (_listOf('initialDiagnosisReports').isNotEmpty) ...[
-                      _buildSectionCard(
-                        'Initial Diagnosis',
-                        _listOf(
-                          'initialDiagnosisReports',
-                        ).map((r) => _buildInitialDiagnosisRow(r)).toList(),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    if (_listOf('visitReports').isNotEmpty) ...[
-                      _buildSectionCard(
-                        'Medical Reports',
-                        _listOf(
-                          'visitReports',
-                        ).map((r) => _buildVisitReportRow(r)).toList(),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    // Clinical Notes
-                    if (_listOf('clinicalNotes').isNotEmpty) ...[
-                      _buildSectionCard(
-                        'Clinical Notes',
-                        _listOf(
-                          'clinicalNotes',
-                        ).map((n) => _buildNoteRow(n)).toList(),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    // Lab Results
-                    if (_listOf('labResults').isNotEmpty) ...[
-                      _buildSectionCard(
-                        'Lab Results',
-                        _listOf(
-                          'labResults',
-                        ).map((l) => _buildLabResultRow(l)).toList(),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
               ),
-            ),
+      ),
     );
   }
 

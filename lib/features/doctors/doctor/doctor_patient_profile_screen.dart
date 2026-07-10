@@ -57,44 +57,46 @@ class _DoctorPatientProfileScreenState
   Widget build(BuildContext context) {
     final palette = CarelinkPalette.of(context);
 
-    return Scaffold(
-      backgroundColor: DoctorUiConstants.doctorBackground,
-      appBar: AppBar(
-        title: const Text('Patient Profile'),
-        centerTitle: true,
+    return DoctorTypographyScope(
+      child: Scaffold(
         backgroundColor: DoctorUiConstants.doctorBackground,
-        foregroundColor: AppColors.primary,
-        elevation: 0,
-      ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            )
-          : _errorMessage != null
-          ? _buildErrorState(palette)
-          : RefreshIndicator(
-              onRefresh: _loadProfile,
-              color: AppColors.primary,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                children: [
-                  Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 720),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildPatientHeader(palette),
-                          const SizedBox(height: 18),
-                          _buildPersonalInformationCard(palette),
-                        ],
+        appBar: AppBar(
+          title: const Text('Patient Profile'),
+          centerTitle: true,
+          backgroundColor: DoctorUiConstants.doctorBackground,
+          foregroundColor: AppColors.primary,
+          elevation: 0,
+        ),
+        body: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(color: AppColors.primary),
+              )
+            : _errorMessage != null
+            ? _buildErrorState(palette)
+            : RefreshIndicator(
+                onRefresh: _loadProfile,
+                color: AppColors.primary,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                  children: [
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 720),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildPatientHeader(palette),
+                            const SizedBox(height: 18),
+                            _buildPersonalInformationCard(palette),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 

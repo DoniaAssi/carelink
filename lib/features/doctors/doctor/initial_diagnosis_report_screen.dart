@@ -203,62 +203,68 @@ class _InitialDiagnosisReportScreenState
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: localeController,
-      builder: (context, _) => Directionality(
-        textDirection: localeController.isDoctorArabic
-            ? TextDirection.rtl
-            : TextDirection.ltr,
-        child: Scaffold(
-          backgroundColor: _pageColor,
-          body: SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
-                child: Form(
-                  key: _formKey,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 26),
-                    children: [
-                      _appBar(),
-                      const SizedBox(height: 18),
-                      _patientHeader(),
-                      const SizedBox(height: 12),
-                      _medicalProfileCard(),
-                      const SizedBox(height: 12),
-                      _textAreaCard(
-                        icon: Icons.assignment_outlined,
-                        title: context.dtr('doctor.initial.chiefComplaint'),
-                        controller: _chiefComplaintController,
-                        hint: context.dtr('doctor.initial.enterChiefComplaint'),
-                      ),
-                      _symptomsCard(),
-                      _textAreaCard(
-                        icon: Icons.medical_services_outlined,
-                        title: context.dtr('doctor.initial.diagnosis'),
-                        controller: _diagnosisController,
-                        hint: context.dtr('doctor.initial.enterDiagnosis'),
-                      ),
-                      _textAreaCard(
-                        icon: Icons.medication_outlined,
-                        title: context.dtr('doctor.initial.treatmentPlan'),
-                        controller: _treatmentPlanController,
-                        hint: context.dtr('doctor.initial.enterTreatmentPlan'),
-                      ),
-                      _textAreaCard(
-                        icon: Icons.warning_amber_rounded,
-                        title: context.dtr(
-                          'doctor.initial.nursingInstructions',
+    return DoctorTypographyScope(
+      child: ListenableBuilder(
+        listenable: localeController,
+        builder: (context, _) => Directionality(
+          textDirection: localeController.isDoctorArabic
+              ? TextDirection.rtl
+              : TextDirection.ltr,
+          child: Scaffold(
+            backgroundColor: _pageColor,
+            body: SafeArea(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: Form(
+                    key: _formKey,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 26),
+                      children: [
+                        _appBar(),
+                        const SizedBox(height: 18),
+                        _patientHeader(),
+                        const SizedBox(height: 12),
+                        _medicalProfileCard(),
+                        const SizedBox(height: 12),
+                        _textAreaCard(
+                          icon: Icons.assignment_outlined,
+                          title: context.dtr('doctor.initial.chiefComplaint'),
+                          controller: _chiefComplaintController,
+                          hint: context.dtr(
+                            'doctor.initial.enterChiefComplaint',
+                          ),
                         ),
-                        controller: _nursingInstructionsController,
-                        hint: context.dtr(
-                          'doctor.initial.enterNursingInstructions',
+                        _symptomsCard(),
+                        _textAreaCard(
+                          icon: Icons.medical_services_outlined,
+                          title: context.dtr('doctor.initial.diagnosis'),
+                          controller: _diagnosisController,
+                          hint: context.dtr('doctor.initial.enterDiagnosis'),
                         ),
-                      ),
-                      _visitsCard(),
-                      const SizedBox(height: 18),
-                      _saveButton(),
-                    ],
+                        _textAreaCard(
+                          icon: Icons.medication_outlined,
+                          title: context.dtr('doctor.initial.treatmentPlan'),
+                          controller: _treatmentPlanController,
+                          hint: context.dtr(
+                            'doctor.initial.enterTreatmentPlan',
+                          ),
+                        ),
+                        _textAreaCard(
+                          icon: Icons.warning_amber_rounded,
+                          title: context.dtr(
+                            'doctor.initial.nursingInstructions',
+                          ),
+                          controller: _nursingInstructionsController,
+                          hint: context.dtr(
+                            'doctor.initial.enterNursingInstructions',
+                          ),
+                        ),
+                        _visitsCard(),
+                        const SizedBox(height: 18),
+                        _saveButton(),
+                      ],
+                    ),
                   ),
                 ),
               ),

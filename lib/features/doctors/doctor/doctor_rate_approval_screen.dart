@@ -119,25 +119,27 @@ class _DoctorRateApprovalScreenState extends State<DoctorRateApprovalScreen> {
   Widget build(BuildContext context) {
     final palette = CarelinkPalette.of(context);
 
-    return PopScope(
-      canPop: false,
-      child: Scaffold(
-        backgroundColor: DoctorUiConstants.doctorBackground,
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          title: const Text('Hourly Rate Approval'),
-          centerTitle: true,
+    return DoctorTypographyScope(
+      child: PopScope(
+        canPop: false,
+        child: Scaffold(
           backgroundColor: DoctorUiConstants.doctorBackground,
-          foregroundColor: palette.inkDark,
-          elevation: 0,
+          appBar: AppBar(
+            automaticallyImplyLeading: false,
+            title: const Text('Hourly Rate Approval'),
+            centerTitle: true,
+            backgroundColor: DoctorUiConstants.doctorBackground,
+            foregroundColor: palette.inkDark,
+            elevation: 0,
+          ),
+          body: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                )
+              : _errorMessage != null
+              ? _buildErrorState(palette)
+              : _buildApprovalContent(palette),
         ),
-        body: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              )
-            : _errorMessage != null
-            ? _buildErrorState(palette)
-            : _buildApprovalContent(palette),
       ),
     );
   }

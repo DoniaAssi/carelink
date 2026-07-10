@@ -67,49 +67,51 @@ class _DoctorPatientAppointmentsScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _pageColor,
-      appBar: AppBar(
+    return DoctorTypographyScope(
+      child: Scaffold(
         backgroundColor: _pageColor,
-        surfaceTintColor: _pageColor,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          color: _primary,
-          onPressed: () => Navigator.maybePop(context),
-        ),
-        title: const Text(
-          'Appointments',
-          style: TextStyle(
-            color: _textDark,
-            fontSize: 24,
-            fontWeight: FontWeight.w900,
+        appBar: AppBar(
+          backgroundColor: _pageColor,
+          surfaceTintColor: _pageColor,
+          elevation: 0,
+          centerTitle: true,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            color: _primary,
+            onPressed: () => Navigator.maybePop(context),
+          ),
+          title: const Text(
+            'Appointments',
+            style: TextStyle(
+              color: _textDark,
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
-      ),
-      body: SafeArea(
-        top: false,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: RefreshIndicator(
-              onRefresh: _loadAppointments,
-              color: _primary,
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _appointments.isEmpty
-                  ? _emptyState()
-                  : ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-                      children: [
-                        _summaryCard(),
-                        const SizedBox(height: 18),
-                        for (final appointment in _appointments)
-                          _appointmentCard(appointment),
-                      ],
-                    ),
+        body: SafeArea(
+          top: false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: RefreshIndicator(
+                onRefresh: _loadAppointments,
+                color: _primary,
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _appointments.isEmpty
+                    ? _emptyState()
+                    : ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+                        children: [
+                          _summaryCard(),
+                          const SizedBox(height: 18),
+                          for (final appointment in _appointments)
+                            _appointmentCard(appointment),
+                        ],
+                      ),
+              ),
             ),
           ),
         ),

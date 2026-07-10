@@ -247,203 +247,211 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
         !_asBool(_request['hasReportForVisit']) &&
         (_request['requestId'] ?? widget.requestId).toString().isNotEmpty;
 
-    return Scaffold(
-      backgroundColor: DoctorUiConstants.doctorBackground,
-      appBar: AppBar(
-        title: const Text('Request Details'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Status Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Status',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          _buildStatusBadge(status),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Patient Info Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Patient Information',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
+    return DoctorTypographyScope(
+      child: Scaffold(
+        backgroundColor: DoctorUiConstants.doctorBackground,
+        appBar: AppBar(
+          title: const Text('Request Details'),
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Status Card
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Status',
+                              style: TextStyle(fontWeight: FontWeight.bold),
                             ),
-                          ),
-                          const Divider(),
-                          _buildInfoRow('Name', patientName),
-                          if (patientPhone.isNotEmpty)
-                            _buildInfoRow('Phone', patientPhone),
-                          if (patientEmail.isNotEmpty)
-                            _buildInfoRow('Email', patientEmail),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Appointment Details Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Appointment Details',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          const Divider(),
-                          if (reasonForVisit.isNotEmpty)
-                            _buildInfoRow('Reason', reasonForVisit),
-                          if (scheduledAt != null)
-                            _buildInfoRow(
-                              'Scheduled',
-                              _formatDate(scheduledAt),
-                            ),
-                          if (location.isNotEmpty)
-                            _buildInfoRow('Location', location),
-                          if (notes.isNotEmpty) _buildInfoRow('Notes', notes),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  // Action Buttons
-                  if (status == 'pending') ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: _acceptRequest,
-                            icon: const Icon(Icons.check),
-                            label: const Text('Accept'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.success,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
+                            _buildStatusBadge(status),
+                          ],
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: _rejectRequest,
-                            icon: const Icon(Icons.close),
-                            label: const Text('Reject'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Patient Info Card
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Patient Information',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
-                          ),
+                            const Divider(),
+                            _buildInfoRow('Name', patientName),
+                            if (patientPhone.isNotEmpty)
+                              _buildInfoRow('Phone', patientPhone),
+                            if (patientEmail.isNotEmpty)
+                              _buildInfoRow('Email', patientEmail),
+                          ],
                         ),
-                      ],
-                    ),
-                  ],
-                  if (status == 'confirmed') ...[
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => MedicalRecordScreen(
-                              patientId: _request['patientUserId'],
-                            ),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.medical_information),
-                      label: const Text('View Medical Record'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => DoctorVisitTrackingScreen(
-                              requestData: Map<String, dynamic>.from(_request),
-                              onCompleteVisit: _completeRequest,
+                    const SizedBox(height: 16),
+                    // Appointment Details Card
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Appointment Details',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.directions_car_outlined),
-                      label: const Text('On The Way'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.success,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                            const Divider(),
+                            if (reasonForVisit.isNotEmpty)
+                              _buildInfoRow('Reason', reasonForVisit),
+                            if (scheduledAt != null)
+                              _buildInfoRow(
+                                'Scheduled',
+                                _formatDate(scheduledAt),
+                              ),
+                            if (location.isNotEmpty)
+                              _buildInfoRow('Location', location),
+                            if (notes.isNotEmpty) _buildInfoRow('Notes', notes),
+                          ],
+                        ),
                       ),
                     ),
-                  ],
-                  if (normalizedStatus == 'completed') ...[
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => MedicalRecordScreen(
-                              patientId: _request['patientUserId'],
+                    const SizedBox(height: 24),
+                    // Action Buttons
+                    if (status == 'pending') ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _acceptRequest,
+                              icon: const Icon(Icons.check),
+                              label: const Text('Accept'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.success,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                              ),
                             ),
                           ),
-                        );
-                      },
-                      icon: const Icon(Icons.medical_information),
-                      label: const Text('View Medical Record'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _rejectRequest,
+                              icon: const Icon(Icons.close),
+                              label: const Text('Reject'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    if (canCreateReport) ...[
+                    ],
+                    if (status == 'confirmed') ...[
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => MedicalRecordScreen(
+                                patientId: _request['patientUserId'],
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.medical_information),
+                        label: const Text('View Medical Record'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
                       const SizedBox(height: 12),
                       ElevatedButton.icon(
-                        onPressed: _openReportForRequest,
-                        icon: const Icon(Icons.description),
-                        label: const Text('Submit Medical Report'),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => DoctorVisitTrackingScreen(
+                                requestData: Map<String, dynamic>.from(
+                                  _request,
+                                ),
+                                onCompleteVisit: _completeRequest,
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.directions_car_outlined),
+                        label: const Text('On The Way'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.info,
+                          backgroundColor: AppColors.success,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                       ),
                     ],
+                    if (normalizedStatus == 'completed') ...[
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => MedicalRecordScreen(
+                                patientId: _request['patientUserId'],
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.medical_information),
+                        label: const Text('View Medical Record'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                      if (canCreateReport) ...[
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          onPressed: _openReportForRequest,
+                          icon: const Icon(Icons.description),
+                          label: const Text('Submit Medical Report'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.info,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ],
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
+      ),
     );
   }
 

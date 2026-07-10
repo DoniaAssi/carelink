@@ -50,114 +50,116 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: DoctorUiConstants.doctorBackground,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Spacer(),
-              // Icon
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: AppColors.warning.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _status == 'approved'
-                      ? Icons.check_circle
-                      : Icons.hourglass_empty,
-                  size: 80,
-                  color: _status == 'approved'
-                      ? AppColors.success
-                      : AppColors.warning,
-                ),
-              ),
-              const SizedBox(height: 32),
-              // Title
-              Text(
-                _status == 'approved'
-                    ? 'Account Approved!'
-                    : 'Pending Approval',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: _status == 'approved'
-                      ? AppColors.success
-                      : AppColors.warning,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              // Message
-              Text(
-                _status == 'approved'
-                    ? 'Your doctor account has been approved. You can now access the system.'
-                    : 'Your doctor account is pending approval from the administrator. Please check back later.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              // User Info Card
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildInfoRow('Name', widget.fullName),
-                      const Divider(),
-                      _buildInfoRow('Email', widget.email),
-                      const Divider(),
-                      _buildInfoRow(
-                        'Status',
-                        _status == 'approved' ? 'Approved' : 'Pending',
-                      ),
-                    ],
+    return DoctorTypographyScope(
+      child: Scaffold(
+        backgroundColor: DoctorUiConstants.doctorBackground,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Spacer(),
+                // Icon
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _status == 'approved'
+                        ? Icons.check_circle
+                        : Icons.hourglass_empty,
+                    size: 80,
+                    color: _status == 'approved'
+                        ? AppColors.success
+                        : AppColors.warning,
                   ),
                 ),
-              ),
-              const Spacer(),
-              // Refresh Button
-              if (_status != 'approved')
-                SizedBox(
-                  height: 50,
-                  child: ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _checkApprovalStatus,
-                    icon: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
-                              ),
-                            ),
-                          )
-                        : const Icon(Icons.refresh),
-                    label: Text(_isLoading ? 'Checking...' : 'Check Status'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                const SizedBox(height: 32),
+                // Title
+                Text(
+                  _status == 'approved'
+                      ? 'Account Approved!'
+                      : 'Pending Approval',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: _status == 'approved'
+                        ? AppColors.success
+                        : AppColors.warning,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                // Message
+                Text(
+                  _status == 'approved'
+                      ? 'Your doctor account has been approved. You can now access the system.'
+                      : 'Your doctor account is pending approval from the administrator. Please check back later.',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                // User Info Card
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildInfoRow('Name', widget.fullName),
+                        const Divider(),
+                        _buildInfoRow('Email', widget.email),
+                        const Divider(),
+                        _buildInfoRow(
+                          'Status',
+                          _status == 'approved' ? 'Approved' : 'Pending',
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              const SizedBox(height: 16),
-              // Logout Button
-              TextButton(
-                onPressed: () => logoutDoctorToLogin(context),
-                child: const Text('Logout'),
-              ),
-            ],
+                const Spacer(),
+                // Refresh Button
+                if (_status != 'approved')
+                  SizedBox(
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _checkApprovalStatus,
+                      icon: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                          : const Icon(Icons.refresh),
+                      label: Text(_isLoading ? 'Checking...' : 'Check Status'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                // Logout Button
+                TextButton(
+                  onPressed: () => logoutDoctorToLogin(context),
+                  child: const Text('Logout'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

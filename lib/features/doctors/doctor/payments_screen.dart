@@ -158,52 +158,54 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: localeController,
-      builder: (context, _) {
-        return Scaffold(
-          backgroundColor: DoctorUiConstants.doctorBackground,
-          appBar: AppBar(
-            title: const Text(
-              'Earnings',
-              style: TextStyle(color: Colors.black),
-            ),
-            centerTitle: true,
+    return DoctorTypographyScope(
+      child: ListenableBuilder(
+        listenable: localeController,
+        builder: (context, _) {
+          return Scaffold(
             backgroundColor: DoctorUiConstants.doctorBackground,
-            foregroundColor: Colors.black,
-          ),
-          body: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _rateStatus['canWork'] != true
-              ? _buildRateBlockedState()
-              : RefreshIndicator(
-                  onRefresh: _loadPayments,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) => SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1180),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _buildApprovedRateCard(),
-                              const SizedBox(height: 16),
-                              _buildStatisticsGrid(constraints.maxWidth),
-                              const SizedBox(height: 20),
-                              _buildEarningsHistory(),
-                              const SizedBox(height: 14),
-                              _buildEarningsNote(),
-                            ],
+            appBar: AppBar(
+              title: const Text(
+                'Earnings',
+                style: TextStyle(color: Colors.black),
+              ),
+              centerTitle: true,
+              backgroundColor: DoctorUiConstants.doctorBackground,
+              foregroundColor: Colors.black,
+            ),
+            body: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _rateStatus['canWork'] != true
+                ? _buildRateBlockedState()
+                : RefreshIndicator(
+                    onRefresh: _loadPayments,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) => SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1180),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _buildApprovedRateCard(),
+                                const SizedBox(height: 16),
+                                _buildStatisticsGrid(constraints.maxWidth),
+                                const SizedBox(height: 20),
+                                _buildEarningsHistory(),
+                                const SizedBox(height: 14),
+                                _buildEarningsNote(),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 

@@ -240,39 +240,41 @@ class _MedicalReportFormScreenState extends State<MedicalReportFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: localeController,
-      builder: (context, _) => Directionality(
-        textDirection: localeController.isDoctorArabic
-            ? TextDirection.rtl
-            : TextDirection.ltr,
-        child: Scaffold(
-          backgroundColor: _pageColor,
-          body: SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildHeader(),
-                        const SizedBox(height: 26),
-                        _buildSteps(),
-                        const SizedBox(height: 24),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 220),
-                          child: KeyedSubtree(
-                            key: ValueKey(_currentStep),
-                            child: _buildCurrentStep(),
+    return DoctorTypographyScope(
+      child: ListenableBuilder(
+        listenable: localeController,
+        builder: (context, _) => Directionality(
+          textDirection: localeController.isDoctorArabic
+              ? TextDirection.rtl
+              : TextDirection.ltr,
+          child: Scaffold(
+            backgroundColor: _pageColor,
+            body: SafeArea(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildHeader(),
+                          const SizedBox(height: 26),
+                          _buildSteps(),
+                          const SizedBox(height: 24),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 220),
+                            child: KeyedSubtree(
+                              key: ValueKey(_currentStep),
+                              child: _buildCurrentStep(),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 24),
-                        _buildActions(),
-                      ],
+                          const SizedBox(height: 24),
+                          _buildActions(),
+                        ],
+                      ),
                     ),
                   ),
                 ),

@@ -112,52 +112,54 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _pageColor,
-      appBar: AppBar(
+    return DoctorTypographyScope(
+      child: Scaffold(
         backgroundColor: _pageColor,
-        surfaceTintColor: _pageColor,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          color: _primary,
-          onPressed: () => Navigator.maybePop(context),
-        ),
-        title: const Text(
-          'Requests',
-          style: TextStyle(
-            color: _textDark,
-            fontSize: 25,
-            fontWeight: FontWeight.w900,
+        appBar: AppBar(
+          backgroundColor: _pageColor,
+          surfaceTintColor: _pageColor,
+          elevation: 0,
+          centerTitle: true,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            color: _primary,
+            onPressed: () => Navigator.maybePop(context),
+          ),
+          title: const Text(
+            'Requests',
+            style: TextStyle(
+              color: _textDark,
+              fontSize: 25,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildFilters(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 22, 24, 14),
-            child: _buildStatusRow(),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : RefreshIndicator(
-                    onRefresh: _loadRequests,
-                    child: _requests.isEmpty
-                        ? _buildEmptyState()
-                        : ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
-                            itemCount: _requests.length,
-                            itemBuilder: (context, index) {
-                              return _buildRequestCard(_requests[index]);
-                            },
-                          ),
-                  ),
-          ),
-        ],
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildFilters(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 22, 24, 14),
+              child: _buildStatusRow(),
+            ),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : RefreshIndicator(
+                      onRefresh: _loadRequests,
+                      child: _requests.isEmpty
+                          ? _buildEmptyState()
+                          : ListView.builder(
+                              padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+                              itemCount: _requests.length,
+                              itemBuilder: (context, index) {
+                                return _buildRequestCard(_requests[index]);
+                              },
+                            ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
