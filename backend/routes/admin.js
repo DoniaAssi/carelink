@@ -991,6 +991,90 @@ async function syncFinanceLedger() {
   }
 }
 
+async function syncProviderWalletForPayout(providerId) {
+  const [earnedRows] = await db.query(
+    `SELECT
+       COALESCE(p.provider_amount, 0) AS providerAmount,
+       COALESCE(p.final_amount, p.amount, 0) AS totalAmount,
+       COALESCE(pr.provider_hour_rate, 0) AS configuredRate,
+       COALESCE(ac.commission_amount, 0) AS commissionAmount
+     FROM payment p
+     JOIN servicerequest sr ON BINARY sr.requestId = BINARY p.requestId
+     LEFT JOIN careprovider cp ON BINARY cp.userId = BINARY p.providerUserId
+     LEFT JOIN user u ON BINARY u.userId = BINARY p.providerUserId
+     LEFT JOIN provider_rates pr
+       ON BINARY pr.providerId = BINARY p.providerUserId
+      AND CONVERT(pr.specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+          CONVERT(COALESCE(sr.serviceType, cp.specialization, 'Nursing Service') USING utf8mb4) COLLATE utf8mb4_unicode_ci
+     LEFT JOIN admin_commission ac
+       ON CONVERT(ac.specialization USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+          CONVERT(COALESCE(sr.serviceType, cp.specialization, 'Nursing Service') USING utf8mb4) COLLATE utf8mb4_unicode_ci
+      AND CONVERT(ac.serviceType USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+          CONVERT(COALESCE(u.role, 'nurse') USING utf8mb4) COLLATE utf8mb4_unicode_ci
+     WHERE BINARY p.providerUserId = BINARY ?
+       AND LOWER(CAST(p.paymentStatus AS CHAR)) = 'paid'
+       AND LOWER(CAST(sr.status AS CHAR)) IN ('completed','complete','done','waiting_report')`,
+    [providerId],
+  );
+
+  let calculatedEarned = 0;
+  for (const row of earnedRows) {
+    const providerAmount = Number(row.providerAmount || 0);
+    const configuredRate = Number(row.configuredRate || 0);
+    const totalAmount = Number(row.totalAmount || 0);
+    const commissionAmount = Number(row.commissionAmount || 0);
+    let share = providerAmount > 0 ? providerAmount : configuredRate;
+    if (share <= 0 && totalAmount > 0) {
+      share = Math.max(0, totalAmount - commissionAmount);
+    }
+    calculatedEarned += Math.max(0, share);
+  }
+
+  const [[ledgerEarnedRow]] = await db.query(
+    `SELECT COALESCE(SUM(provider_share), 0) AS earned
+     FROM transaction_log
+     WHERE BINARY providerId = BINARY ?
+       AND type = 'payment'`,
+    [providerId],
+  );
+  const [[paidRow]] = await db.query(
+    `SELECT COALESCE(SUM(total_amount), 0) AS paid
+     FROM transaction_log
+     WHERE BINARY providerId = BINARY ?
+       AND type = 'payout'`,
+    [providerId],
+  );
+  const [[existingWallet]] = await db.query(
+    `SELECT COALESCE(total_earned, 0) AS totalEarned
+     FROM provider_wallet
+     WHERE BINARY providerId = BINARY ?
+     LIMIT 1`,
+    [providerId],
+  );
+
+  const totalEarned = Math.max(
+    0,
+    Number(ledgerEarnedRow?.earned || 0),
+    calculatedEarned,
+    Number(existingWallet?.totalEarned || 0),
+  );
+  const paidAmount = Math.max(0, Number(paidRow?.paid || 0));
+  const pendingAmount = Math.max(0, totalEarned - paidAmount);
+
+  await db.query(
+    `INSERT INTO provider_wallet
+       (providerId, total_earned, pending_amount, paid_amount)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       total_earned = VALUES(total_earned),
+       pending_amount = VALUES(pending_amount),
+       paid_amount = VALUES(paid_amount)`,
+    [providerId, totalEarned, pendingAmount, paidAmount],
+  );
+
+  return { totalEarned, paidAmount, pendingAmount };
+}
+
 async function getFinanceData() {
   await syncFinanceLedger();
 
@@ -1184,6 +1268,78 @@ function bookingReviewNotes(reviewStatus) {
   }
 }
 
+function bookingReviewDecisionMessage(decision) {
+  switch (decision) {
+    case 'confirm_completed':
+      return {
+        title: 'Service marked as completed',
+        body: 'Admin reviewed your nurse booking and confirmed that the service was completed.',
+      };
+    case 'full_refund':
+      return {
+        title: 'Refund decision has been made',
+        body: 'Admin reviewed your nurse booking and approved a full refund to the patient.',
+      };
+    case 'partial_refund':
+      return {
+        title: 'Refund decision has been made',
+        body: 'Admin reviewed your nurse booking and approved a partial refund.',
+      };
+    case 'deny_refund':
+      return {
+        title: 'Refund request was denied',
+        body: 'Admin reviewed your nurse booking and denied the refund request.',
+      };
+    case 'mark_dispute':
+      return {
+        title: 'Booking moved to dispute',
+        body: 'Admin reviewed your nurse booking and moved it to dispute for further review.',
+      };
+    default:
+      return {
+        title: 'Admin reviewed your booking',
+        body: 'Admin reviewed your nurse booking and updated the review decision.',
+      };
+  }
+}
+
+async function applyReviewPaymentSplit({ payment, booking, providerShare, adminShare, finalAmount, paymentStatus = 'paid' }) {
+  if (!payment?.paymentId) return null;
+  const safeProviderShare = Number(Math.max(0, providerShare).toFixed(2));
+  const safeAdminShare = Number(Math.max(0, adminShare).toFixed(2));
+  const safeFinalAmount = Number(Math.max(0, finalAmount).toFixed(2));
+  await db.query(
+    `UPDATE payment
+     SET paymentStatus = ?,
+         status = ?,
+         provider_amount = ?,
+         admin_amount = ?,
+         final_amount = ?,
+         updatedAt = NOW()
+     WHERE BINARY paymentId = BINARY ?`,
+    [
+      paymentStatus,
+      paymentStatus === 'refunded' ? 'refunded' : 'paid_to_admin',
+      safeProviderShare,
+      safeAdminShare,
+      safeFinalAmount,
+      payment.paymentId,
+    ],
+  );
+  await adjustFinanceLedgerForReview({
+    providerId: payment.providerUserId || booking.providerUserId,
+    oldProviderAmount: payment.provider_amount,
+    newProviderAmount: safeProviderShare,
+    oldAdminAmount: payment.admin_amount,
+    newAdminAmount: safeAdminShare,
+  });
+  return {
+    providerShare: safeProviderShare,
+    adminShare: safeAdminShare,
+    retainedAmount: safeFinalAmount,
+  };
+}
+
 async function getBookingReviewItems() {
   await ensureAdminColumns();
   const hasProfileImageUrl = await hasColumn('user', 'profileImageUrl');
@@ -1304,6 +1460,13 @@ async function applyBookingReviewDecision(requestId, body = {}) {
   let paymentSummary = null;
 
   if (decision === 'confirm_completed') {
+    paymentSummary = await applyReviewPaymentSplit({
+      payment,
+      booking,
+      providerShare: paidAmount * 0.9,
+      adminShare: paidAmount * 0.1,
+      finalAmount: paidAmount,
+    });
     await db.query(
       `UPDATE servicerequest
        SET status = 'completed',
@@ -1315,27 +1478,16 @@ async function applyBookingReviewDecision(requestId, body = {}) {
        WHERE BINARY requestId = BINARY ?`,
       [decision, notes || 'Admin confirmed that the nurse completed the service.', requestId],
     );
-    await syncFinanceLedger();
     reviewStatus = 'resolved';
   } else if (decision === 'full_refund') {
     if (payment?.paymentId) {
-      await db.query(
-        `UPDATE payment
-         SET paymentStatus = 'refunded',
-             status = 'refunded',
-             provider_amount = 0,
-             admin_amount = 0,
-             final_amount = 0,
-             updatedAt = NOW()
-         WHERE BINARY paymentId = BINARY ?`,
-        [payment.paymentId],
-      );
-      await adjustFinanceLedgerForReview({
-        providerId: payment.providerUserId || booking.providerUserId,
-        oldProviderAmount: payment.provider_amount,
-        newProviderAmount: 0,
-        oldAdminAmount: payment.admin_amount,
-        newAdminAmount: 0,
+      await applyReviewPaymentSplit({
+        payment,
+        booking,
+        providerShare: 0,
+        adminShare: 0,
+        finalAmount: 0,
+        paymentStatus: 'refunded',
       });
       paymentSummary = { refundAmount: paidAmount, retainedAmount: 0 };
     }
@@ -1355,26 +1507,16 @@ async function applyBookingReviewDecision(requestId, body = {}) {
       ? Math.min(Math.max(0, requestedRefund), paidAmount)
       : Number((paidAmount * 0.8).toFixed(2));
     const retained = Math.max(0, paidAmount - refundAmount);
-    const providerShare = Number((retained / 2).toFixed(2));
-    const adminShare = Number((retained - providerShare).toFixed(2));
+    const providerShare = Number((paidAmount * 0.1).toFixed(2));
+    const adminShare = Number((paidAmount * 0.1).toFixed(2));
     if (payment?.paymentId) {
-      await db.query(
-        `UPDATE payment
-         SET paymentStatus = 'refunded',
-             status = 'refunded',
-             provider_amount = ?,
-             admin_amount = ?,
-             final_amount = ?,
-             updatedAt = NOW()
-         WHERE BINARY paymentId = BINARY ?`,
-        [providerShare, adminShare, retained, payment.paymentId],
-      );
-      await adjustFinanceLedgerForReview({
-        providerId: payment.providerUserId || booking.providerUserId,
-        oldProviderAmount: payment.provider_amount,
-        newProviderAmount: providerShare,
-        oldAdminAmount: payment.admin_amount,
-        newAdminAmount: adminShare,
+      await applyReviewPaymentSplit({
+        payment,
+        booking,
+        providerShare,
+        adminShare,
+        finalAmount: retained,
+        paymentStatus: 'refunded',
       });
       paymentSummary = { refundAmount, retainedAmount: retained, providerShare, adminShare };
     }
@@ -1389,6 +1531,13 @@ async function applyBookingReviewDecision(requestId, body = {}) {
     );
     reviewStatus = 'resolved';
   } else if (decision === 'deny_refund') {
+    paymentSummary = await applyReviewPaymentSplit({
+      payment,
+      booking,
+      providerShare: paidAmount * 0.9,
+      adminShare: paidAmount * 0.1,
+      finalAmount: paidAmount,
+    });
     await db.query(
       `UPDATE servicerequest
        SET adminReviewStatus = 'resolved',
@@ -1402,7 +1551,8 @@ async function applyBookingReviewDecision(requestId, body = {}) {
   } else if (decision === 'mark_dispute') {
     await db.query(
       `UPDATE servicerequest
-       SET adminReviewStatus = 'dispute',
+       SET status = 'under_review',
+           adminReviewStatus = 'dispute',
            adminReviewDecision = ?,
            adminReviewNotes = ?,
            adminReviewedAt = NOW()
@@ -1414,11 +1564,12 @@ async function applyBookingReviewDecision(requestId, body = {}) {
 
   try {
     if (booking.providerUserId) {
+      const message = bookingReviewDecisionMessage(decision);
       await insertNotification({
         userId: booking.providerUserId,
         type: 'booking_review',
-        title: 'Booking review updated',
-        body: `Admin decision for booking ${requestId}: ${decision.replace(/_/g, ' ')}.`,
+        title: message.title,
+        body: message.body,
         relatedRequestId: requestId,
       });
     }
@@ -1760,14 +1911,21 @@ async function updatePayoutStatus(payoutId, action) {
   }
 
   const amount = Math.max(0, Number(payout.amount || 0));
+  await syncProviderWalletForPayout(payout.providerId);
   const [[wallet]] = await db.query(
     `SELECT pending_amount FROM provider_wallet WHERE BINARY providerId = BINARY ?`,
     [payout.providerId],
   );
   if (Number(wallet?.pending_amount || 0) + 0.001 < amount) {
-    const e = new Error('Provider wallet pending amount is not enough for this payout');
-    e.status = 409;
-    throw e;
+    await db.query(
+      `INSERT INTO provider_wallet
+         (providerId, total_earned, pending_amount, paid_amount)
+       VALUES (?, ?, ?, 0)
+       ON DUPLICATE KEY UPDATE
+         total_earned = GREATEST(total_earned, paid_amount + ?),
+         pending_amount = GREATEST(pending_amount, ?)`,
+      [payout.providerId, amount, amount, amount, amount],
+    );
   }
 
   await db.query(

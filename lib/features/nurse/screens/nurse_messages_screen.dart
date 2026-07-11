@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -73,7 +73,7 @@ class _NurseMessagesScreenState extends State<NurseMessagesScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Messages'),
+          title: Text(NurseUi.t('Messages')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -296,3 +296,4 @@ String _relativeTime(DateTime time) {
   if (diff.inDays < 1) return '${diff.inHours}h';
   return '${diff.inDays}d';
 }
+

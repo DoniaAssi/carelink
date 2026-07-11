@@ -83,9 +83,7 @@ async function getProviderExtrasProjection() {
   const hasConsultationFee = await hasColumn('careprovider', 'consultationFee');
   const hasHourlyRate = await hasColumn('careprovider', 'hourlyRate');
   const hasHourlyRateSnake = await hasColumn('careprovider', 'hourly_rate');
-  const hasAcceptedPatientRate =
-    (await hasColumn('provider_rates', 'providerId')) &&
-    (await hasColumn('provider_rates', 'patient_rate'));
+  const hasAcceptedPatientRate = await hasColumn('provider_rates', 'patient_rate');
   const hasRateAcceptanceStatus = await hasColumn(
     'provider_rates',
     'rateAcceptanceStatus',
@@ -120,7 +118,7 @@ async function getProviderExtrasProjection() {
   }
 
   const feeProjection = feeSources.length
-    ? `COALESCE(${feeSources.join(', ')}) AS consultationFee`
+    ? `COALESCE(${feeSources.join(', ')}, 0) AS consultationFee`
     : 'NULL AS consultationFee';
 
   return `${serviceTypeProjection}, ${feeProjection}`;
@@ -521,7 +519,9 @@ async function attachRealAvailableSlots(providers, horizonDays = 28) {
 
   const [scheduleRows, bookingRows] = await Promise.all([
     db.query(
-      `SELECT providerUserId, day, startTime, endTime
+      `SELECT providerUserId, day,
+              ${await hasColumn('availabilityslot', 'date') ? "DATE_FORMAT(date, '%Y-%m-%d') AS date," : "NULL AS date,"}
+              startTime, endTime
        FROM availabilityslot
        WHERE providerUserId IN (${placeholders})
        ORDER BY providerUserId, day, startTime`,
@@ -572,6 +572,30 @@ async function attachRealAvailableSlots(providers, horizonDays = 28) {
 
     const recurring = schedulesByProvider.get(provider.userId) || [];
     const freeSlots = [];
+
+    for (const slot of recurring) {
+      if (!slot.date) continue;
+      const start = timeKey(slot.startTime);
+      const end = timeKey(slot.endTime);
+      const slotDateTime = new Date(`${slot.date}T${start}:00`);
+      const slotDay = slot.day || slotDateTime.toLocaleDateString('en-US', {
+        weekday: 'long',
+      });
+      if (slotDateTime < new Date(now.getFullYear(), now.getMonth(), now.getDate())) {
+        continue;
+      }
+      if (booked.has(`${provider.userId}|${slot.date}|${start}`)) {
+        continue;
+      }
+      freeSlots.push({
+        day: slotDay,
+        date: slot.date,
+        startTime: start,
+        endTime: end,
+        scheduledAt: `${slot.date} ${start}:00`,
+      });
+    }
+
     for (let offset = 0; offset < horizonDays; offset += 1) {
       const date = new Date(now);
       date.setHours(0, 0, 0, 0);
@@ -581,6 +605,7 @@ async function attachRealAvailableSlots(providers, horizonDays = 28) {
       );
 
       for (const slot of recurring) {
+        if (slot.date) continue;
         if (dayKey(slot.day) !== weekday) continue;
         const start = timeKey(slot.startTime);
         const end = timeKey(slot.endTime);

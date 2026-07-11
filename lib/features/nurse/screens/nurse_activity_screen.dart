@@ -887,13 +887,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     );
   }
 
-  List<BoxShadow> get _shadow => [
-    BoxShadow(
-      color: Colors.black.withValues(alpha: 0.045),
-      blurRadius: 18,
-      offset: const Offset(0, 8),
-    ),
-  ];
+  List<BoxShadow> get _shadow => NurseUi.softShadow;
 
   Widget _bottomNavigationBar() {
     final items = [

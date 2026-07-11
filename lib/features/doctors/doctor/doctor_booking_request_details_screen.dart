@@ -165,91 +165,95 @@ class _DoctorBookingRequestDetailsScreenState
   @override
   Widget build(BuildContext context) {
     final palette = CarelinkPalette.of(context);
-    return Scaffold(
-      backgroundColor: DoctorUiConstants.doctorBackground,
-      appBar: AppBar(
-        title: const Text('Booking Request'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-      ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            )
-          : _errorMessage != null
-          ? _ErrorState(message: _errorMessage!, onRetry: _load)
-          : RefreshIndicator(
-              onRefresh: _load,
-              color: AppColors.primary,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _PatientSummaryCard(
-                    palette: palette,
-                    patientName: _patientName,
-                    patientImageUrl: _patientImageUrl,
-                    serviceType: _serviceType,
-                  ),
-                  const SizedBox(height: 14),
-                  _SectionCard(
-                    palette: palette,
-                    title: 'Appointment Details',
-                    children: [
-                      _DetailRow(
-                        icon: Icons.calendar_today_outlined,
-                        label: 'Date',
-                        value: _dateText,
-                      ),
-                      _DetailRow(
-                        icon: Icons.schedule_outlined,
-                        label: 'Time',
-                        value: _timeText,
-                      ),
-                      _DetailRow(
-                        icon: Icons.medical_services_outlined,
-                        label: 'Service Type',
-                        value: _serviceType,
-                      ),
-                      _DetailRow(
-                        icon: Icons.place_outlined,
-                        label: 'Address',
-                        value: _address,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  _SectionCard(
-                    palette: palette,
-                    title: 'Request Status',
-                    children: [_StatusBadge(status: _status)],
-                  ),
-                  const SizedBox(height: 22),
-                  OutlinedButton.icon(
-                    onPressed: _patientId.isEmpty ? null : _openPatientProfile,
-                    icon: const Icon(Icons.person_search_outlined),
-                    label: const Text('View Patient Profile'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      side: const BorderSide(color: AppColors.primary),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+    return DoctorTypographyScope(
+      child: Scaffold(
+        backgroundColor: DoctorUiConstants.doctorBackground,
+        appBar: AppBar(
+          title: const Text('Booking Request'),
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+        ),
+        body: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(color: AppColors.primary),
+              )
+            : _errorMessage != null
+            ? _ErrorState(message: _errorMessage!, onRetry: _load)
+            : RefreshIndicator(
+                onRefresh: _load,
+                color: AppColors.primary,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _PatientSummaryCard(
+                      palette: palette,
+                      patientName: _patientName,
+                      patientImageUrl: _patientImageUrl,
+                      serviceType: _serviceType,
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  ElevatedButton.icon(
-                    onPressed: _patientId.isEmpty || _doctorId.isEmpty
-                        ? null
-                        : _messagePatient,
-                    icon: const Icon(Icons.chat_bubble_outline_rounded),
-                    label: const Text('Message Patient'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    const SizedBox(height: 14),
+                    _SectionCard(
+                      palette: palette,
+                      title: 'Appointment Details',
+                      children: [
+                        _DetailRow(
+                          icon: Icons.calendar_today_outlined,
+                          label: 'Date',
+                          value: _dateText,
+                        ),
+                        _DetailRow(
+                          icon: Icons.schedule_outlined,
+                          label: 'Time',
+                          value: _timeText,
+                        ),
+                        _DetailRow(
+                          icon: Icons.medical_services_outlined,
+                          label: 'Service Type',
+                          value: _serviceType,
+                        ),
+                        _DetailRow(
+                          icon: Icons.place_outlined,
+                          label: 'Address',
+                          value: _address,
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    _SectionCard(
+                      palette: palette,
+                      title: 'Request Status',
+                      children: [_StatusBadge(status: _status)],
+                    ),
+                    const SizedBox(height: 22),
+                    OutlinedButton.icon(
+                      onPressed: _patientId.isEmpty
+                          ? null
+                          : _openPatientProfile,
+                      icon: const Icon(Icons.person_search_outlined),
+                      label: const Text('View Patient Profile'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      onPressed: _patientId.isEmpty || _doctorId.isEmpty
+                          ? null
+                          : _messagePatient,
+                      icon: const Icon(Icons.chat_bubble_outline_rounded),
+                      label: const Text('Message Patient'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 }
@@ -269,55 +273,57 @@ class _PatientSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: _cardDecoration(palette),
-      child: Row(
-        children: [
-          ClipOval(
-            child: Container(
-              width: 64,
-              height: 64,
-              color: AppColors.primary.withValues(alpha: 0.1),
-              child: profileAvatarOrPlaceholder(
-                imageUrl: patientImageUrl,
-                size: 64,
-                placeholderColor: AppColors.primary,
-                placeholderIcon: Icons.person_outline_rounded,
-                iconSize: 30,
+    return DoctorTypographyScope(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: _cardDecoration(palette),
+        child: Row(
+          children: [
+            ClipOval(
+              child: Container(
+                width: 64,
+                height: 64,
+                color: AppColors.primary.withValues(alpha: 0.1),
+                child: profileAvatarOrPlaceholder(
+                  imageUrl: patientImageUrl,
+                  size: 64,
+                  placeholderColor: AppColors.primary,
+                  placeholderIcon: Icons.person_outline_rounded,
+                  iconSize: 30,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  patientName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.inkDark,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    patientName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.inkDark,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  serviceType,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.inkMuted,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(height: 6),
+                  Text(
+                    serviceType,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.inkMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -336,23 +342,25 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: _cardDecoration(palette),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: palette.inkDark,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
+    return DoctorTypographyScope(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: _cardDecoration(palette),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                color: palette.inkDark,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          ...children,
-        ],
+            const SizedBox(height: 12),
+            ...children,
+          ],
+        ),
       ),
     );
   }
@@ -444,25 +452,31 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, color: Colors.redAccent, size: 42),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: onRetry,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
+    return DoctorTypographyScope(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.error_outline,
+                color: Colors.redAccent,
+                size: 42,
               ),
-              child: const Text('Try Again'),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Text(message, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: onRetry,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Try Again'),
+              ),
+            ],
+          ),
         ),
       ),
     );

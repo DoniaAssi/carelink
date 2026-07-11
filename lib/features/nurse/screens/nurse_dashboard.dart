@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -56,15 +56,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
   }
 
   Future<void> _loadUiSettings() async {
-    try {
-      final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/nurse/settings/${widget.user.userId}'),
-      );
-      if (response.statusCode < 200 || response.statusCode >= 300) return;
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      NurseUi.isDarkMode.value = data['darkMode'] == true;
-      NurseUi.isArabic.value = data['language'] == 'Arabic';
-    } catch (_) {}
+    await NurseUi.loadSettings(widget.user.userId);
   }
 
   Future<void> _decideRate(String decision) async {
@@ -109,7 +101,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
   Widget build(BuildContext context) {
     return NurseUi.reactive(
       (context) => Scaffold(
-        backgroundColor: const Color(0xFFF4FAF9),
+        backgroundColor: NurseUi.background,
         drawer: _drawer(),
         body: IndexedStack(
           index: selectedIndex,
@@ -141,7 +133,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
         final model = dashboardController.model;
         return SafeArea(
           child: RefreshIndicator(
-            color: const Color(0xFF0F766E),
+          color: const Color(0xFF0F766E),
             onRefresh: dashboardController.refresh,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -189,7 +181,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(22),
         boxShadow: _modernShadow,
         border: Border.all(color: const Color(0xFFF59E0B)),
@@ -198,14 +190,14 @@ class _NurseDashboardState extends State<NurseDashboard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: const [
-              Icon(Icons.lock_clock_rounded, color: Color(0xFFF59E0B)),
-              SizedBox(width: 10),
+            children: [
+              const Icon(Icons.lock_clock_rounded, color: Color(0xFFF59E0B)),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Hourly Rate Approval',
+                  NurseUi.t('Hourly Rate Approval'),
                   style: TextStyle(
-                    color: Color(0xFF0F172A),
+                    color: NurseUi.text,
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
                   ),
@@ -218,8 +210,8 @@ class _NurseDashboardState extends State<NurseDashboard> {
             hasRate
                 ? 'Admin approved your rate: ${_money(model.approvedHourlyRate)}/hour'
                 : model.rateGateMessage,
-            style: const TextStyle(
-              color: Color(0xFF0F172A),
+            style: TextStyle(
+              color: NurseUi.text,
               fontSize: 18,
               height: 1.35,
               fontWeight: FontWeight.w900,
@@ -229,8 +221,8 @@ class _NurseDashboardState extends State<NurseDashboard> {
             const SizedBox(height: 8),
             Text(
               'Specialization: ${model.specialization}',
-              style: const TextStyle(
-                color: Color(0xFF64748B),
+              style: TextStyle(
+                color: NurseUi.muted,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -243,7 +235,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
                   child: ElevatedButton.icon(
                     onPressed: () => _decideRate('accepted'),
                     icon: const Icon(Icons.check_rounded),
-                    label: const Text('Accept Rate'),
+                    label: Text(NurseUi.t('Accept Rate')),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0F766E),
                       foregroundColor: Colors.white,
@@ -256,7 +248,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
                   child: OutlinedButton.icon(
                     onPressed: () => _decideRate('rejected'),
                     icon: const Icon(Icons.close_rounded),
-                    label: const Text('Reject'),
+                    label: Text(NurseUi.t('Reject')),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFFB91C1C),
                       side: const BorderSide(color: Color(0xFFB91C1C)),
@@ -283,6 +275,10 @@ class _NurseDashboardState extends State<NurseDashboard> {
           ),
         ),
         const Spacer(),
+        NurseModeControls(
+          providerUserId: widget.user.userId,
+          onChanged: () => setState(() {}),
+        ),
         _notificationButton(notificationCount),
       ],
     );
@@ -294,7 +290,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
       children: [
         IconButton(
           icon: const Icon(Icons.notifications_none_rounded, size: 22),
-          color: const Color(0xFF0F172A),
+          color: NurseUi.text,
           onPressed: () => setState(() => selectedIndex = 4),
         ),
         if (count > 0) Positioned(right: 4, top: 3, child: _smallBadge(count)),
@@ -308,9 +304,9 @@ class _NurseDashboardState extends State<NurseDashboard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Hello, Nurse $name',
-          style: const TextStyle(
-            color: Color(0xFF0F172A),
+          NurseUi.isArabic.value ? 'مرحبا، $name' : 'Hello, Nurse $name',
+          style: TextStyle(
+            color: NurseUi.text,
             fontSize: 18,
             fontWeight: FontWeight.w900,
             letterSpacing: 0,
@@ -320,19 +316,23 @@ class _NurseDashboardState extends State<NurseDashboard> {
         Text.rich(
           TextSpan(
             children: [
-              const TextSpan(text: 'You have '),
+              TextSpan(text: NurseUi.isArabic.value ? 'لديك ' : 'You have '),
               TextSpan(
                 text: '${model.upcomingVisitsCount}',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Color(0xFF0F766E),
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const TextSpan(text: ' upcoming visits today.'),
+              TextSpan(
+                text: NurseUi.isArabic.value
+                    ? ' زيارات قادمة اليوم.'
+                    : ' upcoming visits today.',
+              ),
             ],
           ),
-          style: const TextStyle(
-            color: Color(0xFF0F172A),
+          style: TextStyle(
+            color: NurseUi.text,
             fontSize: 11.5,
             height: 1.35,
             fontWeight: FontWeight.w700,
@@ -346,12 +346,12 @@ class _NurseDashboardState extends State<NurseDashboard> {
     final actions = [
       (
         Icons.calendar_month_outlined,
-        'My Schedule',
+        NurseUi.t('My Schedule'),
         () => setState(() => selectedIndex = 1),
       ),
       (
         Icons.assignment_outlined,
-        'All Requests',
+        NurseUi.t('All Requests'),
         () => Navigator.push(
           context,
           MaterialPageRoute(
@@ -361,12 +361,12 @@ class _NurseDashboardState extends State<NurseDashboard> {
       ),
       (
         Icons.people_outline_rounded,
-        'Patients',
+        NurseUi.t('Patients'),
         () => setState(() => selectedIndex = 2),
       ),
       (
         Icons.insert_chart_outlined,
-        'Reports',
+        NurseUi.t('Reports'),
         () => Navigator.push(
           context,
           MaterialPageRoute(
@@ -394,8 +394,9 @@ class _NurseDashboardState extends State<NurseDashboard> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: NurseUi.surface,
               borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: NurseUi.border),
               boxShadow: _modernShadow,
             ),
             child: Column(
@@ -422,8 +423,8 @@ class _NurseDashboardState extends State<NurseDashboard> {
                     maxLines: 2,
                     textAlign: TextAlign.center,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF0F172A),
+                    style: TextStyle(
+                      color: NurseUi.text,
                       fontSize: 9.5,
                       fontWeight: FontWeight.w900,
                       height: 1.1,
@@ -443,10 +444,10 @@ class _NurseDashboardState extends State<NurseDashboard> {
       children: [
         Row(
           children: [
-            const Text(
-              'Upcoming Visits',
+            Text(
+              NurseUi.t('Upcoming Visits'),
               style: TextStyle(
-                color: Color(0xFF0F172A),
+                color: NurseUi.text,
                 fontSize: 13.5,
                 fontWeight: FontWeight.w900,
               ),
@@ -462,8 +463,8 @@ class _NurseDashboardState extends State<NurseDashboard> {
                 ).then((_) => dashboardController.refresh());
               },
               iconAlignment: IconAlignment.end,
-              label: const Text(
-                'View All',
+              label: Text(
+                NurseUi.t('View All'),
                 style: TextStyle(
                   color: Color(0xFF0F766E),
                   fontSize: 10,
@@ -482,13 +483,13 @@ class _NurseDashboardState extends State<NurseDashboard> {
         Container(
           decoration: _modernCardDecoration(radius: 12),
           child: model.upcomingVisits.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 42),
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 42),
                   child: Center(
                     child: Text(
-                      'No upcoming visits today',
+                      NurseUi.t('No upcoming visits today'),
                       style: TextStyle(
-                        color: Color(0xFF64748B),
+                        color: NurseUi.muted,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -537,8 +538,8 @@ class _NurseDashboardState extends State<NurseDashboard> {
                     visit.patientName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF0F172A),
+                    style: TextStyle(
+                      color: NurseUi.text,
                       fontSize: 12,
                       fontWeight: FontWeight.w900,
                     ),
@@ -548,8 +549,8 @@ class _NurseDashboardState extends State<NurseDashboard> {
                     visit.serviceType,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF0F172A),
+                    style: TextStyle(
+                      color: NurseUi.muted,
                       fontSize: 9.5,
                       fontWeight: FontWeight.w500,
                     ),
@@ -568,8 +569,8 @@ class _NurseDashboardState extends State<NurseDashboard> {
                           visit.location,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF0F172A),
+                          style: TextStyle(
+                            color: NurseUi.muted,
                             fontSize: 9,
                             fontWeight: FontWeight.w500,
                           ),
@@ -595,8 +596,8 @@ class _NurseDashboardState extends State<NurseDashboard> {
                     const SizedBox(width: 4),
                     Text(
                       visit.time,
-                      style: const TextStyle(
-                        color: Color(0xFF0F172A),
+                      style: TextStyle(
+                        color: NurseUi.text,
                         fontSize: 9.5,
                         fontWeight: FontWeight.w900,
                       ),
@@ -629,30 +630,33 @@ class _NurseDashboardState extends State<NurseDashboard> {
       height: 90,
       padding: const EdgeInsets.fromLTRB(18, 16, 12, 0),
       decoration: BoxDecoration(
-        color: const Color(0xFFE6F7F4),
+        color: NurseUi.softSurface,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: NurseUi.border),
       ),
       child: Stack(
         children: [
-          const Positioned(
+          Positioned(
             left: 0,
             top: 4,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "You're doing great!",
+                  NurseUi.isArabic.value ? 'أنت تقومين بعمل رائع!' : "You're doing great!",
                   style: TextStyle(
-                    color: Color(0xFF0F172A),
+                    color: NurseUi.text,
                     fontSize: 13,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 Text(
-                  'Your care makes a big difference.',
+                  NurseUi.isArabic.value
+                      ? 'رعايتك تحدث فرقًا كبيرًا.'
+                      : 'Your care makes a big difference.',
                   style: TextStyle(
-                    color: Color(0xFF0F172A),
+                    color: NurseUi.muted,
                     fontSize: 10,
                     fontWeight: FontWeight.w500,
                   ),
@@ -794,8 +798,8 @@ class _NurseDashboardState extends State<NurseDashboard> {
                 size: 44,
               ),
               const SizedBox(height: 12),
-              const Text(
-                'Failed to load dashboard data',
+              Text(
+                NurseUi.t('Failed to load dashboard data'),
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
               ),
@@ -806,7 +810,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
                   backgroundColor: const Color(0xFF0F766E),
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('Retry'),
+                child: Text(NurseUi.t('Retry')),
               ),
             ],
           ),
@@ -817,7 +821,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
 
   Widget _drawer() {
     return Drawer(
-      backgroundColor: Colors.white,
+      backgroundColor: NurseUi.surface,
       child: SafeArea(
         child: Column(
           children: [
@@ -825,27 +829,59 @@ class _NurseDashboardState extends State<NurseDashboard> {
               leading: _avatar(widget.user.fullName, radius: 24),
               title: Text(
                 widget.user.fullName,
-                style: const TextStyle(fontWeight: FontWeight.w900),
+                style: TextStyle(
+                  color: NurseUi.text,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
-              subtitle: const Text('Nurse'),
+              subtitle: Text(
+                NurseUi.t('Nurse'),
+                style: TextStyle(color: NurseUi.muted),
+              ),
             ),
-            const Divider(),
-            _drawerItem(Icons.home_rounded, 'Home', 0),
-            _drawerItem(Icons.calendar_month_rounded, 'Sessions', 1),
-            _drawerItem(Icons.people_outline_rounded, 'Patients', 2),
-            _drawerItem(Icons.account_balance_wallet_outlined, 'Earnings', 3),
-            _drawerItem(Icons.notifications_none_rounded, 'Notifications', 4),
-            _drawerItem(Icons.person_rounded, 'Profile', 5),
+            Divider(color: NurseUi.border),
+            _drawerItem(
+              Icons.home_rounded,
+              NurseUi.t('Home'),
+              0,
+            ),
+            _drawerItem(
+              Icons.calendar_month_rounded,
+              NurseUi.t('Sessions'),
+              1,
+            ),
+            _drawerItem(
+              Icons.people_outline_rounded,
+              NurseUi.t('Patients'),
+              2,
+            ),
+            _drawerItem(
+              Icons.account_balance_wallet_outlined,
+              NurseUi.t('Earnings'),
+              3,
+            ),
+            _drawerItem(
+              Icons.notifications_none_rounded,
+              NurseUi.t('Notifications'),
+              4,
+            ),
+            _drawerItem(
+              Icons.person_rounded,
+              NurseUi.t('Profile'),
+              5,
+            ),
           ],
         ),
       ),
     );
   }
-
   Widget _drawerItem(IconData icon, String label, int index) {
     return ListTile(
       leading: Icon(icon, color: const Color(0xFF0F766E)),
-      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+      title: Text(
+        label,
+        style: TextStyle(color: NurseUi.text, fontWeight: FontWeight.w800),
+      ),
       onTap: () {
         Navigator.pop(context);
         if (!_canOpenTab(index)) {
@@ -861,7 +897,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
   bool _canOpenTab(int index) {
     final canWork = dashboardController.model?.canWork == true;
     if (canWork) return true;
-    return index == 0 || index == 4;
+    return index == 0 || index == 4 || index == 5;
   }
 
   void _showRateLockedMessage() {
@@ -939,19 +975,20 @@ class _NurseDashboardState extends State<NurseDashboard> {
 
   Widget _bottomNav() {
     final items = [
-      (Icons.home_outlined, 'Home'),
-      (Icons.calendar_month_outlined, 'Sessions'),
-      (Icons.people_outline_rounded, 'Patients'),
-      (Icons.account_balance_wallet_outlined, 'Earnings'),
-      (Icons.notifications_none_rounded, 'Notifications'),
-      (Icons.person_outline_rounded, 'Profile'),
+      (Icons.home_outlined, NurseUi.t('Home')),
+      (Icons.calendar_month_outlined, NurseUi.t('Sessions')),
+      (Icons.people_outline_rounded, NurseUi.t('Patients')),
+      (Icons.account_balance_wallet_outlined, NurseUi.t('Earnings')),
+      (Icons.notifications_none_rounded, NurseUi.t('Alerts')),
+      (Icons.person_outline_rounded, NurseUi.t('Profile')),
     ];
     return Container(
       margin: const EdgeInsets.fromLTRB(4, 0, 4, 4),
       padding: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: NurseUi.border),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.10),
@@ -982,16 +1019,18 @@ class _NurseDashboardState extends State<NurseDashboard> {
                         items[i].$1,
                         color: selectedIndex == i
                             ? AppColors.primaryDark
-                            : const Color(0xFF90A4AE),
+                            : NurseUi.muted,
                         size: 21,
                       ),
                       const SizedBox(height: 4),
                       Text(
                         items[i].$2,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: selectedIndex == i
                               ? AppColors.primaryDark
-                              : const Color(0xFF90A4AE),
+                              : NurseUi.muted,
                           fontSize: 9,
                           fontWeight: FontWeight.w900,
                         ),
@@ -1005,7 +1044,6 @@ class _NurseDashboardState extends State<NurseDashboard> {
       ),
     );
   }
-
   String _firstNameFrom(String name) {
     final clean = name.trim();
     if (clean.isEmpty) return 'Nurse';
@@ -1020,20 +1058,10 @@ class _NurseDashboardState extends State<NurseDashboard> {
   }
 
   BoxDecoration _modernCardDecoration({required double radius}) {
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(radius),
-      boxShadow: _modernShadow,
-    );
+    return NurseUi.cardDecoration(radius: radius);
   }
 
-  List<BoxShadow> get _modernShadow => [
-    BoxShadow(
-      color: Colors.black.withValues(alpha: 0.045),
-      blurRadius: 24,
-      offset: const Offset(0, 12),
-    ),
-  ];
+  List<BoxShadow> get _modernShadow => NurseUi.softShadow;
 }
 
 class _SkeletonBox extends StatelessWidget {
@@ -1061,3 +1089,5 @@ class _SkeletonBox extends StatelessWidget {
     );
   }
 }
+
+

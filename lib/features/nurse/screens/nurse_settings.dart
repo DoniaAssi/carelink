@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use, use_build_context_synchronously
+﻿// ignore_for_file: deprecated_member_use, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
 import 'dart:convert';
@@ -64,6 +64,7 @@ class _NurseSettingsState extends State<NurseSettings> {
           elevation: 0,
           actions: [
             NurseModeControls(
+              providerUserId: widget.user.userId,
               onChanged: () {
                 setState(() {
                   darkMode = NurseUi.isDarkMode.value;
@@ -81,9 +82,13 @@ class _NurseSettingsState extends State<NurseSettings> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Account Section
-                const Text(
-                  'Account',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                Text(
+                  NurseUi.t('Account'),
+                  style: TextStyle(
+                    color: NurseUi.text,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 _buildSettingsCard(
@@ -112,9 +117,13 @@ class _NurseSettingsState extends State<NurseSettings> {
                 const SizedBox(height: 20),
 
                 // Notifications Section
-                const Text(
-                  'Notifications',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                Text(
+                  NurseUi.t('Notifications'),
+                  style: TextStyle(
+                    color: NurseUi.text,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Container(
@@ -166,9 +175,13 @@ class _NurseSettingsState extends State<NurseSettings> {
                 const SizedBox(height: 20),
 
                 // Privacy Section
-                const Text(
-                  'Privacy',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                Text(
+                  NurseUi.t('Privacy'),
+                  style: TextStyle(
+                    color: NurseUi.text,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Container(
@@ -248,6 +261,7 @@ class _NurseSettingsState extends State<NurseSettings> {
                         onChanged: (value) {
                           setState(() => darkMode = value);
                           NurseUi.isDarkMode.value = value;
+                          NurseUi.persistSettings(widget.user.userId);
                           _saveSettings();
                         },
                         activeThumbColor: AppColors.primary,
@@ -507,7 +521,8 @@ class _NurseSettingsState extends State<NurseSettings> {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
+                      color: NurseUi.text,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
@@ -519,7 +534,7 @@ class _NurseSettingsState extends State<NurseSettings> {
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+            Icon(Icons.arrow_forward_ios, size: 16, color: NurseUi.muted),
           ],
         ),
       ),
@@ -572,7 +587,7 @@ class _NurseSettingsState extends State<NurseSettings> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Change Password'),
+        title: Text(NurseUi.t('Change Password')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -628,7 +643,7 @@ class _NurseSettingsState extends State<NurseSettings> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Account Verification'),
+        title: Text(NurseUi.t('Account Verification')),
         content: const Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -661,7 +676,7 @@ class _NurseSettingsState extends State<NurseSettings> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Select Language'),
+        title: Text(NurseUi.t('Select Language')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: languages.map((lang) {
@@ -673,6 +688,7 @@ class _NurseSettingsState extends State<NurseSettings> {
               onTap: () {
                 setState(() => language = lang);
                 NurseUi.isArabic.value = lang == 'Arabic';
+                NurseUi.persistSettings(widget.user.userId);
                 _saveSettings();
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -690,7 +706,7 @@ class _NurseSettingsState extends State<NurseSettings> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Help & Support'),
+        title: Text(NurseUi.t('Help & Support')),
         content: const Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -700,7 +716,7 @@ class _NurseSettingsState extends State<NurseSettings> {
             ),
             SizedBox(height: 16),
             Text(
-              '📧 support@carelink.com\n📞 +1 (555) 123-4567',
+              'ðŸ“§ support@carelink.com\nðŸ“ž +1 (555) 123-4567',
               textAlign: TextAlign.center,
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
@@ -734,7 +750,7 @@ class _NurseSettingsState extends State<NurseSettings> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Deactivate Account'),
+        title: Text(NurseUi.t('Deactivate Account')),
         content: const Text(
           'Are you sure you want to deactivate your account? You can reactivate it anytime by logging back in.',
         ),
@@ -792,6 +808,7 @@ class _NurseSettingsState extends State<NurseSettings> {
   }
 
   Future<void> _saveSettings() async {
+    await NurseUi.persistSettings(widget.user.userId);
     try {
       await http.put(
         Uri.parse('${ApiService.baseUrl}/nurse/settings/${widget.user.userId}'),
@@ -1136,3 +1153,4 @@ class _NurseSettingsState extends State<NurseSettings> {
     return '$hour:$minute $suffix';
   }
 }
+

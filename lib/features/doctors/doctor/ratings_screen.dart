@@ -56,60 +56,62 @@ class _DoctorRatingsScreenState extends State<DoctorRatingsScreen> {
     final averageRating = _toDouble(summary['averageRating']);
     final totalReviews = _toInt(summary['totalReviews']);
 
-    return Scaffold(
-      backgroundColor: _pageColor,
-      appBar: AppBar(
+    return DoctorTypographyScope(
+      child: Scaffold(
         backgroundColor: _pageColor,
-        surfaceTintColor: _pageColor,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          onPressed: () => Navigator.maybePop(context),
-          icon: const Icon(Icons.arrow_back_rounded),
-          color: AppColors.primary,
-        ),
-        title: Text(
-          'Ratings & Reviews',
-          style: TextStyle(
-            color: _primaryText,
-            fontSize: 24,
-            fontWeight: FontWeight.w900,
+        appBar: AppBar(
+          backgroundColor: _pageColor,
+          surfaceTintColor: _pageColor,
+          elevation: 0,
+          centerTitle: true,
+          leading: IconButton(
+            onPressed: () => Navigator.maybePop(context),
+            icon: const Icon(Icons.arrow_back_rounded),
+            color: AppColors.primary,
+          ),
+          title: Text(
+            'Ratings & Reviews',
+            style: TextStyle(
+              color: _primaryText,
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadRatings,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(22, 16, 22, 28),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 760),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildSummaryCard(
-                          averageRating: averageRating,
-                          totalReviews: totalReviews,
-                          distribution: _listOf(summary['distribution']),
-                        ),
-                        const SizedBox(height: 22),
-                        _buildFilters(reviews, totalReviews),
-                        const SizedBox(height: 18),
-                        if (filteredReviews.isEmpty)
-                          _buildEmptyState()
-                        else
-                          ...filteredReviews.map(_buildReviewCard),
-                        const SizedBox(height: 10),
-                        _buildPrivacyCard(),
-                      ],
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _loadRatings,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(22, 16, 22, 28),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 760),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildSummaryCard(
+                            averageRating: averageRating,
+                            totalReviews: totalReviews,
+                            distribution: _listOf(summary['distribution']),
+                          ),
+                          const SizedBox(height: 22),
+                          _buildFilters(reviews, totalReviews),
+                          const SizedBox(height: 18),
+                          if (filteredReviews.isEmpty)
+                            _buildEmptyState()
+                          else
+                            ...filteredReviews.map(_buildReviewCard),
+                          const SizedBox(height: 10),
+                          _buildPrivacyCard(),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
+      ),
     );
   }
 

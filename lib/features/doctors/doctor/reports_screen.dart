@@ -152,49 +152,51 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: localeController,
-      builder: (context, _) {
-        return Scaffold(
-          backgroundColor: DoctorUiConstants.doctorBackground,
-          body: SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
-                child: RefreshIndicator(
-                  onRefresh: _loadRequests,
-                  child: _isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(24, 18, 24, 118),
-                          children: [
-                            _buildHeader(),
-                            const SizedBox(height: 26),
-                            _buildHeroCard(),
-                            const SizedBox(height: 24),
-                            Text(
-                              context.dtr('doctor.reports.completedReady'),
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.black,
+    return DoctorTypographyScope(
+      child: ListenableBuilder(
+        listenable: localeController,
+        builder: (context, _) {
+          return Scaffold(
+            backgroundColor: DoctorUiConstants.doctorBackground,
+            body: SafeArea(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: RefreshIndicator(
+                    onRefresh: _loadRequests,
+                    child: _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(24, 18, 24, 118),
+                            children: [
+                              _buildHeader(),
+                              const SizedBox(height: 26),
+                              _buildHeroCard(),
+                              const SizedBox(height: 24),
+                              Text(
+                                context.dtr('doctor.reports.completedReady'),
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.black,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 12),
-                            if (_requests.isEmpty)
-                              _buildEmptyState()
-                            else
-                              for (final request in _requests)
-                                _buildReportRequestTile(request),
-                          ],
-                        ),
+                              const SizedBox(height: 12),
+                              if (_requests.isEmpty)
+                                _buildEmptyState()
+                              else
+                                for (final request in _requests)
+                                  _buildReportRequestTile(request),
+                            ],
+                          ),
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 

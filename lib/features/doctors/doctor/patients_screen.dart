@@ -87,66 +87,73 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: localeController,
-      builder: (context, _) {
-        return Directionality(
-          textDirection: localeController.isDoctorArabic
-              ? TextDirection.rtl
-              : TextDirection.ltr,
-          child: Scaffold(
-            backgroundColor: _pageColor,
-            appBar: AppBar(
+    return DoctorTypographyScope(
+      child: ListenableBuilder(
+        listenable: localeController,
+        builder: (context, _) {
+          return Directionality(
+            textDirection: localeController.isDoctorArabic
+                ? TextDirection.rtl
+                : TextDirection.ltr,
+            child: Scaffold(
               backgroundColor: _pageColor,
-              surfaceTintColor: _pageColor,
-              elevation: 0,
-              centerTitle: true,
-              leading: Navigator.canPop(context)
-                  ? IconButton(
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      color: _primary,
-                      onPressed: () => Navigator.maybePop(context),
-                    )
-                  : null,
-              title: const Text(
-                'My Patients',
-                style: TextStyle(
-                  color: _textDark,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
+              appBar: AppBar(
+                backgroundColor: _pageColor,
+                surfaceTintColor: _pageColor,
+                elevation: 0,
+                centerTitle: true,
+                leading: Navigator.canPop(context)
+                    ? IconButton(
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        color: _primary,
+                        onPressed: () => Navigator.maybePop(context),
+                      )
+                    : null,
+                title: const Text(
+                  'My Patients',
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
-            ),
-            body: SafeArea(
-              top: false,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
-                  child: _isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : RefreshIndicator(
-                          onRefresh: _loadPatients,
-                          child: ListView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-                            children: [
-                              _searchBox(),
-                              const SizedBox(height: 14),
-                              _summaryCard(),
-                              const SizedBox(height: 14),
-                              if (_filteredPatients.isEmpty)
-                                _emptyState()
-                              else
-                                ..._filteredPatients.map(_patientCard),
-                            ],
+              body: SafeArea(
+                top: false,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : RefreshIndicator(
+                            onRefresh: _loadPatients,
+                            child: ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(
+                                20,
+                                12,
+                                20,
+                                28,
+                              ),
+                              children: [
+                                _searchBox(),
+                                const SizedBox(height: 14),
+                                _summaryCard(),
+                                const SizedBox(height: 14),
+                                if (_filteredPatients.isEmpty)
+                                  _emptyState()
+                                else
+                                  ..._filteredPatients.map(_patientCard),
+                              ],
+                            ),
                           ),
-                        ),
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -479,84 +486,86 @@ class _DoctorPatientDetailsScreenState
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: localeController,
-      builder: (context, _) {
-        return Directionality(
-          textDirection: localeController.isDoctorArabic
-              ? TextDirection.rtl
-              : TextDirection.ltr,
-          child: Scaffold(
-            backgroundColor: _pageColor,
-            appBar: AppBar(
+    return DoctorTypographyScope(
+      child: ListenableBuilder(
+        listenable: localeController,
+        builder: (context, _) {
+          return Directionality(
+            textDirection: localeController.isDoctorArabic
+                ? TextDirection.rtl
+                : TextDirection.ltr,
+            child: Scaffold(
               backgroundColor: _pageColor,
-              surfaceTintColor: _pageColor,
-              elevation: 0,
-              centerTitle: true,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_rounded),
-                color: _primary,
-                onPressed: () => Navigator.maybePop(context),
-              ),
-              title: const Text(
-                'Patient Details',
-                style: TextStyle(
-                  color: _textDark,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
+              appBar: AppBar(
+                backgroundColor: _pageColor,
+                surfaceTintColor: _pageColor,
+                elevation: 0,
+                centerTitle: true,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  color: _primary,
+                  onPressed: () => Navigator.maybePop(context),
                 ),
-              ),
-              actions: [
-                IconButton(
-                  onPressed: () {},
-                  icon: const Icon(Icons.more_vert_rounded, color: _primary),
+                title: const Text(
+                  'Patient Details',
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ],
-            ),
-            body: SafeArea(
-              top: false,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-                    children: [
-                      _headerCard(),
-                      const SizedBox(height: 18),
-                      _statsCard(),
-                      const SizedBox(height: 20),
-                      _actionCard(
-                        icon: Icons.calendar_month_outlined,
-                        title: 'Appointments',
-                        subtitle: 'View & manage appointments',
-                        onTap: _openAppointments,
-                      ),
-                      _actionCard(
-                        icon: Icons.medical_services_outlined,
-                        title: 'Medical Records',
-                        subtitle: 'View medical history and documents',
-                        onTap: _openMedicalRecord,
-                      ),
-                      _actionCard(
-                        icon: Icons.medical_information_outlined,
-                        title: 'Visits History',
-                        subtitle: 'View all past visits',
-                        onTap: _openVisitHistory,
-                      ),
-                      _actionCard(
-                        icon: Icons.note_alt_outlined,
-                        title: 'Notes',
-                        subtitle: 'View patient notes',
-                        onTap: _openNotes,
-                      ),
-                    ],
+                actions: [
+                  IconButton(
+                    onPressed: () {},
+                    icon: const Icon(Icons.more_vert_rounded, color: _primary),
+                  ),
+                ],
+              ),
+              body: SafeArea(
+                top: false,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+                      children: [
+                        _headerCard(),
+                        const SizedBox(height: 18),
+                        _statsCard(),
+                        const SizedBox(height: 20),
+                        _actionCard(
+                          icon: Icons.calendar_month_outlined,
+                          title: 'Appointments',
+                          subtitle: 'View & manage appointments',
+                          onTap: _openAppointments,
+                        ),
+                        _actionCard(
+                          icon: Icons.medical_services_outlined,
+                          title: 'Medical Records',
+                          subtitle: 'View medical history and documents',
+                          onTap: _openMedicalRecord,
+                        ),
+                        _actionCard(
+                          icon: Icons.medical_information_outlined,
+                          title: 'Visits History',
+                          subtitle: 'View all past visits',
+                          onTap: _openVisitHistory,
+                        ),
+                        _actionCard(
+                          icon: Icons.note_alt_outlined,
+                          title: 'Notes',
+                          subtitle: 'View patient notes',
+                          onTap: _openNotes,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -1005,34 +1014,36 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return _DoctorDetailScaffold(
-      title: 'Notes',
-      action: Container(
-        margin: const EdgeInsetsDirectional.only(end: 12),
-        width: 40,
-        height: 40,
-        decoration: const BoxDecoration(
-          color: _primary,
-          shape: BoxShape.circle,
+    return DoctorTypographyScope(
+      child: _DoctorDetailScaffold(
+        title: 'Notes',
+        action: Container(
+          margin: const EdgeInsetsDirectional.only(end: 12),
+          width: 40,
+          height: 40,
+          decoration: const BoxDecoration(
+            color: _primary,
+            shape: BoxShape.circle,
+          ),
+          child: IconButton(
+            padding: EdgeInsets.zero,
+            onPressed: _showAddNoteDialog,
+            icon: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+          ),
         ),
-        child: IconButton(
-          padding: EdgeInsets.zero,
-          onPressed: _showAddNoteDialog,
-          icon: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
-        ),
-      ),
-      child: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadNotes,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 30),
-                children: _notes.isEmpty
-                    ? [_emptyState(Icons.note_alt_outlined, 'No notes yet')]
-                    : _notes.map(_noteCard).toList(),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _loadNotes,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 30),
+                  children: _notes.isEmpty
+                      ? [_emptyState(Icons.note_alt_outlined, 'No notes yet')]
+                      : _notes.map(_noteCard).toList(),
+                ),
               ),
-            ),
+      ),
     );
   }
 
@@ -1172,48 +1183,54 @@ class _DoctorVisitHistoryScreenState extends State<DoctorVisitHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return _DoctorDetailScaffold(
-      title: 'Visit History',
-      action: IconButton(
-        icon: const Icon(Icons.filter_alt_outlined, color: _primary, size: 30),
-        onPressed: () {},
-      ),
-      child: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadVisits,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 30),
-                children: _visits.isEmpty
-                    ? [
-                        _emptyState(
-                          Icons.medical_information_outlined,
-                          'No visit history yet',
-                        ),
-                      ]
-                    : [
-                        Stack(
-                          children: [
-                            PositionedDirectional(
-                              start: 28,
-                              top: 0,
-                              bottom: 0,
-                              child: Container(
-                                width: 1.2,
-                                color: Colors.black.withValues(alpha: 0.12),
+    return DoctorTypographyScope(
+      child: _DoctorDetailScaffold(
+        title: 'Visit History',
+        action: IconButton(
+          icon: const Icon(
+            Icons.filter_alt_outlined,
+            color: _primary,
+            size: 30,
+          ),
+          onPressed: () {},
+        ),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _loadVisits,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 30),
+                  children: _visits.isEmpty
+                      ? [
+                          _emptyState(
+                            Icons.medical_information_outlined,
+                            'No visit history yet',
+                          ),
+                        ]
+                      : [
+                          Stack(
+                            children: [
+                              PositionedDirectional(
+                                start: 28,
+                                top: 0,
+                                bottom: 0,
+                                child: Container(
+                                  width: 1.2,
+                                  color: Colors.black.withValues(alpha: 0.12),
+                                ),
                               ),
-                            ),
-                            Column(
-                              children: _visits
-                                  .map(_visitTimelineItem)
-                                  .toList(),
-                            ),
-                          ],
-                        ),
-                      ],
+                              Column(
+                                children: _visits
+                                    .map(_visitTimelineItem)
+                                    .toList(),
+                              ),
+                            ],
+                          ),
+                        ],
+                ),
               ),
-            ),
+      ),
     );
   }
 
@@ -1405,47 +1422,49 @@ class _DoctorDetailScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: localeController,
-      builder: (context, _) {
-        return Directionality(
-          textDirection: localeController.isDoctorArabic
-              ? TextDirection.rtl
-              : TextDirection.ltr,
-          child: Scaffold(
-            backgroundColor: _pageColor,
-            appBar: AppBar(
+    return DoctorTypographyScope(
+      child: ListenableBuilder(
+        listenable: localeController,
+        builder: (context, _) {
+          return Directionality(
+            textDirection: localeController.isDoctorArabic
+                ? TextDirection.rtl
+                : TextDirection.ltr,
+            child: Scaffold(
               backgroundColor: _pageColor,
-              surfaceTintColor: _pageColor,
-              elevation: 0,
-              centerTitle: true,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_rounded),
-                color: _primary,
-                onPressed: () => Navigator.maybePop(context),
+              appBar: AppBar(
+                backgroundColor: _pageColor,
+                surfaceTintColor: _pageColor,
+                elevation: 0,
+                centerTitle: true,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  color: _primary,
+                  onPressed: () => Navigator.maybePop(context),
+                ),
+                title: Text(
+                  title,
+                  style: const TextStyle(
+                    color: _textDark,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                actions: [action],
               ),
-              title: Text(
-                title,
-                style: const TextStyle(
-                  color: _textDark,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
+              body: SafeArea(
+                top: false,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: child,
+                  ),
                 ),
               ),
-              actions: [action],
             ),
-            body: SafeArea(
-              top: false,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
-                  child: child,
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

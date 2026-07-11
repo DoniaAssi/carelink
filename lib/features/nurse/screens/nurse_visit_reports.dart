@@ -88,7 +88,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
   Widget build(BuildContext context) {
     return NurseUi.reactive(
       (context) => Material(
-        color: _background,
+        color: NurseUi.background,
         child: SafeArea(
           child: isLoading
               ? const Center(child: CircularProgressIndicator(color: _primary))
@@ -352,13 +352,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
     );
   }
 
-  List<BoxShadow> get _shadow => [
-    BoxShadow(
-      color: Colors.black.withValues(alpha: 0.055),
-      blurRadius: 18,
-      offset: const Offset(0, 8),
-    ),
-  ];
+  List<BoxShadow> get _shadow => NurseUi.softShadow;
 }
 
 class ReportDetailsScreen extends StatelessWidget {
@@ -830,13 +824,7 @@ class ReportDetailsScreen extends StatelessWidget {
     );
   }
 
-  List<BoxShadow> get _shadow => [
-    BoxShadow(
-      color: Colors.black.withValues(alpha: 0.055),
-      blurRadius: 18,
-      offset: const Offset(0, 8),
-    ),
-  ];
+  List<BoxShadow> get _shadow => NurseUi.softShadow;
 }
 
 class _FullReportSheet extends StatelessWidget {
@@ -852,9 +840,9 @@ class _FullReportSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: MediaQuery.of(context).size.height * 0.86,
-      decoration: const BoxDecoration(
-        color: _background,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: NurseUi.background,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         children: [

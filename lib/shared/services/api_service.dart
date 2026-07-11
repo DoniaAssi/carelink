@@ -18,13 +18,13 @@ class ApiServiceException implements Exception {
 class ApiService {
   // static const String _machineIp = '192.168.1.5';
 
-  static const String _machineIp = '192.168.0.101';
+  static const String _machineIp = '192.168.1.20';
   // static const String _machineIp = '192.168.1.15';
 
   // إذا كنتِ تستخدمين Android Emulator خليها true.
   // إذا كنتِ تستخدمين جهاز حقيقي، ضعيها false وحددي عنوان IP صحيح في _machineIp.
-  static const bool _useAndroidEmulator = true;
-  // static const bool _useAndroidEmulator = false;
+  // Set this to true only when running on the Android Emulator.
+  static const bool _useAndroidEmulator = false;
 
   static const String _androidEmulatorBase = 'http://10.0.2.2:3000';
   static const String _webBase = 'http://localhost:3000';

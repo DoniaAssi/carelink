@@ -41,8 +41,11 @@ class NurseRepository {
     }).toList()..sort((a, b) => a.scheduledDate.compareTo(b.scheduledDate));
   }
 
-  Future<List<ServiceRequest>> getAllRequests(String nurseUserId) {
-    return ServiceRequestService.getProviderRequests(nurseUserId);
+  Future<List<ServiceRequest>> getAllRequests(String nurseUserId) async {
+    final requests = await ServiceRequestService.getProviderRequests(
+      nurseUserId,
+    );
+    return requests.map(_normalizeRequestForNurse).toList();
   }
 
   Future<List<ServiceRequest>> getPendingRequests(String nurseUserId) async {
@@ -125,5 +128,24 @@ class NurseRepository {
 
   Future<List<ServiceRequest>> getSchedule(String nurseUserId) {
     return getAllRequests(nurseUserId);
+  }
+
+  ServiceRequest _normalizeRequestForNurse(ServiceRequest request) {
+    DateTime local(DateTime value) => value.isUtc ? value.toLocal() : value;
+    DateTime? nullableLocal(DateTime? value) {
+      if (value == null) return null;
+      return value.isUtc ? value.toLocal() : value;
+    }
+
+    return ServiceRequest.fromJson({
+      ...request.toJson(),
+      'scheduledDate': local(request.scheduledDate).toIso8601String(),
+      'confirmedAt': nullableLocal(request.confirmedAt)?.toIso8601String(),
+      'actualStartedAt': nullableLocal(
+        request.actualStartedAt,
+      )?.toIso8601String(),
+      'actualEndedAt': nullableLocal(request.actualEndedAt)?.toIso8601String(),
+      'createdAt': local(request.createdAt).toIso8601String(),
+    });
   }
 }

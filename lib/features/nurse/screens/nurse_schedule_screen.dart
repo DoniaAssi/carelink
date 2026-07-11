@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/features/nurse/screens/nurse_contact_patient_flow.dart';
 import 'package:carelink/features/nurse/screens/nurse_dashboard.dart';
+import 'package:carelink/features/nurse/screens/nurse_patient_medical_records_screen.dart';
 import 'package:carelink/features/nurse/services/nurse_repository.dart';
 import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/models/user.dart';
@@ -78,11 +79,11 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
   Widget build(BuildContext context) {
     return NurseUi.reactive(
       (context) => Scaffold(
-        backgroundColor: const Color(0xFFF4FAF9),
+        backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('My Schedule'),
+          title: Text(NurseUi.t('My Schedule')),
           centerTitle: true,
-          backgroundColor: const Color(0xFFF4FAF9),
+          backgroundColor: NurseUi.background,
           foregroundColor: const Color(0xFF111827),
           elevation: 0,
           leading: IconButton(
@@ -447,8 +448,11 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
     final updated = await Navigator.push<List<Map<String, dynamic>>>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            NurseSetAvailabilityScreen(user: widget.user, initialSlots: slots),
+        builder: (_) => NurseSetAvailabilityScreen(
+          user: widget.user,
+          initialSlots: slots,
+          selectedDate: selectedDate,
+        ),
       ),
     );
     if (updated == null) return;
@@ -673,10 +677,12 @@ class NurseSetAvailabilityScreen extends StatefulWidget {
     super.key,
     required this.user,
     required this.initialSlots,
+    required this.selectedDate,
   });
 
   final User user;
   final List<Map<String, dynamic>> initialSlots;
+  final DateTime selectedDate;
 
   @override
   State<NurseSetAvailabilityScreen> createState() =>
@@ -692,13 +698,7 @@ class _NurseSetAvailabilityScreenState
       'Accept your admin-set hourly rate before setting availability.';
   String approvedSpecialization = 'Nursing';
   double approvedHourlyRate = 0;
-  final workingDays = <String>{
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-  };
+  final workingDays = <String>{};
   late List<Map<String, dynamic>> slots;
 
   @override
@@ -707,6 +707,7 @@ class _NurseSetAvailabilityScreenState
     slots = widget.initialSlots
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
+    _syncWorkingDaysFromSlots();
     _loadEligibility();
   }
 
@@ -749,7 +750,7 @@ class _NurseSetAvailabilityScreenState
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Set Availability'),
+          title: Text(NurseUi.t('Set Availability')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -776,7 +777,7 @@ class _NurseSetAvailabilityScreenState
                   'Availability Status',
                   style: TextStyle(fontWeight: FontWeight.w900),
                 ),
-                subtitle: const Text('You are Available'),
+                subtitle: Text(NurseUi.t('You are Available')),
                 onChanged: (value) => setState(() => available = value),
               ),
             ),
@@ -1013,11 +1014,25 @@ class _NurseSetAvailabilityScreenState
         builder: (_) => NurseAddTimeSlotScreen(
           specialization: approvedSpecialization,
           approvedHourlyRate: approvedHourlyRate,
+          referenceDate: widget.selectedDate,
         ),
       ),
     );
     if (slot == null) return;
-    setState(() => slots.add(slot));
+    setState(() {
+      slots.add(slot);
+      _syncWorkingDaysFromSlots();
+    });
+  }
+
+  void _syncWorkingDaysFromSlots() {
+    workingDays
+      ..clear()
+      ..addAll(
+        slots
+            .map((slot) => (slot['day'] ?? '').toString().trim())
+            .where((day) => day.isNotEmpty),
+      );
   }
 
   Future<void> _save() async {
@@ -1031,13 +1046,15 @@ class _NurseSetAvailabilityScreenState
       );
       return;
     }
+    final selectedSlots = slots.map(_slotWithDate).toList();
     final hourlySlots = ProviderProfileService.expandHourlyAvailabilitySlots(
-      slots,
+      selectedSlots,
     );
     await _saveLocalSlots(hourlySlots);
+    final publishedSlots = selectedSlots.expand(_slotsForPublishing).toList();
     final success = await ProviderProfileService.saveAvailability(
       providerId,
-      slots,
+      publishedSlots,
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1057,6 +1074,24 @@ class _NurseSetAvailabilityScreenState
     final prefs = await SharedPreferences.getInstance();
     final key = 'nurse_availability_slots_${widget.user.userId}';
     await prefs.setString(key, jsonEncode(value));
+  }
+
+  Map<String, dynamic> _slotWithDate(Map<String, dynamic> slot) {
+    final copy = Map<String, dynamic>.from(slot);
+    final existingDate = (copy['date'] ?? '').toString().trim();
+    if (existingDate.isNotEmpty) return copy;
+    final day = (copy['day'] ?? '').toString().trim();
+    if (day.isNotEmpty) {
+      copy['date'] = _dateKey(_dateForSelectedDay(day));
+    }
+    return copy;
+  }
+
+  List<Map<String, dynamic>> _slotsForPublishing(Map<String, dynamic> slot) {
+    final dated = Map<String, dynamic>.from(slot);
+    final date = (dated['date'] ?? '').toString().trim();
+    if (date.isNotEmpty) return [dated];
+    return [dated];
   }
 
   Future<String> _providerId() async {
@@ -1084,6 +1119,43 @@ class _NurseSetAvailabilityScreenState
         : value.toStringAsFixed(2);
     return '$fixed ILS/hour';
   }
+
+  DateTime _dateForSelectedDay(String selectedDay) {
+    final target = _weekdayNumber(selectedDay);
+    final selected = widget.selectedDate;
+    final reference = DateTime(selected.year, selected.month, selected.day);
+    if (target == null) return reference;
+    final offset = (target - reference.weekday + 7) % 7;
+    final date = reference.add(Duration(days: offset));
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  int? _weekdayNumber(String day) {
+    switch (day.toLowerCase().trim()) {
+      case 'monday':
+        return DateTime.monday;
+      case 'tuesday':
+        return DateTime.tuesday;
+      case 'wednesday':
+        return DateTime.wednesday;
+      case 'thursday':
+        return DateTime.thursday;
+      case 'friday':
+        return DateTime.friday;
+      case 'saturday':
+        return DateTime.saturday;
+      case 'sunday':
+        return DateTime.sunday;
+    }
+    return null;
+  }
+
+  String _dateKey(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
 }
 
 class NurseAddTimeSlotScreen extends StatefulWidget {
@@ -1091,21 +1163,35 @@ class NurseAddTimeSlotScreen extends StatefulWidget {
     super.key,
     required this.specialization,
     required this.approvedHourlyRate,
+    required this.referenceDate,
   });
 
   final String specialization;
   final double approvedHourlyRate;
+  final DateTime referenceDate;
 
   @override
   State<NurseAddTimeSlotScreen> createState() => _NurseAddTimeSlotScreenState();
 }
 
 class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
-  String day = 'Wednesday';
+  late String day;
+  late DateTime selectedSlotDate;
   TimeOfDay start = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay end = const TimeOfDay(hour: 13, minute: 0);
   final locationController = TextEditingController(text: 'Birzeit, Ramallah');
   final notesController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    selectedSlotDate = DateTime(
+      widget.referenceDate.year,
+      widget.referenceDate.month,
+      widget.referenceDate.day,
+    );
+    day = _dayName(selectedSlotDate);
+  }
 
   @override
   void dispose() {
@@ -1120,7 +1206,7 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Add Time Slot'),
+          title: Text(NurseUi.t('Add Time Slot')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -1129,6 +1215,9 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
         body: ListView(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
           children: [
+            _label('Select Date'),
+            _dateTile(_formatDate(selectedSlotDate), _pickSlotDate),
+            const SizedBox(height: 16),
             _label('Select Day'),
             _dropdown(day, const [
               'Monday',
@@ -1138,7 +1227,13 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
               'Friday',
               'Saturday',
               'Sunday',
-            ], (v) => setState(() => day = v!)),
+            ], (v) {
+              if (v == null) return;
+              setState(() {
+                day = v;
+                selectedSlotDate = _dateForSelectedDay(v);
+              });
+            }),
             const SizedBox(height: 16),
             _label('Start Time'),
             _timeTile(_formatClock(start), () async {
@@ -1184,6 +1279,7 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
                 onPressed: () {
                   Navigator.pop(context, {
                     'day': day,
+                    'date': _dateKey(selectedSlotDate),
                     'startTime': _format24(start),
                     'endTime': _format24(end),
                     'serviceType': widget.specialization,
@@ -1256,6 +1352,29 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
     );
   }
 
+  Widget _dateTile(String value, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: InputDecorator(
+        decoration: _decoration(null),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                value,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+            const Icon(
+              Icons.calendar_month_outlined,
+              color: AppColors.primaryDark,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _timeTile(String value, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
@@ -1291,6 +1410,91 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
 
   String _format24(TimeOfDay time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _pickSlotDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: selectedSlotDate,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 1, now.month, now.day),
+    );
+    if (picked == null) return;
+    setState(() {
+      selectedSlotDate = DateTime(picked.year, picked.month, picked.day);
+      day = _dayName(selectedSlotDate);
+    });
+  }
+
+  DateTime _dateForSelectedDay(String selectedDay) {
+    final reference = DateTime(
+      selectedSlotDate.year,
+      selectedSlotDate.month,
+      selectedSlotDate.day,
+    );
+    final target = _weekdayNumber(selectedDay);
+    if (target == null) return reference;
+    final offset = (target - reference.weekday + 7) % 7;
+    final date = reference.add(Duration(days: offset));
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  int? _weekdayNumber(String day) {
+    switch (day.toLowerCase().trim()) {
+      case 'monday':
+        return DateTime.monday;
+      case 'tuesday':
+        return DateTime.tuesday;
+      case 'wednesday':
+        return DateTime.wednesday;
+      case 'thursday':
+        return DateTime.thursday;
+      case 'friday':
+        return DateTime.friday;
+      case 'saturday':
+        return DateTime.saturday;
+      case 'sunday':
+        return DateTime.sunday;
+    }
+    return null;
+  }
+
+  String _dateKey(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
+  String _dayName(DateTime date) {
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    return days[date.weekday - 1];
+  }
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
   String _money(num value) {
@@ -1339,7 +1543,7 @@ class _NurseMyAvailabilityScreenState extends State<NurseMyAvailabilityScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('My Availability'),
+          title: Text(NurseUi.t('My Availability')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -1521,29 +1725,29 @@ class _NurseMyAvailabilityScreenState extends State<NurseMyAvailabilityScreen> {
   }
 
   BoxDecoration _cardDecoration() {
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.045),
-          blurRadius: 18,
-          offset: const Offset(0, 8),
-        ),
-      ],
-    );
+    return NurseUi.cardDecoration();
   }
 
   Future<void> _saveSlots() async {
     final hourlySlots = ProviderProfileService.expandHourlyAvailabilitySlots(
       slots,
     );
-    await ProviderProfileService.saveAvailability(widget.user.userId, slots);
+    await ProviderProfileService.saveAvailability(
+      widget.user.userId,
+      slots.expand(_slotsForPublishing).toList(),
+    );
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       'nurse_availability_slots_${widget.user.userId}',
       jsonEncode(hourlySlots),
     );
+  }
+
+  List<Map<String, dynamic>> _slotsForPublishing(Map<String, dynamic> slot) {
+    final dated = Map<String, dynamic>.from(slot);
+    final date = (dated['date'] ?? '').toString().trim();
+    if (date.isNotEmpty) return [dated];
+    return [dated];
   }
 
   String _displayTime(dynamic value) {
@@ -1570,7 +1774,7 @@ class NurseTimeSlotDetails extends StatelessWidget {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Time Slot Details'),
+          title: Text(NurseUi.t('Time Slot Details')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -1709,7 +1913,7 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Visit Dashboard'),
+          title: Text(NurseUi.t('Visit Dashboard')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -2179,17 +2383,7 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
   }
 
   BoxDecoration _cardDecoration() {
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(8),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.045),
-          blurRadius: 18,
-          offset: const Offset(0, 8),
-        ),
-      ],
-    );
+    return NurseUi.cardDecoration();
   }
 
   int get _durationMinutes {
@@ -2304,7 +2498,7 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Visit In Progress'),
+          title: Text(NurseUi.t('Visit In Progress')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -2645,17 +2839,7 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
   }
 
   BoxDecoration _cardDecoration() {
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(8),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.045),
-          blurRadius: 18,
-          offset: const Offset(0, 8),
-        ),
-      ],
-    );
+    return NurseUi.cardDecoration();
   }
 
   String _formatElapsed(Duration value) {
@@ -2751,7 +2935,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Create Report'),
+          title: Text(NurseUi.t('Create Report')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -2988,7 +3172,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
-          onPressed: () {},
+          onPressed: _openMedicalRecords,
           icon: const Icon(Icons.description_outlined),
           label: const Text('View Full Medical Record'),
           style: OutlinedButton.styleFrom(
@@ -2997,6 +3181,18 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  void _openMedicalRecords() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NursePatientMedicalRecordsScreen(
+          request: widget.request,
+          providerUserId: widget.user.userId,
+        ),
+      ),
     );
   }
 
@@ -3142,7 +3338,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                     Icons.calendar_today_outlined,
                     color: AppColors.primaryDark,
                   ),
-                  title: const Text('Follow-up Date'),
+                  title: Text(NurseUi.t('Follow-up Date')),
                   subtitle: Text(_formatDate(followUpDate ?? DateTime.now())),
                   onTap: _pickFollowUpDate,
                 ),
@@ -3742,12 +3938,12 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Choose from gallery'),
+                title: Text(NurseUi.t('Choose from gallery')),
                 onTap: () => Navigator.pop(context, ImageSource.gallery),
               ),
               ListTile(
                 leading: const Icon(Icons.photo_camera_outlined),
-                title: const Text('Take a photo'),
+                title: Text(NurseUi.t('Take a photo')),
                 onTap: () => Navigator.pop(context, ImageSource.camera),
               ),
             ],
@@ -4027,17 +4223,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   }
 
   BoxDecoration _cardDecoration() {
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(8),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.045),
-          blurRadius: 18,
-          offset: const Offset(0, 8),
-        ),
-      ],
-    );
+    return NurseUi.cardDecoration();
   }
 }
 
@@ -4098,7 +4284,7 @@ class ReportSubmittedScreen extends StatelessWidget {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Report Submitted'),
+          title: Text(NurseUi.t('Report Submitted')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -4254,7 +4440,7 @@ class ReportSubmittedScreen extends StatelessWidget {
                 const SizedBox(height: 12),
                 _compactLine(
                   Icons.calendar_today_outlined,
-                  '${_formatDate(request.scheduledDate)} · ${_formatTime(request.scheduledDate)}',
+                  '${_formatDate(request.scheduledDate)} Â· ${_formatTime(request.scheduledDate)}',
                 ),
                 const SizedBox(height: 7),
                 _compactLine(Icons.receipt_long_outlined, '#${request.id}'),
@@ -4426,7 +4612,7 @@ class VisitReportDetailsScreen extends StatelessWidget {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Visit Report'),
+          title: Text(NurseUi.t('Visit Report')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -4544,3 +4730,4 @@ class VisitReportDetailsScreen extends StatelessWidget {
     return '$h:$m ${date.hour >= 12 ? 'PM' : 'AM'}';
   }
 }
+

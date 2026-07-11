@@ -1,8 +1,9 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/shared/models/service_request.dart';
@@ -45,6 +46,8 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
   String get _storageKey => 'nurse_visit_tracking_${widget.request.id}';
   double? get _patientLatitude => _validLatitude(widget.request.gpsLat);
   double? get _patientLongitude => _validLongitude(widget.request.gpsLng);
+  bool get _hasPatientCoordinates =>
+      _patientLatitude != null && _patientLongitude != null;
   String get _patientAddress {
     for (final value in [
       widget.request.location,
@@ -134,7 +137,7 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
     if (patientLatitude == null || patientLongitude == null) {
       if (!mounted) return;
       setState(() {
-        _locationError = 'Patient location coordinates are unavailable.';
+        _locationError = null;
         _isLocating = false;
       });
       return;
@@ -240,10 +243,33 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
     }
   }
 
+  Future<void> _confirmAddressArrival() async {
+    if (_hasPatientCoordinates || _stage != _NurseTrackingStage.onTheWay) {
+      return;
+    }
+    setState(() {
+      _stage = _NurseTrackingStage.arrived;
+      _arrivalVerified = true;
+      _arrivalTime = DateTime.now();
+      _locationError = null;
+    });
+    await _persistState();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Arrival confirmed from the patient address.'),
+        backgroundColor: AppColors.success,
+      ),
+    );
+  }
+
   Future<void> _startVisit() async {
-    if (!_arrivalVerified ||
-        _distanceMeters == null ||
-        _distanceMeters! > _arrivalThresholdMeters) {
+    final verifiedByGps =
+        _hasPatientCoordinates &&
+        _distanceMeters != null &&
+        _distanceMeters! <= _arrivalThresholdMeters;
+    final verifiedByAddress = !_hasPatientCoordinates && _arrivalVerified;
+    if (!_arrivalVerified || (!verifiedByGps && !verifiedByAddress)) {
       _showArrivalRequired();
       return;
     }
@@ -262,15 +288,45 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
 
   void _showArrivalRequired() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text(
-          "You must be at the patient's location to start the visit.",
+          _hasPatientCoordinates
+              ? "You must be at the patient's location to start the visit."
+              : 'Confirm arrival from the patient address before starting the visit.',
         ),
       ),
     );
   }
 
+  Future<void> _openNavigation() async {
+    if (_hasPatientCoordinates) {
+      unawaited(_startLocationTracking());
+    }
+
+    final query = _hasPatientCoordinates
+        ? '${_patientLatitude!},${_patientLongitude!}'
+        : _patientAddress;
+    if (query.trim().isEmpty || query == 'Address not available') {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Patient address is unavailable.')),
+      );
+      return;
+    }
+
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}',
+    );
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not open maps.')));
+    }
+  }
+
   String get _distanceText {
+    if (!_hasPatientCoordinates) return 'Address only';
     final distance = _distanceMeters;
     if (distance == null) return 'Locating...';
     if (distance < 1000) return '${distance.round()} m';
@@ -309,7 +365,7 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Visit Tracking'),
+          title: Text(NurseUi.t('Visit Tracking')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -518,7 +574,13 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
             ],
           ),
         ),
-        if (_locationError != null) ...[
+        if (!_hasPatientCoordinates) ...[
+          const SizedBox(height: 14),
+          _infoMessage(
+            Icons.location_off_outlined,
+            'GPS coordinates are not available, so navigation will use the patient address.',
+          ),
+        ] else if (_locationError != null) ...[
           const SizedBox(height: 14),
           _errorMessage(_locationError!),
         ],
@@ -532,8 +594,16 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
           icon: Icons.navigation_outlined,
           label: 'Start Navigation',
           loading: _isLocating,
-          onPressed: _startLocationTracking,
+          onPressed: _openNavigation,
         ),
+        if (!_hasPatientCoordinates) ...[
+          const SizedBox(height: 10),
+          _secondaryButton(
+            icon: Icons.check_circle_outline,
+            label: 'I Have Arrived',
+            onPressed: _confirmAddressArrival,
+          ),
+        ],
       ],
     );
   }
@@ -541,8 +611,9 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
   Widget _arrivedContent() {
     final canStart =
         _arrivalVerified &&
-        _distanceMeters != null &&
-        _distanceMeters! <= _arrivalThresholdMeters;
+        (!_hasPatientCoordinates ||
+            (_distanceMeters != null &&
+                _distanceMeters! <= _arrivalThresholdMeters));
     return Column(
       key: const ValueKey('nurse-arrived'),
       children: [
@@ -728,6 +799,29 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
     );
   }
 
+  Widget _secondaryButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 54,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _primary,
+          side: const BorderSide(color: _primary),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+        ),
+        icon: Icon(icon),
+        label: Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
+      ),
+    );
+  }
+
   Widget _card({required Widget child, EdgeInsetsGeometry? padding}) {
     return Container(
       width: double.infinity,
@@ -838,3 +932,4 @@ class _NurseLocationException implements Exception {
 
   final String message;
 }
+

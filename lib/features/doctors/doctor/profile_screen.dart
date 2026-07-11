@@ -313,234 +313,238 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
     final user = _profile['user'] ?? {};
     final profile = _profile['profile'] ?? {};
 
-    return ListenableBuilder(
-      listenable: localeController,
-      builder: (context, _) {
-        return Scaffold(
-          backgroundColor: DoctorUiConstants.doctorBackground,
-          appBar: AppBar(
-            title: Text(
-              context.dtr('doctor.nav.profile'),
-              style: const TextStyle(color: Colors.black),
-            ),
+    return DoctorTypographyScope(
+      child: ListenableBuilder(
+        listenable: localeController,
+        builder: (context, _) {
+          return Scaffold(
             backgroundColor: DoctorUiConstants.doctorBackground,
-            foregroundColor: Colors.black,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.edit),
-                onPressed: _updateProfile,
+            appBar: AppBar(
+              title: Text(
+                context.dtr('doctor.nav.profile'),
+                style: const TextStyle(color: Colors.black),
               ),
-            ],
-          ),
-          body: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Profile Header
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            children: [
-                              CircleAvatar(
-                                radius: 50,
-                                backgroundColor: AppColors.primary,
-                                child: Text(
-                                  _doctorName.isNotEmpty
-                                      ? _doctorName[0].toUpperCase()
-                                      : 'D',
-                                  style: const TextStyle(
-                                    fontSize: 40,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Dr. ${user['fullName'] ?? _doctorName}',
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                user['email'] ?? _doctorEmail,
-                                style: const TextStyle(
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.success.withValues(
-                                    alpha: 0.1,
-                                  ),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Text(
-                                  'DOCTOR',
-                                  style: TextStyle(
-                                    color: AppColors.success,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Profile Details
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                context.dtr('doctor.profile.professionalInfo'),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              const Divider(),
-                              _buildDetailRow(
-                                context.dtr('doctor.profile.specialization'),
-                                profile['specialization'] ??
-                                    context.dtr('doctor.common.notSet'),
-                              ),
-                              _buildDetailRow(
-                                context.dtr('doctor.profile.experience'),
-                                context.dtr(
-                                  'doctor.profile.years',
-                                  args: {
-                                    'count': (profile['experienceYears'] ?? 0)
-                                        .toString(),
-                                  },
-                                ),
-                              ),
-                              _buildDetailRow(
-                                context.dtr('doctor.profile.rating'),
-                                '${profile['overallRating'] ?? 0}',
-                              ),
-                              SwitchListTile(
-                                contentPadding: EdgeInsets.zero,
-                                title: Text(
-                                  context.dtr(
-                                    'doctor.profile.availableRequests',
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  _isAvailable
-                                      ? context.dtr('doctor.profile.visible')
-                                      : context.dtr('doctor.profile.hidden'),
-                                ),
-                                value: _isAvailable,
-                                activeThumbColor: AppColors.primary,
-                                onChanged: _setAvailability,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                context.dtr(
-                                  'doctor.profile.notificationSettings',
-                                ),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              const Divider(),
-                              _notificationSwitch(
-                                'medicalCases',
-                                'Medical cases',
-                              ),
-                              _notificationSwitch(
-                                'patientUpdates',
-                                'Patient updates',
-                              ),
-                              _notificationSwitch(
-                                'newAppointments',
-                                'New appointments',
-                              ),
-                              _notificationSwitch(
-                                'assignmentUpdates',
-                                'Assignment updates',
-                              ),
-                              _notificationSwitch(
-                                'cancellations',
-                                'Cancellations',
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Contact Info
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                context.dtr('doctor.profile.contactInfo'),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              const Divider(),
-                              _buildDetailRow(
-                                context.dtr('doctor.profile.phone'),
-                                user['phone'] ??
-                                    context.dtr('doctor.common.notSet'),
-                              ),
-                              _buildDetailRow(
-                                context.dtr('doctor.profile.email'),
-                                user['email'] ?? _doctorEmail,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      // Logout Button
-                      ElevatedButton.icon(
-                        onPressed: _logout,
-                        icon: const Icon(Icons.logout),
-                        label: Text(context.dtr('doctor.profile.logout')),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
-                    ],
-                  ),
+              backgroundColor: DoctorUiConstants.doctorBackground,
+              foregroundColor: Colors.black,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: _updateProfile,
                 ),
-        );
-      },
+              ],
+            ),
+            body: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Profile Header
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              children: [
+                                CircleAvatar(
+                                  radius: 50,
+                                  backgroundColor: AppColors.primary,
+                                  child: Text(
+                                    _doctorName.isNotEmpty
+                                        ? _doctorName[0].toUpperCase()
+                                        : 'D',
+                                    style: const TextStyle(
+                                      fontSize: 40,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Dr. ${user['fullName'] ?? _doctorName}',
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  user['email'] ?? _doctorEmail,
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.success.withValues(
+                                      alpha: 0.1,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Text(
+                                    'DOCTOR',
+                                    style: TextStyle(
+                                      color: AppColors.success,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // Profile Details
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  context.dtr(
+                                    'doctor.profile.professionalInfo',
+                                  ),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const Divider(),
+                                _buildDetailRow(
+                                  context.dtr('doctor.profile.specialization'),
+                                  profile['specialization'] ??
+                                      context.dtr('doctor.common.notSet'),
+                                ),
+                                _buildDetailRow(
+                                  context.dtr('doctor.profile.experience'),
+                                  context.dtr(
+                                    'doctor.profile.years',
+                                    args: {
+                                      'count': (profile['experienceYears'] ?? 0)
+                                          .toString(),
+                                    },
+                                  ),
+                                ),
+                                _buildDetailRow(
+                                  context.dtr('doctor.profile.rating'),
+                                  '${profile['overallRating'] ?? 0}',
+                                ),
+                                SwitchListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(
+                                    context.dtr(
+                                      'doctor.profile.availableRequests',
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    _isAvailable
+                                        ? context.dtr('doctor.profile.visible')
+                                        : context.dtr('doctor.profile.hidden'),
+                                  ),
+                                  value: _isAvailable,
+                                  activeThumbColor: AppColors.primary,
+                                  onChanged: _setAvailability,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  context.dtr(
+                                    'doctor.profile.notificationSettings',
+                                  ),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const Divider(),
+                                _notificationSwitch(
+                                  'medicalCases',
+                                  'Medical cases',
+                                ),
+                                _notificationSwitch(
+                                  'patientUpdates',
+                                  'Patient updates',
+                                ),
+                                _notificationSwitch(
+                                  'newAppointments',
+                                  'New appointments',
+                                ),
+                                _notificationSwitch(
+                                  'assignmentUpdates',
+                                  'Assignment updates',
+                                ),
+                                _notificationSwitch(
+                                  'cancellations',
+                                  'Cancellations',
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // Contact Info
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  context.dtr('doctor.profile.contactInfo'),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const Divider(),
+                                _buildDetailRow(
+                                  context.dtr('doctor.profile.phone'),
+                                  user['phone'] ??
+                                      context.dtr('doctor.common.notSet'),
+                                ),
+                                _buildDetailRow(
+                                  context.dtr('doctor.profile.email'),
+                                  user['email'] ?? _doctorEmail,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        // Logout Button
+                        ElevatedButton.icon(
+                          onPressed: _logout,
+                          icon: const Icon(Icons.logout),
+                          label: Text(context.dtr('doctor.profile.logout')),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          );
+        },
+      ),
     );
   }
 

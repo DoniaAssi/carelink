@@ -453,51 +453,54 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: DoctorUiConstants.doctorBackground,
-      appBar: AppBar(
+    return DoctorTypographyScope(
+      child: Scaffold(
         backgroundColor: DoctorUiConstants.doctorBackground,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: _teal,
-        centerTitle: true,
-        title: Text(
-          _stage == _VisitTrackingStage.inProgress
-              ? 'Visit In Progress'
-              : 'Visit Tracking',
-          style: const TextStyle(
-            color: _text,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0,
+        appBar: AppBar(
+          backgroundColor: DoctorUiConstants.doctorBackground,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          foregroundColor: _teal,
+          centerTitle: true,
+          title: Text(
+            _stage == _VisitTrackingStage.inProgress
+                ? 'Visit In Progress'
+                : 'Visit Tracking',
+            style: const TextStyle(
+              color: _text,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
+            ),
           ),
         ),
-      ),
-      body: SafeArea(
-        top: false,
-        child: _isRestoring
-            ? const Center(child: CircularProgressIndicator(color: _teal))
-            : Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
-                    children: [
-                      _buildProgress(),
-                      const SizedBox(height: 18),
-                      _buildPatientCard(),
-                      const SizedBox(height: 14),
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 220),
-                        child: switch (_stage) {
-                          _VisitTrackingStage.onTheWay => _buildOnTheWay(),
-                          _VisitTrackingStage.arrived => _buildArrived(),
-                          _VisitTrackingStage.inProgress => _buildInProgress(),
-                        },
-                      ),
-                    ],
+        body: SafeArea(
+          top: false,
+          child: _isRestoring
+              ? const Center(child: CircularProgressIndicator(color: _teal))
+              : Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+                      children: [
+                        _buildProgress(),
+                        const SizedBox(height: 18),
+                        _buildPatientCard(),
+                        const SizedBox(height: 14),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 220),
+                          child: switch (_stage) {
+                            _VisitTrackingStage.onTheWay => _buildOnTheWay(),
+                            _VisitTrackingStage.arrived => _buildArrived(),
+                            _VisitTrackingStage.inProgress =>
+                              _buildInProgress(),
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+        ),
       ),
     );
   }

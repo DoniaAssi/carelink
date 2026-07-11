@@ -1,10 +1,11 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/features/nurse/screens/nurse_contact_patient_flow.dart';
+import 'package:carelink/features/nurse/screens/nurse_patient_medical_records_screen.dart';
 import 'package:carelink/features/nurse/screens/nurse_schedule_screen.dart';
 import 'package:carelink/features/nurse/services/nurse_repository.dart';
 import 'package:carelink/shared/models/service_request.dart';
@@ -72,7 +73,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
             icon: const Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: () => Navigator.pop(context),
           ),
-          title: const Text('All Requests'),
+          title: Text(NurseUi.t('All Requests')),
           backgroundColor: Colors.white,
           foregroundColor: const Color(0xFF111827),
           elevation: 0,
@@ -809,19 +810,7 @@ class AcceptConfirmationScreen extends StatelessWidget {
   }
 
   BoxDecoration _cardDecoration() {
-    return BoxDecoration(
-      color: NurseUi.surface,
-      borderRadius: BorderRadius.circular(8),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(
-            alpha: NurseUi.isDarkMode.value ? 0.16 : 0.04,
-          ),
-          blurRadius: 20,
-          offset: const Offset(0, 10),
-        ),
-      ],
-    );
+    return NurseUi.cardDecoration();
   }
 
   Widget _filledAction({
@@ -1080,7 +1069,7 @@ class _AssignTimeSlotScreenState extends State<AssignTimeSlotScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Assign Time Slot'),
+          title: Text(NurseUi.t('Assign Time Slot')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -1422,7 +1411,7 @@ class AppointmentConfirmedScreen extends StatelessWidget {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: const Text('Appointment Confirmed'),
+          title: Text(NurseUi.t('Appointment Confirmed')),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -1728,13 +1717,13 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
   bool isSaving = false;
 
   final activities = <_NursingActivity>[
-    _NursingActivity('Blood Pressure', 'قياس ضغط الدم'),
-    _NursingActivity('Sugar Level', 'قياس السكر'),
-    _NursingActivity('Medication Given', 'إعطاء الدواء'),
-    _NursingActivity('Dressing Changed', 'تغيير الضماد'),
-    _NursingActivity('Vital Signs Follow-up', 'متابعة العلامات الحيوية'),
-    _NursingActivity('Mobility Assistance', 'مساعدة المريض على الحركة'),
-    _NursingActivity('Health Education', 'تقديم تعليمات صحية'),
+    _NursingActivity('Blood Pressure', '\u0642\u064a\u0627\u0633 \u0636\u063a\u0637 \u0627\u0644\u062f\u0645'),
+    _NursingActivity('Sugar Level', '\u0642\u064a\u0627\u0633 \u0627\u0644\u0633\u0643\u0631'),
+    _NursingActivity('Medication Given', '\u0625\u0639\u0637\u0627\u0621 \u0627\u0644\u062f\u0648\u0627\u0621'),
+    _NursingActivity('Dressing Changed', '\u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u0636\u0645\u0627\u062f'),
+    _NursingActivity('Vital Signs Follow-up', '\u0645\u062a\u0627\u0628\u0639\u0629 \u0627\u0644\u0639\u0644\u0627\u0645\u0627\u062a \u0627\u0644\u062d\u064a\u0648\u064a\u0629'),
+    _NursingActivity('Mobility Assistance', '\u0645\u0633\u0627\u0639\u062f\u0629 \u0627\u0644\u0645\u0631\u064a\u0636 \u0639\u0644\u0649 \u0627\u0644\u062d\u0631\u0643\u0629'),
+    _NursingActivity('Health Education', '\u062a\u0642\u062f\u064a\u0645 \u062a\u0639\u0644\u064a\u0645\u0627\u062a \u0635\u062d\u064a\u0629'),
   ];
 
   @override
@@ -1989,16 +1978,32 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
   }
 
   Widget _patientHeaderCard() {
-    return PatientInfoCard(
-      name: _patientName,
-      ageText: request.patientAge > 0
-          ? '${request.patientAge} years'
-          : 'Age not set',
-      location: request.location.isNotEmpty
-          ? request.location
-          : request.patientAddress,
-      statusLabel: _statusLabel(request.status),
-      statusColor: _statusColor(request.status),
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: _openMedicalRecords,
+      child: PatientInfoCard(
+        name: _patientName,
+        ageText: request.patientAge > 0
+            ? '${request.patientAge} years'
+            : 'Age not set',
+        location: request.location.isNotEmpty
+            ? request.location
+            : request.patientAddress,
+        statusLabel: _statusLabel(request.status),
+        statusColor: _statusColor(request.status),
+      ),
+    );
+  }
+
+  void _openMedicalRecords() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NursePatientMedicalRecordsScreen(
+          request: request,
+          providerUserId: widget.providerUserId,
+        ),
+      ),
     );
   }
 
@@ -2033,6 +2038,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       }
 
       await widget.onChanged();
+      await _saveAcceptedRequestLocally(accepted);
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
@@ -2057,6 +2063,28 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     }
   }
 
+  Future<void> _saveAcceptedRequestLocally(ServiceRequest request) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'nurse_scheduled_requests_${widget.providerUserId}';
+    final existing = prefs.getString(key);
+    final items = <Map<String, dynamic>>[];
+    if (existing != null && existing.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(existing);
+        if (decoded is List) {
+          items.addAll(
+            decoded.whereType<Map>().map(
+              (item) => Map<String, dynamic>.from(item),
+            ),
+          );
+        }
+      } catch (_) {}
+    }
+    items.removeWhere((item) => (item['id'] ?? '').toString() == request.id);
+    items.add(request.toJson());
+    await prefs.setString(key, jsonEncode(items));
+  }
+
   Future<void> _rejectRequest() async {
     final reason = await _askRejectReason();
     if (reason == null) return;
@@ -2079,7 +2107,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Reject request'),
+          title: Text(NurseUi.t('Reject request')),
           content: TextField(
             controller: controller,
             maxLines: 3,
@@ -2708,3 +2736,4 @@ class _NursingActivity {
 
   _NursingActivity(this.label, this.arLabel);
 }
+

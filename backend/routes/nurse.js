@@ -119,6 +119,16 @@ async function ensureNurseEditableProfileColumns() {
       columnCache.set(`careprovider.${column}`, true);
     } catch (_) {}
   }
+  if (!(await hasColumn('user', 'profileImageUrl'))) {
+    try {
+      await db.query(`ALTER TABLE user ADD COLUMN profileImageUrl LONGTEXT NULL`);
+      columnCache.set('user.profileImageUrl', true);
+    } catch (_) {}
+  } else {
+    try {
+      await db.query(`ALTER TABLE user MODIFY COLUMN profileImageUrl LONGTEXT NULL`);
+    } catch (_) {}
+  }
 }
 
 async function ensureAvailabilitySlotTable() {
@@ -137,6 +147,7 @@ async function ensureAvailabilitySlotTable() {
   const additions = [
     ['providerUserId', 'VARCHAR(64) NOT NULL DEFAULT ""'],
     ['day', 'VARCHAR(32) NOT NULL DEFAULT ""'],
+    ['date', 'DATE NULL'],
     ['startTime', 'TIME NULL'],
     ['endTime', 'TIME NULL'],
   ];
@@ -385,6 +396,8 @@ async function listRequestsForProvider(providerUserId, statusQ) {
   const hasPatientAddress = await hasColumn('patient', 'addressText');
   const hasMedicalDob = await hasColumn('medicalrecord', 'dateOfBirth');
   const hasPaymentTable = await hasTable('payment');
+  const hasAdminReviewStatus = await hasColumn('servicerequest', 'adminReviewStatus');
+  const hasAdminReviewDecision = await hasColumn('servicerequest', 'adminReviewDecision');
   const createdExpr = hasCreatedAt ? 'sr.createdAt' : 'sr.scheduledAt';
   const visitAddressSel = hasVisitAddress ? 'sr.visitAddress' : "'' AS visitAddress";
   const visitLatSel = hasVisitLatitude ? 'sr.visitLatitude' : 'NULL AS visitLatitude';
@@ -396,6 +409,12 @@ async function listRequestsForProvider(providerUserId, statusQ) {
   const patientAddressSel = hasPatientAddress ? 'pat.addressText' : "'' AS patientAddress";
   const dobSel = hasMedicalDob ? 'mr.dateOfBirth' : 'NULL AS dateOfBirth';
   const priceSel = hasPaymentTable ? 'p.amount' : 'NULL AS amount';
+  const adminReviewStatusSel = hasAdminReviewStatus
+    ? 'sr.adminReviewStatus'
+    : "NULL AS adminReviewStatus";
+  const adminReviewDecisionSel = hasAdminReviewDecision
+    ? 'sr.adminReviewDecision'
+    : "NULL AS adminReviewDecision";
 
   const params = [providerUserId];
   let statusClause = '';
@@ -432,7 +451,9 @@ async function listRequestsForProvider(providerUserId, statusQ) {
         ${patientLngSel},
         ${patientAddressSel},
         ${dobSel},
-        ${priceSel}
+        ${priceSel},
+        ${adminReviewStatusSel},
+        ${adminReviewDecisionSel}
      FROM servicerequest sr
      LEFT JOIN user pu ON BINARY sr.patientUserId = BINARY pu.userId
      LEFT JOIN patient pat ON BINARY pat.userId = BINARY sr.patientUserId
@@ -452,6 +473,12 @@ async function listRequestsForProvider(providerUserId, statusQ) {
     const parsedAddress = addressMatch ? addressMatch[1].trim() : '';
     const parsedLat = gpsMatch ? Number(gpsMatch[1]) : null;
     const parsedLng = gpsMatch ? Number(gpsMatch[2]) : null;
+    const adminReviewStatus = (r.adminReviewStatus || '').toString().trim().toLowerCase();
+    const adminReviewDecision = (r.adminReviewDecision || '').toString().trim().toLowerCase();
+    const effectiveStatus =
+      adminReviewStatus === 'dispute' || adminReviewDecision === 'mark_dispute'
+        ? 'dispute'
+        : r.status;
     return {
       requestId: r.requestId,
       patientUserId: r.patientUserId,
@@ -466,8 +493,10 @@ async function listRequestsForProvider(providerUserId, statusQ) {
       patientAddress: r.patientAddress || '',
       gpsLat: r.visitLatitude ?? r.gpsLat ?? parsedLat,
       gpsLng: r.visitLongitude ?? r.gpsLng ?? parsedLng,
-      status: r.status,
+      status: effectiveStatus,
       notes: r.notes,
+      adminReviewStatus,
+      adminReviewDecision,
       reasonForVisit: r.reasonForVisit || '',
       locationNote: r.locationNote || '',
       medicalCondition: r.reasonForVisit || r.notes || '',
@@ -515,6 +544,92 @@ router.get('/requests/:providerId', async (req, res) => {
       normalizedStatus && normalizedStatus !== 'all' ? normalizedStatus : '',
     );
     res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/patients/:patientId/medical-records', async (req, res) => {
+  const patientId = (req.params.patientId || '').toString().trim();
+  const providerId = (req.query.providerId || req.headers['x-provider-id'] || '')
+    .toString()
+    .trim();
+
+  if (!patientId || !providerId) {
+    return res.status(400).json({ error: 'patientId and providerId are required' });
+  }
+
+  try {
+    const [nurseRows] = await db.query(
+      `SELECT role FROM user WHERE BINARY userId = BINARY ? LIMIT 1`,
+      [providerId],
+    );
+    if (!nurseRows.length || (nurseRows[0].role || '').toLowerCase() !== 'nurse') {
+      return res.status(403).json({ error: 'Nurse medical records only' });
+    }
+
+    const [linkRows] = await db.query(
+      `SELECT requestId
+       FROM servicerequest
+       WHERE BINARY patientUserId = BINARY ?
+         AND BINARY providerUserId = BINARY ?
+       LIMIT 1`,
+      [patientId, providerId],
+    );
+    if (!linkRows.length) {
+      return res.status(403).json({ error: 'No care relationship with this patient' });
+    }
+
+    const hasDob = await hasColumn('medicalrecord', 'dateOfBirth');
+    const hasBloodType = await hasColumn('medicalrecord', 'bloodType');
+    const hasPastSurgeries = await hasColumn('medicalrecord', 'pastSurgeries');
+    const hasPreviousDiagnoses = await hasColumn('medicalrecord', 'previousDiagnoses');
+    const hasDoctorNotes = await hasColumn('medicalrecord', 'doctorNotes');
+    const hasNurseNotes = await hasColumn('medicalrecord', 'nurseNotes');
+    const [summaryRows] = await db.query(
+      `SELECT
+         mr.recordId,
+         ${hasDob ? 'mr.dateOfBirth' : 'NULL AS dateOfBirth'},
+         ${hasBloodType ? 'mr.bloodType' : "'' AS bloodType"},
+         ${hasPastSurgeries ? 'mr.pastSurgeries' : "'' AS pastSurgeries"},
+         ${hasPreviousDiagnoses ? 'mr.previousDiagnoses' : "'' AS previousDiagnoses"},
+         ${hasDoctorNotes ? 'mr.doctorNotes' : "'' AS doctorNotes"},
+         ${hasNurseNotes ? 'mr.nurseNotes' : "'' AS nurseNotes"},
+         u.fullName AS patientName,
+         u.phone AS patientPhone
+       FROM medicalrecord mr
+       LEFT JOIN user u ON BINARY u.userId = BINARY mr.patientUserId
+       WHERE BINARY mr.patientUserId = BINARY ?
+       LIMIT 1`,
+      [patientId],
+    );
+
+    const [diseases] = await db.query(
+      `SELECT d.diseaseName
+       FROM medicalrecorddisease mrd
+       JOIN disease d ON d.diseaseId = mrd.diseaseId
+       WHERE BINARY mrd.recordId = BINARY ?`,
+      [summaryRows[0]?.recordId || ''],
+    ).catch(() => [[]]);
+
+    const [allergies] = await db.query(
+      `SELECT a.allergyName
+       FROM medicalrecordallergy mra
+       JOIN allergy a ON a.allergyId = mra.allergyId
+       WHERE BINARY mra.recordId = BINARY ?`,
+      [summaryRows[0]?.recordId || ''],
+    ).catch(() => [[]]);
+
+    const records = await medicalRecordService.listPatientVisibleRecords(patientId);
+    res.json({
+      patientId,
+      summary: {
+        ...(summaryRows[0] || {}),
+        diseases: diseases.map((d) => d.diseaseName).filter(Boolean),
+        allergies: allergies.map((a) => a.allergyName).filter(Boolean),
+      },
+      records,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2043,6 +2158,7 @@ router.get('/profile/:providerId', async (req, res) => {
     const hasServiceAreasSnake = await hasColumn('careprovider', 'service_areas');
     const hasBiography = await hasColumn('careprovider', 'biography');
     const hasServiceType = await hasColumn('careprovider', 'serviceType');
+    const hasProviderAddress = await hasColumn('careprovider', 'providerAddress');
     const hasHourly = await hasColumn('careprovider', 'hourlyRate');
     const hasFee = await hasColumn('careprovider', 'consultationFee');
     const expSel =
@@ -2062,21 +2178,25 @@ router.get('/profile/:providerId', async (req, res) => {
             ? "COALESCE(NULLIF(c.experience_level, ''), 'junior') AS experienceTier"
             : "'junior' AS experienceTier";
     const serviceAreasSel =
-      hasServiceAreas && hasServiceAreasSnake
-        ? "COALESCE(NULLIF(c.serviceAreas, ''), NULLIF(c.service_areas, ''), '') AS serviceAreas"
+      hasServiceAreas && hasServiceAreasSnake && hasProviderAddress
+        ? "COALESCE(NULLIF(c.serviceAreas, ''), NULLIF(c.service_areas, ''), NULLIF(c.providerAddress, ''), '') AS serviceAreas"
+        : hasServiceAreas && hasProviderAddress
+          ? "COALESCE(NULLIF(c.serviceAreas, ''), NULLIF(c.providerAddress, ''), '') AS serviceAreas"
+          : hasServiceAreasSnake && hasProviderAddress
+            ? "COALESCE(NULLIF(c.service_areas, ''), NULLIF(c.providerAddress, ''), '') AS serviceAreas"
+            : hasProviderAddress
+              ? "COALESCE(c.providerAddress, '') AS serviceAreas"
+              : hasServiceAreas && hasServiceAreasSnake
+                ? "COALESCE(NULLIF(c.serviceAreas, ''), NULLIF(c.service_areas, ''), '') AS serviceAreas"
         : hasServiceAreas
           ? "COALESCE(c.serviceAreas, '') AS serviceAreas"
           : hasServiceAreasSnake
             ? "COALESCE(c.service_areas, '') AS serviceAreas"
             : "'' AS serviceAreas";
     const bioSel =
-      hasBiography && hasServiceType
-        ? "COALESCE(NULLIF(c.biography, ''), NULLIF(c.serviceType, ''), '') AS bio"
-        : hasBiography
+      hasBiography
           ? "COALESCE(c.biography, '') AS bio"
-          : hasServiceType
-            ? "COALESCE(c.serviceType, '') AS bio"
-            : "'' AS bio";
+          : "'' AS bio";
     const rateSel =
       hasHourly && hasFee
         ? 'COALESCE(c.hourlyRate, c.consultationFee, 0) AS hourlyRate'
@@ -2086,8 +2206,14 @@ router.get('/profile/:providerId', async (req, res) => {
             ? 'COALESCE(c.consultationFee, 0) AS hourlyRate'
             : '0 AS hourlyRate';
 
+    const hasProfileImageUrl = await hasColumn('user', 'profileImageUrl');
+    const profileImageSel = hasProfileImageUrl
+      ? 'u.profileImageUrl'
+      : 'NULL AS profileImageUrl';
+
     const [rows] = await db.query(
       `SELECT u.userId AS providerId, u.fullName, u.email, u.phone,
+              ${profileImageSel},
               c.specialization, c.isAvailable, c.overallRating,
               COALESCE(c.approvalStatus, 'pending') AS approvalStatus,
               ${serviceAreasSel}, ${bioSel}, ${tierSel}, ${expSel}, ${rateSel},
@@ -2124,6 +2250,7 @@ router.get('/profile/:providerId', async (req, res) => {
       fullName: r.fullName || '',
       email: r.email || '',
       phone: r.phone || '',
+      profileImageUrl: r.profileImageUrl || '',
       bio: (r.bio || '').toString(),
       specialization: r.specialization || '',
       serviceAreas: r.serviceAreas || '',
@@ -2156,6 +2283,13 @@ router.put('/profile/:providerId', async (req, res) => {
     const fullName = (b.fullName || '').toString().trim();
     const email = (b.email || '').toString().trim();
     const phone = (b.phone || '').toString().trim();
+    const hasProfileImagePayload = Object.prototype.hasOwnProperty.call(
+      b,
+      'profileImageUrl',
+    );
+    const profileImageUrl = hasProfileImagePayload
+      ? (b.profileImageUrl || '').toString().trim()
+      : '';
     const specialization = (b.specialization || '').toString().trim();
     const bio = (b.bio || '').toString().trim();
     const serviceAreas = (b.serviceAreas || b.service_areas || '')
@@ -2183,6 +2317,12 @@ router.put('/profile/:providerId', async (req, res) => {
         providerId,
       ]);
     }
+    if (hasProfileImagePayload) {
+      await db.execute(
+        `UPDATE user SET profileImageUrl = ? WHERE userId = ?`,
+        [profileImageUrl || null, providerId],
+      );
+    }
 
     const hasExp = await hasColumn('careprovider', 'experienceYears');
     const hasYearsSnake = await hasColumn('careprovider', 'years_experience');
@@ -2191,6 +2331,7 @@ router.put('/profile/:providerId', async (req, res) => {
       'careprovider',
       'service_areas',
     );
+    const hasProviderAddress = await hasColumn('careprovider', 'providerAddress');
     const hasBiography = await hasColumn('careprovider', 'biography');
     const hasServiceType = await hasColumn('careprovider', 'serviceType');
     const sets = ['isAvailable = ?'];
@@ -2209,6 +2350,10 @@ router.put('/profile/:providerId', async (req, res) => {
     }
     if (hasServiceAreasSnake) {
       sets.push('service_areas = ?');
+      vals.push(serviceAreas);
+    }
+    if (hasProviderAddress) {
+      sets.push('providerAddress = ?');
       vals.push(serviceAreas);
     }
     if (hasServiceType && (bio || specialization)) {
@@ -2264,8 +2409,14 @@ router.get('/availability/:providerId', async (req, res) => {
       });
     }
     await ensureAvailabilitySlotTable();
+    const hasDate = await hasColumn('availabilityslot', 'date');
     const [slots] = await db.query(
-      `SELECT day, startTime, endTime FROM availabilityslot WHERE providerUserId = ? ORDER BY day, startTime`,
+      `SELECT day,
+              ${hasDate ? "DATE_FORMAT(date, '%Y-%m-%d') AS date," : "NULL AS date,"}
+              startTime, endTime
+       FROM availabilityslot
+       WHERE providerUserId = ?
+       ORDER BY day, startTime`,
       [providerId],
     );
     res.json(slots);
@@ -2303,6 +2454,7 @@ function timeFromMinutes(totalMinutes) {
 
 function expandHourlyAvailabilitySlot(slot) {
   const day = (slot.day ?? slot['day'] ?? '').toString().trim();
+  const date = (slot.date ?? slot['date'] ?? '').toString().trim().slice(0, 10);
   const startTime = (slot.startTime ?? slot['start'] ?? '').toString().trim();
   const endTime = (slot.endTime ?? slot['end'] ?? '').toString().trim();
   const start = minutesFromTime(startTime);
@@ -2314,6 +2466,7 @@ function expandHourlyAvailabilitySlot(slot) {
     const next = Math.min(cursor + 60, end);
     expanded.push({
       day,
+      date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null,
       startTime: timeFromMinutes(cursor),
       endTime: timeFromMinutes(next),
     });
@@ -2336,6 +2489,7 @@ router.put('/availability/:providerId', async (req, res) => {
     await ensureCareProviderForAvailability(conn, providerId, hourlySlots.length > 0);
     const hasSlotId = await hasColumn('availabilityslot', 'slotId');
     const hasSlotUnderscore = await hasColumn('availabilityslot', 'slot_id');
+    const hasDate = await hasColumn('availabilityslot', 'date');
     if (hasSlotId || hasSlotUnderscore) {
       await conn.execute(`DELETE FROM availabilityslot WHERE providerUserId = ? OR providerUserId IS NULL OR providerUserId = ''`, [
         providerId,
@@ -2346,24 +2500,27 @@ router.put('/availability/:providerId', async (req, res) => {
       ]);
     }
     for (const s of hourlySlots) {
-      const { day, startTime, endTime } = s;
+      const { day, date, startTime, endTime } = s;
+      const dateColumn = hasDate ? ', date' : '';
+      const datePlaceholder = hasDate ? ', ?' : '';
+      const dateValue = hasDate ? [date || null] : [];
       if (hasSlotId) {
         await conn.execute(
-          `INSERT INTO availabilityslot (slotId, providerUserId, day, startTime, endTime)
-           VALUES (?, ?, ?, ?, ?)`,
-          [randomUUID(), providerId, day, startTime, endTime],
+          `INSERT INTO availabilityslot (slotId, providerUserId, day${dateColumn}, startTime, endTime)
+           VALUES (?, ?, ?${datePlaceholder}, ?, ?)`,
+          [randomUUID(), providerId, day, ...dateValue, startTime, endTime],
         );
       } else if (hasSlotUnderscore) {
         await conn.execute(
-          `INSERT INTO availabilityslot (slot_id, providerUserId, day, startTime, endTime)
-           VALUES (?, ?, ?, ?, ?)`,
-          [randomUUID(), providerId, day, startTime, endTime],
+          `INSERT INTO availabilityslot (slot_id, providerUserId, day${dateColumn}, startTime, endTime)
+           VALUES (?, ?, ?${datePlaceholder}, ?, ?)`,
+          [randomUUID(), providerId, day, ...dateValue, startTime, endTime],
         );
       } else {
         await conn.execute(
-          `INSERT INTO availabilityslot (providerUserId, day, startTime, endTime)
-           VALUES (?, ?, ?, ?)`,
-          [providerId, day, startTime, endTime],
+          `INSERT INTO availabilityslot (providerUserId, day${dateColumn}, startTime, endTime)
+           VALUES (?, ?${datePlaceholder}, ?, ?)`,
+          [providerId, day, ...dateValue, startTime, endTime],
         );
       }
     }

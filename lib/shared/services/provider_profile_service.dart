@@ -163,6 +163,7 @@ class ProviderProfileService {
     final expanded = <Map<String, dynamic>>[];
     for (final slot in slots) {
       final day = (slot['day'] ?? '').toString().trim();
+      final date = (slot['date'] ?? '').toString().trim();
       final start = _minutesFromTime(slot['startTime'] ?? slot['start']);
       final end = _minutesFromTime(slot['endTime'] ?? slot['end']);
       if (day.isEmpty || start == null || end == null || end <= start) {
@@ -172,6 +173,7 @@ class ProviderProfileService {
         final next = cursor + 60 > end ? end : cursor + 60;
         expanded.add({
           'day': day,
+          if (date.isNotEmpty) 'date': date,
           'startTime': _timeFromMinutes(cursor),
           'endTime': _timeFromMinutes(next),
         });

@@ -1,4 +1,9 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -26,6 +31,7 @@ class _NurseProfileState extends State<NurseProfile> {
   ProviderProfile? profile;
   bool isLoading = true;
   bool isSaving = false;
+  bool isUploadingPhoto = false;
   String? error;
 
   @override
@@ -65,7 +71,7 @@ class _NurseProfileState extends State<NurseProfile> {
       return Scaffold(
         backgroundColor: palette.pageBg,
         appBar: AppBar(
-          title: const Text('Nurse Profile'),
+          title: Text(NurseUi.t('Nurse Profile')),
           centerTitle: true,
           backgroundColor: palette.pageBg,
           foregroundColor: palette.inkDark,
@@ -130,24 +136,67 @@ class _NurseProfileState extends State<NurseProfile> {
     return Column(
       children: [
         Center(
-          child: Container(
-            width: 104,
-            height: 104,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: palette.surfaceSoft,
-              border: Border.all(color: palette.stroke, width: 2),
-            ),
-            child: Center(
-              child: Text(
-                _initial(name),
-                style: const TextStyle(
-                  color: AppColors.primaryDark,
-                  fontSize: 38,
-                  fontWeight: FontWeight.w900,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 104,
+                height: 104,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: palette.surfaceSoft,
+                  border: Border.all(color: palette.surface, width: 3),
+                  boxShadow: NurseUi.softShadow,
+                ),
+                child: ClipOval(
+                  child: _profileAvatarImage(p, name, palette, size: 104),
                 ),
               ),
-            ),
+              PositionedDirectional(
+                end: 0,
+                bottom: 0,
+                child: Material(
+                  color: AppColors.primary,
+                  shape: const CircleBorder(),
+                  elevation: 1,
+                  child: InkWell(
+                    onTap: isUploadingPhoto ? null : _showProfilePhotoSheet,
+                    customBorder: const CircleBorder(),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: palette.surface, width: 2),
+                      ),
+                      child: isUploadingPhoto
+                          ? const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.camera_alt_rounded,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Tap to change photo',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: palette.inkMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 12),
@@ -167,6 +216,11 @@ class _NurseProfileState extends State<NurseProfile> {
           runSpacing: 8,
           children: [
             _profileChip(_fallback(p.specialization, 'Nurse')),
+            if (p.serviceAreas.trim().isNotEmpty)
+              _profileChip(
+                _fallback(p.serviceAreas, 'Location not provided'),
+                icon: Icons.location_on_outlined,
+              ),
             if (p.rating > 0)
               _profileChip(
                 p.rating.toStringAsFixed(1),
@@ -215,11 +269,6 @@ class _NurseProfileState extends State<NurseProfile> {
   Widget _professionalCard(ProviderProfile p, CarelinkPalette palette) {
     final rows = <_ProfileRow>[
       _ProfileRow(
-        Icons.medical_services_outlined,
-        'Nursing specialty',
-        _fallback(p.specialization, 'Not assigned'),
-      ),
-      _ProfileRow(
         Icons.work_history_outlined,
         'Years of experience',
         '${p.experienceYears} years',
@@ -228,11 +277,6 @@ class _NurseProfileState extends State<NurseProfile> {
         Icons.location_on_outlined,
         'Location / Service area',
         _fallback(p.serviceAreas, 'Not provided'),
-      ),
-      _ProfileRow(
-        Icons.workspace_premium_outlined,
-        'Experience tier',
-        _displayTier(p.experienceTier),
       ),
       _ProfileRow(
         Icons.payments_outlined,
@@ -602,6 +646,162 @@ class _NurseProfileState extends State<NurseProfile> {
     );
   }
 
+  Future<void> _showProfilePhotoSheet() async {
+    final current = profile;
+    if (current == null) return;
+    final palette = CarelinkPalette.of(context);
+    final hasExisting = current.profileImageUrl.trim().isNotEmpty;
+
+    final choice = await showModalBottomSheet<_PhotoSheetAction>(
+      context: context,
+      backgroundColor: palette.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 10, bottom: 8),
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: palette.stroke,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+                child: Text(
+                  'Profile Photo',
+                  style: TextStyle(
+                    color: palette.inkDark,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.photo_library_outlined,
+                  color: AppColors.primary,
+                ),
+                title: Text(
+                  'Choose from gallery',
+                  style: TextStyle(
+                    color: palette.inkDark,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                onTap: () => Navigator.pop(context, _PhotoSheetAction.gallery),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.camera_alt_outlined,
+                  color: AppColors.primary,
+                ),
+                title: Text(
+                  'Take a photo',
+                  style: TextStyle(
+                    color: palette.inkDark,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                onTap: () => Navigator.pop(context, _PhotoSheetAction.camera),
+              ),
+              if (hasExisting)
+                ListTile(
+                  leading: Icon(Icons.delete_outline, color: palette.inkMuted),
+                  title: Text(
+                    'Remove photo',
+                    style: TextStyle(
+                      color: palette.inkMuted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  onTap: () => Navigator.pop(context, _PhotoSheetAction.remove),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    switch (choice) {
+      case _PhotoSheetAction.gallery:
+        await _pickProfileImage(ImageSource.gallery);
+        break;
+      case _PhotoSheetAction.camera:
+        await _pickProfileImage(ImageSource.camera);
+        break;
+      case _PhotoSheetAction.remove:
+        await _saveProfilePhoto('');
+        break;
+      case null:
+        break;
+    }
+  }
+
+  Future<void> _pickProfileImage(ImageSource source) async {
+    try {
+      final file = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 80,
+        maxWidth: 512,
+        maxHeight: 512,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        _showSnack('Image size must be less than 5MB', error: true);
+        return;
+      }
+      final payload =
+          'data:${_imageMimeType(file)};base64,${base64Encode(bytes)}';
+      await _saveProfilePhoto(payload);
+    } on MissingPluginException {
+      _showSnack(
+        'Image picker needs a full app restart. Stop and run again.',
+        error: true,
+      );
+    } catch (_) {
+      _showSnack('Unable to select photo. Please try again.', error: true);
+    }
+  }
+
+  Future<void> _saveProfilePhoto(String imagePayload) async {
+    final current = profile;
+    if (current == null || isUploadingPhoto) return;
+    final updated = ProviderProfile.fromJson({
+      ...current.toJson(),
+      'profileImageUrl': imagePayload,
+    });
+
+    setState(() => isUploadingPhoto = true);
+    final ok = await ProviderProfileService.updateProfile(updated);
+    if (!mounted) return;
+    setState(() {
+      isUploadingPhoto = false;
+      if (ok) profile = updated;
+    });
+    _showSnack(
+      ok
+          ? imagePayload.isEmpty
+                ? 'Profile photo removed'
+                : 'Profile photo updated'
+          : 'Failed to update profile photo',
+      error: !ok,
+    );
+    if (ok) await _loadProfile();
+  }
+
   Future<void> _openEditProfile() async {
     final current = profile;
     if (current == null || isSaving) return;
@@ -726,6 +926,7 @@ class _NurseProfileState extends State<NurseProfile> {
       'serviceAreas': areaController.text.trim(),
       'bio': bioController.text.trim(),
       'experienceYears': experienceYears < 0 ? 0 : experienceYears,
+      'profileImageUrl': current.profileImageUrl,
     });
 
     setState(() => isSaving = true);
@@ -951,7 +1152,7 @@ class _NurseProfileState extends State<NurseProfile> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Logout'),
+        title: Text(NurseUi.t('Logout')),
         content: const Text('Are you sure you want to logout?'),
         actions: [
           TextButton(
@@ -1035,6 +1236,113 @@ class _NurseProfileState extends State<NurseProfile> {
     );
   }
 
+  Widget _profileAvatarImage(
+    ProviderProfile p,
+    String name,
+    CarelinkPalette palette, {
+    required double size,
+  }) {
+    final bytes = _dataImageBytes(p.profileImageUrl);
+    if (bytes != null) {
+      return Image.memory(
+        bytes,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _defaultAvatar(name, palette),
+      );
+    }
+
+    final imageUrl = _networkImageUrl(p.profileImageUrl);
+    if (imageUrl != null) {
+      return Image.network(
+        imageUrl,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        headers: const {'Accept': 'image/*'},
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.primary,
+              ),
+            ),
+          );
+        },
+        errorBuilder: (_, __, ___) => _defaultAvatar(name, palette),
+      );
+    }
+
+    return _defaultAvatar(name, palette);
+  }
+
+  Widget _defaultAvatar(String name, CarelinkPalette palette) {
+    return ColoredBox(
+      color: palette.surfaceSoft,
+      child: Center(
+        child: Text(
+          _initial(name),
+          style: const TextStyle(
+            color: AppColors.primaryDark,
+            fontSize: 38,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Uint8List? _dataImageBytes(String raw) {
+    final value = raw.trim();
+    if (!value.toLowerCase().startsWith('data:image')) return null;
+    final comma = value.indexOf(',');
+    if (comma == -1) return null;
+    try {
+      return base64Decode(value.substring(comma + 1));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _networkImageUrl(String raw) {
+    var value = raw.trim();
+    if (value.isEmpty || value.toLowerCase().startsWith('data:image')) {
+      return null;
+    }
+    if (!value.startsWith('http://') && !value.startsWith('https://')) {
+      final separator = value.startsWith('/') ? '' : '/';
+      value = '${ApiService.baseUrl}$separator$value';
+    }
+    return value.startsWith('http://') || value.startsWith('https://')
+        ? value
+        : null;
+  }
+
+  String _imageMimeType(XFile file) {
+    final mime = file.mimeType?.trim();
+    if (mime != null && mime.startsWith('image/')) return mime;
+    final lower = file.name.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
+  }
+
+  void _showSnack(String message, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: error ? Colors.red.shade700 : AppColors.success,
+      ),
+    );
+  }
+
   Widget _profileChip(String text, {IconData? icon}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -1088,18 +1396,7 @@ class _NurseProfileState extends State<NurseProfile> {
   }
 
   BoxDecoration _cardDecoration(CarelinkPalette palette) {
-    return BoxDecoration(
-      color: palette.surface,
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: palette.stroke),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: palette.isDark ? 0.15 : 0.03),
-          blurRadius: 10,
-          offset: const Offset(0, 4),
-        ),
-      ],
-    );
+    return NurseUi.cardDecoration();
   }
 
   Widget _thinDivider(CarelinkPalette palette) {
@@ -1129,13 +1426,6 @@ class _NurseProfileState extends State<NurseProfile> {
     return clean.isEmpty ? 'N' : clean[0].toUpperCase();
   }
 
-  String _displayTier(String value) {
-    final normalized = value.trim().toLowerCase().replaceAll('_', ' ');
-    if (normalized == 'mid') return 'Mid';
-    if (normalized == 'senior') return 'Senior';
-    return 'Junior';
-  }
-
   String _statusLabel(String value) {
     final normalized = value.trim().toLowerCase();
     if (normalized == 'approved') return 'Approved';
@@ -1158,3 +1448,7 @@ class _ProfileRow {
   final String label;
   final String value;
 }
+
+enum _PhotoSheetAction { gallery, camera, remove }
+
+
