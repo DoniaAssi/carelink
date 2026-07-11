@@ -4,10 +4,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/chat_repository.dart';
+import 'package:carelink/shared/widgets/carelink_floating_bottom_nav.dart';
 
 import 'nurse_conversation_threads.dart';
 import 'nurse_contact_patient_flow.dart';
@@ -39,12 +41,12 @@ class ActivityScreen extends StatefulWidget {
 }
 
 class _ActivityScreenState extends State<ActivityScreen> {
-  static const Color _background = Color(0xFFF4FAF9);
-  static const Color _primary = Color(0xFF0F766E);
-  static const Color _border = Color(0xFFE5E7EB);
+  static Color get _background => NurseUi.background;
+  static Color get _primary => AppColors.primary;
+  static Color get _border => NurseUi.border;
   static const Color _star = Color(0xFFFBBF24);
-  static const Color _text = Color(0xFF111827);
-  static const Color _muted = Color(0xFF6B7280);
+  static Color get _text => NurseUi.text;
+  static Color get _muted => NurseUi.muted;
 
   final ChatRepository chatRepository = ChatRepository();
   final ApiService api = ApiService();
@@ -129,9 +131,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
               _tabs(),
               Expanded(
                 child: isLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(color: _primary),
-                      )
+                    ? Center(child: CircularProgressIndicator(color: _primary))
                     : error != null
                     ? _errorState()
                     : AnimatedSwitcher(
@@ -159,9 +159,9 @@ class _ActivityScreenState extends State<ActivityScreen> {
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Text(
-              'Activity',
+              NurseUi.t('Notifications'),
               style: TextStyle(
                 color: _text,
                 fontSize: 26,
@@ -169,14 +169,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
               ),
             ),
           ),
+          NurseModeControls(providerUserId: widget.user.userId),
           Stack(
             clipBehavior: Clip.none,
             children: [
-              const Icon(
-                Icons.notifications_none_rounded,
-                color: _primary,
-                size: 32,
-              ),
+              Icon(Icons.notifications_none_rounded, color: _primary, size: 32),
               if (unreadCount > 0)
                 Positioned(right: -7, top: -7, child: _badge(unreadCount)),
             ],
@@ -197,7 +194,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       margin: const EdgeInsets.fromLTRB(18, 0, 18, 12),
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: _border),
         boxShadow: _shadow,
@@ -213,7 +210,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   duration: const Duration(milliseconds: 180),
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: selectedTab == tab.$1 ? _primary : Colors.white,
+                    color: selectedTab == tab.$1 ? _primary : NurseUi.surface,
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Row(
@@ -227,7 +224,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          tab.$3,
+                          NurseUi.t(tab.$3),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -323,7 +320,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                         name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _text,
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
@@ -334,7 +331,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                       conversation.lastMessageAt == null
                           ? ''
                           : _relativeTime(conversation.lastMessageAt!),
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _muted,
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
@@ -349,10 +346,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                       : thread.lastMessage.trim(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _muted,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: TextStyle(color: _muted, fontWeight: FontWeight.w700),
                 ),
               ],
             ),
@@ -360,11 +354,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
           const SizedBox(width: 10),
           if (thread.unreadCount > 0) _greenBadge(thread.unreadCount),
           const SizedBox(width: 8),
-          const Icon(
-            Icons.arrow_forward_ios_rounded,
-            color: _primary,
-            size: 17,
-          ),
+          Icon(Icons.arrow_forward_ios_rounded, color: _primary, size: 17),
         ],
       ),
     );
@@ -423,18 +413,18 @@ class _ActivityScreenState extends State<ActivityScreen> {
             value: ratingFilter,
             icon: const Icon(Icons.keyboard_arrow_down_rounded),
             borderRadius: BorderRadius.circular(14),
-            items: const [
+            items: [
               DropdownMenuItem(
                 value: _RatingFilter.allTime,
-                child: Text('All Time'),
+                child: Text(NurseUi.t('All Time')),
               ),
               DropdownMenuItem(
                 value: _RatingFilter.lastMonth,
-                child: Text('Last Month'),
+                child: Text(NurseUi.t('Last Month')),
               ),
               DropdownMenuItem(
                 value: _RatingFilter.lastWeek,
-                child: Text('Last Week'),
+                child: Text(NurseUi.t('Last Week')),
               ),
             ],
             onChanged: (value) {
@@ -463,7 +453,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                       rating.patientName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _text,
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
@@ -472,11 +462,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     const SizedBox(height: 4),
                     Text(
                       rating.serviceType.isEmpty
-                          ? 'Nursing service'
-                          : rating.serviceType,
+                          ? NurseUi.t('Nursing service')
+                          : NurseUi.serviceLabel(rating.serviceType),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _muted,
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
@@ -485,7 +475,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     const SizedBox(height: 4),
                     Text(
                       _dateTime(rating.createdAt),
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _muted,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -521,7 +511,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
               ),
               child: Text(
                 '"${rating.comment.trim()}"',
-                style: const TextStyle(
+                style: TextStyle(
                   color: _text,
                   height: 1.35,
                   fontWeight: FontWeight.w700,
@@ -549,6 +539,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   Widget _alertCard(_ActivityAlert alert) {
     final meta = alert.meta;
+    final title = _localizedAlertTitle(alert, meta);
+    final description = _localizedAlertDescription(alert, meta);
     return _activityCard(
       onTap: () {
         if (alert.isRateDecisionAlert) {
@@ -581,10 +573,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  alert.title.isEmpty ? meta.title : alert.title,
+                  title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _text,
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
@@ -592,12 +584,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 ),
                 const SizedBox(height: 7),
                 Text(
-                  alert.description.isEmpty
-                      ? meta.description
-                      : alert.description,
+                  description,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _muted,
                     fontWeight: FontWeight.w700,
                     height: 1.35,
@@ -606,7 +596,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 const SizedBox(height: 9),
                 Text(
                   _relativeTime(alert.createdAt),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _muted,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
@@ -614,8 +604,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 ),
                 if (alert.isRateDecisionAlert) ...[
                   const SizedBox(height: 8),
-                  const Text(
-                    'Tap to accept or reject this hourly rate.',
+                  Text(
+                    NurseUi.t('Tap to accept or reject this hourly rate.'),
                     style: TextStyle(
                       color: _primary,
                       fontSize: 12,
@@ -641,19 +631,61 @@ class _ActivityScreenState extends State<ActivityScreen> {
     );
   }
 
+  String _localizedAlertTitle(_ActivityAlert alert, _AlertMeta meta) {
+    final raw = alert.title.trim();
+    if (raw.isEmpty) return NurseUi.t(meta.title);
+    final lower = raw.toLowerCase();
+    if (alert.isRateDecisionAlert || lower.contains('hourly rate')) {
+      return NurseUi.t('Hourly rate set');
+    }
+    if (lower.contains('booking') || lower.contains('request')) {
+      return NurseUi.t('New booking request');
+    }
+    return NurseUi.t(raw);
+  }
+
+  String _localizedAlertDescription(_ActivityAlert alert, _AlertMeta meta) {
+    final raw = alert.description.trim();
+    if (raw.isEmpty) return NurseUi.t(meta.description);
+    final lower = raw.toLowerCase();
+    if (alert.isRateDecisionAlert ||
+        lower.contains('hourly rate') ||
+        lower.contains('accept it before starting work')) {
+      final amountMatch = RegExp(r'(\d+(?:\.\d+)?)\s*ILS').firstMatch(raw);
+      final amount = amountMatch?.group(1);
+      if (amount != null && amount.isNotEmpty) {
+        return NurseUi.isArabic.value
+            ? 'حددت الإدارة سعر الساعة الخاص بك بقيمة $amount ${NurseUi.t('ILS')}. يرجى قبوله قبل بدء العمل.'
+            : 'Admin set your hourly rate to $amount ILS. Please accept it before starting work.';
+      }
+      return NurseUi.t(
+        'Please accept the admin hourly rate before starting work.',
+      );
+    }
+    if (lower.contains('booked') ||
+        lower.contains('booking') ||
+        lower.contains('service requests')) {
+      return NurseUi.t('You have a new service request.');
+    }
+    return NurseUi.t(raw);
+  }
+
   Future<void> _showRateDecisionDialog(_ActivityAlert alert) async {
+    final description = _localizedAlertDescription(alert, alert.meta);
     final decision = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Hourly rate approval',
-          style: TextStyle(fontWeight: FontWeight.w900),
+        title: Text(
+          NurseUi.t('Hourly rate approval'),
+          style: const TextStyle(fontWeight: FontWeight.w900),
         ),
         content: Text(
-          alert.description.isEmpty
-              ? 'Admin set your hourly rate. Please accept it before starting work.'
-              : alert.description,
+          description.isEmpty
+              ? NurseUi.t(
+                  'Admin set your hourly rate. Please accept it before starting work.',
+                )
+              : description,
           style: const TextStyle(height: 1.45, fontWeight: FontWeight.w700),
         ),
         actionsPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
@@ -664,7 +696,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 child: OutlinedButton.icon(
                   onPressed: () => Navigator.pop(context, 'rejected'),
                   icon: const Icon(Icons.close_rounded),
-                  label: const Text('Reject Rate'),
+                  label: Text(NurseUi.t('Reject Rate')),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFFEF4444),
                     side: const BorderSide(color: Color(0xFFEF4444)),
@@ -680,7 +712,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 child: ElevatedButton.icon(
                   onPressed: () => Navigator.pop(context, 'accepted'),
                   icon: const Icon(Icons.check_rounded),
-                  label: const Text('Accept Rate'),
+                  label: Text(NurseUi.t('Accept Rate')),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _primary,
                     foregroundColor: Colors.white,
@@ -727,8 +759,12 @@ class _ActivityScreenState extends State<ActivityScreen> {
         SnackBar(
           content: Text(
             decision == 'accepted'
-                ? 'Hourly rate accepted. You can add slots and accept patients now.'
-                : 'Hourly rate rejected. Availability and patient requests stay locked.',
+                ? NurseUi.t(
+                    'Hourly rate accepted. You can add slots and accept patients now.',
+                  )
+                : NurseUi.t(
+                    'Hourly rate rejected. Availability and patient requests stay locked.',
+                  ),
           ),
         ),
       );
@@ -753,7 +789,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: NurseUi.surface,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: _border.withValues(alpha: 0.7)),
             boxShadow: _shadow,
@@ -771,7 +807,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       backgroundColor: const Color(0xFFDDF2EF),
       child: Text(
         clean.isEmpty ? 'P' : clean.characters.first.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           color: _primary,
           fontSize: 18,
           fontWeight: FontWeight.w900,
@@ -794,7 +830,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
           const SizedBox(width: 4),
           Text(
             value.toStringAsFixed(1),
-            style: const TextStyle(color: _text, fontWeight: FontWeight.w900),
+            style: TextStyle(color: _text, fontWeight: FontWeight.w900),
           ),
         ],
       ),
@@ -823,7 +859,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     return Container(
       constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
       padding: const EdgeInsets.symmetric(horizontal: 7),
-      decoration: const BoxDecoration(color: _primary, shape: BoxShape.circle),
+      decoration: BoxDecoration(color: _primary, shape: BoxShape.circle),
       child: Center(
         child: Text(
           count > 9 ? '9+' : '$count',
@@ -853,7 +889,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
           const SizedBox(height: 12),
           Text(
             text,
-            style: const TextStyle(color: _muted, fontWeight: FontWeight.w900),
+            style: TextStyle(color: _muted, fontWeight: FontWeight.w900),
           ),
         ],
       ),
@@ -881,7 +917,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
         ),
         const SizedBox(height: 14),
         Center(
-          child: OutlinedButton(onPressed: _load, child: const Text('Retry')),
+          child: OutlinedButton(
+            onPressed: _load,
+            child: Text(NurseUi.t('Retry')),
+          ),
         ),
       ],
     );
@@ -891,67 +930,36 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   Widget _bottomNavigationBar() {
     final items = [
-      (Icons.home_outlined, 'Home'),
-      (Icons.calendar_month_outlined, 'Schedule'),
-      (Icons.people_outline_rounded, 'Patients'),
-      (Icons.notifications_none_rounded, 'Activity'),
-      (Icons.person_outline_rounded, 'Profile'),
+      CarelinkFloatingNavItem(
+        icon: Icons.home_outlined,
+        activeIcon: Icons.home_rounded,
+        label: NurseUi.t('Home'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.calendar_month_outlined,
+        activeIcon: Icons.calendar_month_rounded,
+        label: NurseUi.t('Sessions'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.people_outline_rounded,
+        activeIcon: Icons.people_rounded,
+        label: NurseUi.t('Patients'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.notifications_none_rounded,
+        activeIcon: Icons.notifications_rounded,
+        label: NurseUi.t('Alerts'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.person_outline_rounded,
+        activeIcon: Icons.person_rounded,
+        label: NurseUi.t('Profile'),
+      ),
     ];
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: _border.withValues(alpha: 0.8))),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, -6),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
-          child: Row(
-            children: [
-              for (var i = 0; i < items.length; i++)
-                Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => _handleBottomNavigationTap(i),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 5),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            items[i].$1,
-                            color: i == 3 ? _primary : const Color(0xFF94A3B8),
-                            size: 24,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            items[i].$2,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: i == 3
-                                  ? _primary
-                                  : const Color(0xFF94A3B8),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
+    return CarelinkFloatingBottomNav(
+      items: items,
+      currentIndex: 3,
+      onTap: _handleBottomNavigationTap,
     );
   }
 

@@ -23,7 +23,6 @@ class NursePatients extends StatefulWidget {
 }
 
 class _NursePatientsState extends State<NursePatients> {
-  static const Color _background = Color(0xFFF4FAF9);
   static const Color _primary = Color(0xFF0F766E);
   static const Color _active = Color(0xFF22C55E);
   static const Color _inactive = Color(0xFF9CA3AF);
@@ -228,10 +227,7 @@ class _NursePatientsState extends State<NursePatients> {
             tooltip: 'Filter',
             visualDensity: VisualDensity.compact,
             onPressed: () {},
-            icon: Icon(
-              Icons.filter_list_rounded,
-              color: NurseUi.muted,
-            ),
+            icon: Icon(Icons.filter_list_rounded, color: NurseUi.muted),
           ),
         ],
       ),
@@ -255,10 +251,7 @@ class _NursePatientsState extends State<NursePatients> {
             NurseUi.isArabic.value
                 ? 'تم العثور على ${filteredPatients.length}'
                 : '${filteredPatients.length} found',
-            style: TextStyle(
-              color: NurseUi.muted,
-              fontWeight: FontWeight.w800,
-            ),
+            style: TextStyle(color: NurseUi.muted, fontWeight: FontWeight.w800),
           ),
       ],
     );
@@ -458,7 +451,7 @@ class _PatientSummary {
     required bool active,
   }) {
     final name = request.patientName.trim().isEmpty
-        ? 'Patient ${request.patientId}'
+        ? '${NurseUi.t('Patient')} ${request.patientId}'
         : request.patientName.trim();
     final location = request.patientAddress.trim().isNotEmpty
         ? request.patientAddress.trim()
@@ -484,12 +477,13 @@ class _PatientSummary {
   String get detailsText {
     final parts = <String>[];
     if (gender.trim().isNotEmpty) parts.add(_titleCase(gender));
-    if (age > 0) parts.add('$age years');
+    if (age > 0) parts.add(NurseUi.ageLabel(age));
     if (phone.isNotEmpty) parts.add(phone);
-    return parts.isEmpty ? 'Details not set' : parts.join(' - ');
+    return parts.isEmpty ? NurseUi.t('Details not set') : parts.join(' - ');
   }
 
-  String get locationText => location.isEmpty ? 'Location not set' : location;
+  String get locationText =>
+      location.isEmpty ? NurseUi.t('Location not set') : location;
 
   String get searchText => '$name $phone $location'.toLowerCase();
 
@@ -511,7 +505,7 @@ class NursePatientDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = request.patientName.trim().isEmpty
-        ? 'Patient ${request.patientId}'
+        ? '${NurseUi.t('Patient')} ${request.patientId}'
         : request.patientName.trim();
     return NurseUi.reactive(
       (context) => Scaffold(
@@ -525,38 +519,56 @@ class NursePatientDetails extends StatelessWidget {
               _patientHeader(name),
               const SizedBox(height: 24),
               _card(
-                title: 'Medical Information',
+                title: NurseUi.t('Medical Information'),
                 children: [
-                  _infoRow('Condition', request.medicalCondition, Icons.shield),
                   _infoRow(
-                    'Reason',
+                    NurseUi.t('Condition'),
+                    request.medicalCondition,
+                    Icons.shield,
+                  ),
+                  _infoRow(
+                    NurseUi.t('Reason'),
                     request.reasonForVisit,
                     Icons.medical_information_outlined,
                   ),
-                  _infoRow('Service', request.serviceType, Icons.description),
-                  _infoRow('Phone', request.patientPhone, Icons.phone_outlined),
-                ],
-              ),
-              const SizedBox(height: 14),
-              _card(
-                title: 'Care Plan',
-                children: [
-                  _plainRow('Care Type', request.serviceType),
-                  _plainRow(
-                    'Duration',
-                    '${request.expectedDurationHours} hours',
+                  _infoRow(
+                    NurseUi.t('Service'),
+                    NurseUi.serviceLabel(request.serviceType),
+                    Icons.description,
                   ),
-                  _plainRow('Next Visit', _dateTime(request.scheduledDate)),
-                  _plainRow('Notes', request.notes ?? ''),
+                  _infoRow(
+                    NurseUi.t('Phone'),
+                    request.patientPhone,
+                    Icons.phone_outlined,
+                  ),
                 ],
               ),
               const SizedBox(height: 14),
               _card(
-                title: 'Location',
+                title: NurseUi.t('Care Plan'),
                 children: [
-                  _plainRow('Address', _locationText),
-                  _plainRow('Location Note', request.locationNote),
-                  _plainRow('GPS', _gpsText),
+                  _plainRow(
+                    NurseUi.t('Care Type'),
+                    NurseUi.serviceLabel(request.serviceType),
+                  ),
+                  _plainRow(
+                    NurseUi.t('Duration'),
+                    '${request.expectedDurationHours} ${NurseUi.t('hours')}',
+                  ),
+                  _plainRow(
+                    NurseUi.t('Next Visit'),
+                    _dateTime(request.scheduledDate),
+                  ),
+                  _plainRow(NurseUi.t('Notes'), request.notes ?? ''),
+                ],
+              ),
+              const SizedBox(height: 14),
+              _card(
+                title: NurseUi.t('Location'),
+                children: [
+                  _plainRow(NurseUi.t('Address'), _locationText),
+                  _plainRow(NurseUi.t('Location Note'), request.locationNote),
+                  _plainRow(NurseUi.t('GPS'), _gpsText),
                 ],
               ),
             ],
@@ -596,8 +608,8 @@ class NursePatientDetails extends StatelessWidget {
               ),
               Text(
                 request.patientAge > 0
-                    ? '${request.patientAge} years'
-                    : 'Age not set',
+                    ? NurseUi.ageLabel(request.patientAge)
+                    : NurseUi.t('Age not set'),
                 style: TextStyle(
                   color: NurseUi.muted,
                   fontWeight: FontWeight.w700,
@@ -622,7 +634,10 @@ class NursePatientDetails extends StatelessWidget {
         ),
         const Spacer(),
         IconButton(
-          icon: const Icon(Icons.language_rounded, color: AppColors.primaryDark),
+          icon: const Icon(
+            Icons.language_rounded,
+            color: AppColors.primaryDark,
+          ),
           onPressed: () => NurseUi.isArabic.value = !NurseUi.isArabic.value,
         ),
         const SizedBox(width: 14),
@@ -711,7 +726,7 @@ class NursePatientDetails extends StatelessWidget {
           ),
           Flexible(
             child: Text(
-              value.trim().isEmpty ? 'Not recorded' : value,
+              value.trim().isEmpty ? NurseUi.t('Not recorded') : value,
               textAlign: TextAlign.end,
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
@@ -752,17 +767,18 @@ class NursePatientDetails extends StatelessWidget {
     if (request.patientAddress.trim().isNotEmpty) {
       return request.patientAddress.trim();
     }
-    return request.location.trim();
+    final location = request.location.trim();
+    return location.isEmpty ? NurseUi.t('Location not set') : location;
   }
 
   String get _gpsText {
     final lat = request.gpsLat;
     final lng = request.gpsLng;
-    if (lat == null || lng == null) return '';
+    if (lat == null || lng == null) return NurseUi.t('Not recorded');
     return '$lat, $lng';
   }
 
   String _dateTime(DateTime date) {
-    return '${date.month}/${date.day}/${date.year} - ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    return '${NurseUi.formatDate(date)} - ${NurseUi.formatTime(date)}';
   }
 }

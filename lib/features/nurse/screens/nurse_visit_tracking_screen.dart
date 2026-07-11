@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -476,7 +476,7 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
             backgroundColor: const Color(0xFFDDF2EF),
             child: Text(
               name.characters.first.toUpperCase(),
-              style: const TextStyle(
+              style: TextStyle(
                 color: _primary,
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
@@ -490,7 +490,7 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
               children: [
                 Text(
                   name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _text,
                     fontSize: 17,
                     fontWeight: FontWeight.w900,
@@ -499,7 +499,7 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
                 const SizedBox(height: 4),
                 Text(
                   widget.request.serviceType,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _muted,
                     fontWeight: FontWeight.w700,
                   ),
@@ -508,7 +508,7 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.phone_outlined,
                         size: 15,
                         color: _primary,
@@ -516,7 +516,7 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
                       const SizedBox(width: 5),
                       Text(
                         widget.request.patientPhone,
-                        style: const TextStyle(color: _primary, fontSize: 12),
+                        style: TextStyle(color: _primary, fontSize: 12),
                       ),
                     ],
                   ),
@@ -634,7 +634,7 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
                   shape: BoxShape.circle,
                   border: Border.all(color: const Color(0xFFB8E0D8), width: 2),
                 ),
-                child: const Icon(Icons.location_on, size: 55, color: _primary),
+                child: Icon(Icons.location_on, size: 55, color: _primary),
               ),
               const SizedBox(height: 18),
               _detailRow(
@@ -686,14 +686,14 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _primary,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 const SizedBox(height: 3),
-                Text(subtitle, style: const TextStyle(color: _muted)),
+                Text(subtitle, style: TextStyle(color: _muted)),
               ],
             ),
           ),
@@ -709,14 +709,14 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
         Icon(icon, color: _primary, size: 20),
         const SizedBox(width: 11),
         Expanded(
-          child: Text(label, style: const TextStyle(color: _muted)),
+          child: Text(label, style: TextStyle(color: _muted)),
         ),
         const SizedBox(width: 10),
         Flexible(
           child: Text(
             value,
             textAlign: TextAlign.end,
-            style: const TextStyle(color: _text, fontWeight: FontWeight.w800),
+            style: TextStyle(color: _text, fontWeight: FontWeight.w800),
           ),
         ),
       ],
@@ -736,7 +736,7 @@ class _NurseVisitTrackingScreenState extends State<NurseVisitTrackingScreen> {
           Icon(icon, color: success ? AppColors.success : _primary),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(text, style: const TextStyle(color: _text)),
+            child: Text(text, style: TextStyle(color: _text)),
           ),
           if (success)
             const Icon(Icons.check_circle, color: AppColors.success, size: 20),

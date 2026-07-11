@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
+import 'patient_typography.dart';
 
 class CarelinkAppTheme {
   static ThemeData get light {
@@ -20,9 +21,11 @@ class CarelinkAppTheme {
       ),
       scaffoldBackgroundColor: AppColors.background,
     );
+    final tx = PatientTypographyTokens.light();
     return base.copyWith(
-      textTheme: GoogleFonts.interTextTheme(base.textTheme),
+      textTheme: tx.asMaterialTextTheme(),
       primaryTextTheme: GoogleFonts.interTextTheme(base.primaryTextTheme),
+      extensions: <ThemeExtension<dynamic>>[tx],
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -40,9 +43,7 @@ class CarelinkAppTheme {
       cardTheme: CardThemeData(
         color: Colors.white,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
       ),
@@ -140,9 +141,11 @@ class CarelinkAppTheme {
       ),
       scaffoldBackgroundColor: const Color(0xFF01161E),
     );
+    final tx = PatientTypographyTokens.dark();
     return base.copyWith(
-      textTheme: GoogleFonts.interTextTheme(base.textTheme),
+      textTheme: tx.asMaterialTextTheme(),
       primaryTextTheme: GoogleFonts.interTextTheme(base.primaryTextTheme),
+      extensions: <ThemeExtension<dynamic>>[tx],
       appBarTheme: AppBarTheme(
         backgroundColor: const Color(0xFF0A252E),
         foregroundColor: Colors.white,
@@ -160,9 +163,7 @@ class CarelinkAppTheme {
       cardTheme: CardThemeData(
         color: surface,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
       ),

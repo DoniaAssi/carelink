@@ -1,9 +1,10 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/shared/widgets/carelink_floating_bottom_nav.dart';
 
 import 'nurse_ui.dart';
 
@@ -259,12 +260,12 @@ class _NotificationsReadOnlyScreenState
       (_NurseNotificationFilter.all, NurseUi.t('All'), notifications.length),
       (
         _NurseNotificationFilter.requests,
-        NurseUi.isArabic.value ? 'طلبات جديدة' : 'New Requests',
+        NurseUi.t('New Requests'),
         _count(_NurseNotificationFilter.requests),
       ),
       (
         _NurseNotificationFilter.visits,
-        NurseUi.isArabic.value ? 'حالة الزيارة' : 'Visit Status',
+        NurseUi.t('Visit Status'),
         _count(_NurseNotificationFilter.visits),
       ),
       (
@@ -299,9 +300,7 @@ class _NotificationsReadOnlyScreenState
                 color: selected ? const Color(0xFF0F766E) : NurseUi.surface,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: selected
-                      ? const Color(0xFF0F766E)
-                      : NurseUi.border,
+                  color: selected ? const Color(0xFF0F766E) : NurseUi.border,
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -348,6 +347,8 @@ class _NotificationsReadOnlyScreenState
 
   Widget _notificationCard(_NurseNotificationItem item) {
     final meta = _meta(item.kind);
+    final title = _localizedNotificationTitle(item, meta);
+    final description = _localizedNotificationDescription(item, meta);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -374,7 +375,7 @@ class _NotificationsReadOnlyScreenState
                 if (item.kind == _NurseNotificationKind.request)
                   _newBadge(meta.color),
                 Text(
-                  item.title.isEmpty ? meta.fallbackTitle : item.title,
+                  title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -387,9 +388,7 @@ class _NotificationsReadOnlyScreenState
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  item.description.isEmpty
-                      ? meta.fallbackDescription
-                      : item.description,
+                  description,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -448,6 +447,48 @@ class _NotificationsReadOnlyScreenState
     );
   }
 
+  String _localizedNotificationTitle(
+    _NurseNotificationItem item,
+    _NotificationMeta meta,
+  ) {
+    final raw = item.title.trim();
+    if (raw.isEmpty) return NurseUi.t(meta.fallbackTitle);
+    final lower = raw.toLowerCase();
+    if (lower.contains('hourly rate')) return NurseUi.t('Hourly rate set');
+    if (lower.contains('booking') || lower.contains('request')) {
+      return NurseUi.t('New booking request');
+    }
+    return NurseUi.t(raw);
+  }
+
+  String _localizedNotificationDescription(
+    _NurseNotificationItem item,
+    _NotificationMeta meta,
+  ) {
+    final raw = item.description.trim();
+    if (raw.isEmpty) return NurseUi.t(meta.fallbackDescription);
+    final lower = raw.toLowerCase();
+    if (lower.contains('hourly rate') ||
+        lower.contains('accept it before starting work')) {
+      final amountMatch = RegExp(r'(\d+(?:\.\d+)?)\s*ILS').firstMatch(raw);
+      final amount = amountMatch?.group(1);
+      if (amount != null && amount.isNotEmpty) {
+        return NurseUi.isArabic.value
+            ? 'حددت الإدارة سعر الساعة الخاص بك بقيمة $amount ${NurseUi.t('ILS')}. يرجى قبوله قبل بدء العمل.'
+            : 'Admin set your hourly rate to $amount ILS. Please accept it before starting work.';
+      }
+      return NurseUi.t(
+        'Please accept the admin hourly rate before starting work.',
+      );
+    }
+    if (lower.contains('booked') ||
+        lower.contains('booking') ||
+        lower.contains('service requests')) {
+      return NurseUi.t('You have a new service request.');
+    }
+    return NurseUi.t(raw);
+  }
+
   Widget _leadingIcon(_NotificationMeta meta) {
     return Stack(
       clipBehavior: Clip.none,
@@ -492,7 +533,7 @@ class _NotificationsReadOnlyScreenState
         borderRadius: BorderRadius.circular(7),
       ),
       child: Text(
-        NurseUi.isArabic.value ? 'جديد' : 'New',
+        NurseUi.t('New'),
         style: TextStyle(
           color: Colors.white,
           fontSize: 11,
@@ -533,11 +574,8 @@ class _NotificationsReadOnlyScreenState
         const SizedBox(height: 14),
         Center(
           child: Text(
-            NurseUi.isArabic.value ? 'لا توجد إشعارات' : 'No notifications available',
-            style: TextStyle(
-              color: NurseUi.muted,
-              fontWeight: FontWeight.w900,
-            ),
+            NurseUi.t('No notifications available'),
+            style: TextStyle(color: NurseUi.muted, fontWeight: FontWeight.w900),
           ),
         ),
       ],
@@ -546,50 +584,36 @@ class _NotificationsReadOnlyScreenState
 
   Widget _bottomNav() {
     final items = [
-      (Icons.home_rounded, NurseUi.t('Home')),
-      (Icons.calendar_month_rounded, NurseUi.t('Sessions')),
-      (Icons.groups_rounded, NurseUi.t('Patients')),
-      (Icons.description_rounded, NurseUi.t('Reports')),
-      (Icons.person_rounded, NurseUi.t('Profile')),
-    ];
-    return SafeArea(
-      top: false,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: NurseUi.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: NurseUi.border),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 16,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: items.map((item) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(item.$1, color: NurseUi.muted),
-                const SizedBox(height: 3),
-                Text(
-                  item.$2,
-                  style: TextStyle(
-                    color: NurseUi.muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            );
-          }).toList(),
-        ),
+      CarelinkFloatingNavItem(
+        icon: Icons.home_outlined,
+        activeIcon: Icons.home_rounded,
+        label: NurseUi.t('Home'),
       ),
+      CarelinkFloatingNavItem(
+        icon: Icons.calendar_month_outlined,
+        activeIcon: Icons.calendar_month_rounded,
+        label: NurseUi.t('Sessions'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.groups_outlined,
+        activeIcon: Icons.groups_rounded,
+        label: NurseUi.t('Patients'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.notifications_none_rounded,
+        activeIcon: Icons.notifications_rounded,
+        label: NurseUi.t('Alerts'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.person_outline_rounded,
+        activeIcon: Icons.person_rounded,
+        label: NurseUi.t('Profile'),
+      ),
+    ];
+    return CarelinkFloatingBottomNav(
+      items: items,
+      currentIndex: 3,
+      onTap: (_) => Navigator.maybePop(context),
     );
   }
 
@@ -621,17 +645,21 @@ class _NotificationsReadOnlyScreenState
   }
 
   String _formatTime(DateTime date) {
-    final h = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final m = date.minute.toString().padLeft(2, '0');
-    return '$h:${m.padLeft(2, '0')} ${date.hour >= 12 ? 'PM' : 'AM'}';
+    return NurseUi.formatTime(date);
   }
 
   String _relativeTime(DateTime date) {
     final diff = DateTime.now().difference(date);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
-    if (diff.inHours < 24) return '${diff.inHours} hour ago';
-    return '${diff.inDays} day ago';
+    if (diff.inMinutes < 1) return NurseUi.t('Just now');
+    if (diff.inMinutes < 60) {
+      return '${diff.inMinutes} ${NurseUi.t('min ago')}';
+    }
+    if (diff.inHours < 24) {
+      final key = diff.inHours == 1 ? 'hour ago' : 'hours ago';
+      return '${diff.inHours} ${NurseUi.t(key)}';
+    }
+    final key = diff.inDays == 1 ? 'day ago' : 'days ago';
+    return '${diff.inDays} ${NurseUi.t(key)}';
   }
 
   _NotificationMeta _meta(_NurseNotificationKind kind) {
@@ -709,5 +737,3 @@ class _NotificationMeta {
   final String fallbackTitle;
   final String fallbackDescription;
 }
-
-

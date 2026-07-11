@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,7 +14,6 @@ import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/provider_profile_service.dart';
 
-import 'nurse_notifications_screen.dart';
 import 'nurse_ui.dart';
 
 class NurseProfile extends StatefulWidget {
@@ -52,7 +50,9 @@ class _NurseProfileState extends State<NurseProfile> {
       if (!mounted) return;
       setState(() {
         profile = loaded;
-        error = loaded == null ? 'Unable to load nurse profile' : null;
+        error = loaded == null
+            ? NurseUi.t('Unable to load nurse profile')
+            : null;
         isLoading = false;
       });
     } catch (e) {
@@ -71,14 +71,17 @@ class _NurseProfileState extends State<NurseProfile> {
       return Scaffold(
         backgroundColor: palette.pageBg,
         appBar: AppBar(
-          title: Text(NurseUi.t('Nurse Profile')),
+          title: Text(
+            NurseUi.t('Nurse Profile'),
+            style: NurseUi.pageTitleStyle.copyWith(color: palette.inkDark),
+          ),
           centerTitle: true,
           backgroundColor: palette.pageBg,
           foregroundColor: palette.inkDark,
           elevation: 0,
           actions: [
             IconButton(
-              tooltip: 'Edit profile',
+              tooltip: NurseUi.t('Edit profile'),
               onPressed: profile == null ? null : () => _openEditProfile(),
               icon: const Icon(Icons.edit_outlined),
             ),
@@ -191,7 +194,7 @@ class _NurseProfileState extends State<NurseProfile> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Tap to change photo',
+          NurseUi.t('Tap to change photo'),
           textAlign: TextAlign.center,
           style: TextStyle(
             color: palette.inkMuted,
@@ -215,10 +218,10 @@ class _NurseProfileState extends State<NurseProfile> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            _profileChip(_fallback(p.specialization, 'Nurse')),
+            _profileChip(_fallback(p.specialization, NurseUi.t('Nurse'))),
             if (p.serviceAreas.trim().isNotEmpty)
               _profileChip(
-                _fallback(p.serviceAreas, 'Location not provided'),
+                _fallback(p.serviceAreas, NurseUi.t('Location not provided')),
                 icon: Icons.location_on_outlined,
               ),
             if (p.rating > 0)
@@ -244,56 +247,62 @@ class _NurseProfileState extends State<NurseProfile> {
     final rows = <_ProfileRow>[
       _ProfileRow(
         Icons.badge_outlined,
-        'Full name',
-        _fallback(p.fullName, 'Not provided'),
+        NurseUi.t('Full name'),
+        _fallback(p.fullName, NurseUi.t('Not provided')),
       ),
       _ProfileRow(
         Icons.email_outlined,
-        'Email',
-        _fallback(p.email, 'Not provided'),
+        NurseUi.t('Email'),
+        _fallback(p.email, NurseUi.t('Not provided')),
       ),
       _ProfileRow(
         Icons.phone_outlined,
-        'Phone',
-        _fallback(p.phone, 'Not provided'),
+        NurseUi.t('Phone'),
+        _fallback(p.phone, NurseUi.t('Not provided')),
       ),
       _ProfileRow(
         Icons.verified_user_outlined,
-        'Approval status',
+        NurseUi.t('Approval status'),
         _statusLabel(p.approvalStatus),
       ),
     ];
-    return _sectionCard(palette: palette, title: 'Profile details', rows: rows);
+    return _sectionCard(
+      palette: palette,
+      title: NurseUi.t('Profile details'),
+      rows: rows,
+    );
   }
 
   Widget _professionalCard(ProviderProfile p, CarelinkPalette palette) {
     final rows = <_ProfileRow>[
       _ProfileRow(
         Icons.work_history_outlined,
-        'Years of experience',
-        '${p.experienceYears} years',
+        NurseUi.t('Years of experience'),
+        NurseUi.isArabic.value
+            ? '${p.experienceYears} ${NurseUi.t('years')}'
+            : '${p.experienceYears} years',
       ),
       _ProfileRow(
         Icons.location_on_outlined,
-        'Location / Service area',
-        _fallback(p.serviceAreas, 'Not provided'),
+        NurseUi.t('Location / Service area'),
+        _fallback(p.serviceAreas, NurseUi.t('Not provided')),
       ),
       _ProfileRow(
         Icons.payments_outlined,
-        'Hourly rate',
+        NurseUi.t('Hourly rate'),
         p.hourlyRate > 0
-            ? '${_formatMoney(p.hourlyRate)} ILS'
-            : 'Waiting for admin',
+            ? NurseUi.currency(p.hourlyRate)
+            : NurseUi.t('Waiting for admin'),
       ),
       _ProfileRow(
         Icons.info_outline_rounded,
-        'Biography',
-        _fallback(p.bio, 'No biography provided yet.'),
+        NurseUi.t('Biography'),
+        _fallback(p.bio, NurseUi.t('No biography provided yet.')),
       ),
     ];
     return _sectionCard(
       palette: palette,
-      title: 'Professional information',
+      title: NurseUi.t('Professional information'),
       rows: rows,
     );
   }
@@ -312,7 +321,7 @@ class _NurseProfileState extends State<NurseProfile> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Certificates & documents',
+            NurseUi.t('Certificates & documents'),
             style: TextStyle(
               color: palette.inkDark,
               fontSize: 15,
@@ -321,32 +330,32 @@ class _NurseProfileState extends State<NurseProfile> {
           ),
           const SizedBox(height: 14),
           _documentTile(
-            title: 'Nursing License',
-            subtitle: 'PDF / Image',
+            title: NurseUi.t('Nursing License'),
+            subtitle: NurseUi.t('PDF / Image'),
             url: p.nursingLicenseUrl,
             icon: Icons.badge_outlined,
             palette: palette,
           ),
           _thinDivider(palette),
           _documentTile(
-            title: 'Medical Certificate',
-            subtitle: 'PDF / Image',
+            title: NurseUi.t('Medical Certificate'),
+            subtitle: NurseUi.t('PDF / Image'),
             url: p.medicalCertificateUrl,
             icon: Icons.medical_information_outlined,
             palette: palette,
           ),
           _thinDivider(palette),
           _documentTile(
-            title: 'ID Card',
-            subtitle: 'PDF / Image',
+            title: NurseUi.t('ID Card'),
+            subtitle: NurseUi.t('PDF / Image'),
             url: p.idCardUrl,
             icon: Icons.credit_card_rounded,
             palette: palette,
           ),
           _thinDivider(palette),
           _documentTile(
-            title: 'CV File',
-            subtitle: 'PDF / Image',
+            title: NurseUi.t('CV File'),
+            subtitle: NurseUi.t('PDF / Image'),
             url: p.cvFileUrl,
             icon: Icons.description_outlined,
             palette: palette,
@@ -354,7 +363,7 @@ class _NurseProfileState extends State<NurseProfile> {
           if (certs.isNotEmpty) ...[
             const SizedBox(height: 14),
             Text(
-              'Verified certificates',
+              NurseUi.t('Verified certificates'),
               style: TextStyle(
                 color: palette.inkMuted,
                 fontSize: 12,
@@ -388,7 +397,7 @@ class _NurseProfileState extends State<NurseProfile> {
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
-            'Account & Settings',
+            NurseUi.t('Account & Settings'),
             style: TextStyle(
               color: palette.inkMuted,
               fontSize: 14,
@@ -404,21 +413,14 @@ class _NurseProfileState extends State<NurseProfile> {
               children: [
                 _actionTile(
                   icon: Icons.person_outline_rounded,
-                  title: 'Edit profile',
+                  title: NurseUi.t('Edit profile'),
                   onTap: _openEditProfile,
                   palette: palette,
                 ),
                 _listDivider(palette),
                 _actionTile(
-                  icon: Icons.notifications_none_rounded,
-                  title: 'Notifications',
-                  onTap: _openNotifications,
-                  palette: palette,
-                ),
-                _listDivider(palette),
-                _actionTile(
                   icon: Icons.logout_rounded,
-                  title: 'Logout',
+                  title: NurseUi.t('Logout'),
                   onTap: _confirmLogout,
                   palette: palette,
                   iconColor: Colors.red.shade400,
@@ -541,7 +543,7 @@ class _NurseProfileState extends State<NurseProfile> {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    available ? subtitle : 'Not uploaded',
+                    available ? subtitle : NurseUi.t('Not uploaded'),
                     style: TextStyle(color: palette.inkMuted, fontSize: 12),
                   ),
                 ],
@@ -1139,14 +1141,6 @@ class _NurseProfileState extends State<NurseProfile> {
     return '${ApiService.baseUrl}/$value';
   }
 
-  Future<void> _openNotifications() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => NurseNotificationsScreen(user: widget.user),
-      ),
-    );
-  }
-
   Future<void> _confirmLogout() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1249,7 +1243,8 @@ class _NurseProfileState extends State<NurseProfile> {
         width: size,
         height: size,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _defaultAvatar(name, palette),
+        errorBuilder: (context, error, stackTrace) =>
+            _defaultAvatar(name, palette),
       );
     }
 
@@ -1274,7 +1269,8 @@ class _NurseProfileState extends State<NurseProfile> {
             ),
           );
         },
-        errorBuilder: (_, __, ___) => _defaultAvatar(name, palette),
+        errorBuilder: (context, error, stackTrace) =>
+            _defaultAvatar(name, palette),
       );
     }
 
@@ -1427,17 +1423,9 @@ class _NurseProfileState extends State<NurseProfile> {
   }
 
   String _statusLabel(String value) {
-    final normalized = value.trim().toLowerCase();
-    if (normalized == 'approved') return 'Approved';
-    if (normalized == 'rejected') return 'Rejected';
-    if (normalized == 'inactive') return 'Inactive';
-    return 'Pending approval';
-  }
-
-  String _formatMoney(double value) {
-    return value == value.roundToDouble()
-        ? value.toStringAsFixed(0)
-        : value.toStringAsFixed(2);
+    final normalized = value.trim();
+    if (normalized.isEmpty) return NurseUi.t('Pending approval');
+    return NurseUi.statusLabel(normalized);
   }
 }
 
@@ -1450,5 +1438,3 @@ class _ProfileRow {
 }
 
 enum _PhotoSheetAction { gallery, camera, remove }
-
-

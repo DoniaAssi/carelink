@@ -353,7 +353,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
 
   String _lowerText(Object? value) => (value ?? '').toString().toLowerCase();
 
-  /// Same rules as [_applyCareSearch] so the list under â€œRecommendedâ€‌ matches the AI match.
+  /// Same rules as [_applyCareSearch] so the list under “Recommended” matches the AI match.
   bool _providerMatchesSpecialtyChip(ProviderModel provider, String chip) {
     if (chip == 'All') return true;
     final c = _lowerText(chip);
@@ -900,7 +900,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   }
 
   String _formatAppointmentDate(DateTime? dt) {
-    if (dt == null) return 'â€”';
+    if (dt == null) return '—';
     const months = [
       'January',
       'February',
@@ -928,7 +928,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   }
 
   String _formatAppointmentTime(DateTime? dt) {
-    if (dt == null) return 'â€”';
+    if (dt == null) return '—';
     var h = dt.hour;
     final m = dt.minute;
     final period = h >= 12 ? 'PM' : 'AM';
@@ -7058,7 +7058,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                         Text(
                           provider.overallRating > 0
                               ? provider.overallRating.toStringAsFixed(1)
-                              : 'â€”',
+                              : '—',
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 11,

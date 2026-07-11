@@ -7,6 +7,7 @@ import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/shared/models/chat_message_model.dart';
 import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/services/chat_repository.dart';
+import 'package:carelink/shared/widgets/carelink_floating_bottom_nav.dart';
 
 import 'nurse_ui.dart';
 
@@ -25,21 +26,30 @@ class ContactPatientScreen extends StatelessWidget {
     return NurseUi.reactive(
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
-        appBar: _contactAppBar(context, 'Contact Patient'),
+        appBar: _contactAppBar(
+          context,
+          _ct('Contact Patient', 'التواصل مع المريض'),
+        ),
         body: ListView(
           padding: const EdgeInsets.fromLTRB(18, 10, 18, 110),
           children: [
             NurseContactPatientCard(request: request),
             const SizedBox(height: 34),
-            const Text(
-              'Choose an option to contact the patient',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+            Text(
+              _ct(
+                'Choose an option to contact the patient',
+                'اختاري طريقة التواصل مع المريض',
+              ),
+              style: NurseUi.sectionTitleStyle,
             ),
             const SizedBox(height: 22),
             _optionCard(
               icon: Icons.chat_bubble_outline_rounded,
-              title: 'Message Patient',
-              subtitle: 'Send and receive messages\nwith the patient',
+              title: _ct('Message Patient', 'مراسلة المريض'),
+              subtitle: _ct(
+                'Send and receive messages\nwith the patient',
+                'إرسال واستقبال الرسائل\nمع المريض',
+              ),
               onTap: () {
                 Navigator.push(
                   context,
@@ -55,8 +65,11 @@ class ContactPatientScreen extends StatelessWidget {
             const SizedBox(height: 18),
             _optionCard(
               icon: Icons.location_on_outlined,
-              title: 'View Location',
-              subtitle: 'View patient location on map\nand get directions',
+              title: _ct('View Location', 'عرض الموقع'),
+              subtitle: _ct(
+                'View patient location on map\nand get directions',
+                'عرض موقع المريض على الخريطة\nوالحصول على الاتجاهات',
+              ),
               onTap: () {
                 Navigator.push(
                   context,
@@ -101,28 +114,21 @@ class ContactPatientScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
+                  Text(title, style: NurseUi.sectionTitleStyle),
                   const SizedBox(height: 8),
                   Text(
                     subtitle,
-                    style: const TextStyle(
-                      color: Color(0xFF607D8B),
+                    style: NurseUi.bodyStyle.copyWith(
+                      color: NurseUi.muted,
                       height: 1.45,
-                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(
+            Icon(
               Icons.arrow_forward_ios_rounded,
-              color: Color(0xFF9AAAB0),
+              color: NurseUi.muted,
               size: 18,
             ),
           ],
@@ -203,7 +209,10 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
     if (nurseId.isEmpty || patientId.isEmpty || widget.request.id.isEmpty) {
       setState(() {
         isLoading = false;
-        error = 'Unable to open conversation. Missing request participants.';
+        error = _ct(
+          'Unable to open conversation. Missing request participants.',
+          'تعذر فتح المحادثة. بيانات المشاركين غير مكتملة.',
+        );
       });
       return;
     }
@@ -365,7 +374,7 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
         backgroundColor: NurseUi.background,
         appBar: _contactAppBar(
           context,
-          'Message',
+          _ct('Message', 'الرسائل'),
           trailing: Icons.more_vert_rounded,
         ),
         body: Column(
@@ -398,7 +407,10 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
               Text(
                 error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.redAccent),
+                style: const TextStyle(
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: 12),
               OutlinedButton(
@@ -409,7 +421,7 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
                   });
                   _initializeConversation();
                 },
-                child: const Text('Retry'),
+                child: Text(_ct('Retry', 'إعادة المحاولة')),
               ),
             ],
           ),
@@ -417,7 +429,7 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
       );
     }
     if (messages.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -426,18 +438,18 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
               color: AppColors.primaryDark,
               size: 42,
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             Text(
-              'No messages yet',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+              _ct('No messages yet', 'لا توجد رسائل بعد'),
+              style: NurseUi.sectionTitleStyle,
             ),
-            SizedBox(height: 6),
+            const SizedBox(height: 6),
             Text(
-              'Start the conversation with the patient.',
-              style: TextStyle(
-                color: Color(0xFF607D8B),
-                fontWeight: FontWeight.w700,
+              _ct(
+                'Start the conversation with the patient.',
+                'ابدئي المحادثة مع المريض.',
               ),
+              style: NurseUi.bodyStyle.copyWith(color: NurseUi.muted),
             ),
           ],
         ),
@@ -482,15 +494,12 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(0xFFEFF4F3),
+            color: NurseUi.softSurface,
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
             _dateLabel(date),
-            style: const TextStyle(
-              color: Color(0xFF607D8B),
-              fontWeight: FontWeight.w800,
-            ),
+            style: TextStyle(color: NurseUi.muted, fontWeight: FontWeight.w800),
           ),
         ),
       ),
@@ -509,11 +518,13 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
         decoration: BoxDecoration(
           color: mine
               ? AppColors.primary.withValues(alpha: 0.14)
-              : Colors.white,
+              : NurseUi.surface,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
+              color: NurseUi.isDarkMode.value
+                  ? Colors.black.withValues(alpha: 0.22)
+                  : Colors.black.withValues(alpha: 0.04),
               blurRadius: 14,
               offset: const Offset(0, 7),
             ),
@@ -522,24 +533,14 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(
-              message.text,
-              style: const TextStyle(
-                color: Color(0xFF151823),
-                height: 1.35,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            Text(message.text, style: NurseUi.bodyStyle.copyWith(height: 1.35)),
             const SizedBox(height: 8),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   _timeLabel(message.createdAt),
-                  style: const TextStyle(
-                    color: Color(0xFF78909C),
-                    fontSize: 11,
-                  ),
+                  style: NurseUi.labelStyle.copyWith(fontSize: 11),
                 ),
                 if (mine) ...[
                   const SizedBox(width: 5),
@@ -550,11 +551,11 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
             if (failed)
               GestureDetector(
                 onTap: () => _retry(message),
-                child: const Padding(
-                  padding: EdgeInsets.only(top: 6),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    'Tap to retry',
-                    style: TextStyle(
+                    _ct('Tap to retry', 'اضغطي لإعادة الإرسال'),
+                    style: const TextStyle(
                       color: Colors.redAccent,
                       fontSize: 11,
                       fontWeight: FontWeight.w900,
@@ -591,13 +592,9 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
       );
     }
     if (message.deliveredAt != null) {
-      return const Icon(
-        Icons.done_all_rounded,
-        color: Color(0xFF78909C),
-        size: 15,
-      );
+      return Icon(Icons.done_all_rounded, color: NurseUi.muted, size: 15);
     }
-    return const Icon(Icons.check_rounded, color: Color(0xFF78909C), size: 15);
+    return Icon(Icons.check_rounded, color: NurseUi.muted, size: 15);
   }
 
   Widget _composer() {
@@ -618,13 +615,13 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
                   if (canSend) _send();
                 },
                 decoration: InputDecoration(
-                  hintText: 'Type a message...',
-                  prefixIcon: const Icon(
+                  hintText: _ct('Type a message...', 'اكتبي رسالة...'),
+                  prefixIcon: Icon(
                     Icons.emoji_emotions_outlined,
-                    color: Color(0xFF78909C),
+                    color: NurseUi.muted,
                   ),
                   filled: true,
-                  fillColor: Colors.white,
+                  fillColor: NurseUi.surface,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(24),
                     borderSide: BorderSide(color: NurseUi.border),
@@ -644,7 +641,9 @@ class _PatientMessageScreenState extends State<PatientMessageScreen> {
                 width: 54,
                 height: 54,
                 decoration: BoxDecoration(
-                  color: canSend ? AppColors.primary : const Color(0xFFB9D8D3),
+                  color: canSend
+                      ? AppColors.primary
+                      : NurseUi.border.withValues(alpha: 0.75),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.send_rounded, color: Colors.white),
@@ -734,7 +733,7 @@ class PatientLocationScreen extends StatelessWidget {
     return NurseUi.reactive(
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
-        appBar: _contactAppBar(context, 'View Location'),
+        appBar: _contactAppBar(context, _ct('View Location', 'عرض الموقع')),
         body: ListView(
           padding: const EdgeInsets.fromLTRB(18, 10, 18, 110),
           children: [
@@ -758,23 +757,23 @@ class PatientLocationScreen extends StatelessWidget {
       decoration: _contactCardDecoration(),
       child: Row(
         children: [
-          const Icon(Icons.location_on, color: AppColors.primaryDark, size: 34),
+          const Icon(Icons.location_on, color: AppColors.primary, size: 34),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Patient Location',
-                  style: TextStyle(fontWeight: FontWeight.w900),
+                Text(
+                  _ct('Patient Location', 'موقع المريض'),
+                  style: TextStyle(
+                    color: NurseUi.text,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
                 const SizedBox(height: 5),
                 Text(
                   _address,
-                  style: const TextStyle(
-                    color: Color(0xFF607D8B),
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: NurseUi.bodyStyle.copyWith(color: NurseUi.muted),
                 ),
               ],
             ),
@@ -782,9 +781,9 @@ class PatientLocationScreen extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: () => _openMaps(context),
             icon: const Icon(Icons.navigation_outlined, size: 17),
-            label: const Text('Open in Maps'),
+            label: Text(_ct('Open in Maps', 'فتح في الخرائط')),
             style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primaryDark,
+              foregroundColor: AppColors.primary,
               side: const BorderSide(color: AppColors.primary),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(999),
@@ -800,13 +799,17 @@ class PatientLocationScreen extends StatelessWidget {
     return Container(
       height: 330,
       decoration: BoxDecoration(
-        color: const Color(0xFFE7F1EC),
+        color: NurseUi.softSurface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: NurseUi.border),
       ),
       child: Stack(
         children: [
-          Positioned.fill(child: CustomPaint(painter: _RouteMapPainter())),
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _RouteMapPainter(NurseUi.isDarkMode.value),
+            ),
+          ),
           const Positioned(
             right: 40,
             top: 42,
@@ -825,12 +828,12 @@ class PatientLocationScreen extends StatelessWidget {
               ),
             ),
           ),
-          const Positioned(
+          Positioned(
             right: 42,
             top: 98,
             child: Text(
-              'Patient',
-              style: TextStyle(fontWeight: FontWeight.w900),
+              _ct('Patient', 'المريض'),
+              style: NurseUi.bodyStyle.copyWith(fontWeight: FontWeight.w900),
             ),
           ),
           Positioned(
@@ -856,17 +859,19 @@ class PatientLocationScreen extends StatelessWidget {
       width: 42,
       height: 42,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
+            color: NurseUi.isDarkMode.value
+                ? Colors.black.withValues(alpha: 0.22)
+                : Colors.black.withValues(alpha: 0.08),
             blurRadius: 12,
             offset: const Offset(0, 5),
           ),
         ],
       ),
-      child: Icon(icon, color: const Color(0xFF151823)),
+      child: Icon(icon, color: NurseUi.text),
     );
   }
 
@@ -890,7 +895,7 @@ class PatientLocationScreen extends StatelessWidget {
           final button = ElevatedButton.icon(
             onPressed: () => _openMaps(context),
             icon: const Icon(Icons.map_outlined, size: 18),
-            label: const Text('Open in Maps'),
+            label: Text(_ct('Open in Maps', 'فتح في الخرائط')),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
@@ -927,9 +932,9 @@ class PatientLocationScreen extends StatelessWidget {
     );
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
         context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Could not open maps')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_ct('Could not open maps', 'تعذر فتح الخرائط'))),
+      );
     }
   }
 
@@ -938,7 +943,7 @@ class PatientLocationScreen extends StatelessWidget {
     if (request.patientAddress.trim().isNotEmpty) {
       return request.patientAddress.trim();
     }
-    return 'Location not available';
+    return _ct('Location not available', 'الموقع غير متوفر');
   }
 }
 
@@ -960,7 +965,7 @@ class NurseContactPatientCard extends StatelessWidget {
             backgroundColor: AppColors.primary.withValues(alpha: 0.12),
             child: Text(
               name.characters.first.toLowerCase(),
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.primaryDark,
                 fontSize: 32,
                 fontWeight: FontWeight.w900,
@@ -972,29 +977,22 @@ class NurseContactPatientCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+                Text(name, style: NurseUi.sectionTitleStyle),
                 const SizedBox(height: 5),
                 Text(
                   request.patientAge > 0
-                      ? '${request.patientAge} years'
-                      : 'Age not set',
-                  style: const TextStyle(
-                    color: Color(0xFF607D8B),
-                    fontWeight: FontWeight.w700,
-                  ),
+                      ? NurseUi.ageLabel(request.patientAge)
+                      : NurseUi.t('Age not set'),
+                  style: NurseUi.bodyStyle.copyWith(color: NurseUi.muted),
                 ),
                 const SizedBox(height: 5),
                 Text(
                   request.serviceType.isEmpty
-                      ? 'Home Nursing Care'
-                      : request.serviceType,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
+                      ? NurseUi.t('Home Nursing Care')
+                      : NurseUi.serviceLabel(request.serviceType),
+                  style: NurseUi.bodyStyle.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 Row(
@@ -1012,9 +1010,8 @@ class NurseContactPatientCard extends StatelessWidget {
                             : request.location,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF151823),
-                          fontSize: 12,
+                        style: NurseUi.labelStyle.copyWith(
+                          color: NurseUi.text,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -1032,10 +1029,16 @@ class NurseContactPatientCard extends StatelessWidget {
 }
 
 class _RouteMapPainter extends CustomPainter {
+  final bool isDark;
+
+  const _RouteMapPainter(this.isDark);
+
   @override
   void paint(Canvas canvas, Size size) {
     final roadPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.75)
+      ..color = isDark
+          ? Colors.white.withValues(alpha: 0.24)
+          : AppColors.primary.withValues(alpha: 0.16)
       ..strokeWidth = 1.2;
     for (var x = 20.0; x < size.width; x += 52) {
       canvas.drawLine(Offset(x, 0), Offset(x + 60, size.height), roadPaint);
@@ -1083,13 +1086,13 @@ class _MapStat extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFF607D8B)),
+        Icon(icon, color: NurseUi.muted),
         const SizedBox(width: 8),
         Flexible(
           child: Text(
             value,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w900),
+            style: NurseUi.bodyStyle.copyWith(fontWeight: FontWeight.w900),
           ),
         ),
       ],
@@ -1103,23 +1106,24 @@ PreferredSizeWidget _contactAppBar(
   IconData? trailing,
 }) {
   return AppBar(
-    title: Text(title),
+    title: Text(title, style: NurseUi.pageTitleStyle),
     centerTitle: true,
     backgroundColor: NurseUi.background,
     foregroundColor: NurseUi.text,
     elevation: 0,
     leading: IconButton(
       icon: const Icon(Icons.arrow_back_ios_new_rounded),
-      color: AppColors.primaryDark,
+      color: AppColors.primary,
       onPressed: () => Navigator.pop(context),
     ),
     actions: [
       if (trailing != null)
         IconButton(
           icon: Icon(trailing),
-          color: AppColors.primaryDark,
+          color: AppColors.primary,
           onPressed: () {},
         ),
+      ...NurseUi.headerActions(),
     ],
   );
 }
@@ -1132,14 +1136,15 @@ Widget _acceptedBadge() {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
     decoration: BoxDecoration(
-      color: const Color(0xFFC9F2D7),
+      color: AppColors.primary.withValues(
+        alpha: NurseUi.isDarkMode.value ? 0.20 : 0.12,
+      ),
       borderRadius: BorderRadius.circular(8),
     ),
-    child: const Text(
-      'Accepted',
-      style: TextStyle(
-        color: Color(0xFF159957),
-        fontSize: 12,
+    child: Text(
+      _ct('Accepted', 'مقبول'),
+      style: NurseUi.labelStyle.copyWith(
+        color: AppColors.primary,
         fontWeight: FontWeight.w900,
       ),
     ),
@@ -1147,7 +1152,9 @@ Widget _acceptedBadge() {
 }
 
 String _patientName(ServiceRequest request) {
-  return request.patientName.trim().isEmpty ? 'Patient' : request.patientName;
+  return request.patientName.trim().isEmpty
+      ? _ct('Patient', 'المريض')
+      : request.patientName;
 }
 
 bool _sameDay(DateTime a, DateTime b) {
@@ -1157,30 +1164,53 @@ bool _sameDay(DateTime a, DateTime b) {
 String _dateLabel(DateTime date) {
   final now = DateTime.now();
   final yesterday = now.subtract(const Duration(days: 1));
-  if (_sameDay(date, now)) return 'Today';
-  if (_sameDay(date, yesterday)) return 'Yesterday';
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
+  if (_sameDay(date, now)) return _ct('Today', 'اليوم');
+  if (_sameDay(date, yesterday)) return _ct('Yesterday', 'أمس');
+  final months = NurseUi.isArabic.value
+      ? const [
+          'يناير',
+          'فبراير',
+          'مارس',
+          'أبريل',
+          'مايو',
+          'يونيو',
+          'يوليو',
+          'أغسطس',
+          'سبتمبر',
+          'أكتوبر',
+          'نوفمبر',
+          'ديسمبر',
+        ]
+      : const [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec',
+        ];
   return '${date.day} ${months[date.month - 1]} ${date.year}';
 }
 
 String _timeLabel(DateTime date) {
+  if (NurseUi.isArabic.value) {
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '${date.hour}:$minute';
+  }
   final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
   final minute = date.minute.toString().padLeft(2, '0');
   final suffix = date.hour >= 12 ? 'PM' : 'AM';
   return '$hour:$minute $suffix';
+}
+
+String _ct(String english, String arabic) {
+  return NurseUi.isArabic.value ? arabic : english;
 }
 
 class _ContactBottomNav extends StatelessWidget {
@@ -1188,54 +1218,37 @@ class _ContactBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = const [
-      (Icons.home_rounded, 'Home'),
-      (Icons.calendar_month_rounded, 'Schedule'),
-      (Icons.people_rounded, 'Patients'),
-      (Icons.folder_copy_rounded, 'Reports'),
-      (Icons.person_rounded, 'Profile'),
+    final items = [
+      CarelinkFloatingNavItem(
+        icon: Icons.home_outlined,
+        activeIcon: Icons.home_rounded,
+        label: NurseUi.t('Home'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.calendar_month_outlined,
+        activeIcon: Icons.calendar_month_rounded,
+        label: NurseUi.t('Sessions'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.people_outline_rounded,
+        activeIcon: Icons.people_rounded,
+        label: NurseUi.t('Patients'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.description_outlined,
+        activeIcon: Icons.description_rounded,
+        label: NurseUi.t('Reports'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.person_outline_rounded,
+        activeIcon: Icons.person_rounded,
+        label: NurseUi.t('Profile'),
+      ),
     ];
-    return Container(
-      height: 72,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 18,
-            offset: const Offset(0, -6),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          for (var i = 0; i < items.length; i++)
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  items[i].$1,
-                  color: i == 1
-                      ? AppColors.primaryDark
-                      : const Color(0xFF9AAAB0),
-                  size: 22,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  items[i].$2,
-                  style: TextStyle(
-                    color: i == 1
-                        ? AppColors.primaryDark
-                        : const Color(0xFF9AAAB0),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
+    return CarelinkFloatingBottomNav(
+      items: items,
+      currentIndex: 1,
+      onTap: (_) => Navigator.maybePop(context),
     );
   }
 }

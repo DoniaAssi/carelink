@@ -39,8 +39,9 @@ class _NurseRecommendationsState extends State<NurseRecommendations> {
         final data = jsonDecode(response.body);
         if (data is List && mounted) {
           setState(() {
-            recommendations =
-                data.map((item) => Map<String, dynamic>.from(item)).toList();
+            recommendations = data
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList();
           });
         }
       }
@@ -64,7 +65,9 @@ class _NurseRecommendationsState extends State<NurseRecommendations> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          success ? 'Recommendation accepted' : 'Failed to accept recommendation',
+          success
+              ? 'Recommendation accepted'
+              : 'Failed to accept recommendation',
         ),
       ),
     );
@@ -72,70 +75,75 @@ class _NurseRecommendationsState extends State<NurseRecommendations> {
 
   @override
   Widget build(BuildContext context) {
-    return NurseUi.reactive((context) => Scaffold(
-      backgroundColor: NurseUi.background,
-      appBar: AppBar(
-        title: Text(NurseUi.label('Recommendations', '\u0627\u0644\u062a\u0648\u0635\u064a\u0627\u062a')),
+    return NurseUi.reactive(
+      (context) => Scaffold(
         backgroundColor: NurseUi.background,
-        foregroundColor: NurseUi.text,
-        elevation: 0,
-        actions: [
-          NurseModeControls(providerUserId: widget.user.userId),
-        ],
-      ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : recommendations.isEmpty
-              ? const Center(child: Text('No recommendations right now'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: recommendations.length,
-                  itemBuilder: (context, index) {
-                    final item = recommendations[index];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: NurseUi.surface,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: NurseUi.border.withOpacity(0.8),
+        appBar: AppBar(
+          title: Text(
+            NurseUi.label(
+              'Recommendations',
+              '\u0627\u0644\u062a\u0648\u0635\u064a\u0627\u062a',
+            ),
+          ),
+          backgroundColor: NurseUi.background,
+          foregroundColor: NurseUi.text,
+          elevation: 0,
+          actions: [NurseModeControls(providerUserId: widget.user.userId)],
+        ),
+        body: isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : recommendations.isEmpty
+            ? const Center(child: Text('No recommendations right now'))
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: recommendations.length,
+                itemBuilder: (context, index) {
+                  final item = recommendations[index];
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: NurseUi.surface,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: NurseUi.border.withValues(alpha: 0.8),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item['patientName']?.toString() ?? 'Patient',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item['patientName']?.toString() ?? 'Patient',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
+                        const SizedBox(height: 6),
+                        Text(
+                          item['recommendationReason']?.toString() ??
+                              item['addressText']?.toString() ??
+                              'Nearby patient recommendation',
+                          style: const TextStyle(color: AppColors.textLight),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () => _acceptRecommendation(item),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
                             ),
+                            child: const Text('Accept'),
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            item['recommendationReason']?.toString() ??
-                                item['addressText']?.toString() ??
-                                'Nearby patient recommendation',
-                            style: const TextStyle(color: AppColors.textLight),
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () => _acceptRecommendation(item),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                                foregroundColor: Colors.white,
-                              ),
-                              child: const Text('Accept'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-    ));
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+      ),
+    );
   }
 }

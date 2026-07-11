@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -66,7 +66,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   Widget build(BuildContext context) {
     return NurseUi.reactive(
       (context) => Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: NurseUi.background,
         appBar: AppBar(
           centerTitle: true,
           leading: IconButton(
@@ -74,16 +74,18 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
             onPressed: () => Navigator.pop(context),
           ),
           title: Text(NurseUi.t('All Requests')),
-          backgroundColor: Colors.white,
-          foregroundColor: const Color(0xFF111827),
+          backgroundColor: NurseUi.background,
+          foregroundColor: NurseUi.text,
           elevation: 0,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.search_rounded),
-              color: const Color(0xFF0F766E),
-              onPressed: () {},
-            ),
-          ],
+          actions: NurseUi.headerActions(
+            before: [
+              IconButton(
+                icon: const Icon(Icons.search_rounded),
+                color: AppColors.primary,
+                onPressed: () {},
+              ),
+            ],
+          ),
         ),
         body: Column(
           children: [
@@ -158,18 +160,18 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: NurseUi.surface,
           borderRadius: BorderRadius.circular(9),
           border: Border.all(
-            color: selected ? const Color(0xFF0F766E) : const Color(0xFFE5E7EB),
+            color: selected ? AppColors.primary : NurseUi.border,
             width: selected ? 1.5 : 1,
           ),
         ),
         alignment: Alignment.center,
         child: Text(
-          label,
+          NurseUi.t(label),
           style: TextStyle(
-            color: selected ? const Color(0xFF0F766E) : const Color(0xFF6B7280),
+            color: selected ? AppColors.primary : NurseUi.muted,
             fontWeight: FontWeight.w900,
             fontSize: 12,
           ),
@@ -187,9 +189,9 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
           margin: const EdgeInsets.symmetric(horizontal: 24),
           padding: const EdgeInsets.all(28),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: NurseUi.surface,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFE5E7EB)),
+            border: Border.all(color: NurseUi.border),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.035),
@@ -218,11 +220,11 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
               const SizedBox(height: 14),
               Text(
                 selectedTab == 0
-                    ? 'No new service requests'
-                    : 'No assigned services yet',
+                    ? NurseUi.t('No new service requests')
+                    : NurseUi.t('No assigned services yet'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: const Color(0xFF111827),
+                  color: NurseUi.text,
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
                 ),
@@ -230,10 +232,14 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
               const SizedBox(height: 6),
               Text(
                 selectedTab == 0
-                    ? 'Accepted requests will move to My Assigned Services.'
-                    : 'Accepted visits, active visits, and waiting reports appear here.',
+                    ? NurseUi.t(
+                        'Accepted requests will move to My Assigned Services.',
+                      )
+                    : NurseUi.t(
+                        'Accepted visits, active visits, and waiting reports appear here.',
+                      ),
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Color(0xFF6B7280), height: 1.4),
+                style: TextStyle(color: NurseUi.muted, height: 1.4),
               ),
             ],
           ),
@@ -251,9 +257,9 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
         margin: const EdgeInsets.only(bottom: 14),
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: NurseUi.surface,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: NurseUi.border),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.045),
@@ -288,11 +294,11 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                       Text(
                         request.patientName.isNotEmpty
                             ? request.patientName
-                            : 'Patient',
+                            : NurseUi.t('Patient'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: const Color(0xFF111827),
+                          color: NurseUi.text,
                           fontWeight: FontWeight.w900,
                           fontSize: 14,
                         ),
@@ -300,12 +306,12 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                       const SizedBox(height: 5),
                       Text(
                         request.serviceType.isEmpty
-                            ? 'Home visit'
-                            : request.serviceType,
+                            ? NurseUi.t('Home visit')
+                            : NurseUi.serviceLabel(request.serviceType),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF6B7280),
+                        style: TextStyle(
+                          color: NurseUi.muted,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
@@ -325,7 +331,7 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: const Color(0xFF6B7280),
+                                color: NurseUi.muted,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -355,8 +361,8 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
                       '${_formatDate(request.scheduledDate)}, ${_formatTime(request.scheduledDate)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF374151),
+                      style: TextStyle(
+                        color: NurseUi.text,
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                       ),
@@ -367,8 +373,8 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
             ),
             if (nurseRequestIsCancelled(request)) ...[
               const SizedBox(height: 12),
-              const Text(
-                'Cancelled request is read-only',
+              Text(
+                NurseUi.t('Cancelled request is read-only'),
                 style: TextStyle(
                   color: Color(0xFF991B1B),
                   fontSize: 11,
@@ -496,48 +502,16 @@ class _NurseServiceRequestsState extends State<NurseServiceRequests> {
   }
 
   String _statusLabel(String status) {
-    if (nurseRequestNeedsDecision(status)) return 'Pending';
-    switch (status) {
-      case 'assigned':
-      case 'accepted':
-      case 'confirmed':
-      case 'scheduled':
-        return 'Accepted';
-      case 'in_progress':
-        return 'In Progress';
-      case 'waiting_report':
-        return 'Waiting Report';
-      case 'completed':
-        return 'Completed';
-      case 'cancelled':
-        return 'Cancelled';
-      default:
-        return status;
-    }
+    if (nurseRequestNeedsDecision(status)) return NurseUi.t('Pending');
+    return NurseUi.statusLabel(status);
   }
 
   String _formatDate(DateTime date) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${date.day} ${months[date.month - 1]} ${date.year}';
+    return NurseUi.formatDate(date);
   }
 
   String _formatTime(DateTime date) {
-    final h = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final m = date.minute.toString().padLeft(2, '0');
-    return '$h:$m ${date.hour >= 12 ? 'PM' : 'AM'}';
+    return NurseUi.formatTime(date);
   }
 }
 
@@ -572,6 +546,7 @@ class AcceptConfirmationScreen extends StatelessWidget {
             'Accept Confirmation',
             style: TextStyle(color: NurseUi.text, fontWeight: FontWeight.w900),
           ),
+          actions: NurseUi.headerActions(providerUserId: currentUser.userId),
         ),
         body: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 26, 20, 24),
@@ -713,8 +688,8 @@ class AcceptConfirmationScreen extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   request.patientAge > 0
-                      ? '${request.patientAge} years'
-                      : 'Age not set',
+                      ? NurseUi.ageLabel(request.patientAge)
+                      : NurseUi.t('Age not set'),
                   style: TextStyle(color: NurseUi.muted, fontSize: 12),
                 ),
                 const SizedBox(height: 6),
@@ -737,9 +712,9 @@ class AcceptConfirmationScreen extends StatelessWidget {
               color: const Color(0xFFD7F5E5),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Text(
-              'Accepted',
-              style: TextStyle(
+            child: Text(
+              NurseUi.t('Accepted'),
+              style: const TextStyle(
                 color: Color(0xFF039855),
                 fontSize: 11,
                 fontWeight: FontWeight.w900,
@@ -760,22 +735,22 @@ class AcceptConfirmationScreen extends StatelessWidget {
         children: [
           _summaryLine(
             Icons.medical_services_rounded,
-            'Service Type',
+            NurseUi.t('Service Type'),
             request.serviceType.isEmpty
-                ? 'Home Nursing Care'
-                : request.serviceType,
+                ? NurseUi.t('Home Nursing Care')
+                : NurseUi.serviceLabel(request.serviceType),
           ),
           const SizedBox(height: 14),
           _summaryLine(
             Icons.event_rounded,
-            'Date & Time',
+            NurseUi.t('Date & Time'),
             '${_formatDate(request.scheduledDate)} - ${_formatTime(request.scheduledDate)}',
           ),
           const SizedBox(height: 14),
           _summaryLine(
             Icons.location_on_rounded,
-            'Location',
-            request.location.isEmpty ? 'Not set' : request.location,
+            NurseUi.t('Location'),
+            request.location.isEmpty ? NurseUi.notSet() : request.location,
           ),
         ],
       ),
@@ -1074,13 +1049,15 @@ class _AssignTimeSlotScreenState extends State<AssignTimeSlotScreen> {
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.calendar_month_rounded),
-              color: AppColors.primaryDark,
-              onPressed: () {},
-            ),
-          ],
+          actions: NurseUi.headerActions(
+            before: [
+              IconButton(
+                icon: const Icon(Icons.calendar_month_rounded),
+                color: AppColors.primary,
+                onPressed: () {},
+              ),
+            ],
+          ),
         ),
         body: isLoading
             ? const Center(child: CircularProgressIndicator())
@@ -1140,7 +1117,7 @@ class _AssignTimeSlotScreenState extends State<AssignTimeSlotScreen> {
                       decoration: InputDecoration(
                         hintText: 'Add a note for the patient',
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: NurseUi.surface,
                         counterText: '',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -1223,8 +1200,8 @@ class _AssignTimeSlotScreenState extends State<AssignTimeSlotScreen> {
               const SizedBox(height: 3),
               Text(
                 widget.request.serviceType.isEmpty
-                    ? 'Home Nursing Care'
-                    : widget.request.serviceType,
+                    ? NurseUi.t('Home Nursing Care')
+                    : NurseUi.serviceLabel(widget.request.serviceType),
                 style: TextStyle(
                   color: NurseUi.text,
                   fontWeight: FontWeight.w700,
@@ -1272,7 +1249,7 @@ class _AssignTimeSlotScreenState extends State<AssignTimeSlotScreen> {
           height: 46,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
-            color: slot.busy ? const Color(0xFFF3F6F6) : Colors.white,
+            color: slot.busy ? NurseUi.softSurface : NurseUi.surface,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: selected ? AppColors.primary : NurseUi.border,
@@ -1303,7 +1280,7 @@ class _AssignTimeSlotScreenState extends State<AssignTimeSlotScreen> {
                   selected
                       ? Icons.check_circle_rounded
                       : Icons.radio_button_unchecked_rounded,
-                  color: selected ? AppColors.primary : const Color(0xFFB0BEC5),
+                  color: selected ? AppColors.primary : NurseUi.muted,
                 ),
             ],
           ),
@@ -1327,7 +1304,7 @@ class _AssignTimeSlotScreenState extends State<AssignTimeSlotScreen> {
         height: 38,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: selected ? AppColors.primary : Colors.white,
+          color: selected ? AppColors.primary : NurseUi.surface,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: selected ? AppColors.primary : NurseUi.border,
@@ -1416,13 +1393,7 @@ class AppointmentConfirmedScreen extends StatelessWidget {
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.language_rounded),
-              color: AppColors.primaryDark,
-              onPressed: () {},
-            ),
-          ],
+          actions: NurseUi.headerActions(providerUserId: currentUser.userId),
         ),
         body: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(22, 18, 22, 110),
@@ -1547,12 +1518,12 @@ class AppointmentConfirmedScreen extends StatelessWidget {
           ),
           _summaryLine(
             Icons.timer_outlined,
-            'Duration',
-            '$durationMinutes minutes',
+            NurseUi.t('Duration'),
+            '$durationMinutes ${NurseUi.t('minutes')}',
           ),
           _summaryLine(
             Icons.location_on_outlined,
-            'Location',
+            NurseUi.t('Location'),
             request.location.isEmpty
                 ? request.patientAddress
                 : request.location,
@@ -1717,13 +1688,34 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
   bool isSaving = false;
 
   final activities = <_NursingActivity>[
-    _NursingActivity('Blood Pressure', '\u0642\u064a\u0627\u0633 \u0636\u063a\u0637 \u0627\u0644\u062f\u0645'),
-    _NursingActivity('Sugar Level', '\u0642\u064a\u0627\u0633 \u0627\u0644\u0633\u0643\u0631'),
-    _NursingActivity('Medication Given', '\u0625\u0639\u0637\u0627\u0621 \u0627\u0644\u062f\u0648\u0627\u0621'),
-    _NursingActivity('Dressing Changed', '\u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u0636\u0645\u0627\u062f'),
-    _NursingActivity('Vital Signs Follow-up', '\u0645\u062a\u0627\u0628\u0639\u0629 \u0627\u0644\u0639\u0644\u0627\u0645\u0627\u062a \u0627\u0644\u062d\u064a\u0648\u064a\u0629'),
-    _NursingActivity('Mobility Assistance', '\u0645\u0633\u0627\u0639\u062f\u0629 \u0627\u0644\u0645\u0631\u064a\u0636 \u0639\u0644\u0649 \u0627\u0644\u062d\u0631\u0643\u0629'),
-    _NursingActivity('Health Education', '\u062a\u0642\u062f\u064a\u0645 \u062a\u0639\u0644\u064a\u0645\u0627\u062a \u0635\u062d\u064a\u0629'),
+    _NursingActivity(
+      'Blood Pressure',
+      '\u0642\u064a\u0627\u0633 \u0636\u063a\u0637 \u0627\u0644\u062f\u0645',
+    ),
+    _NursingActivity(
+      'Sugar Level',
+      '\u0642\u064a\u0627\u0633 \u0627\u0644\u0633\u0643\u0631',
+    ),
+    _NursingActivity(
+      'Medication Given',
+      '\u0625\u0639\u0637\u0627\u0621 \u0627\u0644\u062f\u0648\u0627\u0621',
+    ),
+    _NursingActivity(
+      'Dressing Changed',
+      '\u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u0636\u0645\u0627\u062f',
+    ),
+    _NursingActivity(
+      'Vital Signs Follow-up',
+      '\u0645\u062a\u0627\u0628\u0639\u0629 \u0627\u0644\u0639\u0644\u0627\u0645\u0627\u062a \u0627\u0644\u062d\u064a\u0648\u064a\u0629',
+    ),
+    _NursingActivity(
+      'Mobility Assistance',
+      '\u0645\u0633\u0627\u0639\u062f\u0629 \u0627\u0644\u0645\u0631\u064a\u0636 \u0639\u0644\u0649 \u0627\u0644\u062d\u0631\u0643\u0629',
+    ),
+    _NursingActivity(
+      'Health Education',
+      '\u062a\u0642\u062f\u064a\u0645 \u062a\u0639\u0644\u064a\u0645\u0627\u062a \u0635\u062d\u064a\u0629',
+    ),
   ];
 
   @override
@@ -1772,16 +1764,12 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
             onPressed: () => Navigator.pop(context),
           ),
           title: Text(
-            'Request Details',
+            NurseUi.t('Request Details'),
             style: TextStyle(color: NurseUi.text, fontWeight: FontWeight.w900),
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.language_rounded),
-              color: AppColors.primaryDark,
-              onPressed: () => NurseUi.isArabic.value = !NurseUi.isArabic.value,
-            ),
-          ],
+          actions: NurseUi.headerActions(
+            providerUserId: widget.currentUser.userId,
+          ),
         ),
         body: Column(
           children: [
@@ -1798,45 +1786,45 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                   children: [
                     _patientHeaderCard(),
                     const SizedBox(height: 18),
-                    _sectionTitle('Service Details'),
+                    _sectionTitle(NurseUi.t('Service Details')),
                     _serviceDetailsCard([
                       RequestInfoItem(
-                        'Service Type',
+                        NurseUi.t('Service Type'),
                         _serviceText,
                         Icons.healing_rounded,
                       ),
                       RequestInfoItem(
-                        'Visit Time',
+                        NurseUi.t('Visit Time'),
                         '${_formatDate(request.scheduledDate)}  ${_formatTime(request.scheduledDate)}',
                         Icons.event_rounded,
                       ),
                       RequestInfoItem(
-                        'Location',
+                        NurseUi.t('Location'),
                         request.location.isNotEmpty
                             ? request.location
                             : request.patientAddress,
                         Icons.location_on_rounded,
                       ),
                       RequestInfoItem(
-                        'Notes',
+                        NurseUi.t('Notes'),
                         _reasonText,
                         Icons.notes_rounded,
                       ),
                       RequestInfoItem(
-                        'Location Note',
+                        NurseUi.t('Location Note'),
                         _locationNoteText,
                         Icons.apartment_rounded,
                       ),
                       RequestInfoItem(
-                        'Estimated Fee',
+                        NurseUi.t('Estimated Fee'),
                         request.price > 0
-                            ? '${request.price.toStringAsFixed(0)} ILS'
-                            : 'Not set',
+                            ? NurseUi.currency(request.price)
+                            : NurseUi.notSet(),
                         Icons.payments_rounded,
                       ),
                     ]),
                     const SizedBox(height: 18),
-                    _sectionTitle('Medical Information'),
+                    _sectionTitle(NurseUi.t('Medical Information')),
                     _serviceDetailsCard(_medicalInformationItems),
                     const SizedBox(height: 18),
                     if (request.status == 'in_progress') ...[
@@ -1895,10 +1883,10 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
   String get _serviceText {
     final parsed = _parsedNoteFields['service'] ?? '';
-    if (parsed.isNotEmpty) return parsed;
+    if (parsed.isNotEmpty) return NurseUi.serviceLabel(parsed);
     return request.serviceType.isEmpty
-        ? 'Home Nursing Care'
-        : request.serviceType;
+        ? NurseUi.t('Home Nursing Care')
+        : NurseUi.serviceLabel(request.serviceType);
   }
 
   String get _appointmentTypeText {
@@ -1911,7 +1899,9 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     final parsed = _parsedNoteFields['address'] ?? '';
     if (parsed.isNotEmpty) return parsed;
     if (request.location.isNotEmpty) return request.location;
-    return request.patientAddress.isEmpty ? 'Not set' : request.patientAddress;
+    return request.patientAddress.isEmpty
+        ? NurseUi.notSet()
+        : request.patientAddress;
   }
 
   String get _visitGpsText {
@@ -1922,16 +1912,32 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
   List<RequestInfoItem> get _medicalInformationItems {
     return [
-      RequestInfoItem('Service', _serviceText, Icons.medical_services_rounded),
       RequestInfoItem(
-        'Appointment Type',
+        NurseUi.t('Service'),
+        _serviceText,
+        Icons.medical_services_rounded,
+      ),
+      RequestInfoItem(
+        NurseUi.t('Appointment Type'),
         _appointmentTypeText,
         Icons.home_work_rounded,
       ),
-      RequestInfoItem('Address', _addressText, Icons.location_on_rounded),
-      RequestInfoItem('Current Case', _reasonText, Icons.assignment_rounded),
-      RequestInfoItem('Reason', _reasonText, Icons.notes_rounded),
-      RequestInfoItem('GPS Location', _visitGpsText, Icons.map_rounded),
+      RequestInfoItem(
+        NurseUi.t('Address'),
+        _addressText,
+        Icons.location_on_rounded,
+      ),
+      RequestInfoItem(
+        NurseUi.t('Current Case'),
+        _reasonText,
+        Icons.assignment_rounded,
+      ),
+      RequestInfoItem(NurseUi.t('Reason'), _reasonText, Icons.notes_rounded),
+      RequestInfoItem(
+        NurseUi.t('GPS Location'),
+        _visitGpsText,
+        Icons.map_rounded,
+      ),
     ];
   }
 
@@ -1939,7 +1945,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     final reason = request.reasonForVisit.trim();
     if (reason.isNotEmpty) return reason;
     final notes = _cleanComposedNotes(request.notes ?? '');
-    return notes.isEmpty ? 'No notes added' : notes;
+    return notes.isEmpty ? NurseUi.t('No notes added') : notes;
   }
 
   String get _locationNoteText {
@@ -1950,7 +1956,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       caseSensitive: false,
     ).firstMatch(request.notes ?? '');
     final parsed = match?.group(1)?.trim() ?? '';
-    return parsed.isEmpty ? 'No location note' : parsed;
+    return parsed.isEmpty ? NurseUi.t('No location note') : parsed;
   }
 
   String _cleanComposedNotes(String raw) {
@@ -1973,7 +1979,9 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
   }
 
   String get _gpsText {
-    if (request.gpsLat == null || request.gpsLng == null) return 'Not set';
+    if (request.gpsLat == null || request.gpsLng == null) {
+      return NurseUi.notSet();
+    }
     return '${request.gpsLat!.toStringAsFixed(5)}, ${request.gpsLng!.toStringAsFixed(5)}';
   }
 
@@ -1984,8 +1992,8 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       child: PatientInfoCard(
         name: _patientName,
         ageText: request.patientAge > 0
-            ? '${request.patientAge} years'
-            : 'Age not set',
+            ? NurseUi.ageLabel(request.patientAge)
+            : NurseUi.t('Age not set'),
         location: request.location.isNotEmpty
             ? request.location
             : request.patientAddress,
@@ -2238,7 +2246,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                   TextField(
                     controller: activity.notesController,
                     decoration: InputDecoration(
-                      hintText: 'Notes',
+                      hintText: NurseUi.t('Notes'),
                       filled: true,
                       fillColor: NurseUi.softSurface,
                     ),
@@ -2323,8 +2331,10 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
   Widget _completedBox() {
     return _noteBox(
-      'Completed',
-      'The visit is completed. The patient can now rate the nurse and write feedback.',
+      NurseUi.t('Completed'),
+      NurseUi.t(
+        'The visit is completed. The patient can now rate the nurse and write feedback.',
+      ),
     );
   }
 
@@ -2445,15 +2455,15 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       case 'assigned':
       case 'confirmed':
       case 'scheduled':
-        return 'Confirmed';
+        return NurseUi.t('Confirmed');
       case 'in_progress':
-        return 'In Progress';
+        return NurseUi.t('In Progress');
       case 'waiting_report':
-        return 'Waiting Report';
+        return NurseUi.t('Waiting Report');
       case 'completed':
-        return 'Completed';
+        return NurseUi.t('Completed');
       default:
-        return status;
+        return NurseUi.statusLabel(status);
     }
   }
 
@@ -2477,12 +2487,10 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     }
   }
 
-  String _formatDate(DateTime date) => '${date.day}/${date.month}/${date.year}';
+  String _formatDate(DateTime date) => NurseUi.formatDate(date);
 
   String _formatTime(DateTime date) {
-    final h = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final m = date.minute.toString().padLeft(2, '0');
-    return '$h:$m ${date.hour >= 12 ? 'PM' : 'AM'}';
+    return NurseUi.formatTime(date);
   }
 }
 
@@ -2736,4 +2744,3 @@ class _NursingActivity {
 
   _NursingActivity(this.label, this.arLabel);
 }
-

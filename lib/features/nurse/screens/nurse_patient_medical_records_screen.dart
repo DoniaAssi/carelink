@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -88,6 +88,7 @@ class _NursePatientMedicalRecordsScreenState
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
+          actions: NurseUi.headerActions(),
         ),
         body: loading
             ? const Center(child: CircularProgressIndicator())
@@ -396,7 +397,7 @@ class _NursePatientMedicalRecordsScreenState
       margin: margin,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: NurseUi.border),
         boxShadow: [
@@ -465,4 +466,3 @@ class _NursePatientMedicalRecordsScreenState
     return '${months[parsed.month - 1]} ${parsed.day}, ${parsed.year}';
   }
 }
-

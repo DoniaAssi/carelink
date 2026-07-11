@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:carelink/core/app_colors.dart';
@@ -210,7 +210,7 @@ class _NurseMedicalReportFormScreenState
   Widget build(BuildContext context) {
     return NurseUi.reactive(
       (context) => Scaffold(
-        backgroundColor: const Color(0xFFF4FAF8),
+        backgroundColor: NurseUi.background,
         body: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -297,14 +297,14 @@ class _NurseMedicalReportFormScreenState
     return Row(
       children: [
         _circleButton(Icons.arrow_back_rounded, () => Navigator.pop(context)),
-        const Expanded(
+        Expanded(
           child: Text(
             'Create Medical Report',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w900,
-              color: Colors.black,
+              color: NurseUi.text,
             ),
           ),
         ),
@@ -314,8 +314,8 @@ class _NurseMedicalReportFormScreenState
           label: const Text('Save Draft'),
           style: OutlinedButton.styleFrom(
             foregroundColor: AppColors.primary,
-            backgroundColor: Colors.white,
-            side: const BorderSide(color: Color(0xFFEAF0EF)),
+            backgroundColor: NurseUi.surface,
+            side: BorderSide(color: NurseUi.border),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
@@ -328,7 +328,7 @@ class _NurseMedicalReportFormScreenState
 
   Widget _circleButton(IconData icon, VoidCallback onTap) {
     return Material(
-      color: Colors.white,
+      color: NurseUi.surface,
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onTap,
@@ -336,14 +336,14 @@ class _NurseMedicalReportFormScreenState
         child: SizedBox(
           width: 50,
           height: 50,
-          child: Icon(icon, color: const Color(0xFF151823), size: 28),
+          child: Icon(icon, color: NurseUi.text, size: 28),
         ),
       ),
     );
   }
 
   Widget _buildSteps() {
-    const steps = [
+    final steps = [
       'Report Details',
       'Assessment & Care',
       'Follow-up & Notes',
@@ -360,11 +360,11 @@ class _NurseMedicalReportFormScreenState
                   radius: 17,
                   backgroundColor: i == 0
                       ? AppColors.primary
-                      : const Color(0xFFF0F4F3),
+                      : NurseUi.softSurface,
                   child: Text(
                     '${i + 1}',
                     style: TextStyle(
-                      color: i == 0 ? Colors.white : const Color(0xFF59646E),
+                      color: i == 0 ? Colors.white : NurseUi.muted,
                       fontSize: 13,
                       fontWeight: FontWeight.w900,
                     ),
@@ -372,12 +372,12 @@ class _NurseMedicalReportFormScreenState
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  steps[i],
+                  NurseUi.t(steps[i]),
                   maxLines: 2,
                   textAlign: TextAlign.center,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: i == 0 ? AppColors.primary : const Color(0xFF59646E),
+                    color: i == 0 ? AppColors.primary : NurseUi.muted,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
@@ -390,7 +390,7 @@ class _NurseMedicalReportFormScreenState
               width: 36,
               height: 2,
               margin: const EdgeInsets.only(bottom: 28),
-              color: i == 0 ? AppColors.primary : const Color(0xFFE2E8E6),
+              color: i == 0 ? AppColors.primary : NurseUi.border,
             ),
         ],
       ],
@@ -399,15 +399,15 @@ class _NurseMedicalReportFormScreenState
 
   Widget _buildPatientCard() {
     final patientName = widget.request.patientName.isEmpty
-        ? 'Patient'
+        ? NurseUi.t('Patient')
         : widget.request.patientName;
     final serviceType = widget.request.serviceType.isEmpty
-        ? 'Nursing visit'
-        : widget.request.serviceType;
+        ? NurseUi.t('Nursing visit')
+        : NurseUi.serviceLabel(widget.request.serviceType);
 
     return _buildSectionCard(
       icon: Icons.person_outline_rounded,
-      title: 'Patient & Visit Information',
+      title: NurseUi.t('Patient & Visit Information'),
       child: Column(
         children: [
           Row(
@@ -433,19 +433,19 @@ class _NurseMedicalReportFormScreenState
                       patientName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
-                        color: Colors.black,
+                        color: NurseUi.text,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Request ID: ${widget.request.id}',
+                      '${NurseUi.t('Request ID')}: ${widget.request.id}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF68727D),
+                      style: TextStyle(
+                        color: NurseUi.muted,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -473,7 +473,7 @@ class _NurseMedicalReportFormScreenState
               Expanded(
                 child: _infoBox(
                   Icons.calendar_today_outlined,
-                  'Visit Date',
+                  NurseUi.t('Visit Date'),
                   _formatDate(widget.request.scheduledDate),
                 ),
               ),
@@ -481,14 +481,18 @@ class _NurseMedicalReportFormScreenState
               Expanded(
                 child: _infoBox(
                   Icons.access_time_rounded,
-                  'Visit Time',
+                  NurseUi.t('Visit Time'),
                   _formatTime(widget.request.scheduledDate),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          _infoBox(Icons.home_work_outlined, 'Service Type', serviceType),
+          _infoBox(
+            Icons.home_work_outlined,
+            NurseUi.t('Service Type'),
+            serviceType,
+          ),
         ],
       ),
     );
@@ -497,7 +501,7 @@ class _NurseMedicalReportFormScreenState
   Widget _buildFollowUpCard() {
     return _buildSectionCard(
       icon: Icons.favorite_border_rounded,
-      title: 'Follow-up & Notes',
+      title: NurseUi.t('Follow-up & Notes'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -510,8 +514,8 @@ class _NurseMedicalReportFormScreenState
                   readOnly: true,
                   onTap: _pickFollowUpDate,
                   decoration: _fieldDecoration(
-                    'Select date',
-                    label: 'Follow-up Date (Optional)',
+                    NurseUi.t('Select date'),
+                    label: NurseUi.t('Follow-up Date (Optional)'),
                     suffixIcon: Icons.calendar_month_outlined,
                   ),
                 ),
@@ -520,8 +524,8 @@ class _NurseMedicalReportFormScreenState
               Expanded(
                 child: _reportField(
                   _followUpNotesController,
-                  'e.g. Recheck after 5 days...',
-                  label: 'Follow-up Notes',
+                  NurseUi.t('e.g. Recheck after 5 days...'),
+                  label: NurseUi.t('Follow-up Notes'),
                   maxLines: 3,
                   maxLength: 200,
                 ),
@@ -531,8 +535,8 @@ class _NurseMedicalReportFormScreenState
           const SizedBox(height: 14),
           _reportField(
             _additionalNotesController,
-            'Any additional notes or recommendations...',
-            label: 'Additional Notes (Optional)',
+            NurseUi.t('Any additional notes or recommendations...'),
+            label: NurseUi.t('Additional Notes (Optional)'),
             maxLines: 3,
             maxLength: 500,
           ),
@@ -549,9 +553,9 @@ class _NurseMedicalReportFormScreenState
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFEAF0EF)),
+        border: Border.all(color: NurseUi.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -571,10 +575,10 @@ class _NurseMedicalReportFormScreenState
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w900,
-                    color: Colors.black,
+                    color: NurseUi.text,
                   ),
                 ),
               ),
@@ -620,16 +624,16 @@ class _NurseMedicalReportFormScreenState
       labelText: label,
       hintText: hint,
       filled: true,
-      fillColor: Colors.white,
-      counterStyle: const TextStyle(color: Color(0xFF68727D), fontSize: 11),
+      fillColor: NurseUi.surface,
+      counterStyle: TextStyle(color: NurseUi.muted, fontSize: 11),
       suffixIcon: suffixIcon == null ? null : Icon(suffixIcon),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: Color(0xFFE5ECEA)),
+        borderSide: BorderSide(color: NurseUi.border),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: Color(0xFFE5ECEA)),
+        borderSide: BorderSide(color: NurseUi.border),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -643,9 +647,9 @@ class _NurseMedicalReportFormScreenState
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5ECEA)),
+        border: Border.all(color: NurseUi.border),
       ),
       child: Row(
         children: [
@@ -657,8 +661,8 @@ class _NurseMedicalReportFormScreenState
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
-                    color: Color(0xFF68727D),
+                  style: TextStyle(
+                    color: NurseUi.muted,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -668,8 +672,8 @@ class _NurseMedicalReportFormScreenState
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.black,
+                  style: TextStyle(
+                    color: NurseUi.text,
                     fontSize: 14,
                     fontWeight: FontWeight.w900,
                   ),
@@ -692,7 +696,7 @@ class _NurseMedicalReportFormScreenState
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
-        lower.isEmpty ? 'Confirmed' : status,
+        lower.isEmpty ? NurseUi.t('Confirmed') : NurseUi.statusLabel(status),
         style: TextStyle(
           color: color,
           fontSize: 13,
@@ -716,9 +720,9 @@ class _NurseMedicalReportFormScreenState
                 borderRadius: BorderRadius.circular(14),
               ),
             ),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+            child: Text(
+              NurseUi.t('Cancel'),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
             ),
           ),
         ),
@@ -736,7 +740,7 @@ class _NurseMedicalReportFormScreenState
                     ),
                   )
                 : const Icon(Icons.arrow_forward_rounded),
-            label: const Text('Next: Review Report'),
+            label: Text(NurseUi.t('Next: Review Report')),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
@@ -779,18 +783,11 @@ class _NurseMedicalReportFormScreenState
   }
 
   String _formatDate(DateTime date) {
-    return '${date.month}/${date.day}/${date.year}';
+    return NurseUi.formatDate(date);
   }
 
   String _formatTime(DateTime date) {
-    final hour = date.hour == 0
-        ? 12
-        : date.hour > 12
-        ? date.hour - 12
-        : date.hour;
-    final minute = date.minute.toString().padLeft(2, '0');
-    final suffix = date.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $suffix';
+    return NurseUi.formatTime(date);
   }
 
   String _activitiesSummary(ServiceRequest request) {
@@ -801,4 +798,3 @@ class _NurseMedicalReportFormScreenState
         .join('\n');
   }
 }
-

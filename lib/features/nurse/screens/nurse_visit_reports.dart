@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/models/visit_report.dart';
 import 'package:carelink/shared/services/report_service.dart';
@@ -22,10 +23,9 @@ class NurseVisitReports extends StatefulWidget {
 }
 
 class _NurseVisitReportsState extends State<NurseVisitReports> {
-  static const Color _background = Color(0xFFF4FAF9);
-  static const Color _primary = Color(0xFF0F766E);
-  static const Color _text = Color(0xFF111827);
-  static const Color _muted = Color(0xFF6B7280);
+  static Color get _primary => AppColors.primary;
+  static Color get _text => NurseUi.text;
+  static Color get _muted => NurseUi.muted;
 
   final TextEditingController _searchController = TextEditingController();
   Timer? _refreshTimer;
@@ -91,7 +91,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
         color: NurseUi.background,
         child: SafeArea(
           child: isLoading
-              ? const Center(child: CircularProgressIndicator(color: _primary))
+              ? Center(child: CircularProgressIndicator(color: _primary))
               : RefreshIndicator(
                   color: _primary,
                   onRefresh: _loadReports,
@@ -111,7 +111,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
                         for (final report in filteredReports)
                           _reportCard(report),
                         const SizedBox(height: 18),
-                        const Center(
+                        Center(
                           child: Text(
                             'All reports loaded',
                             style: TextStyle(
@@ -132,7 +132,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
   Widget _header() {
     return Row(
       children: [
-        const Expanded(
+        Expanded(
           child: Text(
             'Reports',
             style: TextStyle(
@@ -145,8 +145,9 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
         IconButton(
           tooltip: 'Filter',
           onPressed: () {},
-          icon: const Icon(Icons.filter_list_rounded, color: _primary),
+          icon: Icon(Icons.filter_list_rounded, color: _primary),
         ),
+        NurseModeControls(providerUserId: widget.user.userId),
       ],
     );
   }
@@ -156,25 +157,25 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(14),
         boxShadow: _shadow,
       ),
       child: Row(
         children: [
-          const Icon(Icons.search_rounded, size: 20, color: _muted),
+          Icon(Icons.search_rounded, size: 20, color: _muted),
           const SizedBox(width: 10),
           Expanded(
             child: TextField(
               controller: _searchController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
-                hintText: 'Search reports...',
+                hintText: NurseUi.t('Search reports...'),
                 isDense: true,
               ),
-              style: const TextStyle(color: _text, fontWeight: FontWeight.w700),
+              style: TextStyle(color: _text, fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -201,22 +202,16 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
     final selected = selectedFilter == filter;
     final count = filter == 'All'
         ? reports.length
-        : reports
-              .where(
-                (report) =>
-                    _statusLabel(report.status).toLowerCase() ==
-                    filter.toLowerCase(),
-              )
-              .length;
+        : reports.where((report) => _statusKey(report.status) == filter).length;
     return ChoiceChip(
-      label: Text('$filter ($count)'),
+      label: Text('${NurseUi.t(filter)} ($count)'),
       selected: selected,
       onSelected: (_) => setState(() => selectedFilter = filter),
       showCheckmark: false,
       visualDensity: VisualDensity.compact,
       selectedColor: _primary,
-      backgroundColor: Colors.white,
-      side: BorderSide(color: selected ? _primary : const Color(0xFFE5E7EB)),
+      backgroundColor: NurseUi.surface,
+      side: BorderSide(color: selected ? _primary : NurseUi.border),
       labelStyle: TextStyle(
         color: selected ? Colors.white : _text,
         fontSize: 12,
@@ -231,7 +226,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(18),
         boxShadow: _shadow,
       ),
@@ -256,7 +251,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
                   backgroundColor: const Color(0xFFDDF2EF),
                   child: Text(
                     _initial(patient),
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _primary,
                       fontWeight: FontWeight.w900,
                     ),
@@ -271,7 +266,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
                         patient,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _text,
                           fontWeight: FontWeight.w900,
                         ),
@@ -281,7 +276,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
                         _serviceType(report),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _muted,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -290,7 +285,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
                       const SizedBox(height: 5),
                       Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.calendar_today_rounded,
                             color: _muted,
                             size: 14,
@@ -301,7 +296,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
                               _dateTime(report.scheduledDate),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _muted,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -319,7 +314,7 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
                   children: [
                     _statusBadge(report.status),
                     const SizedBox(height: 14),
-                    const Icon(
+                    Icon(
                       Icons.arrow_forward_ios_rounded,
                       color: _primary,
                       size: 16,
@@ -339,13 +334,13 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 44),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(18),
         boxShadow: _shadow,
       ),
-      child: const Center(
+      child: Center(
         child: Text(
-          'No reports available',
+          NurseUi.t('No reports available'),
           style: TextStyle(color: _muted, fontWeight: FontWeight.w900),
         ),
       ),
@@ -358,11 +353,11 @@ class _NurseVisitReportsState extends State<NurseVisitReports> {
 class ReportDetailsScreen extends StatelessWidget {
   const ReportDetailsScreen({super.key, required this.report});
 
-  static const Color _background = Color(0xFFF4FAF9);
-  static const Color _primary = Color(0xFF0F766E);
+  static Color get _background => NurseUi.background;
+  static Color get _primary => AppColors.primary;
   static const Color _success = Color(0xFF22C55E);
-  static const Color _text = Color(0xFF111827);
-  static const Color _muted = Color(0xFF6B7280);
+  static Color get _text => NurseUi.text;
+  static Color get _muted => NurseUi.muted;
 
   final VisitReport report;
 
@@ -402,17 +397,18 @@ class ReportDetailsScreen extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
           icon: const Icon(Icons.arrow_back_ios_rounded, size: 20),
         ),
-        const Expanded(
+        Expanded(
           child: Text(
-            'Report Details',
+            NurseUi.t('Report Details'),
             textAlign: TextAlign.center,
             style: TextStyle(color: _text, fontWeight: FontWeight.w900),
           ),
         ),
         IconButton(
           onPressed: () {},
-          icon: const Icon(Icons.more_vert_rounded, color: _primary),
+          icon: Icon(Icons.more_vert_rounded, color: _primary),
         ),
+        ...NurseUi.headerActions(),
       ],
     );
   }
@@ -427,10 +423,7 @@ class ReportDetailsScreen extends StatelessWidget {
             backgroundColor: const Color(0xFFDDF2EF),
             child: Text(
               _initial(patient),
-              style: const TextStyle(
-                color: _primary,
-                fontWeight: FontWeight.w900,
-              ),
+              style: TextStyle(color: _primary, fontWeight: FontWeight.w900),
             ),
           ),
           const SizedBox(width: 12),
@@ -442,17 +435,14 @@ class ReportDetailsScreen extends StatelessWidget {
                   patient,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _text,
-                    fontWeight: FontWeight.w900,
-                  ),
+                  style: TextStyle(color: _text, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 3),
                 Text(
                   _serviceType(report),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _muted,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -461,18 +451,14 @@ class ReportDetailsScreen extends StatelessWidget {
                 const SizedBox(height: 5),
                 Row(
                   children: [
-                    const Icon(
-                      Icons.location_on_outlined,
-                      color: _primary,
-                      size: 15,
-                    ),
+                    Icon(Icons.location_on_outlined, color: _primary, size: 15),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         _location(report),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _muted,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -492,27 +478,31 @@ class ReportDetailsScreen extends StatelessWidget {
 
   Widget _visitInformationCard() {
     return _sectionCard(
-      title: 'Visit Information',
+      title: NurseUi.t('Visit Information'),
       children: [
         _infoRow(
           Icons.calendar_today_rounded,
-          'Date & Time',
+          NurseUi.t('Date & Time'),
           _dateTime(report.scheduledDate),
         ),
-        _infoRow(Icons.timer_outlined, 'Duration', _duration(report)),
+        _infoRow(
+          Icons.timer_outlined,
+          NurseUi.t('Duration'),
+          _duration(report),
+        ),
         _infoRow(
           Icons.local_hospital_outlined,
-          'Visit Type',
+          NurseUi.t('Visit Type'),
           _serviceType(report),
         ),
         _infoRow(
           Icons.play_arrow_rounded,
-          'Started At',
+          NurseUi.t('Started At'),
           _time(report.createdAt),
         ),
         _infoRow(
           Icons.check_circle_outline,
-          'Completed At',
+          NurseUi.t('Completed At'),
           _time(report.updatedAt),
         ),
       ],
@@ -521,14 +511,14 @@ class ReportDetailsScreen extends StatelessWidget {
 
   Widget _summaryCard() {
     final summary = report.visitSummary.trim().isEmpty
-        ? 'Not recorded'
+        ? NurseUi.t('Not recorded')
         : report.visitSummary.trim();
     return _sectionCard(
-      title: 'Summary',
+      title: NurseUi.t('Summary'),
       children: [
         Text(
           summary,
-          style: const TextStyle(
+          style: TextStyle(
             color: _text,
             height: 1.45,
             fontWeight: FontWeight.w600,
@@ -541,32 +531,44 @@ class ReportDetailsScreen extends StatelessWidget {
   Widget _careProvidedGrid() {
     final items = [
       _CareItem(
-        'Medication\nAdministration',
+        NurseUi.t('Medication\nAdministration'),
         Icons.medication_outlined,
         report.medications,
       ),
-      _CareItem('Wound Care', Icons.healing_rounded, report.observations),
       _CareItem(
-        'Vital Signs\nMonitoring',
+        NurseUi.t('Wound Care'),
+        Icons.healing_rounded,
+        report.observations,
+      ),
+      _CareItem(
+        NurseUi.t('Vital Signs\nMonitoring'),
         Icons.favorite_outline,
         report.vitalSigns,
       ),
-      _CareItem('Personal Care', Icons.person_outline, report.visitSummary),
       _CareItem(
-        'Patient\nEducation',
+        NurseUi.t('Personal Care'),
+        Icons.person_outline,
+        report.visitSummary,
+      ),
+      _CareItem(
+        NurseUi.t('Patient\nEducation'),
         Icons.menu_book_outlined,
         report.recommendations,
       ),
-      _CareItem('IV Support', Icons.invert_colors, report.observations),
+      _CareItem(
+        NurseUi.t('IV Support'),
+        Icons.invert_colors,
+        report.observations,
+      ),
     ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 2, bottom: 10),
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 10),
           child: Text(
-            'Care Provided',
+            NurseUi.t('Care Provided'),
             style: TextStyle(color: _text, fontWeight: FontWeight.w900),
           ),
         ),
@@ -607,7 +609,7 @@ class ReportDetailsScreen extends StatelessWidget {
                           textAlign: TextAlign.center,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _text,
                             fontSize: 10,
                             fontWeight: FontWeight.w900,
@@ -641,23 +643,25 @@ class ReportDetailsScreen extends StatelessWidget {
     final vitals = _parseVitals(report.vitalSigns);
     final items = [
       _VitalItem(
-        'Blood Pressure',
-        vitals['blood pressure'] ?? vitals['bp'] ?? 'Not recorded',
+        NurseUi.t('Blood Pressure'),
+        vitals['blood pressure'] ?? vitals['bp'] ?? NurseUi.t('Not recorded'),
         Icons.monitor_heart_outlined,
       ),
       _VitalItem(
-        'Heart Rate',
-        vitals['heart rate'] ?? vitals['hr'] ?? 'Not recorded',
+        NurseUi.t('Heart Rate'),
+        vitals['heart rate'] ?? vitals['hr'] ?? NurseUi.t('Not recorded'),
         Icons.favorite_border,
       ),
       _VitalItem(
-        'Temperature',
-        vitals['temperature'] ?? vitals['temp'] ?? 'Not recorded',
+        NurseUi.t('Temperature'),
+        vitals['temperature'] ?? vitals['temp'] ?? NurseUi.t('Not recorded'),
         Icons.thermostat,
       ),
       _VitalItem(
-        'Oxygen Saturation',
-        vitals['oxygen saturation'] ?? vitals['spo2'] ?? 'Not recorded',
+        NurseUi.t('Oxygen Saturation'),
+        vitals['oxygen saturation'] ??
+            vitals['spo2'] ??
+            NurseUi.t('Not recorded'),
         Icons.air,
       ),
     ];
@@ -665,10 +669,10 @@ class ReportDetailsScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 2, bottom: 10),
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 10),
           child: Text(
-            'Vital Signs',
+            NurseUi.t('Vital Signs'),
             style: TextStyle(color: _text, fontWeight: FontWeight.w900),
           ),
         ),
@@ -704,7 +708,7 @@ class ReportDetailsScreen extends StatelessWidget {
                           item.label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _muted,
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
@@ -715,7 +719,7 @@ class ReportDetailsScreen extends StatelessWidget {
                           item.value,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _text,
                             fontSize: 11,
                             fontWeight: FontWeight.w900,
@@ -740,7 +744,7 @@ class ReportDetailsScreen extends StatelessWidget {
       child: ElevatedButton.icon(
         onPressed: () => _showFullReport(context),
         icon: const Icon(Icons.description_outlined, size: 18),
-        label: const Text('View Full Report'),
+        label: Text(NurseUi.t('View Full Report')),
         style: ElevatedButton.styleFrom(
           backgroundColor: _primary,
           foregroundColor: Colors.white,
@@ -769,7 +773,7 @@ class ReportDetailsScreen extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(color: _text, fontWeight: FontWeight.w900),
+            style: TextStyle(color: _text, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 12),
           ...children,
@@ -783,7 +787,7 @@ class ReportDetailsScreen extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(18),
         boxShadow: _shadow,
       ),
@@ -801,7 +805,7 @@ class ReportDetailsScreen extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: _muted,
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
@@ -810,9 +814,9 @@ class ReportDetailsScreen extends StatelessWidget {
           ),
           Flexible(
             child: Text(
-              value.trim().isEmpty ? 'Not recorded' : value,
+              value.trim().isEmpty ? NurseUi.t('Not recorded') : value,
               textAlign: TextAlign.end,
-              style: const TextStyle(
+              style: TextStyle(
                 color: _text,
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
@@ -830,9 +834,8 @@ class ReportDetailsScreen extends StatelessWidget {
 class _FullReportSheet extends StatelessWidget {
   const _FullReportSheet({required this.report});
 
-  static const Color _background = Color(0xFFF4FAF9);
-  static const Color _primary = Color(0xFF0F766E);
-  static const Color _text = Color(0xFF111827);
+  static Color get _primary => AppColors.primary;
+  static Color get _text => NurseUi.text;
 
   final VisitReport report;
 
@@ -850,9 +853,9 @@ class _FullReportSheet extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(18, 14, 10, 8),
             child: Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Full Report',
+                    NurseUi.t('Full Report'),
                     style: TextStyle(
                       color: _text,
                       fontSize: 20,
@@ -871,16 +874,19 @@ class _FullReportSheet extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
               children: [
-                _section('Patient', _patientName(report)),
-                _section('Service Type', _serviceType(report)),
-                _section('Location', _location(report)),
-                _section('Date & Time', _dateTime(report.scheduledDate)),
-                _section('Duration', _duration(report)),
-                _section('Summary', report.visitSummary),
-                _section('Vital Signs', report.vitalSigns),
-                _section('Medications', report.medications),
-                _section('Observations', report.observations),
-                _section('Recommendations', report.recommendations),
+                _section(NurseUi.t('Patient'), _patientName(report)),
+                _section(NurseUi.t('Service Type'), _serviceType(report)),
+                _section(NurseUi.t('Location'), _location(report)),
+                _section(
+                  NurseUi.t('Date & Time'),
+                  _dateTime(report.scheduledDate),
+                ),
+                _section(NurseUi.t('Duration'), _duration(report)),
+                _section(NurseUi.t('Summary'), report.visitSummary),
+                _section(NurseUi.t('Vital Signs'), report.vitalSigns),
+                _section(NurseUi.t('Medications'), report.medications),
+                _section(NurseUi.t('Observations'), report.observations),
+                _section(NurseUi.t('Recommendations'), report.recommendations),
               ],
             ),
           ),
@@ -895,7 +901,7 @@ class _FullReportSheet extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -910,15 +916,12 @@ class _FullReportSheet extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: _primary,
-              fontWeight: FontWeight.w900,
-            ),
+            style: TextStyle(color: _primary, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 8),
           Text(
-            value.trim().isEmpty ? 'Not recorded' : value.trim(),
-            style: const TextStyle(
+            value.trim().isEmpty ? NurseUi.t('Not recorded') : value.trim(),
+            style: TextStyle(
               color: _text,
               height: 1.45,
               fontWeight: FontWeight.w600,
@@ -963,6 +966,10 @@ Widget _statusBadge(String status) {
 }
 
 String _statusLabel(String status) {
+  return NurseUi.t(_statusKey(status));
+}
+
+String _statusKey(String status) {
   final value = status.toLowerCase().trim().replaceAll('_', ' ');
   if (value.contains('progress')) return 'In Progress';
   if (value.contains('draft')) return 'Draft';
@@ -970,8 +977,8 @@ String _statusLabel(String status) {
 }
 
 Color _statusColor(String label) {
-  if (label == 'In Progress') return const Color(0xFF3B82F6);
-  if (label == 'Draft') return const Color(0xFFF59E0B);
+  if (label == NurseUi.t('In Progress')) return const Color(0xFF3B82F6);
+  if (label == NurseUi.t('Draft')) return const Color(0xFFF59E0B);
   return const Color(0xFF22C55E);
 }
 
@@ -979,23 +986,25 @@ String _patientName(VisitReport report) {
   final name = report.patientName.trim();
   if (name.isNotEmpty) return name;
   final id = report.patientId.trim();
-  return id.isEmpty ? 'Patient' : 'Patient $id';
+  return id.isEmpty ? NurseUi.t('Patient') : '${NurseUi.t('Patient')} $id';
 }
 
 String _serviceType(VisitReport report) {
   final value = report.serviceType.trim();
-  return value.isEmpty ? 'Nursing Care' : value;
+  return value.isEmpty
+      ? NurseUi.t('Nursing Care')
+      : NurseUi.serviceLabel(value);
 }
 
 String _location(VisitReport report) {
   final value = report.location.trim();
-  return value.isEmpty ? 'Location not recorded' : value;
+  return value.isEmpty ? NurseUi.t('Location not recorded') : value;
 }
 
 String _duration(VisitReport report) {
-  if (report.durationHours <= 0) return 'Not recorded';
-  if (report.durationHours == 1) return '1 hour';
-  return '${report.durationHours} hours';
+  if (report.durationHours <= 0) return NurseUi.t('Not recorded');
+  if (report.durationHours == 1) return '1 ${NurseUi.t('hour')}';
+  return '${report.durationHours} ${NurseUi.t('hours')}';
 }
 
 String _initial(String value) {
@@ -1005,33 +1014,11 @@ String _initial(String value) {
 }
 
 String _dateTime(DateTime date) {
-  final months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  final month = months[date.month - 1];
-  return '$month ${date.day}, ${date.year} - ${_time(date)}';
+  return '${NurseUi.formatDate(date)} - ${NurseUi.formatTime(date)}';
 }
 
 String _time(DateTime date) {
-  final hour = date.hour == 0
-      ? 12
-      : date.hour > 12
-      ? date.hour - 12
-      : date.hour;
-  final minute = date.minute.toString().padLeft(2, '0');
-  final period = date.hour >= 12 ? 'PM' : 'AM';
-  return '$hour:$minute $period';
+  return NurseUi.formatTime(date);
 }
 
 bool _hasCareData(String source, String label) {

@@ -1,8 +1,9 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
 
@@ -28,9 +29,7 @@ enum _EarningsView {
 }
 
 class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
-  static const _primary = Color(0xFF0F766E);
-  static Color get _bg => NurseUi.background;
-  static Color get _surface => NurseUi.surface;
+  static Color get _primary => AppColors.primary;
   static Color get _text => NurseUi.text;
   static Color get _muted => NurseUi.muted;
 
@@ -120,9 +119,11 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
 
   void _showLockedMessage() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text(
-          'Accept your admin-set hourly rate before requesting payouts.',
+          NurseUi.t(
+            'Accept your admin-set hourly rate before requesting payouts.',
+          ),
         ),
       ),
     );
@@ -153,8 +154,10 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
         SnackBar(
           content: Text(
             decision == 'accepted'
-                ? 'Hourly rate accepted. You can start working now.'
-                : 'Hourly rate rejected. Your account remains inactive for work.',
+                ? NurseUi.t('Hourly rate accepted. You can start working now.')
+                : NurseUi.t(
+                    'Hourly rate rejected. Your account remains inactive for work.',
+                  ),
           ),
         ),
       );
@@ -168,65 +171,63 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return NurseUi.reactive(
-      (context) {
-        if (_loading) {
-          return Scaffold(
-            backgroundColor: NurseUi.background,
-            body: const Center(child: CircularProgressIndicator(color: _primary)),
-          );
-        }
+    return NurseUi.reactive((context) {
+      if (_loading) {
+        return Scaffold(
+          backgroundColor: NurseUi.background,
+          body: Center(child: CircularProgressIndicator(color: _primary)),
+        );
+      }
 
-        if (_error != null) {
-          return Scaffold(
-            backgroundColor: NurseUi.background,
-            body: SafeArea(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.error_outline,
-                        color: Color(0xFFEF4444),
-                        size: 44,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _error!,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: NurseUi.text),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _load,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _primary,
-                          foregroundColor: Colors.white,
-                        ),
-                        child: Text(NurseUi.t('Retry')),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        }
-
+      if (_error != null) {
         return Scaffold(
           backgroundColor: NurseUi.background,
           body: SafeArea(
-            child: RefreshIndicator(
-              color: _primary,
-              onRefresh: _load,
-              child: _buildCurrentView(),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: Color(0xFFEF4444),
+                      size: 44,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: NurseUi.text),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _load,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _primary,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: Text(NurseUi.t('Retry')),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         );
-      },
-    );
+      }
+
+      return Scaffold(
+        backgroundColor: NurseUi.background,
+        body: SafeArea(
+          child: RefreshIndicator(
+            color: _primary,
+            onRefresh: _load,
+            child: _buildCurrentView(),
+          ),
+        ),
+      );
+    });
   }
 
   Widget _buildCurrentView() {
@@ -261,27 +262,37 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
       children: [
-        _topBar(
-          NurseUi.t('Earnings & Payments'),
-          leading: Icons.menu_rounded,
-          onLeading: () {},
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                NurseUi.t('Earnings & Payments'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: NurseUi.pageTitleStyle.copyWith(fontSize: 19),
+              ),
+            ),
+            ...NurseUi.headerActions(providerUserId: widget.user.userId),
+          ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 18),
         _providerHeader(provider),
         const SizedBox(height: 18),
         _rateApprovalCard(eligibility),
         if (!canWork) ...[
           const SizedBox(height: 24),
           _infoBox(
-            'Accept your admin-set hourly rate to unlock earnings, sessions, payouts, and nurse services.',
+            NurseUi.t(
+              'Accept your admin-set hourly rate to unlock earnings, sessions, payouts, and nurse services.',
+            ),
           ),
           const SizedBox(height: 90),
         ] else ...[
           const SizedBox(height: 22),
           _balanceCard(
-            title: 'Available Balance (Pending)',
+            title: NurseUi.t('Available Balance (Pending)'),
             amount: _num(wallet['availableBalance']),
-            subtitle: '${_int(summary['totalPoints'])} Points',
+            subtitle: '${_int(summary['totalPoints'])} ${NurseUi.t('Points')}',
           ),
           const SizedBox(height: 16),
           Row(
@@ -316,7 +327,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
               Expanded(
                 child: _actionTile(
                   Icons.account_balance_wallet_outlined,
-                  NurseUi.isArabic.value ? 'Ø·Ù„Ø¨ Ø¯ÙØ¹Ø©' : 'Request Payout',
+                  NurseUi.t('Request Payout'),
                   () => setState(() => _view = _EarningsView.requestPayout),
                 ),
               ),
@@ -324,7 +335,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
               Expanded(
                 child: _actionTile(
                   Icons.receipt_long_outlined,
-                  NurseUi.isArabic.value ? 'Ø³Ø¬Ù„ Ø§Ù„Ø£Ø±Ø¨Ø§Ø­' : 'Earnings History',
+                  NurseUi.t('Earnings History'),
                   () => setState(() => _view = _EarningsView.requests),
                 ),
               ),
@@ -333,19 +344,15 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
           const SizedBox(height: 18),
           _wideAction(
             Icons.medical_services_outlined,
-            NurseUi.isArabic.value ? 'Ø®Ø¯Ù…Ø§ØªÙŠ (Ø§Ù„Ø¬Ù„Ø³Ø§Øª)' : 'My Services (Sessions)',
-            NurseUi.isArabic.value
-                ? 'Ø±Ø§Ø¬Ø¹ÙŠ Ø§Ù„Ø¬Ù„Ø³Ø§Øª Ø§Ù„Ù…ÙƒØªÙ…Ù„Ø© ÙˆØ§Ù„Ù…Ø¹Ù„Ù‚Ø©'
-                : 'Review completed and pending sessions',
+            NurseUi.t('My Services (Sessions)'),
+            NurseUi.t('Review completed and pending sessions'),
             () => setState(() => _view = _EarningsView.sessions),
           ),
           const SizedBox(height: 12),
           _wideAction(
             Icons.bar_chart_rounded,
             NurseUi.t('Overall Summary'),
-            NurseUi.isArabic.value
-                ? 'Ù…Ø¬Ù…Ø¹Ø© Ø­Ø³Ø¨ Ø§Ù„Ø®Ø¯Ù…Ø© ÙˆØªØ³Ø¹ÙŠØ± Ø§Ù„Ø£Ø¯Ù…Ù†'
-                : 'Grouped by service and admin pricing rules',
+            NurseUi.t('Grouped by service and admin pricing rules'),
             () => setState(() => _view = _EarningsView.summary),
           ),
         ],
@@ -365,9 +372,8 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 110),
       children: [
         _topBar(
-          NurseUi.isArabic.value ? 'Ø®Ø¯Ù…Ø§ØªÙŠ (Ø§Ù„Ø¬Ù„Ø³Ø§Øª)' : 'My Services (Sessions)',
+          NurseUi.t('My Services (Sessions)'),
           leading: Icons.arrow_back_rounded,
-          trailing: Icons.filter_list_rounded,
           onLeading: () => setState(() => _view = _EarningsView.overview),
         ),
         const SizedBox(height: 20),
@@ -376,7 +382,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
         }),
         const SizedBox(height: 16),
         if (filtered.isEmpty)
-          _emptyCard(NurseUi.isArabic.value ? 'Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¬Ù„Ø³Ø§Øª' : 'No sessions found')
+          _emptyCard(NurseUi.t('No sessions found'))
         else
           for (final session in filtered) ...[
             _sessionCard(session),
@@ -401,7 +407,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
         Text(NurseUi.t('Summary by Service'), style: _sectionTitle),
         const SizedBox(height: 12),
         if (services.isEmpty)
-          _emptyCard(NurseUi.isArabic.value ? 'Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ù…Ù„Ø®Øµ Ø£Ø±Ø¨Ø§Ø­ Ø¨Ø¹Ø¯' : 'No earnings summary yet')
+          _emptyCard(NurseUi.t('No earnings summary yet'))
         else
           for (final service in services) ...[
             _serviceSummaryCard(service),
@@ -417,7 +423,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
         ]),
         const SizedBox(height: 18),
         _primaryButton(
-          NurseUi.isArabic.value ? 'Ø·Ù„Ø¨ Ø¯ÙØ¹Ø©' : 'Request Payout',
+          NurseUi.t('Request Payout'),
           Icons.account_balance_wallet_outlined,
           () => setState(() => _view = _EarningsView.requestPayout),
         ),
@@ -434,9 +440,8 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 110),
       children: [
         _topBar(
-          NurseUi.isArabic.value ? 'Ø·Ù„Ø¨ Ø¯ÙØ¹Ø©' : 'Request Payout',
+          NurseUi.t('Request Payout'),
           leading: Icons.arrow_back_rounded,
-          trailing: Icons.more_horiz_rounded,
           onLeading: () => setState(() => _view = _EarningsView.overview),
         ),
         const SizedBox(height: 24),
@@ -461,11 +466,15 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
         _paymentMethodCard(method),
         const SizedBox(height: 18),
         _infoBox(
-          'Your request will be reviewed by admin. You will be notified once the payment is approved.',
+          NurseUi.t(
+            'Your request will be reviewed by admin. You will be notified once the payment is approved.',
+          ),
         ),
         const SizedBox(height: 22),
         _primaryButton(
-          _submitting ? 'Submitting...' : 'Submit Request',
+          _submitting
+              ? NurseUi.t('Submitting...')
+              : NurseUi.t('Submit Request'),
           Icons.send_rounded,
           _submitting ? null : _requestPayout,
         ),
@@ -482,8 +491,8 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
       children: [
         _successIcon(),
         const SizedBox(height: 24),
-        const Text(
-          'Request Submitted!',
+        Text(
+          NurseUi.t('Request Submitted!'),
           textAlign: TextAlign.center,
           style: TextStyle(
             color: _primary,
@@ -493,7 +502,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
         ),
         const SizedBox(height: 14),
         Text(
-          'Your payout request of\n${_money(amount)}\nhas been submitted successfully.',
+          '${NurseUi.t('Your payout request of')}\n${_money(amount)}\n${NurseUi.t('has been submitted successfully.')}',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: _text,
@@ -509,16 +518,16 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
             color: const Color(0xFFFFF7E6),
             borderRadius: BorderRadius.circular(18),
           ),
-          child: const Column(
+          child: Column(
             children: [
               Text(
-                'Request Status',
-                style: TextStyle(fontWeight: FontWeight.w900),
+                NurseUi.t('Request Status'),
+                style: const TextStyle(fontWeight: FontWeight.w900),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
-                'Pending Approval',
-                style: TextStyle(
+                NurseUi.t('Pending Approval'),
+                style: const TextStyle(
                   color: Color(0xFFF59E0B),
                   fontWeight: FontWeight.w900,
                   fontSize: 18,
@@ -529,7 +538,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
         ),
         const SizedBox(height: 120),
         _outlineButton(
-          'View My Requests',
+          NurseUi.t('View My Requests'),
           Icons.list_alt_rounded,
           () => setState(() => _view = _EarningsView.requests),
         ),
@@ -549,9 +558,8 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 110),
       children: [
         _topBar(
-          'My Payout Requests',
+          NurseUi.t('My Payout Requests'),
           leading: Icons.arrow_back_rounded,
-          trailing: Icons.more_horiz_rounded,
           onLeading: () => setState(() => _view = _EarningsView.overview),
         ),
         const SizedBox(height: 20),
@@ -560,7 +568,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
         }),
         const SizedBox(height: 16),
         if (filtered.isEmpty)
-          _emptyCard('No payout requests yet')
+          _emptyCard(NurseUi.t('No payout requests yet'))
         else
           for (final payout in filtered) ...[
             _payoutCard(payout),
@@ -568,7 +576,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
           ],
         const SizedBox(height: 22),
         _outlineButton(
-          'View Payment Received',
+          NurseUi.t('View Payment Received'),
           Icons.payments_outlined,
           _list('transactions').isEmpty
               ? null
@@ -589,15 +597,15 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
       padding: const EdgeInsets.fromLTRB(20, 26, 20, 110),
       children: [
         _topBar(
-          'Payment Received',
+          NurseUi.t('Payment Received'),
           leading: Icons.arrow_back_rounded,
           onLeading: () => setState(() => _view = _EarningsView.requests),
         ),
         const SizedBox(height: 26),
         _successIcon(),
         const SizedBox(height: 22),
-        const Text(
-          'Payment Received!',
+        Text(
+          NurseUi.t('Payment Received!'),
           textAlign: TextAlign.center,
           style: TextStyle(
             color: _primary,
@@ -607,7 +615,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
         ),
         const SizedBox(height: 10),
         Text(
-          '${_money(_num(transaction['amount']))}\nhas been transferred to you.',
+          '${_money(_num(transaction['amount']))}\n${NurseUi.t('has been transferred to you.')}',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 20,
@@ -623,28 +631,27 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
           (
             'Payment Method',
             _status(method['type']).isEmpty
-                ? 'Not configured'
-                : _status(method['type']),
+                ? NurseUi.t('Not configured')
+                : NurseUi.t(_title(_status(method['type']))),
           ),
           (
             'Status',
             _status(transaction['status']).isEmpty
-                ? 'Completed'
-                : _status(transaction['status']),
+                ? NurseUi.t('Completed')
+                : NurseUi.t(_title(_status(transaction['status']))),
           ),
         ]),
         const SizedBox(height: 22),
-        _outlineButton('Download Receipt', Icons.download_rounded, () {}),
+        _outlineButton(
+          NurseUi.t('Download Receipt'),
+          Icons.download_rounded,
+          () {},
+        ),
       ],
     );
   }
 
-  Widget _topBar(
-    String title, {
-    IconData? leading,
-    IconData? trailing,
-    VoidCallback? onLeading,
-  }) {
+  Widget _topBar(String title, {IconData? leading, VoidCallback? onLeading}) {
     return Row(
       children: [
         IconButton(
@@ -656,18 +663,13 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
           child: Text(
             title,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: _text,
-            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: NurseUi.pageTitleStyle.copyWith(fontSize: 18),
           ),
         ),
-        IconButton(
-          onPressed: trailing == null ? null : () {},
-          icon: Icon(trailing ?? Icons.notifications_none_rounded),
-          color: _primary,
-        ),
+        // Balancing box keeps the title centered; no dead action buttons.
+        const SizedBox(width: 48),
       ],
     );
   }
@@ -677,7 +679,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
       children: [
         CircleAvatar(
           radius: 42,
-          backgroundColor: const Color(0xFFDDF2EF),
+          backgroundColor: NurseUi.softSurface,
           child: Text(
             _initial(provider['name']),
             style: TextStyle(
@@ -704,12 +706,9 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                '${_title(_status(provider['role']).isEmpty ? 'Nurse' : _status(provider['role']))}'
-                '${_status(provider['specialty']).isEmpty ? '' : ' â€¢ ${_status(provider['specialty'])}'}',
-                style: TextStyle(
-                  color: _primary,
-                  fontWeight: FontWeight.w800,
-                ),
+                '${NurseUi.t(_title(_status(provider['role']).isEmpty ? 'Nurse' : _status(provider['role'])))}'
+                '${_status(provider['specialty']).isEmpty ? '' : ' • ${NurseUi.t(_status(provider['specialty']))}'}',
+                style: TextStyle(color: _primary, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
               Row(
@@ -721,7 +720,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    '${_num(provider['rating']).toStringAsFixed(1)} (${_int(provider['reviews'])} reviews)',
+                    '${_num(provider['rating']).toStringAsFixed(1)} (${_int(provider['reviews'])} ${NurseUi.t('reviews')})',
                     style: TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ],
@@ -759,9 +758,9 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Admin Hourly Rate',
-                      style: TextStyle(
+                    Text(
+                      NurseUi.t('Admin Hourly Rate'),
+                      style: const TextStyle(
                         fontWeight: FontWeight.w900,
                         fontSize: 16,
                       ),
@@ -769,8 +768,8 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
                     const SizedBox(height: 4),
                     Text(
                       rate > 0
-                          ? '${_money(rate)} per hour'
-                          : 'Waiting for admin rate',
+                          ? '${_money(rate)} ${NurseUi.t('per hour')}'
+                          : NurseUi.t('Waiting for admin rate'),
                       style: TextStyle(
                         color: _muted,
                         fontWeight: FontWeight.w800,
@@ -781,10 +780,10 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
               ),
               _pill(
                 canWork
-                    ? 'Ready'
+                    ? NurseUi.t('Ready')
                     : status.isEmpty
-                    ? 'Pending'
-                    : _title(status),
+                    ? NurseUi.t('Pending')
+                    : NurseUi.t(_title(status)),
                 color.withValues(alpha: 0.12),
                 color,
               ),
@@ -794,9 +793,13 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
           Text(
             approval == 'approved'
                 ? (reason.isEmpty
-                      ? 'Your account is approved. Accept the hourly rate before accepting requests or starting sessions.'
+                      ? NurseUi.t(
+                          'Your account is approved. Accept the hourly rate before accepting requests or starting sessions.',
+                        )
                       : reason)
-                : 'Admin approval is required before accepting requests or starting sessions.',
+                : NurseUi.t(
+                    'Admin approval is required before accepting requests or starting sessions.',
+                  ),
             style: TextStyle(
               color: _text,
               fontWeight: FontWeight.w700,
@@ -811,7 +814,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () => _decideRate('rejected'),
                     icon: const Icon(Icons.close_rounded),
-                    label: const Text('Reject Rate'),
+                    label: Text(NurseUi.t('Reject Rate')),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFFEF4444),
                       side: const BorderSide(color: Color(0xFFEF4444)),
@@ -826,7 +829,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
                   child: ElevatedButton.icon(
                     onPressed: () => _decideRate('accepted'),
                     icon: const Icon(Icons.check_rounded),
-                    label: const Text('Accept Rate'),
+                    label: Text(NurseUi.t('Accept Rate')),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _primary,
                       foregroundColor: Colors.white,
@@ -853,7 +856,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 26),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF0F766E), Color(0xFF0A5C54)],
+          colors: [AppColors.primary, AppColors.primaryDark],
         ),
         borderRadius: BorderRadius.circular(18),
         boxShadow: _shadow,
@@ -862,10 +865,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
         children: [
           Text(
             title,
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 12),
           Text(
@@ -879,10 +879,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
           const SizedBox(height: 8),
           Text(
             subtitle,
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
           ),
         ],
       ),
@@ -893,8 +890,9 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: const Color(0xFFEAF7F5),
+        color: NurseUi.softSurface,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.7)),
         boxShadow: _shadow,
       ),
       child: Row(
@@ -904,7 +902,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Available Balance (Pending)',
+                  NurseUi.t('Available Balance (Pending)'),
                   style: TextStyle(color: _muted, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
@@ -918,16 +916,16 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '$points Points',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+                  '$points ${NurseUi.t('Points')}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
               ],
             ),
           ),
-          const Icon(
+          Icon(
             Icons.account_balance_wallet_rounded,
             size: 58,
-            color: Color(0xFF60A5FA),
+            color: AppColors.primary.withValues(alpha: 0.55),
           ),
         ],
       ),
@@ -941,7 +939,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
       child: Column(
         children: [
           Text(
-            label,
+            NurseUi.t(label),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: _muted,
@@ -1009,10 +1007,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
                 children: [
                   Text(
                     title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -1025,11 +1020,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
                 ],
               ),
             ),
-            const Icon(
-              Icons.arrow_forward_ios_rounded,
-              color: _primary,
-              size: 18,
-            ),
+            Icon(Icons.arrow_forward_ios_rounded, color: _primary, size: 18),
           ],
         ),
       ),
@@ -1053,8 +1044,8 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _status(session['specialization']),
-                  style: TextStyle(
+                  NurseUi.t(_status(session['specialization'])),
+                  style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 16,
                   ),
@@ -1062,22 +1053,16 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
                 const SizedBox(height: 5),
                 Text(
                   _date(session['dateTime']),
-                  style: TextStyle(
-                    color: _text,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: TextStyle(color: _text, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${_duration(session['duration'])} â€¢ ${_title(status)}',
-                  style: TextStyle(
-                    color: _muted,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  '${_duration(session['duration'])} • ${NurseUi.t(_title(status))}',
+                  style: TextStyle(color: _muted, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
                 _pill(
-                  '${_int(session['points'])} ${_int(session['points']) == 1 ? 'Point' : 'Points'}',
+                  '${_int(session['points'])} ${_int(session['points']) == 1 ? NurseUi.t('Point') : NurseUi.t('Points')}',
                   const Color(0xFFE5F7EF),
                   const Color(0xFF16A34A),
                 ),
@@ -1090,14 +1075,11 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
             children: [
               Text(
                 _money(_num(session['ratePerSession'])),
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 17,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
               ),
               const SizedBox(height: 4),
               Text(
-                'Per Hour',
+                NurseUi.t('Per Hour'),
                 style: TextStyle(
                   color: _muted,
                   fontWeight: FontWeight.w700,
@@ -1126,8 +1108,8 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
               const SizedBox(width: 14),
               Expanded(
                 child: Text(
-                  _status(service['specialization']),
-                  style: TextStyle(
+                  NurseUi.t(_status(service['specialization'])),
+                  style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 17,
                   ),
@@ -1162,11 +1144,8 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'Rate / Hour: ${_money(_num(service['ratePerSession']))}',
-              style: TextStyle(
-                color: _muted,
-                fontWeight: FontWeight.w800,
-              ),
+              '${NurseUi.t('Rate / Hour')}: ${_money(_num(service['ratePerSession']))}',
+              style: TextStyle(color: _muted, fontWeight: FontWeight.w800),
             ),
           ),
         ],
@@ -1178,7 +1157,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
     return Column(
       children: [
         Text(
-          label,
+          NurseUi.t(label),
           textAlign: TextAlign.center,
           style: TextStyle(
             color: _muted,
@@ -1199,8 +1178,8 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
 
   Widget _paymentMethodCard(Map<String, dynamic> method) {
     final type = _status(method['type']).isEmpty
-        ? 'Payment method not configured'
-        : _status(method['type']);
+        ? NurseUi.t('Payment method not configured')
+        : NurseUi.t(_title(_status(method['type'])));
     final details = _status(method['details']);
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1252,13 +1231,23 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Request #${_shortId(payout['payoutId'])}',
-                    style: TextStyle(fontWeight: FontWeight.w900),
+                  Row(
+                    children: [
+                      Icon(Icons.payments_outlined, color: _primary, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          NurseUi.t('Payout request'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _date(payout['createdAt']),
+                    '${NurseUi.t('Created')} • ${_date(payout['createdAt'])}',
                     style: TextStyle(
                       color: _muted,
                       fontWeight: FontWeight.w700,
@@ -1267,16 +1256,13 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
                   const SizedBox(height: 12),
                   Text(
                     _money(_num(payout['amount'])),
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
                   ),
                 ],
               ),
             ),
             _pill(
-              label.isEmpty ? 'Pending' : label,
+              label.isEmpty ? NurseUi.t('Pending') : NurseUi.t(label),
               color.withValues(alpha: 0.12),
               color,
             ),
@@ -1297,7 +1283,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    rows[i].$1,
+                    NurseUi.t(rows[i].$1),
                     style: TextStyle(
                       color: _muted,
                       fontWeight: FontWeight.w800,
@@ -1309,10 +1295,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
                   child: Text(
                     rows[i].$2,
                     textAlign: TextAlign.right,
-                    style: TextStyle(
-                      color: _text,
-                      fontWeight: FontWeight.w900,
-                    ),
+                    style: TextStyle(color: _text, fontWeight: FontWeight.w900),
                   ),
                 ),
               ],
@@ -1335,19 +1318,19 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
         children: [
           for (final value in values) ...[
             ChoiceChip(
-              label: Text(value),
+              label: Text(NurseUi.t(value)),
               selected: selected == value,
               onSelected: (_) => onChanged(value),
               selectedColor: _primary,
-              backgroundColor: Colors.white,
+              backgroundColor: NurseUi.surface,
               labelStyle: TextStyle(
                 color: selected == value ? Colors.white : _text,
                 fontWeight: FontWeight.w900,
               ),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(999),
                 side: BorderSide(
-                  color: selected == value ? _primary : const Color(0xFFE5E7EB),
+                  color: selected == value ? _primary : NurseUi.border,
                 ),
               ),
               showCheckmark: false,
@@ -1441,8 +1424,8 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
       child: Container(
         width: 100,
         height: 100,
-        decoration: const BoxDecoration(
-          color: Color(0xFFDDF2EF),
+        decoration: BoxDecoration(
+          color: NurseUi.softSurface,
           shape: BoxShape.circle,
         ),
         child: const Center(
@@ -1483,7 +1466,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
   }
 
   BoxDecoration _cardDecoration({Color? borderColor}) {
-    return NurseUi.cardDecoration(borderColor: borderColor);
+    return NurseUi.cardDecoration(radius: 18, borderColor: borderColor);
   }
 
   List<BoxShadow> get _shadow => NurseUi.softShadow;
@@ -1512,7 +1495,7 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
     final fixed = value % 1 == 0
         ? value.toStringAsFixed(0)
         : value.toStringAsFixed(2);
-    return '$fixed ILS';
+    return '$fixed ${NurseUi.t('ILS')}';
   }
 
   String _date(Object? value) {
@@ -1520,34 +1503,49 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
     if (raw.isEmpty) return '-';
     final parsed = DateTime.tryParse(raw);
     if (parsed == null) return raw;
-    final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
+    final months = NurseUi.isArabic.value
+        ? const [
+            'يناير',
+            'فبراير',
+            'مارس',
+            'أبريل',
+            'مايو',
+            'يونيو',
+            'يوليو',
+            'أغسطس',
+            'سبتمبر',
+            'أكتوبر',
+            'نوفمبر',
+            'ديسمبر',
+          ]
+        : const [
+            'Jan',
+            'Feb',
+            'Mar',
+            'Apr',
+            'May',
+            'Jun',
+            'Jul',
+            'Aug',
+            'Sep',
+            'Oct',
+            'Nov',
+            'Dec',
+          ];
     final hour = parsed.hour % 12 == 0 ? 12 : parsed.hour % 12;
     final minute = parsed.minute.toString().padLeft(2, '0');
-    final suffix = parsed.hour >= 12 ? 'PM' : 'AM';
-    return '${months[parsed.month - 1]} ${parsed.day}, ${parsed.year} â€¢ $hour:$minute $suffix';
+    final suffix = parsed.hour >= 12 ? NurseUi.t('PM') : NurseUi.t('AM');
+    return '${months[parsed.month - 1]} ${parsed.day}, ${parsed.year} • $hour:$minute $suffix';
   }
 
   String _duration(Object? minutesValue) {
     final minutes = _int(minutesValue);
-    if (minutes <= 0) return 'Duration not set';
-    if (minutes < 60) return '$minutes min';
+    if (minutes <= 0) return NurseUi.t('Duration not set');
+    if (minutes < 60) return '$minutes ${NurseUi.t('min')}';
     final hours = minutes / 60;
     return hours % 1 == 0
-        ? '${hours.toStringAsFixed(0)} Hours'
-        : '${hours.toStringAsFixed(1)} Hours';
+        ? '${hours.toStringAsFixed(0)} ${NurseUi.t('Hours')}'
+        : '${hours.toStringAsFixed(1)} ${NurseUi.t('Hours')}';
   }
 
   String _initial(Object? name) {
@@ -1562,12 +1560,6 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
         .where((part) => part.isNotEmpty)
         .map((part) => part[0].toUpperCase() + part.substring(1).toLowerCase())
         .join(' ');
-  }
-
-  String _shortId(Object? value) {
-    final raw = _status(value);
-    if (raw.length <= 12) return raw;
-    return raw.substring(raw.length - 12).toUpperCase();
   }
 
   IconData _serviceIcon(Object? specialization) {
@@ -1603,10 +1595,6 @@ class _NurseEarningsScreenState extends State<NurseEarningsScreen> {
     }
   }
 
-  TextStyle get _sectionTitle => TextStyle(
-    color: _text,
-    fontSize: 18,
-    fontWeight: FontWeight.w900,
-  );
+  TextStyle get _sectionTitle =>
+      NurseUi.textStyle(fontSize: 16, fontWeight: FontWeight.w900);
 }
-

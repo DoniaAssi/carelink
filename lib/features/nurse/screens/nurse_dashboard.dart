@@ -1,15 +1,18 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/profile_avatar.dart';
 import 'package:carelink/features/nurse/models/nurse_dashboard_model.dart';
 import 'package:carelink/features/nurse/services/nurse_dashboard_repository.dart';
 import 'package:carelink/shared/models/service_request.dart';
 import 'package:carelink/shared/models/user.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/shared/services/provider_profile_service.dart';
+import 'package:carelink/shared/widgets/carelink_floating_bottom_nav.dart';
 
 import 'nurse_patients.dart';
 import 'nurse_activity_screen.dart';
@@ -34,6 +37,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
   late final NurseDashboardController dashboardController;
   Timer? dashboardSyncTimer;
   int selectedIndex = 0;
+  String? nurseProfileImageUrl;
 
   @override
   void initState() {
@@ -41,6 +45,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
     selectedIndex = widget.initialIndex;
     dashboardController = NurseDashboardController(user: widget.user);
     _loadUiSettings();
+    _loadProfileHeader();
     dashboardController.load();
     dashboardSyncTimer = Timer.periodic(const Duration(seconds: 12), (_) {
       if (!mounted || selectedIndex != 0) return;
@@ -57,6 +62,15 @@ class _NurseDashboardState extends State<NurseDashboard> {
 
   Future<void> _loadUiSettings() async {
     await NurseUi.loadSettings(widget.user.userId);
+  }
+
+  Future<void> _loadProfileHeader() async {
+    final profile = await ProviderProfileService.getProfile(widget.user.userId);
+    if (!mounted || profile == null) return;
+    final json = profile.toJson();
+    setState(() {
+      nurseProfileImageUrl = profileImageUrlFromMap(json);
+    });
   }
 
   Future<void> _decideRate(String decision) async {
@@ -102,7 +116,6 @@ class _NurseDashboardState extends State<NurseDashboard> {
     return NurseUi.reactive(
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
-        drawer: _drawer(),
         body: IndexedStack(
           index: selectedIndex,
           children: [
@@ -133,11 +146,11 @@ class _NurseDashboardState extends State<NurseDashboard> {
         final model = dashboardController.model;
         return SafeArea(
           child: RefreshIndicator(
-          color: const Color(0xFF0F766E),
+            color: AppColors.primaryDark,
             onRefresh: dashboardController.refresh,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 104),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 104),
               children: [
                 if (dashboardController.isLoading)
                   _loadingDashboard()
@@ -157,18 +170,16 @@ class _NurseDashboardState extends State<NurseDashboard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _dashboardHeader(model.notificationCount),
-        const SizedBox(height: 18),
-        _greeting(model),
-        const SizedBox(height: 20),
+        _homeHeader(model, notificationCount: model.notificationCount),
+        const SizedBox(height: 16),
         if (!model.canWork) ...[
           _rateGateCard(model),
         ] else ...[
-          _quickGrid(),
-          const SizedBox(height: 26),
+          _quickGrid(model),
+          const SizedBox(height: 16),
           _upcomingVisitsSection(model),
-          const SizedBox(height: 22),
-          _motivationBanner(),
+          const SizedBox(height: 16),
+          _dashboardSummaryCard(model),
         ],
       ],
     );
@@ -264,94 +275,191 @@ class _NurseDashboardState extends State<NurseDashboard> {
     );
   }
 
-  Widget _dashboardHeader(int notificationCount) {
-    return Row(
-      children: [
-        Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu_rounded, size: 22),
-            color: const Color(0xFF0F766E),
-            onPressed: () => Scaffold.of(context).openDrawer(),
+  Widget _homeHeader(
+    NurseDashboardModel? model, {
+    required int notificationCount,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 380;
+        final avatarSize = compact ? 38.0 : 42.0;
+        return SizedBox(
+          width: double.infinity,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              InkWell(
+                onTap: () => setState(() => selectedIndex = 5),
+                customBorder: const CircleBorder(),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: avatarSize,
+                      height: avatarSize,
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: NurseUi.surface,
+                        border: Border.all(
+                          color: AppColors.primary,
+                          width: 1.6,
+                        ),
+                        boxShadow: NurseUi.softShadow,
+                      ),
+                      child: ClipOval(
+                        child: profileAvatarOrPlaceholder(
+                          imageUrl: nurseProfileImageUrl,
+                          size: avatarSize - 4,
+                          placeholderColor: AppColors.primary,
+                          placeholderIcon: Icons.person,
+                          iconSize: 22,
+                        ),
+                      ),
+                    ),
+                    PositionedDirectional(
+                      end: 1,
+                      bottom: 1,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: NurseUi.background,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(width: compact ? 10 : 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            _timeGreeting(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: NurseUi.heroTitleStyle.copyWith(
+                              fontSize: compact ? 16 : 17,
+                              height: 1.1,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(
+                              alpha: NurseUi.isDarkMode.value ? 0.18 : 0.10,
+                            ),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            NurseUi.t('Nurse'),
+                            maxLines: 1,
+                            style: NurseUi.textStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.calendar_today_outlined,
+                          color: AppColors.primary,
+                          size: 12,
+                        ),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            _todayLabel(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: NurseUi.textStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: NurseUi.muted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(width: compact ? 4 : 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  NurseModeControls(
+                    providerUserId: widget.user.userId,
+                    onChanged: () => setState(() {}),
+                  ),
+                  _notificationButton(notificationCount),
+                ],
+              ),
+            ],
           ),
-        ),
-        const Spacer(),
-        NurseModeControls(
-          providerUserId: widget.user.userId,
-          onChanged: () => setState(() {}),
-        ),
-        _notificationButton(notificationCount),
-      ],
+        );
+      },
     );
   }
 
   Widget _notificationButton(int count) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        IconButton(
-          icon: const Icon(Icons.notifications_none_rounded, size: 22),
-          color: NurseUi.text,
-          onPressed: () => setState(() => selectedIndex = 4),
-        ),
-        if (count > 0) Positioned(right: 4, top: 3, child: _smallBadge(count)),
-      ],
+    return SizedBox(
+      width: 34,
+      height: 34,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.notifications_none_rounded),
+            iconSize: 23,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+            color: AppColors.primary,
+            onPressed: () => setState(() => selectedIndex = 4),
+          ),
+          if (count > 0)
+            Positioned(right: -1, top: -1, child: _smallBadge(count)),
+        ],
+      ),
     );
   }
 
-  Widget _greeting(NurseDashboardModel model) {
-    final name = _firstNameFrom(model.nurseName);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          NurseUi.isArabic.value ? 'مرحبا، $name' : 'Hello, Nurse $name',
-          style: TextStyle(
-            color: NurseUi.text,
-            fontSize: 18,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0,
-          ),
-        ),
-        const SizedBox(height: 7),
-        Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(text: NurseUi.isArabic.value ? 'لديك ' : 'You have '),
-              TextSpan(
-                text: '${model.upcomingVisitsCount}',
-                style: TextStyle(
-                  color: Color(0xFF0F766E),
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              TextSpan(
-                text: NurseUi.isArabic.value
-                    ? ' زيارات قادمة اليوم.'
-                    : ' upcoming visits today.',
-              ),
-            ],
-          ),
-          style: TextStyle(
-            color: NurseUi.text,
-            fontSize: 11.5,
-            height: 1.35,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _quickGrid() {
+  Widget _quickGrid(NurseDashboardModel model) {
+    final patientCount = model.allRequests
+        .map((r) => r.patientId.trim().isEmpty ? r.patientName : r.patientId)
+        .toSet()
+        .length;
     final actions = [
       (
         Icons.calendar_month_outlined,
         NurseUi.t('My Schedule'),
+        '${model.upcomingVisitsCount} ${NurseUi.t('Today')}',
         () => setState(() => selectedIndex = 1),
       ),
       (
         Icons.assignment_outlined,
-        NurseUi.t('All Requests'),
+        NurseUi.t('Requests'),
+        '${model.pendingRequestsCount} ${NurseUi.t('Pending')}',
         () => Navigator.push(
           context,
           MaterialPageRoute(
@@ -362,11 +470,13 @@ class _NurseDashboardState extends State<NurseDashboard> {
       (
         Icons.people_outline_rounded,
         NurseUi.t('Patients'),
+        '$patientCount ${NurseUi.label('Total', 'إجمالي')}',
         () => setState(() => selectedIndex = 2),
       ),
       (
         Icons.insert_chart_outlined,
         NurseUi.t('Reports'),
+        '${model.completedVisitsCount} ${NurseUi.t('Completed')}',
         () => Navigator.push(
           context,
           MaterialPageRoute(
@@ -376,66 +486,91 @@ class _NurseDashboardState extends State<NurseDashboard> {
       ),
     ];
 
-    return GridView.builder(
-      itemCount: actions.length,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 0.86,
-      ),
-      itemBuilder: (context, index) {
-        final item = actions[index];
-        return InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: item.$3,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              color: NurseUi.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: NurseUi.border),
-              boxShadow: _modernShadow,
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE6F7F4),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    item.$1,
-                    color: const Color(0xFF0F766E),
-                    size: 17,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Text(
-                    item.$2,
-                    maxLines: 2,
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: NurseUi.text,
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w900,
-                      height: 1.1,
-                    ),
-                  ),
-                ),
-              ],
+    return Row(
+      children: [
+        for (var i = 0; i < actions.length; i++) ...[
+          if (i > 0) const SizedBox(width: 8),
+          Expanded(
+            child: _quickActionCard(
+              icon: actions[i].$1,
+              title: actions[i].$2,
+              stat: actions[i].$3,
+              onTap: actions[i].$4,
             ),
           ),
-        );
-      },
+        ],
+      ],
+    );
+  }
+
+  Widget _quickActionCard({
+    required IconData icon,
+    required String title,
+    required String stat,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+          decoration: BoxDecoration(
+            color: NurseUi.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: NurseUi.border.withValues(alpha: 0.7)),
+            boxShadow: [
+              BoxShadow(
+                color: NurseUi.palette.cardShadowColor(
+                  NurseUi.isDarkMode.value ? 0.24 : 0.04,
+                ),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(
+                    alpha: NurseUi.isDarkMode.value ? 0.18 : 0.10,
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: AppColors.primary, size: 18),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: NurseUi.textStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                stat,
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: NurseUi.textStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: NurseUi.muted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -444,13 +579,27 @@ class _NurseDashboardState extends State<NurseDashboard> {
       children: [
         Row(
           children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: NurseUi.palette.upcomingIconGradient,
+                ),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: const Icon(
+                Icons.calendar_month_rounded,
+                color: AppColors.primary,
+                size: 19,
+              ),
+            ),
+            const SizedBox(width: 10),
             Text(
               NurseUi.t('Upcoming Visits'),
-              style: TextStyle(
-                color: NurseUi.text,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w900,
-              ),
+              style: NurseUi.pageTitleStyle.copyWith(fontSize: 18),
             ),
             const Spacer(),
             TextButton.icon(
@@ -465,42 +614,31 @@ class _NurseDashboardState extends State<NurseDashboard> {
               iconAlignment: IconAlignment.end,
               label: Text(
                 NurseUi.t('View All'),
-                style: TextStyle(
-                  color: Color(0xFF0F766E),
-                  fontSize: 10,
+                style: NurseUi.bodyStyle.copyWith(
+                  color: AppColors.primary,
                   fontWeight: FontWeight.w900,
                 ),
               ),
               icon: const Icon(
                 Icons.arrow_forward_ios_rounded,
-                color: Color(0xFF0F766E),
-                size: 10,
+                color: AppColors.primary,
+                size: 15,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         Container(
-          decoration: _modernCardDecoration(radius: 12),
+          width: double.infinity,
+          decoration: _modernCardDecoration(radius: 20),
           child: model.upcomingVisits.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 42),
-                  child: Center(
-                    child: Text(
-                      NurseUi.t('No upcoming visits today'),
-                      style: TextStyle(
-                        color: NurseUi.muted,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                )
+              ? _emptyUpcomingVisitsCard()
               : Column(
                   children: [
                     for (var i = 0; i < model.upcomingVisits.length; i++) ...[
                       _visitRow(model.upcomingVisits[i]),
                       if (i != model.upcomingVisits.length - 1)
-                        const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                        Divider(height: 1, color: NurseUi.border),
                     ],
                   ],
                 ),
@@ -509,27 +647,98 @@ class _NurseDashboardState extends State<NurseDashboard> {
     );
   }
 
+  Widget _emptyUpcomingVisitsCard() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: NurseUi.palette.upcomingIconGradient,
+              ),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.calendar_month_rounded,
+              color: AppColors.primary,
+              size: 22,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            NurseUi.label('No upcoming visits', '\u0644\u0627 \u062a\u0648\u062c\u062f \u0632\u064a\u0627\u0631\u0627\u062a \u0642\u0627\u062f\u0645\u0629'),
+            textAlign: TextAlign.center,
+            style: NurseUi.sectionTitleStyle.copyWith(fontSize: 14),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            NurseUi.label(
+              "You're all caught up for today.",
+              '\u0623\u0646\u0647\u064a\u062a\u0650 \u0643\u0644 \u0634\u064a\u0621 \u0644\u0647\u0630\u0627 \u0627\u0644\u064a\u0648\u0645.',
+            ),
+            textAlign: TextAlign.center,
+            style: NurseUi.textStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: NurseUi.muted,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: () => setState(() => selectedIndex = 1),
+            icon: const Icon(Icons.calendar_today_outlined, size: 14),
+            label: Text(NurseUi.label('View Schedule', '\u0639\u0631\u0636 \u0627\u0644\u062c\u062f\u0648\u0644')),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              minimumSize: const Size(0, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              textStyle: NurseUi.textStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _visitRow(VisitModel visit) {
     final isPending = visit.status.toLowerCase() == 'pending';
     return InkWell(
       onTap: () => _openRequest(visit.request),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: const Color(0xFFE6F7F4),
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: NurseUi.palette.upcomingIconGradient,
+                ),
+                shape: BoxShape.circle,
+              ),
               child: Text(
                 visit.patientInitial,
-                style: const TextStyle(
-                  color: Color(0xFF0F766E),
-                  fontSize: 15,
+                style: NurseUi.textStyle(
+                  fontSize: 16,
                   fontWeight: FontWeight.w900,
+                  color: AppColors.primaryDark,
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -538,10 +747,9 @@ class _NurseDashboardState extends State<NurseDashboard> {
                     visit.patientName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: NurseUi.text,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
+                    style: NurseUi.textStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -549,19 +757,19 @@ class _NurseDashboardState extends State<NurseDashboard> {
                     visit.serviceType,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+                    style: NurseUi.textStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
                       color: NurseUi.muted,
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.location_on_outlined,
-                        color: Color(0xFF14B8A6),
-                        size: 11,
+                        color: AppColors.primary,
+                        size: 12,
                       ),
                       const SizedBox(width: 4),
                       Expanded(
@@ -569,10 +777,10 @@ class _NurseDashboardState extends State<NurseDashboard> {
                           visit.location,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+                          style: NurseUi.textStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
                             color: NurseUi.muted,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
@@ -588,34 +796,47 @@ class _NurseDashboardState extends State<NurseDashboard> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.access_time_rounded,
-                      color: Color(0xFF0F766E),
-                      size: 11,
+                      color: AppColors.primaryDark,
+                      size: 12,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       visit.time,
-                      style: TextStyle(
-                        color: NurseUi.text,
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w900,
+                      style: NurseUi.textStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 7),
                 _visitStatusBadge(
-                  isPending ? 'Pending' : 'Accepted',
-                  isPending ? const Color(0xFFFFEDD5) : const Color(0xFFDCFCE7),
+                  isPending
+                      ? NurseUi.label(
+                          'Pending',
+                          '\u0642\u064a\u062f \u0627\u0644\u0627\u0646\u062a\u0638\u0627\u0631',
+                        )
+                      : NurseUi.label(
+                          'Accepted',
+                          '\u0645\u0642\u0628\u0648\u0644',
+                        ),
+                  isPending
+                      ? const Color(0xFFF59E0B).withValues(
+                          alpha: NurseUi.isDarkMode.value ? 0.18 : 0.14,
+                        )
+                      : const Color(0xFF22C55E).withValues(
+                          alpha: NurseUi.isDarkMode.value ? 0.18 : 0.14,
+                        ),
                   isPending ? const Color(0xFFF59E0B) : const Color(0xFF22C55E),
                 ),
               ],
             ),
             const SizedBox(width: 8),
-            const Icon(
+            Icon(
               Icons.arrow_forward_ios_rounded,
-              color: Color(0xFF0F766E),
+              color: NurseUi.muted.withValues(alpha: 0.7),
               size: 13,
             ),
           ],
@@ -624,123 +845,128 @@ class _NurseDashboardState extends State<NurseDashboard> {
     );
   }
 
-  Widget _motivationBanner() {
+  Widget _dashboardSummaryCard(NurseDashboardModel model) {
     return Container(
       width: double.infinity,
-      height: 90,
-      padding: const EdgeInsets.fromLTRB(18, 16, 12, 0),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
-        color: NurseUi.softSurface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: NurseUi.border),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            left: 0,
-            top: 4,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  NurseUi.isArabic.value ? 'أنت تقومين بعمل رائع!' : "You're doing great!",
-                  style: TextStyle(
-                    color: NurseUi.text,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  NurseUi.isArabic.value
-                      ? 'رعايتك تحدث فرقًا كبيرًا.'
-                      : 'Your care makes a big difference.',
-                  style: TextStyle(
-                    color: NurseUi.muted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
+        color: NurseUi.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.7)),
+        boxShadow: [
+          BoxShadow(
+            color: NurseUi.palette.cardShadowColor(
+              NurseUi.isDarkMode.value ? 0.24 : 0.04,
             ),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
           ),
-          Positioned(right: 4, bottom: 0, child: _nurseIllustration()),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(
+                    alpha: NurseUi.isDarkMode.value ? 0.18 : 0.10,
+                  ),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: const Icon(
+                  Icons.today_rounded,
+                  color: AppColors.primary,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  NurseUi.label("Today's Schedule", 'جدول اليوم'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: NurseUi.sectionTitleStyle.copyWith(fontSize: 15),
+                ),
+              ),
+              TextButton(
+                onPressed: () => setState(() => selectedIndex = 1),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  minimumSize: const Size(0, 30),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  textStyle: NurseUi.textStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                child: Text(NurseUi.label('Quick View', 'عرض سريع')),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _summaryStat(
+                '${model.upcomingVisitsCount}',
+                NurseUi.label("Today's appointments", 'مواعيد اليوم'),
+              ),
+              _summaryDivider(),
+              _summaryStat(
+                '${model.pendingRequestsCount}',
+                NurseUi.label('Pending requests', 'طلبات معلقة'),
+              ),
+              _summaryDivider(),
+              _summaryStat(
+                '${model.completedVisitsCount}',
+                NurseUi.label('Completed visits', 'زيارات مكتملة'),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _nurseIllustration() {
-    return SizedBox(
-      width: 88,
-      height: 82,
-      child: Stack(
-        alignment: Alignment.bottomCenter,
+  Widget _summaryStat(String value, String label) {
+    return Expanded(
+      child: Column(
         children: [
-          Positioned(
-            right: 8,
-            top: 0,
-            child: Container(
-              width: 34,
-              height: 34,
-              decoration: const BoxDecoration(
-                color: Color(0xFF0F766E),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.favorite_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
+          Text(
+            value,
+            style: NurseUi.textStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: AppColors.primaryDark,
             ),
           ),
-          Positioned(
-            bottom: 0,
-            child: Container(
-              width: 48,
-              height: 42,
-              decoration: const BoxDecoration(
-                color: Color(0xFF0F766E),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: const Icon(
-                Icons.local_hospital,
-                color: Colors.white,
-                size: 22,
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 31,
-            child: Container(
-              width: 34,
-              height: 34,
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFD7C2),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 56,
-            child: Container(
-              width: 34,
-              height: 15,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
-              ),
-              child: const Center(
-                child: Icon(
-                  Icons.add_rounded,
-                  color: Color(0xFF0F766E),
-                  size: 12,
-                ),
-              ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            maxLines: 2,
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+            style: NurseUi.textStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              color: NurseUi.muted,
+              height: 1.2,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _summaryDivider() {
+    return Container(
+      width: 1,
+      height: 34,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      color: NurseUi.border.withValues(alpha: 0.8),
     );
   }
 
@@ -750,34 +976,46 @@ class _NurseDashboardState extends State<NurseDashboard> {
       children: [
         Row(
           children: const [
-            _SkeletonBox(width: 42, height: 42, radius: 14),
-            Spacer(),
-            _SkeletonBox(width: 42, height: 42, radius: 14),
+            _SkeletonBox(width: 50, height: 50, radius: 25),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _SkeletonBox(width: 150, height: 18, radius: 8),
+                  SizedBox(height: 7),
+                  _SkeletonBox(width: 112, height: 14, radius: 7),
+                  SizedBox(height: 6),
+                  _SkeletonBox(width: 130, height: 12, radius: 6),
+                ],
+              ),
+            ),
+            SizedBox(width: 10),
+            _SkeletonBox(width: 34, height: 34, radius: 17),
+            SizedBox(width: 8),
+            _SkeletonBox(width: 34, height: 34, radius: 17),
+            SizedBox(width: 8),
+            _SkeletonBox(width: 34, height: 34, radius: 17),
           ],
         ),
-        const SizedBox(height: 36),
-        const _SkeletonBox(width: 280, height: 38, radius: 12),
-        const SizedBox(height: 14),
-        const _SkeletonBox(width: 250, height: 24, radius: 10),
-        const SizedBox(height: 32),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 4,
-          mainAxisSpacing: 18,
-          crossAxisSpacing: 18,
-          childAspectRatio: 0.96,
+        const SizedBox(height: 24),
+        Row(
           children: const [
-            _SkeletonBox(radius: 22),
-            _SkeletonBox(radius: 22),
-            _SkeletonBox(radius: 22),
-            _SkeletonBox(radius: 22),
+            Expanded(child: _SkeletonBox(height: 92, radius: 18)),
+            SizedBox(width: 8),
+            Expanded(child: _SkeletonBox(height: 92, radius: 18)),
+            SizedBox(width: 8),
+            Expanded(child: _SkeletonBox(height: 92, radius: 18)),
+            SizedBox(width: 8),
+            Expanded(child: _SkeletonBox(height: 92, radius: 18)),
           ],
         ),
-        const SizedBox(height: 36),
-        const _SkeletonBox(width: 210, height: 28, radius: 10),
-        const SizedBox(height: 18),
-        const _SkeletonBox(height: 300, radius: 22),
+        const SizedBox(height: 24),
+        const _SkeletonBox(width: 210, height: 24, radius: 10),
+        const SizedBox(height: 12),
+        const _SkeletonBox(height: 180, radius: 18),
+        const SizedBox(height: 16),
+        const _SkeletonBox(height: 120, radius: 18),
       ],
     );
   }
@@ -785,7 +1023,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
   Widget _errorDashboard() {
     return Column(
       children: [
-        _dashboardHeader(0),
+        _homeHeader(null, notificationCount: 0),
         const SizedBox(height: 130),
         Container(
           padding: const EdgeInsets.all(22),
@@ -816,81 +1054,6 @@ class _NurseDashboardState extends State<NurseDashboard> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _drawer() {
-    return Drawer(
-      backgroundColor: NurseUi.surface,
-      child: SafeArea(
-        child: Column(
-          children: [
-            ListTile(
-              leading: _avatar(widget.user.fullName, radius: 24),
-              title: Text(
-                widget.user.fullName,
-                style: TextStyle(
-                  color: NurseUi.text,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              subtitle: Text(
-                NurseUi.t('Nurse'),
-                style: TextStyle(color: NurseUi.muted),
-              ),
-            ),
-            Divider(color: NurseUi.border),
-            _drawerItem(
-              Icons.home_rounded,
-              NurseUi.t('Home'),
-              0,
-            ),
-            _drawerItem(
-              Icons.calendar_month_rounded,
-              NurseUi.t('Sessions'),
-              1,
-            ),
-            _drawerItem(
-              Icons.people_outline_rounded,
-              NurseUi.t('Patients'),
-              2,
-            ),
-            _drawerItem(
-              Icons.account_balance_wallet_outlined,
-              NurseUi.t('Earnings'),
-              3,
-            ),
-            _drawerItem(
-              Icons.notifications_none_rounded,
-              NurseUi.t('Notifications'),
-              4,
-            ),
-            _drawerItem(
-              Icons.person_rounded,
-              NurseUi.t('Profile'),
-              5,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  Widget _drawerItem(IconData icon, String label, int index) {
-    return ListTile(
-      leading: Icon(icon, color: const Color(0xFF0F766E)),
-      title: Text(
-        label,
-        style: TextStyle(color: NurseUi.text, fontWeight: FontWeight.w800),
-      ),
-      onTap: () {
-        Navigator.pop(context);
-        if (!_canOpenTab(index)) {
-          _showRateLockedMessage();
-          setState(() => selectedIndex = 0);
-          return;
-        }
-        setState(() => selectedIndex = index);
-      },
     );
   }
 
@@ -926,14 +1089,18 @@ class _NurseDashboardState extends State<NurseDashboard> {
 
   Widget _visitStatusBadge(String text, Color bg, Color fg) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         text,
-        style: TextStyle(color: fg, fontSize: 9, fontWeight: FontWeight.w900),
+        style: NurseUi.textStyle(
+          color: fg,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -959,95 +1126,119 @@ class _NurseDashboardState extends State<NurseDashboard> {
     );
   }
 
-  Widget _avatar(String name, {double radius = 34}) {
-    return CircleAvatar(
-      radius: radius,
-      backgroundColor: const Color(0xFFDDF2EF),
-      child: Text(
-        name.trim().isEmpty ? 'N' : name.trim()[0].toUpperCase(),
-        style: const TextStyle(
-          color: AppColors.primaryDark,
-          fontWeight: FontWeight.w900,
-        ),
+  Widget _bottomNav() {
+    final items = [
+      CarelinkFloatingNavItem(
+        icon: Icons.home_outlined,
+        activeIcon: Icons.home_rounded,
+        label: NurseUi.t('Home'),
       ),
+      CarelinkFloatingNavItem(
+        icon: Icons.calendar_month_outlined,
+        activeIcon: Icons.calendar_month_rounded,
+        label: NurseUi.t('Sessions'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.people_outline_rounded,
+        activeIcon: Icons.people_rounded,
+        label: NurseUi.t('Patients'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.account_balance_wallet_outlined,
+        activeIcon: Icons.account_balance_wallet_rounded,
+        label: NurseUi.t('Earnings'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.notifications_none_rounded,
+        activeIcon: Icons.notifications_rounded,
+        label: NurseUi.t('Alerts'),
+      ),
+      CarelinkFloatingNavItem(
+        icon: Icons.person_outline_rounded,
+        activeIcon: Icons.person_rounded,
+        label: NurseUi.t('Profile'),
+      ),
+    ];
+    return CarelinkFloatingBottomNav(
+      items: items,
+      currentIndex: selectedIndex,
+      onTap: (index) {
+        if (selectedIndex == index) return;
+        if (!_canOpenTab(index)) {
+          _showRateLockedMessage();
+          setState(() => selectedIndex = 0);
+          return;
+        }
+        setState(() => selectedIndex = index);
+      },
     );
   }
 
-  Widget _bottomNav() {
-    final items = [
-      (Icons.home_outlined, NurseUi.t('Home')),
-      (Icons.calendar_month_outlined, NurseUi.t('Sessions')),
-      (Icons.people_outline_rounded, NurseUi.t('Patients')),
-      (Icons.account_balance_wallet_outlined, NurseUi.t('Earnings')),
-      (Icons.notifications_none_rounded, NurseUi.t('Alerts')),
-      (Icons.person_outline_rounded, NurseUi.t('Profile')),
-    ];
-    return Container(
-      margin: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      decoration: BoxDecoration(
-        color: NurseUi.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: NurseUi.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.10),
-            blurRadius: 22,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: [
-            for (var i = 0; i < items.length; i++)
-              Expanded(
-                child: InkWell(
-                  onTap: () {
-                    if (!_canOpenTab(i)) {
-                      _showRateLockedMessage();
-                      setState(() => selectedIndex = 0);
-                      return;
-                    }
-                    setState(() => selectedIndex = i);
-                  },
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        items[i].$1,
-                        color: selectedIndex == i
-                            ? AppColors.primaryDark
-                            : NurseUi.muted,
-                        size: 21,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        items[i].$2,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: selectedIndex == i
-                              ? AppColors.primaryDark
-                              : NurseUi.muted,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
+  String _timeGreeting() {
+    final hour = DateTime.now().hour;
+    if (NurseUi.isArabic.value) {
+      if (hour < 12) {
+        return '\u0635\u0628\u0627\u062d \u0627\u0644\u062e\u064a\u0631';
+      }
+      return '\u0645\u0633\u0627\u0621 \u0627\u0644\u062e\u064a\u0631';
+    }
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
   }
-  String _firstNameFrom(String name) {
-    final clean = name.trim();
-    if (clean.isEmpty) return 'Nurse';
-    return clean.split(RegExp(r'\s+')).first;
+
+  String _todayLabel() {
+    final now = DateTime.now();
+    if (NurseUi.isArabic.value) {
+      const days = [
+        '\u0627\u0644\u0627\u062b\u0646\u064a\u0646',
+        '\u0627\u0644\u062b\u0644\u0627\u062b\u0627\u0621',
+        '\u0627\u0644\u0623\u0631\u0628\u0639\u0627\u0621',
+        '\u0627\u0644\u062e\u0645\u064a\u0633',
+        '\u0627\u0644\u062c\u0645\u0639\u0629',
+        '\u0627\u0644\u0633\u0628\u062a',
+        '\u0627\u0644\u0623\u062d\u062f',
+      ];
+      const months = [
+        '\u064a\u0646\u0627\u064a\u0631',
+        '\u0641\u0628\u0631\u0627\u064a\u0631',
+        '\u0645\u0627\u0631\u0633',
+        '\u0623\u0628\u0631\u064a\u0644',
+        '\u0645\u0627\u064a\u0648',
+        '\u064a\u0648\u0646\u064a\u0648',
+        '\u064a\u0648\u0644\u064a\u0648',
+        '\u0623\u063a\u0633\u0637\u0633',
+        '\u0633\u0628\u062a\u0645\u0628\u0631',
+        '\u0623\u0643\u062a\u0648\u0628\u0631',
+        '\u0646\u0648\u0641\u0645\u0628\u0631',
+        '\u062f\u064a\u0633\u0645\u0628\u0631',
+      ];
+      return '${days[now.weekday - 1]}\u060c ${now.day} ${months[now.month - 1]}';
+    }
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return '${days[now.weekday - 1]}, ${months[now.month - 1]} ${now.day}';
   }
 
   String _money(num value) {
@@ -1089,5 +1280,3 @@ class _SkeletonBox extends StatelessWidget {
     );
   }
 }
-
-

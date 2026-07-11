@@ -1,4 +1,4 @@
-﻿// ignore_for_file: deprecated_member_use, use_build_context_synchronously
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
 import 'dart:convert';
@@ -334,7 +334,7 @@ class _NurseSettingsState extends State<NurseSettings> {
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete, size: 24),
-                                  color: const Color(0xFF151823),
+                                  color: NurseUi.text,
                                   onPressed: () {
                                     setState(() {
                                       availabilitySlots.remove(slot);
@@ -879,8 +879,6 @@ class _NurseSettingsState extends State<NurseSettings> {
         String selectedDay = 'Monday';
         TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
         TimeOfDay endTime = const TimeOfDay(hour: 17, minute: 0);
-        String serviceType = 'Home visit';
-        String location = 'Birzeit, Ramallah';
         final notesController = TextEditingController();
 
         return StatefulBuilder(
@@ -966,37 +964,6 @@ class _NurseSettingsState extends State<NurseSettings> {
                               setSheetState(() => endTime = time);
                             }
                           }),
-                          const SizedBox(height: 16),
-                          _sheetLabel('Service Type'),
-                          _sheetDropdown(
-                            value: serviceType,
-                            items: const [
-                              'Home visit',
-                              'Elderly care',
-                              'Post-surgery care',
-                              'Medication assistance',
-                            ],
-                            onChanged: (value) {
-                              if (value != null) {
-                                setSheetState(() => serviceType = value);
-                              }
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          _sheetLabel('Location'),
-                          _sheetDropdown(
-                            value: location,
-                            items: const [
-                              'Birzeit, Ramallah',
-                              'Al-bireh, Ramallah',
-                              'Beitunia, Ramallah',
-                            ],
-                            onChanged: (value) {
-                              if (value != null) {
-                                setSheetState(() => location = value);
-                              }
-                            },
-                          ),
                           const SizedBox(height: 16),
                           _sheetLabel('Notes (Optional)'),
                           TextField(
@@ -1153,4 +1120,3 @@ class _NurseSettingsState extends State<NurseSettings> {
     return '$hour:$minute $suffix';
   }
 }
-

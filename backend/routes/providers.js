@@ -581,7 +581,7 @@ async function attachRealAvailableSlots(providers, horizonDays = 28) {
       const slotDay = slot.day || slotDateTime.toLocaleDateString('en-US', {
         weekday: 'long',
       });
-      if (slotDateTime < new Date(now.getFullYear(), now.getMonth(), now.getDate())) {
+      if (slotDateTime <= now) {
         continue;
       }
       if (booked.has(`${provider.userId}|${slot.date}|${start}`)) {
@@ -1549,7 +1549,7 @@ router.get('/provider/:userId/blocked-slots', async (req, res) => {
           )`
       : '';
     const [rows] = await db.query(
-      `SELECT scheduledAt
+      `SELECT DATE_FORMAT(scheduledAt, '%Y-%m-%d %H:%i') AS scheduledAt
        FROM servicerequest
          WHERE providerUserId = ?
          AND (

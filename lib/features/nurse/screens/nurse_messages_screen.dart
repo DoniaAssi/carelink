@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -78,6 +78,7 @@ class _NurseMessagesScreenState extends State<NurseMessagesScreen> {
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
+          actions: NurseUi.headerActions(providerUserId: widget.user.userId),
         ),
         body: RefreshIndicator(onRefresh: () => _load(), child: _body()),
       ),
@@ -296,4 +297,3 @@ String _relativeTime(DateTime time) {
   if (diff.inDays < 1) return '${diff.inHours}h';
   return '${diff.inDays}d';
 }
-

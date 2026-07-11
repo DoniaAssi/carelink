@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -17,10 +17,28 @@ import 'package:carelink/shared/models/visit_report.dart';
 import 'package:carelink/shared/services/provider_profile_service.dart';
 import 'package:carelink/shared/services/report_service.dart';
 import 'package:carelink/shared/services/service_request_service.dart';
+import 'package:carelink/shared/widgets/carelink_background.dart';
 
 import 'nurse_visit_reports.dart';
 import 'nurse_visit_tracking_screen.dart';
 import 'nurse_ui.dart';
+
+String _nurseWeekdayNameLabel(String day, {bool short = false}) {
+  if (!NurseUi.isArabic.value) {
+    return short ? day.substring(0, 3) : day;
+  }
+  final labels = <String, String>{
+    'Monday': '\u0627\u0644\u0627\u062b\u0646\u064a\u0646',
+    'Tuesday': '\u0627\u0644\u062b\u0644\u0627\u062b\u0627\u0621',
+    'Wednesday': '\u0627\u0644\u0623\u0631\u0628\u0639\u0627\u0621',
+    'Thursday': '\u0627\u0644\u062e\u0645\u064a\u0633',
+    'Friday': '\u0627\u0644\u062c\u0645\u0639\u0629',
+    'Saturday': '\u0627\u0644\u0633\u0628\u062a',
+    'Sunday': '\u0627\u0644\u0623\u062d\u062f',
+  };
+  final value = labels[day] ?? day;
+  return value;
+}
 
 class NurseScheduleScreen extends StatefulWidget {
   const NurseScheduleScreen({super.key, required this.user});
@@ -81,20 +99,41 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: Text(NurseUi.t('My Schedule')),
+          toolbarHeight: 64,
+          title: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                NurseUi.t('My Schedule'),
+                style: NurseUi.pageTitleStyle.copyWith(fontSize: 19),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                NurseUi.label(
+                  'Manage your appointments with ease',
+                  'إدارة مواعيدك بسهولة',
+                ),
+                style: NurseUi.textStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: NurseUi.muted,
+                ),
+              ),
+            ],
+          ),
           centerTitle: true,
-          backgroundColor: NurseUi.background,
-          foregroundColor: const Color(0xFF111827),
+          backgroundColor: Colors.transparent,
+          foregroundColor: NurseUi.text,
           elevation: 0,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_rounded),
-            color: const Color(0xFF0F766E),
+            color: AppColors.primary,
             onPressed: () {},
           ),
           actions: [
             IconButton(
               icon: const Icon(Icons.calendar_month_outlined),
-              color: const Color(0xFF0F766E),
+              color: AppColors.primary,
               onPressed: () {
                 Navigator.push(
                   context,
@@ -109,49 +148,74 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.add_rounded),
-              color: const Color(0xFF0F766E),
+              color: AppColors.primary,
               onPressed: _openSetAvailability,
             ),
+            ...NurseUi.headerActions(providerUserId: widget.user.userId),
           ],
         ),
-        body: isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : RefreshIndicator(
-                onRefresh: _load,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
-                  children: [
-                    _weekStrip(),
-                    const SizedBox(height: 14),
-                    _filterStrip(),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Text(
-                          _dateHeaderTitle,
-                          style: const TextStyle(
-                            color: Color(0xFF111827),
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          _headerDateText,
-                          style: const TextStyle(
-                            color: Color(0xFF64748B),
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    _scheduleCards(),
-                  ],
+        body: CarelinkBackground(
+          child: isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 110),
+                    children: [
+                      _weekStrip(),
+                      const SizedBox(height: 14),
+                      _filterStrip(),
+                      const SizedBox(height: 18),
+                      _daySummaryHeader(),
+                      const SizedBox(height: 12),
+                      _scheduleCards(),
+                    ],
+                  ),
                 ),
-              ),
+        ),
       ),
+    );
+  }
+
+  Widget _daySummaryHeader() {
+    return Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: NurseUi.palette.upcomingIconGradient,
+            ),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.calendar_month_rounded,
+            color: AppColors.primary,
+            size: 17,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            _dateHeaderTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: NurseUi.pageTitleStyle.copyWith(fontSize: 17),
+          ),
+        ),
+        Text(
+          _headerDateText,
+          style: NurseUi.textStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            color: NurseUi.muted,
+          ),
+        ),
+      ],
     );
   }
 
@@ -163,8 +227,15 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
       'Completed',
       'Cancelled',
     ];
+    const icons = [
+      Icons.grid_view_rounded,
+      Icons.access_time_rounded,
+      Icons.play_circle_outline_rounded,
+      Icons.check_circle_outline_rounded,
+      Icons.cancel_outlined,
+    ];
     return SizedBox(
-      height: 34,
+      height: 40,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: filters.length,
@@ -173,23 +244,48 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
           final selected = selectedFilter == index;
           return InkWell(
             onTap: () => setState(() => selectedFilter = index),
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
+            borderRadius: BorderRadius.circular(999),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
               alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 13),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
-                color: selected
-                    ? const Color(0xFF0F766E)
-                    : const Color(0xFFE9F7F4),
+                color: selected ? AppColors.primary : NurseUi.surface,
                 borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                filters[index],
-                style: TextStyle(
-                  color: selected ? Colors.white : const Color(0xFF6B7280),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
+                border: Border.all(
+                  color: selected
+                      ? AppColors.primary
+                      : NurseUi.border.withValues(alpha: 0.8),
                 ),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.22),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : NurseUi.softShadow,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icons[index],
+                    size: 15,
+                    color: selected ? Colors.white : AppColors.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _scheduleFilterLabel(filters[index]),
+                    style: NurseUi.textStyle(
+                      color: selected ? Colors.white : NurseUi.muted,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -203,57 +299,99 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
       Duration(days: selectedDate.weekday - 1),
     );
     final days = List.generate(7, (index) => start.add(Duration(days: index)));
-    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return SizedBox(
-      height: 72,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: days.length,
-        separatorBuilder: (context, index) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final day = days[index];
-          final selected = _sameDay(day, selectedDate);
-          return InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: () => setState(() => selectedDate = day),
-            child: Container(
-              width: 42,
-              decoration: BoxDecoration(
-                color: selected ? const Color(0xFFE2F5F1) : Colors.transparent,
-                borderRadius: BorderRadius.circular(18),
-                border: selected
-                    ? Border.all(color: const Color(0xFF0F766E), width: 1.4)
-                    : null,
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    labels[index],
-                    style: TextStyle(
-                      color: selected
-                          ? const Color(0xFF0F766E)
-                          : const Color(0xFF607D8B),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 7),
-                  Text(
-                    '${day.day}',
-                    style: TextStyle(
-                      color: selected
-                          ? const Color(0xFF0F766E)
-                          : const Color(0xFF151823),
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: BoxDecoration(
+        color: NurseUi.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: NurseUi.border.withValues(alpha: 0.7)),
+        boxShadow: [
+          BoxShadow(
+            color: NurseUi.palette.cardShadowColor(
+              NurseUi.isDarkMode.value ? 0.24 : 0.05,
             ),
-          );
-        },
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          for (final day in days)
+            Expanded(child: _weekDayCell(day, _sameDay(day, selectedDate))),
+        ],
+      ),
+    );
+  }
+
+  Widget _weekDayCell(DateTime day, bool selected) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => setState(() => selectedDate = day),
+        child: AnimatedScale(
+          scale: selected ? 1.06 : 1,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.primary : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.28),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _weekdayShortLabel(day),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: NurseUi.textStyle(
+                    color: selected
+                        ? Colors.white.withValues(alpha: 0.92)
+                        : NurseUi.muted,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '${day.day}',
+                  style: NurseUi.textStyle(
+                    color: selected ? Colors.white : NurseUi.text,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: selected ? 1 : 0,
+                  child: Container(
+                    width: 4,
+                    height: 4,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -262,23 +400,129 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
     final appointments = _visibleAppointments;
     if (appointments.isEmpty) {
       return Container(
-        padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 18),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-        ),
-        child: const Column(
-          children: [
-            Icon(
-              Icons.calendar_month_rounded,
-              color: Color(0xFF0F766E),
-              size: 38,
+          color: NurseUi.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: NurseUi.border.withValues(alpha: 0.7)),
+          boxShadow: [
+            BoxShadow(
+              color: NurseUi.palette.cardShadowColor(
+                NurseUi.isDarkMode.value ? 0.24 : 0.05,
+              ),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
             ),
-            SizedBox(height: 10),
+          ],
+        ),
+        child: Column(
+          children: [
+            SizedBox(
+              width: 130,
+              height: 96,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Positioned(
+                    left: 6,
+                    bottom: 4,
+                    child: Icon(
+                      Icons.eco_outlined,
+                      color: AppColors.primary.withValues(alpha: 0.20),
+                      size: 30,
+                    ),
+                  ),
+                  Positioned(
+                    right: 6,
+                    bottom: 4,
+                    child: Icon(
+                      Icons.eco_outlined,
+                      color: AppColors.primary.withValues(alpha: 0.20),
+                      size: 30,
+                    ),
+                  ),
+                  Positioned(
+                    left: 16,
+                    top: 8,
+                    child: Icon(
+                      Icons.auto_awesome_rounded,
+                      color: AppColors.primary.withValues(alpha: 0.28),
+                      size: 15,
+                    ),
+                  ),
+                  Positioned(
+                    right: 16,
+                    top: 2,
+                    child: Icon(
+                      Icons.auto_awesome_rounded,
+                      color: AppColors.primary.withValues(alpha: 0.22),
+                      size: 12,
+                    ),
+                  ),
+                  Container(
+                    width: 76,
+                    height: 76,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: NurseUi.palette.upcomingIconGradient,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.calendar_month_rounded,
+                      color: AppColors.primary,
+                      size: 38,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
             Text(
-              'No appointments for this day',
-              style: TextStyle(fontWeight: FontWeight.w900),
+              NurseUi.t('No appointments for this day'),
+              textAlign: TextAlign.center,
+              style: NurseUi.sectionTitleStyle.copyWith(fontSize: 16),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              NurseUi.label(
+                'Enjoy your day — booked appointments will appear here.',
+                'استمتع بيومك، ستظهر مواعيدك هنا عندما يتم حجزها.',
+              ),
+              textAlign: TextAlign.center,
+              style: NurseUi.textStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: NurseUi.muted,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: () => setState(
+                () => selectedDate = selectedDate.add(const Duration(days: 1)),
+              ),
+              icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+              label: Text(
+                NurseUi.label('View upcoming days', 'عرض الأيام القادمة'),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: BorderSide(
+                  color: AppColors.primary.withValues(alpha: 0.45),
+                ),
+                minimumSize: const Size(0, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                textStyle: NurseUi.textStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
           ],
         ),
@@ -311,117 +555,160 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
           ),
         ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 46,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 14),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
+        decoration: BoxDecoration(
+          color: NurseUi.surface,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: NurseUi.palette.cardShadowColor(
+                NurseUi.isDarkMode.value ? 0.24 : 0.05,
+              ),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
+          border: Border.all(color: NurseUi.border.withValues(alpha: 0.7)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: NurseUi.palette.upcomingIconGradient,
+                ),
+                shape: BoxShape.circle,
+              ),
               child: Text(
-                _timeStacked(request.scheduledDate),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF111827),
-                  fontSize: 10,
-                  height: 1.05,
+                _initial(request.patientName),
+                style: NurseUi.textStyle(
+                  color: AppColors.primaryDark,
+                  fontSize: 16,
                   fontWeight: FontWeight.w900,
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.045),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-                border: Border.all(color: const Color(0xFFE8F1EF)),
-              ),
-              child: Row(
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
-                    radius: 20,
-                    backgroundColor: const Color(0xFFDDF4EF),
-                    child: Text(
-                      _initial(request.patientName),
-                      style: const TextStyle(
-                        color: Color(0xFF0F766E),
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
                           _shortPatientName(request.patientName),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF111827),
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w900,
+                          style: NurseUi.textStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          request.serviceType.isEmpty
-                              ? 'Home Nursing Care'
-                              : request.serviceType,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF6B7280),
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
-                          ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
                         ),
-                        const SizedBox(height: 7),
-                        Row(
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(
+                            alpha: NurseUi.isDarkMode.value ? 0.18 : 0.10,
+                          ),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(
-                              Icons.location_on_rounded,
-                              color: Color(0xFF0F766E),
-                              size: 13,
+                              Icons.access_time_rounded,
+                              color: AppColors.primary,
+                              size: 11,
                             ),
                             const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                _locationLabel(request),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Color(0xFF5B7F7A),
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                            Text(
+                              _timeBadgeLabel(request.scheduledDate),
+                              style: NurseUi.textStyle(
+                                color: AppColors.primary,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
                           ],
                         ),
-                      ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    request.serviceType.isEmpty
+                        ? NurseUi.t('Home Nursing Care')
+                        : request.serviceType,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: NurseUi.textStyle(
+                      color: NurseUi.muted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  _chip(_scheduleStatusLabel(request.status), request.status),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on_rounded,
+                        color: AppColors.primary,
+                        size: 12,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          _locationLabel(request),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: NurseUi.textStyle(
+                            color: NurseUi.muted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _chip(
+                        _scheduleStatusLabel(request.status),
+                        request.status,
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 6),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: NurseUi.muted.withValues(alpha: 0.7),
+              size: 13,
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  String _timeBadgeLabel(DateTime date) {
+    final hour12 = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final period = NurseUi.isArabic.value
+        ? (date.hour >= 12 ? 'م' : 'ص')
+        : (date.hour >= 12 ? 'PM' : 'AM');
+    return '$hour12:$minute $period';
   }
 
   Widget _chip(String text, String status) {
@@ -548,50 +835,80 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
   String get _dateHeaderTitle {
     final today = DateTime.now();
     final prefix = _sameDay(selectedDate, today)
-        ? 'Today'
+        ? NurseUi.t('Today')
         : _weekdayLabel(selectedDate);
     return '$prefix, ${_shortDate(selectedDate)}';
   }
 
   String get _headerDateText {
     final count = _visibleAppointments.length;
+    if (NurseUi.isArabic.value) {
+      return '$count ${NurseUi.t('appointments')}';
+    }
     return '$count ${count == 1 ? 'appointment' : 'appointments'}';
   }
 
   String _weekdayLabel(DateTime date) {
-    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return labels[date.weekday - 1];
+    return _weekdayShortLabel(date);
   }
 
   String _shortDate(DateTime date) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
+    final months = NurseUi.isArabic.value
+        ? const [
+            '\u064a\u0646\u0627\u064a\u0631',
+            '\u0641\u0628\u0631\u0627\u064a\u0631',
+            '\u0645\u0627\u0631\u0633',
+            '\u0623\u0628\u0631\u064a\u0644',
+            '\u0645\u0627\u064a\u0648',
+            '\u064a\u0648\u0646\u064a\u0648',
+            '\u064a\u0648\u0644\u064a\u0648',
+            '\u0623\u063a\u0633\u0637\u0633',
+            '\u0633\u0628\u062a\u0645\u0628\u0631',
+            '\u0623\u0643\u062a\u0648\u0628\u0631',
+            '\u0646\u0648\u0641\u0645\u0628\u0631',
+            '\u062f\u064a\u0633\u0645\u0628\u0631',
+          ]
+        : const [
+            'Jan',
+            'Feb',
+            'Mar',
+            'Apr',
+            'May',
+            'Jun',
+            'Jul',
+            'Aug',
+            'Sep',
+            'Oct',
+            'Nov',
+            'Dec',
+          ];
     return '${months[date.month - 1]} ${date.day}';
   }
 
-  String _timeStacked(DateTime date) {
-    final h = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final m = date.minute.toString().padLeft(2, '0');
-    return '$h:$m\n${date.hour >= 12 ? 'PM' : 'AM'}';
+  String _weekdayShortLabel(DateTime date) {
+    final labels = NurseUi.isArabic.value
+        ? const [
+            '\u0627\u0644\u0627\u062b\u0646\u064a\u0646',
+            '\u0627\u0644\u062b\u0644\u0627\u062b\u0627\u0621',
+            '\u0627\u0644\u0623\u0631\u0628\u0639\u0627\u0621',
+            '\u0627\u0644\u062e\u0645\u064a\u0633',
+            '\u0627\u0644\u062c\u0645\u0639\u0629',
+            '\u0627\u0644\u0633\u0628\u062a',
+            '\u0627\u0644\u0623\u062d\u062f',
+          ]
+        : const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return labels[date.weekday - 1];
+  }
+
+  String _scheduleFilterLabel(String value) {
+    return NurseUi.t(value);
   }
 
   String _locationLabel(ServiceRequest request) {
     final value = request.location.trim().isNotEmpty
         ? request.location.trim()
         : request.patientAddress.trim();
-    return value.isEmpty ? 'Location not set' : value;
+    return value.isEmpty ? NurseUi.t('Location not set') : value;
   }
 
   String _shortPatientName(String name) {
@@ -617,16 +934,16 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
       case 'pending_provider_approval':
       case 'pending_payment':
       case 'payment_pending':
-        return 'Pending';
+        return NurseUi.t('Pending');
       case 'assigned':
       case 'scheduled':
       case 'accepted':
       case 'confirmed':
-        return 'Accepted';
+        return NurseUi.t('Accepted');
       case 'in_progress':
-        return 'In Progress';
+        return NurseUi.t('In Progress');
       case 'completed':
-        return 'Completed';
+        return NurseUi.t('Completed');
       default:
         return status;
     }
@@ -638,7 +955,7 @@ class _NurseScheduleScreenState extends State<NurseScheduleScreen> {
         value == 'scheduled' ||
         value == 'accepted' ||
         value == 'confirmed') {
-      return 'Upcoming';
+      return NurseUi.t('Upcoming');
     }
     return _statusLabel(status);
   }
@@ -750,14 +1067,18 @@ class _NurseSetAvailabilityScreenState
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: Text(NurseUi.t('Set Availability')),
+          title: Text(
+            NurseUi.t('Set Availability'),
+            style: NurseUi.pageTitleStyle.copyWith(fontSize: 20),
+          ),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
+          actions: NurseUi.headerActions(),
         ),
         body: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
           children: [
             if (eligibilityLoading)
               const LinearProgressIndicator(minHeight: 3)
@@ -768,53 +1089,24 @@ class _NurseSetAvailabilityScreenState
               _approvedRateCard(),
               const SizedBox(height: 14),
             ],
-            _card(
-              child: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: available,
-                activeThumbColor: AppColors.primary,
-                title: const Text(
-                  'Availability Status',
-                  style: TextStyle(fontWeight: FontWeight.w900),
-                ),
-                subtitle: Text(NurseUi.t('You are Available')),
-                onChanged: (value) => setState(() => available = value),
-              ),
-            ),
+            _availabilityStatusCard(),
             const SizedBox(height: 14),
             _card(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  const Text(
-                    'Working Days',
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
+                  _sectionHeading(NurseUi.t('Working Days')),
                   const SizedBox(height: 4),
-                  const Text(
-                    'Select days you are available',
+                  Text(
+                    NurseUi.t('Select days you are available'),
                     style: TextStyle(
-                      color: Color(0xFF78909C),
+                      color: NurseUi.muted,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 9,
-                    runSpacing: 9,
-                    children: [
-                      for (final day in const [
-                        'Monday',
-                        'Tuesday',
-                        'Wednesday',
-                        'Thursday',
-                        'Friday',
-                        'Saturday',
-                        'Sunday',
-                      ])
-                        _dayChip(day),
-                    ],
-                  ),
+                  _workingDaysGrid(),
                 ],
               ),
             ),
@@ -823,27 +1115,38 @@ class _NurseSetAvailabilityScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Working Hours',
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
+                  _sectionHeading(NurseUi.t('Working Hours')),
                   const SizedBox(height: 4),
-                  const Text(
-                    'Set your daily available time slots',
+                  Text(
+                    NurseUi.t('Set your daily available time slots'),
                     style: TextStyle(
-                      color: Color(0xFF78909C),
+                      color: NurseUi.muted,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 14),
                   for (final slot in slots) _slotEditRow(slot),
-                  TextButton.icon(
-                    onPressed: canManageAvailability ? _openAddTimeSlot : null,
-                    icon: const Icon(Icons.add_rounded),
-                    label: const Text('Add Time Slot'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.primaryDark,
-                      textStyle: const TextStyle(fontWeight: FontWeight.w900),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: OutlinedButton.icon(
+                      onPressed: canManageAvailability
+                          ? _openAddTimeSlot
+                          : null,
+                      icon: const Icon(Icons.add_rounded),
+                      label: Text(NurseUi.t('Add time period')),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: BorderSide(
+                          color: AppColors.primary.withValues(alpha: 0.35),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
                     ),
                   ),
                 ],
@@ -851,19 +1154,30 @@ class _NurseSetAvailabilityScreenState
             ),
             const SizedBox(height: 18),
             SizedBox(
-              height: 52,
+              height: 58,
               child: ElevatedButton(
                 onPressed: canManageAvailability ? _save : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(18),
                   ),
+                  elevation: 0,
                 ),
-                child: const Text(
-                  'Save Availability',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.save_outlined, size: 21),
+                    const SizedBox(width: 12),
+                    Text(
+                      NurseUi.t('Save Availability'),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -877,17 +1191,23 @@ class _NurseSetAvailabilityScreenState
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.045),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        color: NurseUi.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: NurseUi.border),
+        boxShadow: NurseUi.softShadow,
       ),
       child: child,
+    );
+  }
+
+  Widget _sectionHeading(String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        color: NurseUi.text,
+        fontSize: 15,
+        fontWeight: FontWeight.w900,
+      ),
     );
   }
 
@@ -901,8 +1221,8 @@ class _NurseSetAvailabilityScreenState
           Expanded(
             child: Text(
               eligibilityMessage,
-              style: const TextStyle(
-                color: Color(0xFF111827),
+              style: TextStyle(
+                color: NurseUi.text,
                 fontWeight: FontWeight.w900,
                 height: 1.35,
               ),
@@ -916,79 +1236,215 @@ class _NurseSetAvailabilityScreenState
   Widget _approvedRateCard() {
     return _card(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _readOnlyRow('Specialization', approvedSpecialization),
-          const Divider(height: 22),
-          _readOnlyRow('Approved Hourly Rate', _money(approvedHourlyRate)),
+          _infoPairRow(
+            icon: Icons.home_work_outlined,
+            label: NurseUi.t('Specialization'),
+            value: NurseUi.serviceLabel(approvedSpecialization),
+          ),
+          const Divider(height: 26),
+          _infoPairRow(
+            icon: Icons.payments_outlined,
+            label: NurseUi.t('Approved Hourly Rate'),
+            value: _money(approvedHourlyRate),
+          ),
         ],
       ),
     );
   }
 
-  Widget _readOnlyRow(String label, String value) {
+  Widget _infoPairRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
     return Row(
       children: [
+        _miniIcon(icon),
+        const SizedBox(width: 12),
         Expanded(
           child: Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF78909C),
-              fontWeight: FontWeight.w800,
+            value,
+            style: TextStyle(
+              color: NurseUi.text,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        Flexible(
+        Container(width: 1, height: 30, color: NurseUi.border),
+        const SizedBox(width: 14),
+        Expanded(
           child: Text(
-            value,
-            textAlign: TextAlign.right,
-            style: const TextStyle(fontWeight: FontWeight.w900),
+            label,
+            textAlign: TextAlign.end,
+            style: TextStyle(
+              color: NurseUi.text,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
       ],
     );
   }
 
+  Widget _availabilityStatusCard() {
+    return _card(
+      child: Row(
+        children: [
+          Switch(
+            value: available,
+            activeThumbColor: Colors.white,
+            activeTrackColor: AppColors.primary,
+            inactiveThumbColor: NurseUi.surface,
+            inactiveTrackColor: NurseUi.border,
+            onChanged: (value) => setState(() => available = value),
+          ),
+          const Spacer(),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                NurseUi.t('Availability Status'),
+                style: TextStyle(
+                  color: NurseUi.text,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                available
+                    ? NurseUi.t('You are Available')
+                    : NurseUi.t('Inactive'),
+                style: TextStyle(
+                  color: NurseUi.muted,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _workingDaysGrid() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 420 ? 3 : 2;
+        final chipWidth = (constraints.maxWidth - (columns - 1) * 12) / columns;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (final day in const [
+              'Monday',
+              'Tuesday',
+              'Wednesday',
+              'Thursday',
+              'Friday',
+              'Saturday',
+              'Sunday',
+            ])
+              SizedBox(width: chipWidth, child: _dayChip(day)),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _dayChip(String day) {
     final selected = workingDays.contains(day);
-    return FilterChip(
-      label: Text(day.substring(0, 3)),
-      selected: selected,
-      showCheckmark: false,
-      selectedColor: AppColors.primary,
-      backgroundColor: Colors.white,
-      labelStyle: TextStyle(
-        color: selected ? Colors.white : const Color(0xFF607D8B),
-        fontWeight: FontWeight.w900,
-      ),
-      onSelected: (value) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () {
         setState(() {
-          if (value) {
-            workingDays.add(day);
-          } else {
+          if (selected) {
             workingDays.remove(day);
+          } else {
+            workingDays.add(day);
           }
         });
       },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        height: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : NurseUi.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? AppColors.primary : NurseUi.border,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (selected) ...[
+              Container(
+                width: 21,
+                height: 21,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_rounded,
+                  color: AppColors.primary,
+                  size: 15,
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Text(
+                _nurseWeekdayNameLabel(day),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? Colors.white : NurseUi.text,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _slotEditRow(Map<String, dynamic> slot) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
-          Expanded(child: _timeBox(_displayTime(slot['startTime']))),
-          const SizedBox(width: 8),
-          Expanded(child: _timeBox(_displayTime(slot['endTime']))),
-          IconButton(
-            icon: const Icon(
-              Icons.delete_outline_rounded,
-              color: Color(0xFFFF4D4F),
+          SizedBox(
+            width: 56,
+            height: 48,
+            child: OutlinedButton(
+              onPressed: () => setState(() => slots.remove(slot)),
+              style: OutlinedButton.styleFrom(
+                padding: EdgeInsets.zero,
+                side: BorderSide(color: NurseUi.border),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              child: const Icon(
+                Icons.delete_outline_rounded,
+                color: Color(0xFFFF3B30),
+              ),
             ),
-            onPressed: () => setState(() => slots.remove(slot)),
           ),
+          const SizedBox(width: 12),
+          Expanded(child: _timeBox(_displayTime(slot['startTime']))),
+          const SizedBox(width: 12),
+          Expanded(child: _timeBox(_displayTime(slot['endTime']))),
         ],
       ),
     );
@@ -999,11 +1455,39 @@ class _NurseSetAvailabilityScreenState
       height: 48,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE7F0EE)),
+        color: NurseUi.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: NurseUi.border),
       ),
-      child: Text(text, style: const TextStyle(fontWeight: FontWeight.w900)),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            text,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 18,
+            color: NurseUi.muted,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniIcon(IconData icon) {
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(
+          alpha: NurseUi.isDarkMode.value ? 0.18 : 0.10,
+        ),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(icon, color: AppColors.primary, size: 19),
     );
   }
 
@@ -1117,7 +1601,7 @@ class _NurseSetAvailabilityScreenState
     final fixed = value % 1 == 0
         ? value.toStringAsFixed(0)
         : value.toStringAsFixed(2);
-    return '$fixed ILS/hour';
+    return '$fixed ${NurseUi.t('ILS')} / ${NurseUi.t('per hour')}';
   }
 
   DateTime _dateForSelectedDay(String selectedDay) {
@@ -1155,7 +1639,6 @@ class _NurseSetAvailabilityScreenState
     final day = date.day.toString().padLeft(2, '0');
     return '${date.year}-$month-$day';
   }
-
 }
 
 class NurseAddTimeSlotScreen extends StatefulWidget {
@@ -1205,76 +1688,72 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
     return NurseUi.reactive(
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
-        appBar: AppBar(
-          title: Text(NurseUi.t('Add Time Slot')),
-          centerTitle: true,
-          backgroundColor: NurseUi.background,
-          foregroundColor: NurseUi.text,
-          elevation: 0,
-        ),
         body: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
           children: [
-            _label('Select Date'),
-            _dateTile(_formatDate(selectedSlotDate), _pickSlotDate),
-            const SizedBox(height: 16),
-            _label('Select Day'),
-            _dropdown(day, const [
-              'Monday',
-              'Tuesday',
-              'Wednesday',
-              'Thursday',
-              'Friday',
-              'Saturday',
-              'Sunday',
-            ], (v) {
-              if (v == null) return;
-              setState(() {
-                day = v;
-                selectedSlotDate = _dateForSelectedDay(v);
-              });
-            }),
-            const SizedBox(height: 16),
-            _label('Start Time'),
-            _timeTile(_formatClock(start), () async {
-              final picked = await showTimePicker(
-                context: context,
-                initialTime: start,
-              );
-              if (picked != null) setState(() => start = picked);
-            }),
-            const SizedBox(height: 16),
-            _label('End Time'),
-            _timeTile(_formatClock(end), () async {
-              final picked = await showTimePicker(
-                context: context,
-                initialTime: end,
-              );
-              if (picked != null) setState(() => end = picked);
-            }),
-            const SizedBox(height: 16),
-            _label('Specialization'),
-            _readOnlyField(widget.specialization),
-            const SizedBox(height: 16),
-            _label('Approved Hourly Rate'),
-            _readOnlyField(_money(widget.approvedHourlyRate)),
-            const SizedBox(height: 16),
-            _label('Location'),
-            TextField(
-              controller: locationController,
-              decoration: _decoration('Visit location'),
+            _topBar(context),
+            const SizedBox(height: 6),
+            Text(
+              NurseUi.t('Add Time Slot'),
+              textAlign: TextAlign.center,
+              style: NurseUi.pageTitleStyle.copyWith(fontSize: 30),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              NurseUi.t('Add your available time so patients can see it.'),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: NurseUi.muted,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 30),
+            _fieldCard(
+              icon: Icons.calendar_month_rounded,
+              title: NurseUi.t('Select Date'),
+              child: _dateTile(_formatDate(selectedSlotDate), _pickSlotDate),
             ),
             const SizedBox(height: 16),
-            _label('Notes (Optional)'),
-            TextField(
-              controller: notesController,
-              maxLines: 4,
-              maxLength: 150,
-              decoration: _decoration('Add a note...'),
+            _fieldCard(
+              icon: Icons.calendar_today_rounded,
+              title: NurseUi.t('Select Day'),
+              child: _dropdown(
+                day,
+                const [
+                  'Monday',
+                  'Tuesday',
+                  'Wednesday',
+                  'Thursday',
+                  'Friday',
+                  'Saturday',
+                  'Sunday',
+                ],
+                (v) {
+                  if (v == null) return;
+                  setState(() {
+                    day = v;
+                    selectedSlotDate = _dateForSelectedDay(v);
+                  });
+                },
+              ),
             ),
             const SizedBox(height: 16),
+            _timeCard(context),
+            const SizedBox(height: 16),
+            _fieldCard(
+              icon: Icons.rate_review_outlined,
+              title: NurseUi.t('Notes (Optional)'),
+              child: TextField(
+                controller: notesController,
+                maxLines: 4,
+                maxLength: 150,
+                decoration: _decoration(NurseUi.t('Add a note...')),
+              ),
+            ),
+            const SizedBox(height: 22),
             SizedBox(
-              height: 52,
+              height: 64,
               child: ElevatedButton(
                 onPressed: () {
                   Navigator.pop(context, {
@@ -1293,30 +1772,212 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(18),
                   ),
+                  elevation: 0,
                 ),
-                child: const Text(
-                  'Save Slot',
-                  style: TextStyle(fontWeight: FontWeight.w900),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.event_available_rounded, size: 24),
+                    const SizedBox(width: 12),
+                    Text(
+                      NurseUi.t('Save Slot'),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
+            const SizedBox(height: 18),
+            _infoNote(),
           ],
         ),
       ),
     );
   }
 
-  Widget _label(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontWeight: FontWeight.w900,
-          color: Color(0xFF607D8B),
+  Widget _topBar(BuildContext context) {
+    return Row(
+      children: [
+        ...NurseUi.headerActions(),
+        const Spacer(),
+        IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: Icon(Icons.arrow_forward_rounded, color: AppColors.primary),
         ),
+      ],
+    );
+  }
+
+  Widget _fieldCard({
+    required IconData icon,
+    required String title,
+    required Widget child,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: _slotCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Row(
+            textDirection: NurseUi.isArabic.value
+                ? TextDirection.rtl
+                : TextDirection.ltr,
+            children: [
+              _fieldIcon(icon),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  title,
+                  textAlign: NurseUi.isArabic.value
+                      ? TextAlign.right
+                      : TextAlign.left,
+                  style: TextStyle(
+                    color: NurseUi.text,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _timeCard(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: _slotCardDecoration(),
+      child: Row(
+        children: [
+          Expanded(
+            child: _timeField(
+              context,
+              NurseUi.t('End Time'),
+              end,
+              (picked) => setState(() => end = picked),
+            ),
+          ),
+          Container(
+            height: 76,
+            margin: const EdgeInsets.symmetric(horizontal: 14),
+            width: 1,
+            color: NurseUi.border,
+          ),
+          Expanded(
+            child: _timeField(
+              context,
+              NurseUi.t('Start Time'),
+              start,
+              (picked) => setState(() => start = picked),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _timeField(
+    BuildContext context,
+    String title,
+    TimeOfDay value,
+    ValueChanged<TimeOfDay> onPicked,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Row(
+          textDirection: NurseUi.isArabic.value
+              ? TextDirection.rtl
+              : TextDirection.ltr,
+          children: [
+            _fieldIcon(Icons.access_time_rounded),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                textAlign: NurseUi.isArabic.value
+                    ? TextAlign.right
+                    : TextAlign.left,
+                style: TextStyle(
+                  color: NurseUi.text,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        _timeTile(_formatClock(value), () async {
+          final picked = await showTimePicker(
+            context: context,
+            initialTime: value,
+          );
+          if (picked != null) onPicked(picked);
+        }),
+      ],
+    );
+  }
+
+  Widget _fieldIcon(IconData icon) {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(
+          alpha: NurseUi.isDarkMode.value ? 0.18 : 0.10,
+        ),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Icon(icon, color: AppColors.primary, size: 25),
+    );
+  }
+
+  BoxDecoration _slotCardDecoration() {
+    return BoxDecoration(
+      color: NurseUi.surface,
+      borderRadius: BorderRadius.circular(22),
+      border: Border.all(color: NurseUi.border),
+      boxShadow: NurseUi.softShadow,
+    );
+  }
+
+  Widget _infoNote() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(
+          alpha: NurseUi.isDarkMode.value ? 0.14 : 0.07,
+        ),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.verified_user_outlined, color: AppColors.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              NurseUi.t(
+                'This time will be shown as available for patients, and you can edit or delete it anytime.',
+              ),
+              style: TextStyle(
+                color: NurseUi.muted,
+                fontWeight: FontWeight.w800,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1330,25 +1991,14 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
       initialValue: value,
       decoration: _decoration(null),
       items: items
-          .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+          .map(
+            (e) => DropdownMenuItem(
+              value: e,
+              child: Text(_nurseWeekdayNameLabel(e)),
+            ),
+          )
           .toList(),
       onChanged: onChanged,
-    );
-  }
-
-  Widget _readOnlyField(String value) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE0ECEA)),
-      ),
-      child: Text(
-        value.trim().isEmpty ? 'Not set' : value,
-        style: const TextStyle(fontWeight: FontWeight.w900),
-      ),
     );
   }
 
@@ -1365,10 +2015,7 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w900),
               ),
             ),
-            const Icon(
-              Icons.calendar_month_outlined,
-              color: AppColors.primaryDark,
-            ),
+            Icon(Icons.chevron_left_rounded, color: NurseUi.muted),
           ],
         ),
       ),
@@ -1388,7 +2035,7 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w900),
               ),
             ),
-            const Icon(Icons.access_time_rounded, color: AppColors.primaryDark),
+            Icon(Icons.keyboard_arrow_down_rounded, color: NurseUi.muted),
           ],
         ),
       ),
@@ -1399,12 +2046,12 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
     return InputDecoration(
       hintText: hint,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: NurseUi.surface,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
     );
   }
 
@@ -1497,13 +2144,6 @@ class _NurseAddTimeSlotScreenState extends State<NurseAddTimeSlotScreen> {
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
-  String _money(num value) {
-    final fixed = value % 1 == 0
-        ? value.toStringAsFixed(0)
-        : value.toStringAsFixed(2);
-    return '$fixed ILS/hour';
-  }
-
   String _formatClock(TimeOfDay time) {
     final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
     final minute = time.minute.toString().padLeft(2, '0');
@@ -1543,11 +2183,15 @@ class _NurseMyAvailabilityScreenState extends State<NurseMyAvailabilityScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: Text(NurseUi.t('My Availability')),
+          title: Text(
+            NurseUi.t('My Availability'),
+            style: NurseUi.pageTitleStyle,
+          ),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
+          actions: NurseUi.headerActions(providerUserId: widget.user.userId),
         ),
         body: ListView(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
@@ -1560,19 +2204,19 @@ class _NurseMyAvailabilityScreenState extends State<NurseMyAvailabilityScreen> {
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
+                      children: [
                         Text(
-                          'You are Available',
+                          NurseUi.t('You are Available'),
                           style: TextStyle(
                             color: Color(0xFF079179),
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         Text(
-                          'Patients can book your available slots',
+                          NurseUi.t('Patients can book your available slots'),
                           style: TextStyle(
-                            color: Color(0xFF78909C),
+                            color: NurseUi.muted,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -1595,29 +2239,32 @@ class _NurseMyAvailabilityScreenState extends State<NurseMyAvailabilityScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    children: const [
+                    children: [
                       Expanded(
                         child: Text(
-                          'This Week',
-                          style: TextStyle(fontWeight: FontWeight.w900),
+                          NurseUi.t('This Week'),
+                          style: TextStyle(
+                            color: NurseUi.text,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
-                      Icon(
+                      const Icon(
                         Icons.chevron_left_rounded,
                         color: AppColors.primaryDark,
                       ),
-                      SizedBox(width: 10),
-                      Icon(
+                      const SizedBox(width: 10),
+                      const Icon(
                         Icons.chevron_right_rounded,
                         color: AppColors.primaryDark,
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Jun 15 - Jun 21',
                     style: TextStyle(
-                      color: Color(0xFF78909C),
+                      color: NurseUi.muted,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -1643,7 +2290,7 @@ class _NurseMyAvailabilityScreenState extends State<NurseMyAvailabilityScreen> {
 
   Widget _dayRow(String day) {
     final daySlots = slots.where((slot) => slot['day'] == day).toList();
-    final short = day.substring(0, 3);
+    final label = _nurseWeekdayNameLabel(day);
     final date = {
       'Monday': '15',
       'Tuesday': '16',
@@ -1673,24 +2320,33 @@ class _NurseMyAvailabilityScreenState extends State<NurseMyAvailabilityScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFE4F6F2) : Colors.transparent,
+          color: selected
+              ? AppColors.primary.withValues(
+                  alpha: NurseUi.isDarkMode.value ? 0.16 : 0.09,
+                )
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
             SizedBox(
-              width: 48,
+              width: 104,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    short,
-                    style: const TextStyle(fontWeight: FontWeight.w900),
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: NurseUi.text,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   Text(
                     date,
-                    style: const TextStyle(
-                      color: Color(0xFF607D8B),
+                    style: TextStyle(
+                      color: NurseUi.muted,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -1699,10 +2355,10 @@ class _NurseMyAvailabilityScreenState extends State<NurseMyAvailabilityScreen> {
             ),
             Expanded(
               child: daySlots.isEmpty
-                  ? const Text(
-                      'Not available',
+                  ? Text(
+                      NurseUi.t('Not available'),
                       style: TextStyle(
-                        color: Color(0xFF78909C),
+                        color: NurseUi.muted,
                         fontWeight: FontWeight.w700,
                       ),
                     )
@@ -1712,12 +2368,15 @@ class _NurseMyAvailabilityScreenState extends State<NurseMyAvailabilityScreen> {
                         for (final slot in daySlots)
                           Text(
                             '${_displayTime(slot['startTime'])} - ${_displayTime(slot['endTime'])}',
-                            style: const TextStyle(fontWeight: FontWeight.w900),
+                            style: TextStyle(
+                              color: NurseUi.text,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                       ],
                     ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: Color(0xFFB0BEC5)),
+            Icon(Icons.chevron_right_rounded, color: NurseUi.muted),
           ],
         ),
       ),
@@ -1774,11 +2433,15 @@ class NurseTimeSlotDetails extends StatelessWidget {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: Text(NurseUi.t('Time Slot Details')),
+          title: Text(
+            NurseUi.t('Time Slot Details'),
+            style: NurseUi.pageTitleStyle,
+          ),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
+          actions: NurseUi.headerActions(),
         ),
         body: ListView(
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
@@ -1786,7 +2449,7 @@ class NurseTimeSlotDetails extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: NurseUi.surface,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Column(
@@ -1913,18 +2576,23 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: Text(NurseUi.t('Visit Dashboard')),
+          title: Text(
+            NurseUi.t('Visit Dashboard'),
+            style: NurseUi.pageTitleStyle,
+          ),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.phone_rounded),
-              color: AppColors.primaryDark,
-              onPressed: _openContactPatient,
-            ),
-          ],
+          actions: NurseUi.headerActions(
+            before: [
+              IconButton(
+                icon: const Icon(Icons.phone_rounded),
+                color: AppColors.primary,
+                onPressed: _openContactPatient,
+              ),
+            ],
+          ),
         ),
         body: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 110),
@@ -1978,10 +2646,10 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
                 const SizedBox(height: 4),
                 Text(
                   request.patientAge > 0
-                      ? '${request.patientAge} years'
-                      : 'Age not set',
-                  style: const TextStyle(
-                    color: Color(0xFF607D8B),
+                      ? NurseUi.ageLabel(request.patientAge)
+                      : NurseUi.t('Age not set'),
+                  style: TextStyle(
+                    color: NurseUi.muted,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -2033,18 +2701,15 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
           Container(
             width: 4,
             height: 4,
-            decoration: const BoxDecoration(
-              color: Color(0xFF78909C),
+            decoration: BoxDecoration(
+              color: NurseUi.muted,
               shape: BoxShape.circle,
             ),
           ),
           const SizedBox(width: 8),
           Text(
             _durationText,
-            style: const TextStyle(
-              color: Color(0xFF607D8B),
-              fontWeight: FontWeight.w800,
-            ),
+            style: TextStyle(color: NurseUi.muted, fontWeight: FontWeight.w800),
           ),
         ],
       ),
@@ -2061,28 +2726,28 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Text(
                   'Visit Timer',
                   style: TextStyle(
-                    color: Color(0xFF607D8B),
+                    color: NurseUi.muted,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                SizedBox(height: 7),
+                const SizedBox(height: 7),
                 Text(
                   '00:00:00',
                   style: TextStyle(
-                    color: Color(0xFF151823),
+                    color: NurseUi.text,
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                SizedBox(height: 3),
+                const SizedBox(height: 3),
                 Text(
                   'Not started yet',
                   style: TextStyle(
-                    color: Color(0xFF78909C),
+                    color: NurseUi.muted,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -2152,8 +2817,8 @@ class _VisitDashboardScreenState extends State<VisitDashboardScreen> {
                 Text(
                   action.$2,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFF607D8B),
+                  style: TextStyle(
+                    color: NurseUi.muted,
                     fontSize: 10,
                     fontWeight: FontWeight.w900,
                   ),
@@ -2498,18 +3163,23 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: Text(NurseUi.t('Visit In Progress')),
+          title: Text(
+            NurseUi.t('Visit In Progress'),
+            style: NurseUi.pageTitleStyle,
+          ),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.phone_rounded),
-              color: AppColors.primaryDark,
-              onPressed: _openContactPatient,
-            ),
-          ],
+          actions: NurseUi.headerActions(
+            before: [
+              IconButton(
+                icon: const Icon(Icons.phone_rounded),
+                color: AppColors.primary,
+                onPressed: _openContactPatient,
+              ),
+            ],
+          ),
         ),
         body: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 110),
@@ -2532,8 +3202,8 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
                   ),
                   Text(
                     '$completed/${checklist.length} Completed',
-                    style: const TextStyle(
-                      color: Color(0xFF607D8B),
+                    style: TextStyle(
+                      color: NurseUi.muted,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -2603,18 +3273,18 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Visit Timer',
                   style: TextStyle(
-                    color: Color(0xFF607D8B),
+                    color: NurseUi.muted,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(height: 7),
                 Text(
                   _formatElapsed(elapsed),
-                  style: const TextStyle(
-                    color: Color(0xFF151823),
+                  style: TextStyle(
+                    color: NurseUi.text,
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
                   ),
@@ -2704,37 +3374,39 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFDDF3EE),
+        color: AppColors.primary.withValues(
+          alpha: NurseUi.isDarkMode.value ? 0.16 : 0.10,
+        ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFC5E8E0)),
+        border: Border.all(color: NurseUi.border),
       ),
-      child: const Row(
+      child: Row(
         children: [
           CircleAvatar(
             radius: 23,
-            backgroundColor: Colors.white,
+            backgroundColor: NurseUi.surface,
             child: Icon(
               Icons.medical_services_outlined,
               color: AppColors.primaryDark,
             ),
           ),
-          SizedBox(width: 13),
+          const SizedBox(width: 13),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Visit In Progress',
+                  NurseUi.t('Visit In Progress'),
                   style: TextStyle(
-                    color: AppColors.primaryDark,
+                    color: NurseUi.text,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                SizedBox(height: 3),
+                const SizedBox(height: 3),
                 Text(
-                  'Care session is currently in progress',
-                  style: TextStyle(color: Color(0xFF667085)),
+                  NurseUi.t('Care session is currently in progress'),
+                  style: TextStyle(color: NurseUi.muted),
                 ),
               ],
             ),
@@ -2826,7 +3498,7 @@ class _VisitInProgressScreenState extends State<VisitInProgressScreen> {
     return InputDecoration(
       hintText: hint,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: NurseUi.surface,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: BorderSide(color: NurseUi.border),
@@ -2935,11 +3607,15 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: Text(NurseUi.t('Create Report')),
+          title: Text(
+            NurseUi.t('Create Report'),
+            style: NurseUi.pageTitleStyle,
+          ),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
+          actions: NurseUi.headerActions(),
         ),
         body: Column(
           children: [
@@ -3134,7 +3810,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                           style: const TextStyle(fontWeight: FontWeight.w900),
                         ),
                         Text(
-                          '${widget.request.patientAge > 0 ? '${widget.request.patientAge} years' : 'Age not set'}, $_genderText',
+                          '${widget.request.patientAge > 0 ? NurseUi.ageLabel(widget.request.patientAge) : NurseUi.t('Age not set')}, $_genderText',
                           style: TextStyle(
                             color: NurseUi.muted,
                             fontWeight: FontWeight.w700,
@@ -3154,19 +3830,22 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                 ],
               ),
               const SizedBox(height: 14),
-              _reviewLine('Request ID', widget.request.id),
-              _reviewLine('Service Type', _serviceType),
+              _reviewLine(NurseUi.t('Request ID'), widget.request.id),
+              _reviewLine(NurseUi.t('Service Type'), _serviceType),
               _reviewLine(
-                'Visit Date',
+                NurseUi.t('Visit Date'),
                 _formatDate(widget.request.scheduledDate),
               ),
               _reviewLine(
-                'Scheduled Time',
+                NurseUi.t('Scheduled Time'),
                 _formatTime(widget.request.scheduledDate),
               ),
-              _reviewLine('Actual Start Time', _formatTime(widget.startTime)),
-              _reviewLine('Known Condition', _knownCondition),
-              _reviewLine('Allergies', _allergiesText, isLast: true),
+              _reviewLine(
+                NurseUi.t('Actual Start Time'),
+                _formatTime(widget.startTime),
+              ),
+              _reviewLine(NurseUi.t('Known Condition'), _knownCondition),
+              _reviewLine(NurseUi.t('Allergies'), _allergiesText, isLast: true),
             ],
           ),
         ),
@@ -3201,12 +3880,9 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionTitle('Patient Condition'),
-        const Text(
-          'General Condition',
-          style: TextStyle(
-            color: Color(0xFF78909C),
-            fontWeight: FontWeight.w800,
-          ),
+        Text(
+          NurseUi.t('General Condition'),
+          style: TextStyle(color: NurseUi.muted, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 10),
         _conditionCard(),
@@ -3735,7 +4411,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         labelText: label,
         hintText: hint,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: NurseUi.surface,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -3756,7 +4432,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       decoration: InputDecoration(
         labelText: label,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: NurseUi.surface,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -3798,7 +4474,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         labelText: label,
         hintText: hint,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: NurseUi.surface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: NurseUi.border),
@@ -3815,7 +4491,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     return InputDecoration(
       hintText: hint,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: NurseUi.surface,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: BorderSide(color: NurseUi.border),
@@ -3927,7 +4603,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   Future<void> _pickAttachment() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: NurseUi.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -4284,7 +4960,10 @@ class ReportSubmittedScreen extends StatelessWidget {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: Text(NurseUi.t('Report Submitted')),
+          title: Text(
+            NurseUi.t('Report Submitted'),
+            style: NurseUi.pageTitleStyle,
+          ),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
@@ -4299,13 +4978,15 @@ class ReportSubmittedScreen extends StatelessWidget {
               );
             },
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.more_vert_rounded),
-              color: AppColors.primaryDark,
-              onPressed: () {},
-            ),
-          ],
+          actions: NurseUi.headerActions(
+            before: [
+              IconButton(
+                icon: const Icon(Icons.more_vert_rounded),
+                color: AppColors.primary,
+                onPressed: () {},
+              ),
+            ],
+          ),
         ),
         body: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(22, 30, 22, 28),
@@ -4323,11 +5004,11 @@ class ReportSubmittedScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-              const Text(
-                'Your visit report has been submitted.',
+              Text(
+                NurseUi.t('Your visit report has been submitted.'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Color(0xFF607D8B),
+                  color: NurseUi.muted,
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
@@ -4389,11 +5070,13 @@ class ReportSubmittedScreen extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.045),
+            color: NurseUi.isDarkMode.value
+                ? Colors.black.withValues(alpha: 0.22)
+                : Colors.black.withValues(alpha: 0.045),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -4429,10 +5112,10 @@ class ReportSubmittedScreen extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   request.serviceType.isEmpty
-                      ? 'Home nursing'
+                      ? NurseUi.t('Home nursing')
                       : request.serviceType,
-                  style: const TextStyle(
-                    color: Color(0xFF607D8B),
+                  style: TextStyle(
+                    color: NurseUi.muted,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -4440,7 +5123,7 @@ class ReportSubmittedScreen extends StatelessWidget {
                 const SizedBox(height: 12),
                 _compactLine(
                   Icons.calendar_today_outlined,
-                  '${_formatDate(request.scheduledDate)} Â· ${_formatTime(request.scheduledDate)}',
+                  '${_formatDate(request.scheduledDate)} - ${_formatTime(request.scheduledDate)}',
                 ),
                 const SizedBox(height: 7),
                 _compactLine(Icons.receipt_long_outlined, '#${request.id}'),
@@ -4612,39 +5295,49 @@ class VisitReportDetailsScreen extends StatelessWidget {
       (context) => Scaffold(
         backgroundColor: NurseUi.background,
         appBar: AppBar(
-          title: Text(NurseUi.t('Visit Report')),
+          title: Text(NurseUi.t('Visit Report'), style: NurseUi.pageTitleStyle),
           centerTitle: true,
           backgroundColor: NurseUi.background,
           foregroundColor: NurseUi.text,
           elevation: 0,
+          actions: NurseUi.headerActions(),
         ),
         body: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _title('Patient Information'),
+              _title(NurseUi.t('Patient Information')),
               _card([
-                _line('Patient', request.patientName),
-                _line('Request ID', request.id),
-                _line('Location', request.location),
+                _line(NurseUi.t('Patient'), request.patientName),
+                _line(NurseUi.t('Request ID'), request.id),
+                _line(NurseUi.t('Location'), request.location),
               ]),
-              _title('Nurse Information'),
+              _title(NurseUi.t('Nurse Information')),
               _card([
-                _line('Submitted By', submittedBy),
-                _line('Nurse ID', user.userId),
+                _line(NurseUi.t('Submitted By'), submittedBy),
+                _line(NurseUi.t('Nurse ID'), user.userId),
               ]),
-              _title('Visit Details'),
+              _title(NurseUi.t('Visit Details')),
               _card([
-                _line('Visit Date', _formatDate(request.scheduledDate)),
-                _line('Scheduled Time', _formatTime(request.scheduledDate)),
-                _line('Service Type', request.serviceType),
-                _line('Report Status', 'Submitted'),
+                _line(
+                  NurseUi.t('Visit Date'),
+                  _formatDate(request.scheduledDate),
+                ),
+                _line(
+                  NurseUi.t('Scheduled Time'),
+                  _formatTime(request.scheduledDate),
+                ),
+                _line(
+                  NurseUi.t('Service Type'),
+                  NurseUi.serviceLabel(request.serviceType),
+                ),
+                _line(NurseUi.t('Report Status'), NurseUi.t('Submitted')),
               ]),
-              _title('Medical Report'),
+              _title(NurseUi.t('Medical Report')),
               _card([
-                _line('Summary', reportSummary),
-                _line('Submitted Date', _formatDate(DateTime.now())),
+                _line(NurseUi.t('Summary'), reportSummary),
+                _line(NurseUi.t('Submitted Date'), _formatDate(DateTime.now())),
               ]),
             ],
           ),
@@ -4665,11 +5358,13 @@ class VisitReportDetailsScreen extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NurseUi.surface,
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.045),
+            color: NurseUi.isDarkMode.value
+                ? Colors.black.withValues(alpha: 0.22)
+                : Colors.black.withValues(alpha: 0.045),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -4688,8 +5383,8 @@ class VisitReportDetailsScreen extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
-                color: Color(0xFF78909C),
+              style: TextStyle(
+                color: NurseUi.muted,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -4698,7 +5393,10 @@ class VisitReportDetailsScreen extends StatelessWidget {
             child: Text(
               value.trim().isEmpty ? 'Not set' : value,
               textAlign: TextAlign.right,
-              style: const TextStyle(fontWeight: FontWeight.w900),
+              style: TextStyle(
+                color: NurseUi.text,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
         ],
@@ -4730,4 +5428,3 @@ class VisitReportDetailsScreen extends StatelessWidget {
     return '$h:$m ${date.hour >= 12 ? 'PM' : 'AM'}';
   }
 }
-
