@@ -42,6 +42,7 @@ class _RescheduleModalState extends State<RescheduleModal> {
   DateTime _visibleMonth = DateTime(DateTime.now().year, DateTime.now().month);
   int _visibleDays = 14;
   bool _showCalendar = false;
+  bool _showInlineConfirm = false;
 
   DateTime? _selectedDate;
   String? _selectedTime;
@@ -121,7 +122,7 @@ class _RescheduleModalState extends State<RescheduleModal> {
   bool get _requiresProviderApproval =>
       widget.appointment.status.toLowerCase().trim() == 'confirmed';
 
-  Future<void> _reschedule() async {
+  Future<void> _beginRescheduleConfirmation() async {
     if (!_canSave) return;
 
     final date = _selectedDate!;
@@ -138,6 +139,7 @@ class _RescheduleModalState extends State<RescheduleModal> {
       );
       return;
     }
+
     final available = _availableTimeSlots(date).contains(_selectedTime);
     if (!available || _slotDateTime(date, time24).isBefore(DateTime.now())) {
       _showSnack(
@@ -171,13 +173,35 @@ class _RescheduleModalState extends State<RescheduleModal> {
         return;
       }
 
-      setState(() => _isSaving = false);
+      setState(() {
+        _isSaving = false;
+        _showInlineConfirm = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      _showSnack(
+        context.l10n.isArabic
+            ? 'تعذر التحقق من الموعد، حاول مرة أخرى'
+            : 'Failed to verify this appointment, please try again',
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
 
-      final confirm = await _showConfirmSheet(date, time24);
-      if (confirm != true) return;
+  Future<void> _reschedule() async {
+    if (!_canSave) return;
 
-      setState(() => _isSaving = true);
+    final date = _selectedDate!;
+    final time24 = _format24Hour(_selectedTime!);
+    
+    print('--- FLUTTER UI DEBUG ---');
+    print('Current appointment status before submit: ${widget.appointment.status}');
+    print('----------------------------');
 
+    setState(() => _isSaving = true);
+    try {
       await _api.rescheduleAppointment(
         appointmentId: widget.appointment.appointmentId,
         date: _formatIsoDate(date),
@@ -195,93 +219,27 @@ class _RescheduleModalState extends State<RescheduleModal> {
                   : 'Appointment updated successfully'),
       );
       widget.onSuccess();
-    } catch (_) {
+    } catch (e, st) {
+      print('--- RESCHEDULE EXCEPTION ---');
+      print(e);
+      print(st);
+      print('----------------------------');
       if (!mounted) return;
-      _showSnack(
-        context.l10n.isArabic
+      
+      String errMsg = e.toString().replaceAll('Exception: ', '');
+      if (errMsg.trim().isEmpty || errMsg.toLowerCase().contains('failed to edit')) {
+        errMsg = context.l10n.isArabic
             ? 'تعذر تعديل الموعد، حاول مرة أخرى'
-            : 'Failed to edit appointment, please try again',
+            : 'Failed to edit appointment, please try again';
+      }
+
+      _showSnack(
+        errMsg,
         isError: true,
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
-  }
-
-  Future<bool?> _showConfirmSheet(DateTime date, String time24) {
-    final p = CarelinkPalette.of(context);
-    final isAr = context.l10n.isArabic;
-    return showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: p.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetCtx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  _requiresProviderApproval
-                      ? (isAr ? 'طلب تغيير الموعد' : 'Request reschedule')
-                      : (isAr ? 'تأكيد تغيير الموعد' : 'Confirm change'),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    color: p.inkDark,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _requiresProviderApproval
-                      ? (isAr
-                            ? 'سيتم إرسال الطلب إلى مقدم الرعاية، ولن يتغير موعدك الحالي حتى تتم الموافقة.'
-                            : 'Your reschedule request will be sent to the provider. Your current appointment remains active until approval.')
-                      : (isAr
-                            ? 'سيتم تحديث طلب الحجز إلى الموعد الجديد، وسيبقى بانتظار موافقة مقدم الرعاية.'
-                            : 'Your booking request will be updated and will remain pending provider approval.'),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 15,
-                    height: 1.5,
-                    color: p.inkMuted,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                PatientPrimaryButton(
-                  onPressed: () => Navigator.pop(sheetCtx, true),
-                  label: isAr ? 'تأكيد' : 'Confirm',
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(sheetCtx, false),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: p.inkDark,
-                    side: BorderSide(color: p.stroke),
-                    minimumSize: const Size.fromHeight(52),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: Text(
-                    isAr ? 'إلغاء' : 'Cancel',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
   }
 
   @override
@@ -291,14 +249,21 @@ class _RescheduleModalState extends State<RescheduleModal> {
 
     return Container(
       decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border.all(color: p.stroke, width: 0.5),
+        color: p.isDark ? p.pageBg : const Color(0xFFF0FAF7),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        border: Border.all(color: p.stroke.withValues(alpha: 0.5), width: 0.6),
+        boxShadow: [
+          BoxShadow(
+            color: p.cardShadowColor(0.18),
+            blurRadius: 34,
+            offset: const Offset(0, -12),
+          ),
+        ],
       ),
-      padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomInset),
+      padding: EdgeInsets.fromLTRB(20, 10, 20, 18 + bottomInset),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
         ),
         child: AnimatedSize(
           duration: const Duration(milliseconds: 220),
@@ -315,50 +280,64 @@ class _RescheduleModalState extends State<RescheduleModal> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 42,
-          height: 4,
-          margin: const EdgeInsets.only(bottom: 12),
+          width: 52,
+          height: 5,
+          margin: const EdgeInsets.only(bottom: 18),
           decoration: BoxDecoration(
-            color: p.stroke,
+            color: p.inkMuted.withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(999),
           ),
         ),
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+          textDirection: TextDirection.ltr,
           children: [
-            const Icon(
-              Icons.calendar_month_outlined,
-              color: AppColors.primary,
-              size: 23,
+            _sheetIconButton(
+              p,
+              icon: Icons.close_rounded,
+              onTap: () => Navigator.pop(context),
             ),
-            const SizedBox(width: 9),
             Expanded(
-              child: Text(
-                context.tr('schedule.edit.title'),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w800,
-                  color: p.inkDark,
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isAr ? 'إعادة جدولة الموعد' : 'Reschedule Appointment',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: p.inkDark,
+                      height: 1.05,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    isAr
+                        ? 'اختر تاريخاً ووقتاً مناسبين لك'
+                        : 'Choose a new date and time',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: p.inkMuted,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ),
-            IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: Icon(Icons.close_rounded, color: p.inkMuted),
-              style: IconButton.styleFrom(backgroundColor: p.surfaceSoft),
+            _sheetIconButton(
+              p,
+              icon: Icons.calendar_month_rounded,
+              onTap: _showInlineConfirm
+                  ? () => setState(() => _showInlineConfirm = false)
+                  : () => setState(() => _showCalendar = !_showCalendar),
             ),
           ],
         ),
-        const SizedBox(height: 2),
-        Text(
-          isAr ? 'اختر تاريخاً ووقتاً جديداً' : 'Choose a new date and time',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: p.inkMuted, fontSize: 13),
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 22),
         Flexible(
           child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
             child: _isLoading
                 ? const Padding(
                     padding: EdgeInsets.symmetric(vertical: 44),
@@ -370,25 +349,210 @@ class _RescheduleModalState extends State<RescheduleModal> {
                   )
                 : _errorMessage != null
                 ? _buildError(p)
+                : _showInlineConfirm
+                ? _buildInlineConfirmation(p, isAr)
                 : _buildPicker(p, isAr),
           ),
         ),
         if (!_isLoading && _errorMessage == null) ...[
-          const SizedBox(height: 12),
-          PatientPrimaryButton(
-            height: 52,
-            icon: Icons.check_rounded,
-            isLoading: _isSaving,
-            onPressed: _canSave ? _reschedule : null,
-            label: isAr
-                ? (_requiresProviderApproval
-                      ? 'إرسال طلب تغيير الموعد'
-                      : 'تأكيد الموعد الجديد')
-                : (_requiresProviderApproval
-                      ? 'Submit reschedule request'
-                      : 'Confirm new appointment'),
+          const SizedBox(height: 16),
+          _showInlineConfirm
+              ? _buildInlineConfirmActions(p, isAr)
+              : PatientPrimaryButton(
+                  height: 56,
+                  icon: Icons.event_available_rounded,
+                  isLoading: _isSaving,
+                  onPressed: _canSave ? _beginRescheduleConfirmation : null,
+                  label: isAr
+                      ? (_requiresProviderApproval
+                            ? 'إرسال طلب تغيير الموعد'
+                            : 'تأكيد الموعد الجديد')
+                      : (_requiresProviderApproval
+                            ? 'Submit reschedule request'
+                            : 'Confirm New Appointment'),
+                ),
+        ],
+      ],
+    );
+  }
+
+  Widget _sheetIconButton(
+    CarelinkPalette p, {
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return PatientPressable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(25),
+      child: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          color: p.surface.withValues(alpha: 0.94),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: p.cardShadowColor(0.05),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Icon(icon, color: AppColors.primary, size: 25),
+      ),
+    );
+  }
+
+  Widget _pickerCard(CarelinkPalette p, {required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+      decoration: BoxDecoration(
+        color: p.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: p.stroke.withValues(alpha: 0.55)),
+        boxShadow: [
+          BoxShadow(
+            color: p.cardShadowColor(0.06),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
           ),
         ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildInlineConfirmation(CarelinkPalette p, bool isAr) {
+    final date = _selectedDate;
+    final time = _selectedTime;
+    final dateLabel = date == null ? '' : _formatDateTitle(date, isAr);
+
+    return _pickerCard(
+      p,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: p.isDark ? 0.16 : 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.event_available_rounded,
+              color: AppColors.primary,
+              size: 28,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isAr ? 'تأكيد إعادة الجدولة' : 'Confirm Reschedule',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: p.inkDark,
+              fontSize: 21,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _requiresProviderApproval
+                ? (isAr
+                      ? 'سيتم إرسال طلب تغيير الموعد إلى مقدم الرعاية وسيبقى موعدك الحالي فعالاً حتى تتم الموافقة.'
+                      : 'Your appointment will be updated to the selected date and time and will wait for the provider\'s approval.')
+                : (isAr
+                      ? 'سيتم تحديث طلب الحجز إلى التاريخ والوقت المحددين.'
+                      : 'Your booking request will be updated to the selected date and time.'),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: p.inkMuted,
+              fontSize: 13.5,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            decoration: BoxDecoration(
+              color: p.surfaceSoft,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: p.stroke.withValues(alpha: 0.65)),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.calendar_today_rounded,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    dateLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: p.inkDark,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  time ?? '',
+                  textDirection: TextDirection.ltr,
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInlineConfirmActions(CarelinkPalette p, bool isAr) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: _isSaving
+                ? null
+                : () => setState(() => _showInlineConfirm = false),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(56),
+              foregroundColor: p.inkDark,
+              side: BorderSide(color: p.stroke),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            child: Text(isAr ? 'رجوع' : 'Back'),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 2,
+          child: PatientPrimaryButton(
+            height: 56,
+            icon: Icons.check_circle_rounded,
+            isLoading: _isSaving,
+            onPressed: _canSave ? _reschedule : null,
+            label: isAr ? 'تأكيد' : 'Confirm',
+          ),
+        ),
       ],
     );
   }
@@ -397,53 +561,62 @@ class _RescheduleModalState extends State<RescheduleModal> {
     final nearest = _nearestSlot;
     if (nearest == null) return _buildEmptyState(p, isAr);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _sectionTitle(
-          p,
-          isAr ? 'اختر تاريخاً جديداً' : 'Choose a new date',
-          isAr
-              ? 'الأيام المتاحة فقط قابلة للاختيار.'
-              : 'Only available dates can be selected.',
-        ),
-        const SizedBox(height: 10),
-        _buildWeekSelector(p, isAr),
-        const SizedBox(height: 18),
-        Row(
-          children: [
-            const Icon(
-              Icons.access_time_rounded,
-              color: AppColors.primary,
-              size: 21,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              isAr ? 'اختر وقتاً متاحاً' : 'Choose an available time',
-              style: TextStyle(
-                color: p.inkDark,
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        _buildTimeChips(p),
-        if (_requiresProviderApproval) ...[
+    return _pickerCard(
+      p,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _sectionTitle(
+            p,
+            isAr ? 'اختر تاريخاً جديداً' : 'Choose a new date',
+            isAr
+                ? 'الأيام المتاحة فقط للاختيار'
+                : 'Only available days can be selected.',
+            icon: Icons.calendar_today_rounded,
+          ),
           const SizedBox(height: 14),
+          _buildWeekSelector(p, isAr),
+          if (_showCalendar) ...[
+            const SizedBox(height: 14),
+            _buildMonthCalendar(p, isAr),
+          ],
+          const SizedBox(height: 20),
+          Divider(color: p.stroke.withValues(alpha: 0.55), height: 1),
+          const SizedBox(height: 20),
+          _sectionTitle(
+            p,
+            isAr ? 'اختر وقتاً متاحاً' : 'Choose an available time',
+            isAr
+                ? 'اختر الوقت الأنسب من المواعيد المتاحة'
+                : 'Pick the time that works best for you.',
+            icon: Icons.access_time_rounded,
+          ),
+          const SizedBox(height: 14),
+          _buildTimeChips(p),
+          const SizedBox(height: 16),
           _buildInfoBanner(
             p: p,
             isAr: isAr,
-            color: AppColors.warning,
-            icon: Icons.info_rounded,
-            textAr:
-                'موعدك الحالي يبقى فعالاً حتى يوافق مقدم الرعاية على الموعد الجديد.',
-            textEn:
-                'Your current appointment remains active until the provider approves the new time.',
+            color: AppColors.primary,
+            icon: Icons.info_outline_rounded,
+            textAr: 'جميع الأوقات معروضة بتوقيتك المحلي.',
+            textEn: 'All times are shown in your local timezone.',
           ),
+          if (_requiresProviderApproval) ...[
+            const SizedBox(height: 10),
+            _buildInfoBanner(
+              p: p,
+              isAr: isAr,
+              color: AppColors.warning,
+              icon: Icons.hourglass_bottom_rounded,
+              textAr:
+                  'موعدك الحالي يبقى فعالاً حتى يوافق مقدم الرعاية على الموعد الجديد.',
+              textEn:
+                  'Your current appointment remains active until the provider approves the new time.',
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -757,15 +930,16 @@ class _RescheduleModalState extends State<RescheduleModal> {
       children: [
         Row(
           children: [
-            IconButton(
-              onPressed: _weekStart.isAfter(_startOfWeek(_today))
+            _weekNavButton(
+              p,
+              icon: isAr
+                  ? Icons.chevron_right_rounded
+                  : Icons.chevron_left_rounded,
+              onTap: _weekStart.isAfter(_startOfWeek(_today))
                   ? () => setState(() {
                       _weekStart = _weekStart.subtract(const Duration(days: 7));
                     })
                   : null,
-              icon: Icon(
-                isAr ? Icons.chevron_right_rounded : Icons.chevron_left_rounded,
-              ),
             ),
             Expanded(
               child: Text(
@@ -773,25 +947,28 @@ class _RescheduleModalState extends State<RescheduleModal> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: p.inkDark,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
                 ),
               ),
             ),
-            IconButton(
-              onPressed: () => setState(() {
+            _weekNavButton(
+              p,
+              icon: isAr
+                  ? Icons.chevron_left_rounded
+                  : Icons.chevron_right_rounded,
+              onTap: () => setState(() {
                 _weekStart = _weekStart.add(const Duration(days: 7));
               }),
-              icon: Icon(
-                isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
-              ),
             ),
           ],
         ),
+        const SizedBox(height: 12),
         SizedBox(
-          height: 82,
+          height: 78,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
             itemCount: dates.length + 1,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
@@ -806,24 +983,51 @@ class _RescheduleModalState extends State<RescheduleModal> {
     );
   }
 
+  Widget _weekNavButton(
+    CarelinkPalette p, {
+    required IconData icon,
+    required VoidCallback? onTap,
+  }) {
+    return PatientPressable(
+      enabled: onTap != null,
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: p.surfaceSoft.withValues(alpha: onTap == null ? 0.45 : 1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          icon,
+          color: onTap == null
+              ? p.inkMuted.withValues(alpha: 0.35)
+              : AppColors.primary,
+          size: 24,
+        ),
+      ),
+    );
+  }
+
   Widget _loadMoreDayButton(CarelinkPalette p, bool isAr) {
     return PatientPressable(
       onTap: () => setState(() => _visibleDays += 7),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        width: 86,
+        width: 70,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: p.surfaceSoft,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: p.stroke),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: p.stroke.withValues(alpha: 0.8)),
         ),
         child: Text(
           isAr ? 'المزيد' : 'More',
-          style: TextStyle(
+          style: const TextStyle(
             color: AppColors.primary,
-            fontWeight: FontWeight.w800,
-            fontSize: 13,
+            fontWeight: FontWeight.w900,
+            fontSize: 12.5,
           ),
         ),
       ),
@@ -848,24 +1052,35 @@ class _RescheduleModalState extends State<RescheduleModal> {
               _visibleMonth = DateTime(date.year, date.month);
             })
           : null,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        width: 64,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
+        width: 56,
+        height: 72,
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 6),
         decoration: BoxDecoration(
           color: selected
               ? AppColors.primary
               : available
               ? p.surface
-              : p.surfaceSoft.withValues(alpha: 0.72),
-          borderRadius: BorderRadius.circular(14),
+              : p.surfaceSoft.withValues(alpha: 0.62),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: selected
                 ? AppColors.primary
                 : available
-                ? AppColors.primary.withValues(alpha: 0.28)
-                : p.stroke,
+                ? p.stroke.withValues(alpha: 0.85)
+                : p.stroke.withValues(alpha: 0.45),
+            width: selected ? 0 : 1,
           ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.24),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -876,15 +1091,15 @@ class _RescheduleModalState extends State<RescheduleModal> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: selected
-                    ? Colors.white.withValues(alpha: 0.82)
+                    ? Colors.white.withValues(alpha: 0.88)
                     : available
-                    ? p.inkMuted
-                    : p.inkMuted.withValues(alpha: 0.46),
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
+                    ? AppColors.primary
+                    : p.inkMuted.withValues(alpha: 0.42),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 2),
             Text(
               '${date.day}',
               style: TextStyle(
@@ -892,10 +1107,38 @@ class _RescheduleModalState extends State<RescheduleModal> {
                     ? Colors.white
                     : available
                     ? p.inkDark
-                    : p.inkMuted.withValues(alpha: 0.45),
+                    : p.inkMuted.withValues(alpha: 0.42),
                 fontSize: 18,
                 fontWeight: FontWeight.w900,
+                height: 1,
               ),
+            ),
+            const SizedBox(height: 2),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 160),
+              child: selected
+                  ? const Icon(
+                      Icons.check_circle_rounded,
+                      key: ValueKey('selected'),
+                      color: Colors.white,
+                      size: 14,
+                    )
+                  : SizedBox(
+                      key: const ValueKey('spacer'),
+                      height: 14,
+                      child: Text(
+                        _monthName(date.month, isAr, short: true),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: available
+                              ? p.inkMuted
+                              : p.inkMuted.withValues(alpha: 0.35),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
             ),
           ],
         ),
@@ -1069,79 +1312,129 @@ class _RescheduleModalState extends State<RescheduleModal> {
       return _softNotice(p, context.tr('booking.dateTime.noTimes'));
     }
 
-    return Column(
-      children: times.map((time) {
-        final selected = _selectedTime == time;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: PatientPressable(
-            onTap: () => setState(() => _selectedTime = time),
-            borderRadius: BorderRadius.circular(13),
-            child: Container(
-              height: 54,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: selected ? AppColors.primary : p.surface,
-                borderRadius: BorderRadius.circular(13),
-                border: Border.all(
-                  color: selected ? AppColors.primary : p.stroke,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      color: selected ? Colors.white : Colors.transparent,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: selected ? Colors.white : p.inkMuted,
-                      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 430 ? 3 : 2;
+        const spacing = 10.0;
+        final itemWidth =
+            (constraints.maxWidth - (spacing * (columns - 1))) / columns;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: times.map((time) {
+            final selected = _selectedTime == time;
+            return SizedBox(
+              width: itemWidth,
+              child: PatientPressable(
+                onTap: () => setState(() {
+                  _showInlineConfirm = false;
+                  _selectedTime = time;
+                }),
+                borderRadius: BorderRadius.circular(16),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: selected ? AppColors.primary : p.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: selected
+                          ? AppColors.primary
+                          : AppColors.primary.withValues(alpha: 0.42),
+                      width: 1.1,
                     ),
-                    child: selected
-                        ? const Icon(
-                            Icons.check_rounded,
-                            size: 15,
-                            color: AppColors.primary,
-                          )
+                    boxShadow: selected
+                        ? [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.2),
+                              blurRadius: 14,
+                              offset: const Offset(0, 7),
+                            ),
+                          ]
                         : null,
                   ),
-                  const Spacer(),
-                  Text(
-                    time,
-                    textDirection: TextDirection.ltr,
-                    style: TextStyle(
-                      color: selected ? Colors.white : p.inkDark,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          time,
+                          textDirection: TextDirection.ltr,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: selected ? Colors.white : AppColors.primary,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      if (selected) ...[
+                        const SizedBox(width: 7),
+                        const Icon(
+                          Icons.check_circle_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ],
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          }).toList(),
         );
-      }).toList(),
+      },
     );
   }
 
-  Widget _sectionTitle(CarelinkPalette p, String title, String subtitle) {
-    return Column(
+  Widget _sectionTitle(
+    CarelinkPalette p,
+    String title,
+    String subtitle, {
+    required IconData icon,
+  }) {
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            color: p.inkDark,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: p.isDark ? 0.16 : 0.1),
+            borderRadius: BorderRadius.circular(12),
           ),
+          child: Icon(icon, color: AppColors.primary, size: 19),
         ),
-        const SizedBox(height: 3),
-        Text(
-          subtitle,
-          style: TextStyle(color: p.inkMuted, fontSize: 12.5, height: 1.3),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: p.inkDark,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                  height: 1.15,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: p.inkMuted,
+                  fontSize: 12.5,
+                  height: 1.3,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );

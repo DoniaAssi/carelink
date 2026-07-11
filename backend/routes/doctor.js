@@ -1339,8 +1339,49 @@ router.post('/requests/:requestId/accept', async (req, res) => {
       }
       return res.status(400).json({ error: `Cannot accept request with status: ${request.status}` });
     }
-    if (!['pending', 'pending_provider_approval'].includes(currentStatus)) {
+    if (!['pending', 'pending_provider_approval', 'pending_reschedule'].includes(currentStatus)) {
       return res.status(400).json({ error: `Cannot accept request with status: ${request.status}` });
+    }
+
+    if (currentStatus === 'pending_reschedule') {
+      await db.query(
+        `UPDATE servicerequest 
+         SET status = 'confirmed', 
+             scheduledAt = IFNULL(requestedRescheduleAt, scheduledAt),
+             requestedRescheduleAt = NULL
+         WHERE requestId = ?`,
+        [requestId]
+      );
+
+      await db.query(
+        `INSERT INTO appointmentstatushistory (statusHistoryId, requestId, patientUserId, providerUserId, statusCode, sourceRole, note)
+         VALUES (?, ?, ?, ?, 'confirmed', 'doctor', 'Reschedule accepted')`,
+        [randomUUID(), requestId, request.patientUserId, doctorId]
+      );
+
+      try {
+        await insertDoctorNotificationIfEnabled({
+          doctorId,
+          preferenceKey: 'assignmentUpdates',
+          type: 'appointment_change',
+          title: 'Reschedule accepted',
+          body: 'You accepted the patient reschedule request.',
+          relatedRequestId: requestId,
+        });
+        await insertNotification({
+          userId: request.patientUserId,
+          type: 'appointment_change',
+          title: 'Reschedule confirmed',
+          body: 'Your doctor accepted the reschedule request. Your new appointment time is confirmed.',
+          relatedRequestId: requestId,
+        });
+      } catch (_) {}
+
+      return res.json({
+        success: true,
+        status: 'confirmed',
+        message: 'Reschedule request accepted',
+      });
     }
 
     await db.query(
@@ -1483,8 +1524,47 @@ router.post('/requests/:requestId/reject', async (req, res) => {
 
     const request = requestRows[0];
     const currentStatus = (request.status || '').toString().trim().toLowerCase();
-    if (!['pending', 'pending_provider_approval'].includes(currentStatus)) {
+    if (!['pending', 'pending_provider_approval', 'pending_reschedule'].includes(currentStatus)) {
       return res.status(400).json({ error: `Cannot reject request with status: ${request.status}` });
+    }
+
+    if (currentStatus === 'pending_reschedule') {
+      await db.query(
+        `UPDATE servicerequest 
+         SET status = 'confirmed', 
+             requestedRescheduleAt = NULL
+         WHERE requestId = ?`,
+        [requestId]
+      );
+
+      await db.query(
+        `INSERT INTO appointmentstatushistory (statusHistoryId, requestId, patientUserId, providerUserId, statusCode, sourceRole, note)
+         VALUES (?, ?, ?, ?, 'confirmed', 'doctor', 'Reschedule rejected')`,
+        [randomUUID(), requestId, request.patientUserId, doctorId]
+      );
+
+      try {
+        await insertDoctorNotificationIfEnabled({
+          doctorId,
+          preferenceKey: 'assignmentUpdates',
+          type: 'appointment_change',
+          title: 'Reschedule rejected',
+          body: 'You declined the patient reschedule request. Original time kept.',
+          relatedRequestId: requestId,
+        });
+        await insertNotification({
+          userId: request.patientUserId,
+          type: 'appointment_change',
+          title: 'Reschedule declined',
+          body: 'Your doctor declined the reschedule request. Your original appointment time is kept.',
+          relatedRequestId: requestId,
+        });
+      } catch (_) {}
+
+      return res.json({ 
+        success: true, 
+        message: 'Reschedule request rejected, original appointment kept' 
+      });
     }
 
     // Update request status

@@ -45,7 +45,7 @@ class AppointmentActionHelper {
       );
     }
 
-    if (s == 'reschedule_requested') {
+    if (s == 'reschedule_requested' || s == 'pending_reschedule') {
       return AppointmentActionState(
         type: AppointmentActionType.requestPending,
         isEnabled: false,

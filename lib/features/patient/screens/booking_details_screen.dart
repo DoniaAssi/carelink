@@ -19,6 +19,7 @@ import 'package:carelink/features/patient/screens/chat_screen.dart';
 import 'package:carelink/features/patient/utils/appointment_action_helper.dart';
 import 'package:carelink/features/patient/utils/rebook_flow_helper.dart';
 import 'package:carelink/shared/services/patient_recent_chats_service.dart';
+import 'package:carelink/shared/utils/appointment_time_utils.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/features/patient/widgets/reschedule_modal.dart';
 
@@ -603,7 +604,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     String title;
     String subtitle;
 
-    if (subStatus == 'reschedule_requested') {
+    if (subStatus == 'reschedule_requested' || status == 'pending_reschedule') {
       bg = AppColors.warning.withValues(alpha: 0.12);
       textCol = AppColors.warning;
       title = isAr
@@ -1525,7 +1526,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     })();
 
     String displayMethod = pm;
-    if (pm.toLowerCase() == 'mock_card' || pm.toLowerCase() == 'card') {
+    if (pm.toLowerCase() == 'card') {
       displayMethod = isAr ? 'بطاقة ائتمان' : 'Credit Card';
     } else if (pm.toLowerCase() == 'cash') {
       displayMethod = isAr ? 'نقداً' : 'Cash';
@@ -1936,7 +1937,46 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (actionState.type != AppointmentActionType.hidden) ...[
+            if (actionState.type != AppointmentActionType.hidden &&
+                _canCancel &&
+                actionState.type != AppointmentActionType.bookAgain) ...[
+              Row(
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: _buildActionStateButton(p, isAr, actionState),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 5,
+                    child: _buildCompactAction(
+                      palette: p,
+                      icon: Icons.close_rounded,
+                      label: isAr ? 'إلغاء الحجز' : 'Cancel Booking',
+                      color: const Color(0xFFD93636),
+                      onTap: isCancelling
+                          ? null
+                          : _showCancelConfirmationDialog,
+                      isLoading: isCancelling,
+                      destructive: true,
+                    ),
+                  ),
+                ],
+              ),
+              if (!actionState.isEnabled &&
+                  actionState.helperTextEn != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  isAr ? actionState.helperTextAr! : actionState.helperTextEn!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: p.inkMuted,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ] else if (actionState.type != AppointmentActionType.hidden) ...[
               SizedBox(
                 width: double.infinity,
                 child: _buildActionStateButton(p, isAr, actionState),
@@ -1954,12 +1994,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                   textAlign: TextAlign.center,
                 ),
               ],
-            ],
-
-            if (_canCancel &&
+            ] else if (_canCancel &&
                 actionState.type != AppointmentActionType.bookAgain) ...[
-              if (actionState.type != AppointmentActionType.hidden)
-                const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 child: _buildCompactAction(
@@ -2006,15 +2042,21 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
               : const Color(0xFFF1F5F9),
           disabledForegroundColor: p.inkMuted,
           minimumSize: const Size.fromHeight(52),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           side: BorderSide.none,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
         ),
         icon: Icon(icon, size: 20),
-        label: Text(
-          label,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        label: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.visible,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          ),
         ),
       );
     }
@@ -2025,13 +2067,19 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         minimumSize: const Size.fromHeight(52),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         elevation: 0,
       ),
       icon: Icon(icon, size: 20),
-      label: Text(
-        label,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+      label: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.visible,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }
@@ -2054,7 +2102,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             : palette.surfaceSoft,
         disabledForegroundColor: color.withValues(alpha: 0.55),
         minimumSize: const Size.fromHeight(52),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
         side: BorderSide(
           color: destructive
               ? color.withValues(alpha: 0.55)
@@ -2069,11 +2117,14 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
               child: CircularProgressIndicator(strokeWidth: 2, color: color),
             )
           : Icon(icon, size: 19),
-      label: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+      label: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.visible,
+          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+        ),
       ),
     );
   }
@@ -2666,49 +2717,11 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   String _formatDateOnly(DateTime? date) {
-    if (date == null) return context.tr('common.dateUnavailable');
-    final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    final monthsAr = [
-      'يناير',
-      'فبراير',
-      'مارس',
-      'أبريل',
-      'مايو',
-      'يونيو',
-      'يوليو',
-      'أغسطس',
-      'سبتمبر',
-      'أكتوبر',
-      'نوفمبر',
-      'ديسمبر',
-    ];
-    final isAr = localeController.isArabic;
-    final monthName = isAr ? monthsAr[date.month - 1] : months[date.month - 1];
-    return '${date.day} $monthName ${date.year}';
+    return AppointmentTimeUtils.formatDate(context, date);
   }
 
   String _formatTimeOnly(DateTime? date) {
-    if (date == null) return context.tr('common.timeUnavailable');
-    final isAr = localeController.isArabic;
-    final suffixEn = date.hour >= 12 ? 'PM' : 'AM';
-    final suffixAr = date.hour >= 12 ? 'م' : 'ص';
-    final suffix = isAr ? suffixAr : suffixEn;
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '$hour:$minute $suffix';
+    return AppointmentTimeUtils.formatTime(context, date);
   }
 
   Future<void> _submitVisitRating() async {

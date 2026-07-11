@@ -210,7 +210,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     }
   }
 
-  int _distanceFor(ProviderModel provider) {
+  int? _distanceFor(ProviderModel provider) {
     final realDistance = _locationService.distanceInMeters(
       fromLat: _patientLat,
       fromLng: _patientLng,
@@ -218,9 +218,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       toLng: provider.gpsLng,
     );
     if (realDistance != null) return realDistance.round();
-
-    final seed = provider.userId.codeUnits.fold<int>(0, (sum, c) => sum + c);
-    return 500 + (seed % 700);
+    return null;
   }
 
   void _applyFiltersAndSort() {
@@ -253,9 +251,15 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       final availabilityMatches =
           !_availableNowOnly || ProviderBookingEligibility.canBook(provider);
       final ratingMatches = provider.overallRating >= _minRating;
-      final distanceMatches =
-          _maxDistanceKm == null ||
-          (_distanceFor(provider) <= (_maxDistanceKm! * 1000));
+      
+      bool distanceMatches = true;
+      if (_maxDistanceKm != null) {
+        final dist = _distanceFor(provider);
+        if (dist == null || dist > (_maxDistanceKm! * 1000)) {
+          distanceMatches = false;
+        }
+      }
+      
       final priceMatches =
           _maxPrice == null ||
           (provider.consultationFee != null &&
@@ -298,7 +302,9 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
           case ProviderSortOption.smartMatch:
             return a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase());
           case ProviderSortOption.nearest:
-            return _distanceFor(a).compareTo(_distanceFor(b));
+            final distA = _distanceFor(a) ?? double.maxFinite.toInt();
+            final distB = _distanceFor(b) ?? double.maxFinite.toInt();
+            return distA.compareTo(distB);
           case ProviderSortOption.ratingHighToLow:
             return b.overallRating.compareTo(a.overallRating);
           case ProviderSortOption.availableNow:
@@ -1109,6 +1115,66 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     );
   }
 
+  String _availabilityLabelFor(ProviderModel provider) {
+    if (!ProviderBookingEligibility.canBook(provider)) {
+      return _copy('Unavailable', 'غير متاح');
+    }
+    if (provider.availableSlots.isEmpty) {
+      return _copy('Available', 'متاح');
+    }
+    
+    const days = {
+      'monday': DateTime.monday,
+      'tuesday': DateTime.tuesday,
+      'wednesday': DateTime.wednesday,
+      'thursday': DateTime.thursday,
+      'friday': DateTime.friday,
+      'saturday': DateTime.saturday,
+      'sunday': DateTime.sunday,
+    };
+    
+    DateTime nextDate(String day) {
+      final target = days[day.trim().toLowerCase()];
+      var date = DateTime.now();
+      date = DateTime(date.year, date.month, date.day);
+      if (target == null) return date;
+      while (date.weekday != target) {
+        date = date.add(const Duration(days: 1));
+      }
+      return date;
+    }
+
+    final slots = List<AvailabilitySlot>.from(provider.availableSlots);
+    slots.sort((a, b) {
+      final day = nextDate(a.day).compareTo(nextDate(b.day));
+      return day != 0 ? day : a.startTime.compareTo(b.startTime);
+    });
+
+    final firstSlotDate = nextDate(slots.first.day);
+    var today = DateTime.now();
+    today = DateTime(today.year, today.month, today.day);
+    final diff = firstSlotDate.difference(today).inDays;
+
+    if (diff == 0) {
+      return _copy('Available today', 'متاح اليوم');
+    } else if (diff == 1) {
+      return _copy('Available tomorrow', 'متاح غداً');
+    } else {
+      const en = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      const ar = ['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];
+      final weekday = (context.l10n.isArabic ? ar : en)[firstSlotDate.weekday - 1];
+      
+      const enM = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const arM = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+      final month = (context.l10n.isArabic ? arM : enM)[firstSlotDate.month - 1];
+      
+      final dateStr = context.l10n.isArabic 
+          ? '$weekday، ${firstSlotDate.day} $month' 
+          : '$weekday, $month ${firstSlotDate.day}';
+      return _copy('Available on $dateStr', 'متاح في $dateStr');
+    }
+  }
+
   Widget _providerCard(
     CarelinkPalette p,
     ProviderModel provider, {
@@ -1118,7 +1184,10 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     final matchPercentage = _matchPercentageFor(provider);
 
     final available = ProviderBookingEligibility.canBook(provider);
-    final distanceKm = _distanceFor(provider) / 1000;
+    final dist = _distanceFor(provider);
+    final distanceText = dist != null 
+        ? '${(dist / 1000).toStringAsFixed(1)} ${_copy("km", "كم")}'
+        : _copy('Unknown', 'غير معروف');
     final specialty = provider.serviceType.trim().isNotEmpty
         ? provider.serviceType.trim()
         : provider.specialization.trim().isNotEmpty
@@ -1232,7 +1301,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                               ),
                               const SizedBox(width: 2),
                               Text(
-                                '${distanceKm.toStringAsFixed(1)} ${_copy('km', 'كم')}',
+                                distanceText,
                                 style: TextStyle(
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.w600,
@@ -1273,9 +1342,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                             ),
                           _providerPill(
                             icon: Icons.circle,
-                            label: available
-                                ? _copy('Available', 'متاح')
-                                : _copy('Unavailable', 'غير متاح'),
+                            label: _availabilityLabelFor(provider),
                             color: available
                                 ? const Color(0xFF16A34A)
                                 : p.inkMuted,
@@ -1478,7 +1545,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
         builder: (_) => ProviderDetailsScreen(
           provider: provider,
           patientUserId: widget.userId,
-          distanceKm: _distanceFor(provider) / 1000.0,
+          distanceKm: (_distanceFor(provider) ?? 0) / 1000.0,
           recommendation: _backendRecommendations[provider.userId],
         ),
       ),

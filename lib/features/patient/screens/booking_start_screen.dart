@@ -8,6 +8,7 @@ import 'package:carelink/core/profile_avatar.dart'
     show profileAvatarOrPlaceholder;
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/features/patient/screens/booking_screen.dart';
+import 'package:carelink/features/patient/utils/booking_flow_exit_helper.dart';
 import 'package:carelink/features/patient/utils/booking_service_helper.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/location_service.dart';
@@ -175,6 +176,13 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
             letterSpacing: -0.3,
           ),
         ),
+        actions: [
+          BookingFlowExitHelper.action(
+            context: context,
+            patientUserId: widget.patientUserId,
+            hasProgress: false,
+          ),
+        ],
       ),
       body: RefreshIndicator(
         color: AppColors.primary,
@@ -183,46 +191,46 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(
             16,
-            8,
+            6,
             16,
             112 + MediaQuery.paddingOf(context).bottom,
           ),
           children: [
             _PremiumBookingStepper(palette: p, isArabic: _isArabic),
-            const SizedBox(height: 28),
+            const SizedBox(height: 16),
             Text(
               _isArabic ? 'اختر مقدم الرعاية' : 'Choose Provider',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: p.inkDark,
-                fontSize: 26,
-                height: 1.15,
-                fontWeight: FontWeight.w900,
+                fontSize: 19,
+                height: 1.18,
+                fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Text(
               _isArabic
                   ? 'اختر مقدم الرعاية المناسب لاحتياجاتك'
                   : 'Choose the care provider that fits your needs.',
               style: TextStyle(
                 color: p.inkMuted,
-                height: 1.4,
-                fontSize: 13.5,
+                height: 1.28,
+                fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             Container(
-              height: 52,
+              height: 48,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(18),
                 boxShadow: [
                   BoxShadow(
                     color: p.cardShadowColor(0.045),
-                    blurRadius: 18,
-                    offset: const Offset(0, 7),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
                   ),
                 ],
               ),
@@ -252,17 +260,17 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
                   fillColor: p.surface,
                   contentPadding: const EdgeInsets.symmetric(vertical: 0),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(18),
                     borderSide: BorderSide(color: p.stroke),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(18),
                     borderSide: BorderSide(
                       color: p.stroke.withValues(alpha: 0.75),
                     ),
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(18),
                     borderSide: const BorderSide(
                       color: AppColors.primary,
                       width: 1.2,
@@ -271,7 +279,7 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             _ProviderRoleFilter(
               palette: p,
               isArabic: _isArabic,
@@ -306,7 +314,7 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
                   ],
                 ),
               ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 14),
             if (_loading)
               const Center(
                 child: Padding(
@@ -358,7 +366,7 @@ class _BookingStartScreenState extends State<BookingStartScreen> {
                     onTap: () => _selectProvider(_filteredProviders[index]),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
               ],
           ],
         ),
@@ -634,18 +642,18 @@ class _ProviderChoiceCard extends StatelessWidget {
 
     return PatientPressable(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: palette.surface,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: palette.stroke.withValues(alpha: 0.65)),
           boxShadow: [
             BoxShadow(
-              color: palette.cardShadowColor(0.055),
-              blurRadius: 24,
-              offset: const Offset(0, 10),
+              color: palette.cardShadowColor(0.045),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -657,8 +665,8 @@ class _ProviderChoiceCard extends StatelessWidget {
                 Hero(
                   tag: 'provider-avatar-${provider.userId}',
                   child: SizedBox(
-                    width: 84,
-                    height: 84,
+                    width: 68,
+                    height: 68,
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
@@ -676,10 +684,10 @@ class _ProviderChoiceCard extends StatelessWidget {
                             ),
                             child: profileAvatarOrPlaceholder(
                               imageUrl: provider.profileImageUrl,
-                              size: 84,
+                              size: 68,
                               placeholderColor: AppColors.primary,
                               placeholderIcon: Icons.person_outline_rounded,
-                              iconSize: 34,
+                              iconSize: 28,
                             ),
                           ),
                         ),
@@ -687,8 +695,8 @@ class _ProviderChoiceCard extends StatelessWidget {
                           end: -1,
                           bottom: 3,
                           child: Container(
-                            width: 25,
-                            height: 25,
+                            width: 22,
+                            height: 22,
                             decoration: BoxDecoration(
                               color: const Color(0xFF16A34A),
                               shape: BoxShape.circle,
@@ -700,7 +708,7 @@ class _ProviderChoiceCard extends StatelessWidget {
                             child: const Icon(
                               Icons.check_rounded,
                               color: Colors.white,
-                              size: 15,
+                              size: 13,
                             ),
                           ),
                         ),
@@ -708,7 +716,7 @@ class _ProviderChoiceCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -720,29 +728,29 @@ class _ProviderChoiceCard extends StatelessWidget {
                         style: TextStyle(
                           color: palette.inkDark,
                           fontWeight: FontWeight.w900,
-                          fontSize: 19.5,
+                          fontSize: 16.5,
                           height: 1.15,
                         ),
                       ),
                       if (detail.isNotEmpty) ...[
-                        const SizedBox(height: 5),
+                        const SizedBox(height: 3),
                         Text(
                           detail,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: palette.inkMuted,
-                            fontSize: 14,
+                            fontSize: 12.5,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
                       if (provider.isActive && provider.isProfileComplete) ...[
-                        const SizedBox(height: 9),
+                        const SizedBox(height: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 5,
+                            horizontal: 8,
+                            vertical: 4,
                           ),
                           decoration: BoxDecoration(
                             color: AppColors.primary.withValues(alpha: 0.09),
@@ -754,9 +762,9 @@ class _ProviderChoiceCard extends StatelessWidget {
                               const Icon(
                                 Icons.shield_outlined,
                                 color: AppColors.primary,
-                                size: 14,
+                                size: 12,
                               ),
-                              const SizedBox(width: 5),
+                              const SizedBox(width: 4),
                               Flexible(
                                 child: Text(
                                   isArabic
@@ -766,7 +774,7 @@ class _ProviderChoiceCard extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                     color: AppColors.primary,
-                                    fontSize: 10.5,
+                                    fontSize: 9.8,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
@@ -780,8 +788,8 @@ class _ProviderChoiceCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 Container(
-                  width: 48,
-                  height: 48,
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.09),
                     shape: BoxShape.circle,
@@ -791,14 +799,14 @@ class _ProviderChoiceCard extends StatelessWidget {
                         ? Icons.chevron_left_rounded
                         : Icons.chevron_right_rounded,
                     color: AppColors.primary,
-                    size: 28,
+                    size: 24,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
             Divider(height: 1, color: palette.stroke.withValues(alpha: 0.68)),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -852,8 +860,8 @@ class _ProviderMetricDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 1,
-      height: 68,
-      margin: const EdgeInsets.symmetric(horizontal: 7),
+      height: 50,
+      margin: const EdgeInsets.symmetric(horizontal: 5),
       color: palette.stroke.withValues(alpha: 0.75),
     );
   }
@@ -881,15 +889,15 @@ class _ProviderInfoMetric extends StatelessWidget {
     return Column(
       children: [
         Container(
-          width: 36,
-          height: 36,
+          width: 30,
+          height: 30,
           decoration: BoxDecoration(
             color: iconColor.withValues(alpha: 0.09),
             shape: BoxShape.circle,
           ),
-          child: Icon(icon, color: iconColor, size: 19),
+          child: Icon(icon, color: iconColor, size: 16),
         ),
-        const SizedBox(height: 7),
+        const SizedBox(height: 5),
         Text(
           value,
           maxLines: 1,
@@ -897,11 +905,11 @@ class _ProviderInfoMetric extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(
             color: palette.inkDark,
-            fontSize: 12.5,
+            fontSize: 11.5,
             fontWeight: FontWeight.w900,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -923,7 +931,7 @@ class _ProviderInfoMetric extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: palette.inkMuted,
-                  fontSize: 9.5,
+                  fontSize: 9,
                   fontWeight: FontWeight.w600,
                 ),
               ),

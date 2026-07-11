@@ -2640,7 +2640,7 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
     if (!ProviderBookingEligibility.canBook(_provider)) {
       return _t('Not set', 'غير محدد');
     }
-    return _t('Available', 'متاح');
+    return _availableDayLabel;
   }
 
   String get _availabilityHintLabel {
@@ -2679,10 +2679,34 @@ class _ProviderDetailsScreenState extends State<ProviderDetailsScreen> {
 
   String get _availableDayLabel {
     final slots = _todayOrNextSlots;
-    if (slots.isEmpty) return '';
-    final isToday =
-        _nextDate(slots.first.day).difference(_nextDate('invalid')).inDays == 0;
-    return isToday ? _t('Available today', 'متاح اليوم') : slots.first.day;
+    if (slots.isEmpty) return _t('Not available', 'غير متاح');
+    final firstSlotDate = _nextDate(slots.first.day);
+    final today = _nextDate('invalid'); // returns today with zeroed time
+    final diff = firstSlotDate.difference(today).inDays;
+    if (diff == 0) {
+      return _t('Available today', 'متاح اليوم');
+    } else if (diff == 1) {
+      return _t('Available tomorrow', 'متاح غداً');
+    } else {
+      final weekday = _weekdayShort(firstSlotDate);
+      final month = _monthName(firstSlotDate.month);
+      final dateStr = context.l10n.isArabic 
+          ? '$weekday، ${firstSlotDate.day} $month' 
+          : '$weekday, $month ${firstSlotDate.day}';
+      return _t('Available on $dateStr', 'متاح في $dateStr');
+    }
+  }
+
+  String _weekdayShort(DateTime date) {
+    const en = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const ar = ['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];
+    return (context.l10n.isArabic ? ar : en)[date.weekday - 1];
+  }
+
+  String _monthName(int month) {
+    const en = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const ar = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+    return (context.l10n.isArabic ? ar : en)[month - 1];
   }
 
   String? _imageUrl(String? raw) {

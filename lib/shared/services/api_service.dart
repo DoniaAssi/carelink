@@ -1380,13 +1380,26 @@ class ApiService {
     required String date,
     required String time,
   }) async {
+    final url = _endpoint('/patient/appointments/$appointmentId/reschedule');
+    final payload = {'date': date, 'time': time};
+    
+    print('--- RESCHEDULE API DEBUG ---');
+    print('Base URL: ${ApiService.baseUrl}');
+    print('Endpoint URL: $url');
+    print('Appointment ID: $appointmentId');
+    print('Payload: $payload');
+    
     final response = await _sendRequest(
       http.put(
-        _endpoint('/patient/appointments/$appointmentId/reschedule'),
+        url,
         headers: _jsonHeaders,
-        body: jsonEncode({'date': date, 'time': time}),
+        body: jsonEncode(payload),
       ),
     );
+    
+    print('HTTP Status: ${response.statusCode}');
+    print('Response Body: ${response.body}');
+    print('----------------------------');
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body) as Map<String, dynamic>;

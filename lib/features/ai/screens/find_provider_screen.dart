@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/shared/widgets/carelink_theme_toggle.dart';
@@ -1097,12 +1098,16 @@ class _FindProviderScreenState extends State<FindProviderScreen> {
             runSpacing: 12,
             alignment: WrapAlignment.center,
             children: [
-              _buildSuggestionChip('رعاية جروح'),
-              _buildSuggestionChip('حقن منزلية'),
-              _buildSuggestionChip('كبار السن'),
-              _buildSuggestionChip('القلب'),
-              _buildSuggestionChip('حرارة'),
-              _buildSuggestionChip('إعطاء أدوية'),
+              _buildSuggestionChip(context.tr('ai.quickExample.woundCare')),
+              _buildSuggestionChip(
+                context.tr('ai.quickExample.homeInjection'),
+              ),
+              _buildSuggestionChip(context.tr('ai.quickExample.elderlyCare')),
+              _buildSuggestionChip(context.tr('ai.quickExample.heartProblem')),
+              _buildSuggestionChip(context.tr('ai.quickExample.fever')),
+              _buildSuggestionChip(
+                context.tr('ai.quickExample.medicationAdministration'),
+              ),
             ],
           ),
           const SizedBox(height: 40),

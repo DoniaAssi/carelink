@@ -1,3 +1,5 @@
+import 'package:carelink/shared/utils/appointment_time_utils.dart';
+
 class AppointmentModel {
   final String appointmentId;
   final String patientUserId;
@@ -64,7 +66,6 @@ class AppointmentModel {
   });
 
   factory AppointmentModel.fromJson(Map<String, dynamic> json) {
-    final rawDate = (json['scheduledAt'] ?? '').toString();
     return AppointmentModel(
       appointmentId: (json['appointmentId'] ?? json['requestId'] ?? '')
           .toString(),
@@ -100,12 +101,14 @@ class AppointmentModel {
         (json['visitLongitude'] ?? '').toString(),
       ),
       notes: (json['notes'] ?? '').toString(),
-      scheduledAt: DateTime.tryParse(rawDate.replaceFirst(' ', 'T')),
-      requestedRescheduleAt: DateTime.tryParse(
-        (json['requestedRescheduleAt'] ?? '').toString().replaceFirst(' ', 'T'),
+      scheduledAt: AppointmentTimeUtils.parseBackendDateTime(
+        json['scheduledAt'],
       ),
-      rescheduleRejectedAt: DateTime.tryParse(
-        (json['rescheduleRejectedAt'] ?? '').toString().replaceFirst(' ', 'T'),
+      requestedRescheduleAt: AppointmentTimeUtils.parseBackendDateTime(
+        json['requestedRescheduleAt'],
+      ),
+      rescheduleRejectedAt: AppointmentTimeUtils.parseBackendDateTime(
+        json['rescheduleRejectedAt'],
       ),
       rescheduleRejectionReason: (json['rescheduleRejectionReason'] ?? '')
           .toString(),
@@ -115,11 +118,8 @@ class AppointmentModel {
       providerCurrentLng: double.tryParse(
         (json['providerCurrentLng'] ?? '').toString(),
       ),
-      providerLocationUpdatedAt: DateTime.tryParse(
-        (json['providerLocationUpdatedAt'] ?? '').toString().replaceFirst(
-          ' ',
-          'T',
-        ),
+      providerLocationUpdatedAt: AppointmentTimeUtils.parseBackendDateTime(
+        json['providerLocationUpdatedAt'],
       ),
       patientRatingStars: _parseOptionalInt(json['patientRatingStars']),
       patientRatingComment: (json['patientRatingComment'] ?? '').toString(),

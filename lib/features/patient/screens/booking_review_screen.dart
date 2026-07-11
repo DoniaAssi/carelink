@@ -5,6 +5,7 @@ import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/features/patient/payment/booking_payment_flow.dart';
+import 'package:carelink/features/patient/utils/booking_flow_exit_helper.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
@@ -108,6 +109,13 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
         title: context.l10n.isArabic
             ? 'مراجعة الحجز'
             : context.tr('booking.review.title'),
+        actions: [
+          BookingFlowExitHelper.action(
+            context: context,
+            patientUserId: widget.request.patientId,
+            hasProgress: true,
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),

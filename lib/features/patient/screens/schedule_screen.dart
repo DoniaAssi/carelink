@@ -15,6 +15,7 @@ import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
 import 'package:carelink/shared/services/payment_service.dart';
+import 'package:carelink/shared/utils/appointment_time_utils.dart';
 import 'package:carelink/features/patient/utils/appointment_action_helper.dart';
 import 'package:carelink/features/patient/utils/rebook_flow_helper.dart';
 import 'package:carelink/features/patient/screens/messages_screen.dart';
@@ -247,8 +248,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   DateTime? _dateOf(Map<String, dynamic> row) {
-    final raw = row['scheduledAt']?.toString() ?? '';
-    return DateTime.tryParse(raw.replaceFirst(' ', 'T'))?.toLocal();
+    return AppointmentTimeUtils.parseBackendDateTime(row['scheduledAt']);
   }
 
   bool _sameDay(DateTime first, DateTime second) =>
@@ -281,7 +281,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         appointmentId: id,
         patientUserId: widget.patientUserId,
         providerUserId: providerId,
-        paymentMethod: 'mock_card',
+        paymentMethod: 'card',
       );
       if (!mounted) return;
       final paid =
@@ -1177,9 +1177,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     DateTime? requestedRescheduleAt;
     final rawReschedule = row['requestedRescheduleAt']?.toString();
     if (rawReschedule != null && rawReschedule.trim().isNotEmpty) {
-      requestedRescheduleAt = DateTime.tryParse(
-        rawReschedule.replaceFirst(' ', 'T'),
-      )?.toLocal();
+      requestedRescheduleAt = AppointmentTimeUtils.parseBackendDateTime(
+        rawReschedule,
+      );
     }
 
     final actionState = AppointmentActionHelper.getActionState(
@@ -1325,7 +1325,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   String _statusLabel(Map<String, dynamic> row, _BookingState state) {
     final subStatus = (row['subStatus'] ?? '').toString().trim().toLowerCase();
-    if (subStatus == 'reschedule_requested') {
+    if (subStatus == 'reschedule_requested' || row['status'] == 'pending_reschedule') {
       return _t(
         'Reschedule request pending approval',
         'طلب تغيير الموعد بانتظار الموافقة',
@@ -1355,7 +1355,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   Color _statusColor(Map<String, dynamic> row, _BookingState state) {
     final subStatus = (row['subStatus'] ?? '').toString().trim().toLowerCase();
-    if (subStatus == 'reschedule_requested') return AppColors.warning;
+    if (subStatus == 'reschedule_requested' || row['status'] == 'pending_reschedule') return AppColors.warning;
     return switch (state) {
       _BookingState.waitingProvider => const Color(0xFFD58A14),
       _BookingState.waitingPayment => const Color(0xFFE56B16),

@@ -7,6 +7,7 @@ import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/shared/utils/appointment_time_utils.dart';
 import 'booking_details_screen.dart';
 
 class AppointmentsScreen extends StatefulWidget {
@@ -91,24 +92,11 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
   String _formatDate(DateTime? date) {
     if (date == null) return context.tr('patient.appointments.dateUnavailable');
-    final isAr = context.l10n.isArabic;
-    final month = isAr
-        ? const [
-            'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-            'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
-          ]
-        : const [
-            'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-          ];
-    final suffix = date.hour >= 12 ? (isAr ? 'م' : 'PM') : (isAr ? 'ص' : 'AM');
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '${date.day} ${month[date.month - 1]} ${date.year} - $hour:$minute $suffix';
+    return AppointmentTimeUtils.formatDateTime(context, date);
   }
 
   Color _statusColor(AppointmentModel appointment) {
-    if (appointment.subStatus.toLowerCase().trim() == 'reschedule_requested') {
+    if (appointment.subStatus.toLowerCase().trim() == 'reschedule_requested' || appointment.status.toLowerCase().trim() == 'pending_reschedule') {
       return AppColors.warning;
     }
     final status = appointment.status;
@@ -128,7 +116,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   }
 
   String _translateStatus(AppointmentModel appointment) {
-    if (appointment.subStatus.toLowerCase().trim() == 'reschedule_requested') {
+    if (appointment.subStatus.toLowerCase().trim() == 'reschedule_requested' || appointment.status.toLowerCase().trim() == 'pending_reschedule') {
       return context.l10n.isArabic
           ? 'طلب تغيير الموعد بانتظار الموافقة'
           : 'Reschedule request pending approval';

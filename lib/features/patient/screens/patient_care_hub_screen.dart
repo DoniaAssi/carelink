@@ -15,6 +15,7 @@ import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/features/ai/provider_smart_match.dart';
 import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/shared/services/location_service.dart';
+import 'package:carelink/shared/utils/appointment_time_utils.dart';
 import 'provider_details_screen.dart';
 
 class PatientCareHubScreen extends StatefulWidget {
@@ -201,7 +202,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
 
     return PatientScaffold(
       enabled: false,
-      backgroundColor: p.isDark ? p.pageBg : const Color(0xFFF8FAFA),
+      backgroundColor: p.pageBg,
       appBar: PatientAppBar(
         title: _t('My Care', 'رعايتي'),
         showBack: false,
@@ -226,7 +227,7 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(
                     16,
-                    12,
+                    18,
                     16,
                     MediaQuery.paddingOf(context).bottom + 120,
                   ),
@@ -246,10 +247,10 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                         ],
                       ] else ...[
                         _buildUpcomingCareCard(p, _activeBookings.first),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 24),
 
                         _buildCurrentCarePlanCard(p, _activeBookings.first),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 24),
 
                         _buildRecentCareActivities(p),
                         const SizedBox(height: 20),
@@ -317,8 +318,8 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
           Text(
             _t('No active care currently', 'لا توجد رعاية نشطة حالياً'),
             style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
               color: p.inkDark,
             ),
           ),
@@ -527,11 +528,6 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
     );
   }
 
-  String _formatDate(DateTime? d) {
-    if (d == null) return '—';
-    return '${d.day}/${d.month}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-  }
-
   // ==========================================
   // SECTION 3: CURRENT CARE PLAN
   // ==========================================
@@ -548,9 +544,9 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _skeletonBox(p, height: 140),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           _skeletonBox(p, height: 160),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           _skeletonBox(p, height: 220),
         ],
       ),
@@ -569,10 +565,48 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
   // Helper for generic section cards
 
   BoxShadow _cardShadow(CarelinkPalette p) => BoxShadow(
-    color: Colors.black.withValues(alpha: p.isDark ? 0.28 : 0.05),
-    blurRadius: p.isDark ? 18 : 12,
-    offset: const Offset(0, 8),
+    color: p.cardShadowColor(0.06),
+    blurRadius: 22,
+    offset: const Offset(0, 10),
   );
+
+  BoxDecoration _dashboardCardDecoration(CarelinkPalette p) => BoxDecoration(
+    color: p.surface,
+    borderRadius: BorderRadius.circular(20),
+    border: Border.all(color: p.stroke.withValues(alpha: 0.45)),
+    boxShadow: [_cardShadow(p)],
+  );
+
+  String _formatDateOnly(DateTime? d) {
+    return AppointmentTimeUtils.formatDate(
+      context,
+      d,
+      fallback: _t('Date pending', 'التاريخ قيد الانتظار'),
+      numeric: true,
+    );
+  }
+
+  String _formatTimeOnly(DateTime? d) {
+    return AppointmentTimeUtils.formatTime(
+      context,
+      d,
+      fallback: _t('Time pending', 'الوقت قيد الانتظار'),
+      twoDigitHour: true,
+    );
+  }
+
+  Widget _providerAvatar(CarelinkPalette p, AppointmentModel b) {
+    final image = _absoluteImage(b.providerImageUrl);
+    return CircleAvatar(
+      radius: 31,
+      backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+      foregroundImage: image == null ? null : NetworkImage(image),
+      child: image == null
+          ? const Icon(Icons.person_rounded, color: AppColors.primary, size: 30)
+          : null,
+    );
+  }
+
   // ==========================================
   // NEW SECTION: UPCOMING CARE CARD
   // ==========================================
@@ -584,12 +618,8 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
         : role;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: p.isDark ? p.surface : Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [_cardShadow(p)],
-      ),
+      padding: const EdgeInsets.all(18),
+      decoration: _dashboardCardDecoration(p),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -599,8 +629,8 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
               Text(
                 _t('Upcoming Care', 'الموعد القادم'),
                 style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
                   color: p.inkDark,
                 ),
               ),
@@ -611,50 +641,62 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                 _infoBadge(
                   p,
                   _translateStatus(b.status),
-                  const Color(0xFF0E8A78),
+                  AppColors.primary,
                   Colors.white,
                 ),
               ],
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: p.isDark
-                      ? const Color(0xFF0D3841)
-                      : const Color(0xFFE7F8F6),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.calendar_month_outlined,
-                  color: Color(0xFF0E8A78),
-                  size: 26,
-                ),
-              ),
-              const SizedBox(width: 16),
+              _providerAvatar(p, b),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      b.providerName.isEmpty
+                          ? _t('Care provider', 'مقدم الرعاية')
+                          : b.providerName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: p.inkDark,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      service.isEmpty
+                          ? _t('General Care', 'رعاية عامة')
+                          : service,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         const Icon(
                           Icons.calendar_today_rounded,
                           size: 16,
-                          color: Color(0xFF0E8A78),
+                          color: AppColors.primary,
                         ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            _formatDate(b.scheduledAt).split(' ')[0],
+                            _formatDateOnly(b.scheduledAt),
                             style: TextStyle(
                               fontSize: 14,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w800,
                               color: p.inkDark,
                             ),
                           ),
@@ -667,31 +709,12 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
                         const Icon(
                           Icons.access_time_rounded,
                           size: 16,
-                          color: Color(0xFF0E8A78),
+                          color: AppColors.primary,
                         ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            b.scheduledAt != null
-                                ? '${b.scheduledAt!.hour.toString().padLeft(2, '0')}:${b.scheduledAt!.minute.toString().padLeft(2, '0')}'
-                                : '',
-                            style: TextStyle(fontSize: 14, color: p.inkMuted),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.person_outline_rounded,
-                          size: 16,
-                          color: Color(0xFF0E8A78),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            '${b.providerName} • $service',
+                            _formatTimeOnly(b.scheduledAt),
                             style: TextStyle(fontSize: 14, color: p.inkMuted),
                           ),
                         ),
@@ -702,20 +725,24 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: () =>
                   _handleMessageProvider(b.providerUserId, b.providerName),
-              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 20),
+              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
               label: Text(_t('Message Provider', 'مراسلة مقدم الرعاية')),
               style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
-                foregroundColor: const Color(0xFF0E8A78),
-                side: const BorderSide(color: Color(0xFF0E8A78), width: 1.5),
+                minimumSize: const Size.fromHeight(42),
+                foregroundColor: AppColors.primary,
+                textStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+                side: const BorderSide(color: AppColors.primary, width: 1.2),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(14),
                 ),
               ),
             ),
@@ -729,127 +756,57 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
   // NEW SECTION: CURRENT CARE PLAN CARD
   // ==========================================
   Widget _buildCurrentCarePlanCard(CarelinkPalette p, AppointmentModel b) {
-    final spec = b.specialization.trim();
-    final role = b.providerRole.trim();
-    final service = (spec != '' && spec != 'null' && spec != 'undefined')
-        ? spec
-        : role;
-
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: p.isDark ? p.surface : Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [_cardShadow(p)],
-      ),
+      padding: const EdgeInsets.all(18),
+      decoration: _dashboardCardDecoration(p),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             _t('Current Care Plan', 'خطة الرعاية الحالية'),
             style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
               color: p.inkDark,
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: p.isDark
-                      ? const Color(0xFF0D3841)
-                      : const Color(0xFFE7F8F6),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.health_and_safety_rounded,
-                  color: Color(0xFF0E8A78),
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      service.isEmpty
-                          ? _t('General Care', 'رعاية عامة')
-                          : service,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFF0E8A78),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _t('Start Date: ', 'بداية الخطة: ') +
-                          _formatDate(b.scheduledAt).split(' ')[0],
-                      style: TextStyle(fontSize: 13, color: p.inkMuted),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _carePlanStatItem(
-                  p,
-                  Icons.fact_check_outlined,
-                  _t('Tasks', 'المهام'),
-                  _t('4 Tasks', '4 مهام'),
-                ),
-              ),
-              Expanded(
-                child: _carePlanStatItem(
-                  p,
-                  Icons.medication_outlined,
-                  _t('Medications', 'الأدوية'),
-                  _t('2 Meds', '2 أدوية'),
-                ),
-              ),
-              Expanded(
-                child: _carePlanStatItem(
-                  p,
-                  Icons.assignment_outlined,
-                  _t('Instructions', 'التعليمات'),
-                  _t('5 Inst.', '5 تعليمات'),
-                ),
-              ),
-              Expanded(
-                child: _carePlanStatItem(
-                  p,
-                  Icons.flag_outlined,
-                  _t('Goals', 'الأهداف'),
-                  _t('3 Goals', '3 أهداف'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
             width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () {}, // Future endpoint for full care plan
-              icon: const Icon(Icons.chevron_left_rounded, size: 20),
-              label: Text(_t('View Plan', 'عرض الخطة')),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
-                foregroundColor: const Color(0xFF0E8A78),
-                side: const BorderSide(color: Color(0xFF0E8A78), width: 1.0),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            decoration: BoxDecoration(
+              color: p.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: p.stroke.withValues(alpha: 0.5)),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.assignment_outlined,
+                  size: 32,
+                  color: p.inkMuted.withValues(alpha: 0.5),
                 ),
-              ),
+                const SizedBox(height: 12),
+                Text(
+                  _t('No active care plan', 'لا توجد خطة رعاية نشطة'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: p.inkDark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _t(
+                    'Your care provider has not published a plan yet.',
+                    'لم يقم مقدم الرعاية بنشر خطة بعد.',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: p.inkMuted),
+                ),
+              ],
             ),
           ),
         ],
@@ -857,164 +814,53 @@ class _PatientCareHubScreenState extends State<PatientCareHubScreen> {
     );
   }
 
-  Widget _carePlanStatItem(
-    CarelinkPalette p,
-    IconData icon,
-    String title,
-    String subtitle,
-  ) {
-    return Column(
-      children: [
-        Icon(icon, color: const Color(0xFF0E8A78), size: 24),
-        const SizedBox(height: 8),
-        Text(
-          title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: p.inkDark,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          subtitle,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 11, color: p.inkMuted),
-        ),
-      ],
-    );
-  }
-
   // ==========================================
   // NEW SECTION: RECENT CARE ACTIVITIES
   // ==========================================
   Widget _buildRecentCareActivities(CarelinkPalette p) {
-    // Generate dummy activities based on latest records + bookings
-    final activities = <Map<String, dynamic>>[];
-
-    if (_activeBookings.isNotEmpty) {
-      activities.add({
-        'title': _t('Status update', 'تحديث حالة'),
-        'source': _activeBookings.first.providerName,
-        'date': _activeBookings.first.scheduledAt?.toIso8601String() ?? '',
-        'icon': Icons.info_outline_rounded,
-        'color': const Color(0xFF3B82F6),
-      });
-      if (_activeBookings.first.status.toLowerCase() == 'completed') {
-        activities.insert(0, {
-          'title': _t('Visit completed', 'زيارة تم تنفيذها'),
-          'source': _activeBookings.first.providerName,
-          'date': _activeBookings.first.scheduledAt?.toIso8601String() ?? '',
-          'icon': Icons.check_circle_outline_rounded,
-          'color': const Color(0xFF10B981),
-        });
-      }
-    }
-
-    if (activities.isEmpty) return const SizedBox.shrink();
-
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: p.isDark ? p.surface : Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [_cardShadow(p)],
-      ),
+      padding: const EdgeInsets.all(18),
+      decoration: _dashboardCardDecoration(p),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             _t('Recent Care Activities', 'آخر أنشطة الرعاية'),
             style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
               color: p.inkDark,
             ),
           ),
-          const SizedBox(height: 16),
-          Column(
-            children: List.generate(activities.length, (index) {
-              final act = activities[index];
-              final dateStr = act['date'].toString();
-              final dt = DateTime.tryParse(dateStr) ?? DateTime.now();
-              return Column(
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: (act['color'] as Color).withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          act['icon'] as IconData,
-                          color: act['color'] as Color,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              act['title'] as String,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: p.inkDark,
-                              ),
-                            ),
-                            Text(
-                              act['source'] as String,
-                              style: TextStyle(fontSize: 12, color: p.inkMuted),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF0E8A78),
-                            ),
-                          ),
-                          Text(
-                            '${dt.day} ${_t('May', 'مايو')} ${dt.year}', // Simple mock date for demo
-                            style: TextStyle(fontSize: 11, color: p.inkMuted),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(width: 8),
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        color: p.inkMuted,
-                        size: 20,
-                      ),
-                    ],
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: p.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: p.stroke.withValues(alpha: 0.5)),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.history_rounded,
+                  size: 32,
+                  color: p.inkMuted.withValues(alpha: 0.5),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _t('No recent activities', 'لا توجد أنشطة حديثة'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: p.inkDark,
                   ),
-                  if (index < activities.length - 1)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Divider(
-                        color: p.stroke.withValues(alpha: 0.5),
-                        height: 1,
-                      ),
-                    ),
-                ],
-              );
-            }),
+                ),
+              ],
+            ),
           ),
         ],
       ),

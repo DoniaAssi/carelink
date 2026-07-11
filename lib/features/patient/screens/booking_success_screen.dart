@@ -9,6 +9,7 @@ import 'package:carelink/features/patient/widgets/patient_navigation_shell.dart'
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
 import 'package:carelink/shared/models/appointment_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/shared/utils/appointment_time_utils.dart';
 
 class BookingSuccessScreen extends StatefulWidget {
   const BookingSuccessScreen({
@@ -312,16 +313,11 @@ class _BookingSuccessScreenState extends State<BookingSuccessScreen> {
   }
 
   String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-'
-        '${date.day.toString().padLeft(2, '0')}';
+    return AppointmentTimeUtils.formatDate(context, date);
   }
 
   String _formatTime(DateTime date) {
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    final isAr = context.l10n.isArabic;
-    final suffix = date.hour >= 12 ? (isAr ? 'م' : 'PM') : (isAr ? 'ص' : 'AM');
-    return '$hour:$minute $suffix';
+    return AppointmentTimeUtils.formatTime(context, date);
   }
 }
 

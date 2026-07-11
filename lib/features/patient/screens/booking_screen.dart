@@ -9,6 +9,7 @@ import 'package:carelink/features/ai/provider_booking_eligibility.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
 import 'package:carelink/shared/models/provider_model.dart';
 import 'package:carelink/shared/services/api_service.dart';
+import 'package:carelink/features/patient/utils/booking_flow_exit_helper.dart';
 import 'select_visit_location_screen.dart';
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
@@ -268,6 +269,13 @@ class _BookingScreenState extends State<BookingScreen> {
         title: context.l10n.isArabic
             ? 'اختر التاريخ والوقت'
             : context.tr('booking.dateTime.title'),
+        actions: [
+          BookingFlowExitHelper.action(
+            context: context,
+            patientUserId: widget.request.patientId,
+            hasProgress: true,
+          ),
+        ],
       ),
       bottomNavigationBar: SafeArea(
         top: false,

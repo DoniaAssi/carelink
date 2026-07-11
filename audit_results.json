@@ -1,0 +1,397 @@
+[
+  {
+    "file": "\\screens\\add_visit_report_screen.dart",
+    "findings": [
+      {
+        "line": 55,
+        "type": "DateTime.now()",
+        "content": "final now = DateTime.now();"
+      },
+      {
+        "line": 74,
+        "type": "DateTime.now()",
+        "content": "final now = DateTime.now();"
+      },
+      {
+        "line": 90,
+        "type": "DateTime.now()",
+        "content": "final now = DateTime.now();"
+      }
+    ]
+  },
+  {
+    "file": "\\screens\\booking_details_screen.dart",
+    "findings": [
+      {
+        "line": 177,
+        "type": "DateTime.now()",
+        "content": "if (scheduledAt == null || !scheduledAt.isAfter(DateTime.now())) {"
+      },
+      {
+        "line": 309,
+        "type": "DateTime.now()",
+        "content": "final d = DateTime.now().difference(t);"
+      },
+      {
+        "line": 577,
+        "type": "DateTime.now()",
+        "content": "if (scheduledAt != null && scheduledAt.isBefore(DateTime.now())) {"
+      },
+      {
+        "line": 922,
+        "type": "Hardcoded Available",
+        "content": "isAr ? '\u0645\u062a\u0627\u062d \u0627\u0644\u064a\u0648\u0645' : 'Available today',"
+      }
+    ]
+  },
+  {
+    "file": "\\screens\\booking_screen.dart",
+    "findings": [
+      {
+        "line": 33,
+        "type": "DateTime.now()",
+        "content": "DateTime _selectedDate = DateTime.now();"
+      },
+      {
+        "line": 34,
+        "type": "DateTime.now()",
+        "content": "DateTime _visibleStartDate = DateTime.now();"
+      },
+      {
+        "line": 43,
+        "type": "DateTime.now()",
+        "content": "_selectedDate = DateTime.now();"
+      },
+      {
+        "line": 120,
+        "type": "DateTime.now()",
+        "content": "final now = DateTime.now();"
+      },
+      {
+        "line": 942,
+        "type": "DateTime.now()",
+        "content": "return slotDateTime.isBefore(DateTime.now());"
+      }
+    ]
+  },
+  {
+    "file": "\\screens\\booking_success_screen.dart",
+    "findings": [
+      {
+        "line": 866,
+        "type": "Hardcoded Ratings",
+        "content": "fontSize: emphasized ? 14.5 : 13.5,"
+      }
+    ]
+  },
+  {
+    "file": "\\screens\\chat_screen.dart",
+    "findings": [
+      {
+        "line": 309,
+        "type": "DateTime.now()",
+        "content": "final localId = 'local-${DateTime.now().microsecondsSinceEpoch}';"
+      },
+      {
+        "line": 316,
+        "type": "DateTime.now()",
+        "content": "createdAt: DateTime.now(),"
+      },
+      {
+        "line": 343,
+        "type": "DateTime.now()",
+        "content": "DateTime.now(),"
+      },
+      {
+        "line": 544,
+        "type": "DateTime.now()",
+        "content": "'${(await getTemporaryDirectory()).path}/carelink-${DateTime.now().millisecondsSinceEpoch}.m4a';"
+      },
+      {
+        "line": 581,
+        "type": "DateTime.now()",
+        "content": "'voice-${DateTime.now().millisecondsSinceEpoch}.${kIsWeb ? 'webm' : 'm4a'}',"
+      },
+      {
+        "line": 680,
+        "type": "DateTime.now()",
+        "content": "final difference = DateTime.now().difference(last);"
+      },
+      {
+        "line": 685,
+        "type": "DateTime.now()",
+        "content": "final now = DateTime.now();"
+      },
+      {
+        "line": 699,
+        "type": "DateTime.now()",
+        "content": "final now = DateTime.now();"
+      },
+      {
+        "line": 1039,
+        "type": "Hardcoded Ratings",
+        "content": "height: 5.0 + (index % 4) * 2.5,"
+      },
+      {
+        "line": 1062,
+        "type": "Hardcoded Ratings",
+        "content": "style: TextStyle(color: textColor, fontSize: 14.5, height: 1.38),"
+      },
+      {
+        "line": 1189,
+        "type": "DateTime.now()",
+        "content": "key: ValueKey('typing-$index-${DateTime.now().second ~/ 2}'),"
+      },
+      {
+        "line": 1355,
+        "type": "Hardcoded Ratings",
+        "content": "style: TextStyle(color: palette.inkDark, fontSize: 14.5),"
+      }
+    ]
+  },
+  {
+    "file": "\\screens\\edit_profile_screen.dart",
+    "findings": [
+      {
+        "line": 589,
+        "type": "DateTime.now()",
+        "content": "'profile_${widget.userId}_${DateTime.now().millisecondsSinceEpoch}.jpg';"
+      }
+    ]
+  },
+  {
+    "file": "\\screens\\messages_screen.dart",
+    "findings": [
+      {
+        "line": 181,
+        "type": "DateTime.now()",
+        "content": "final now = DateTime.now();"
+      }
+    ]
+  },
+  {
+    "file": "\\screens\\patient_care_hub_screen.dart",
+    "findings": [
+      {
+        "line": 832,
+        "type": "Hardcoded Task Count",
+        "content": "_t('4 Tasks', '4 \u0645\u0647\u0627\u0645'),"
+      },
+      {
+        "line": 840,
+        "type": "Hardcoded Task Count",
+        "content": "_t('2 Meds', '2 \u0623\u062f\u0648\u064a\u0629'),"
+      },
+      {
+        "line": 848,
+        "type": "Hardcoded Task Count",
+        "content": "_t('5 Inst.', '5 \u062a\u0639\u0644\u064a\u0645\u0627\u062a'),"
+      },
+      {
+        "line": 856,
+        "type": "Hardcoded Task Count",
+        "content": "_t('3 Goals', '3 \u0623\u0647\u062f\u0627\u0641'),"
+      },
+      {
+        "line": 991,
+        "type": "DateTime.now()",
+        "content": "final dt = DateTime.tryParse(dateStr) ?? DateTime.now();"
+      }
+    ]
+  },
+  {
+    "file": "\\screens\\patient_favorites_screen.dart",
+    "findings": [
+      {
+        "line": 207,
+        "type": "Hardcoded Ratings",
+        "content": "fontSize: 14.5,"
+      }
+    ]
+  },
+  {
+    "file": "\\screens\\patient_home_screen.dart",
+    "findings": [
+      {
+        "line": 260,
+        "type": "DateTime.now()",
+        "content": "final hour = DateTime.now().hour;"
+      },
+      {
+        "line": 840,
+        "type": "DateTime.now()",
+        "content": "final now = DateTime.now();"
+      },
+      {
+        "line": 1560,
+        "type": "DateTime.now()",
+        "content": "final hour = DateTime.now().hour;"
+      },
+      {
+        "line": 5073,
+        "type": "Hardcoded Ratings",
+        "content": "fontSize: 14.5,"
+      },
+      {
+        "line": 5487,
+        "type": "DateTime.now()",
+        "content": "final diff = DateTime.now().difference(dt);"
+      },
+      {
+        "line": 5804,
+        "type": "DateTime.now()",
+        "content": "scheduled.year == DateTime.now().year &&"
+      },
+      {
+        "line": 5805,
+        "type": "DateTime.now()",
+        "content": "scheduled.month == DateTime.now().month &&"
+      },
+      {
+        "line": 5806,
+        "type": "DateTime.now()",
+        "content": "scheduled.day == DateTime.now().day;"
+      }
+    ]
+  },
+  {
+    "file": "\\screens\\providers_screen.dart",
+    "findings": [
+      {
+        "line": 552,
+        "type": "Hardcoded Ratings",
+        "content": "children: [null, 2.0, 5.0, 10.0].map((km) {"
+      }
+    ]
+  },
+  {
+    "file": "\\screens\\provider_details_screen.dart",
+    "findings": [
+      {
+        "line": 221,
+        "type": "DateTime.now()",
+        "content": "var date = DateTime.now();"
+      },
+      {
+        "line": 1752,
+        "type": "DateTime.now()",
+        "content": "if (slotDateTime.isBefore(DateTime.now())) return false;"
+      },
+      {
+        "line": 2634,
+        "type": "Hardcoded Available",
+        "content": "return _availableDayLabel == _t('Available today', '\u0645\u062a\u0627\u062d \u0627\u0644\u064a\u0648\u0645')"
+      },
+      {
+        "line": 2635,
+        "type": "Hardcoded Available",
+        "content": "? _t('Available Today', '\u0645\u062a\u0627\u062d \u0627\u0644\u064a\u0648\u0645')"
+      },
+      {
+        "line": 2672,
+        "type": "DateTime.now()",
+        "content": "final today = names[DateTime.now().weekday];"
+      },
+      {
+        "line": 2685,
+        "type": "Hardcoded Available",
+        "content": "return isToday ? _t('Available today', '\u0645\u062a\u0627\u062d \u0627\u0644\u064a\u0648\u0645') : slots.first.day;"
+      },
+      {
+        "line": 2834,
+        "type": "Hardcoded Ratings",
+        "content": "fontSize: primary ? 14.5 : 14,"
+      },
+      {
+        "line": 3211,
+        "type": "Hardcoded Ratings",
+        "content": "fontSize: 14.5,"
+      }
+    ]
+  },
+  {
+    "file": "\\screens\\schedule_screen.dart",
+    "findings": [
+      {
+        "line": 58,
+        "type": "DateTime.now()",
+        "content": "DateTime _focusedDay = DateTime.now();"
+      },
+      {
+        "line": 108,
+        "type": "DateTime.now()",
+        "content": "final firstPast = first.isBefore(DateTime.now());"
+      },
+      {
+        "line": 109,
+        "type": "DateTime.now()",
+        "content": "final secondPast = second.isBefore(DateTime.now());"
+      },
+      {
+        "line": 134,
+        "type": "DateTime.now()",
+        "content": "final hasPassed = _dateOf(row)?.isBefore(DateTime.now()) ?? false;"
+      },
+      {
+        "line": 504,
+        "type": "DateTime.now()",
+        "content": "final now = DateTime.now();"
+      },
+      {
+        "line": 675,
+        "type": "DateTime.now()",
+        "content": "final now = DateTime.now();"
+      },
+      {
+        "line": 872,
+        "type": "DateTime.now()",
+        "content": "final today = DateTime.now();"
+      }
+    ]
+  },
+  {
+    "file": "\\widgets\\reschedule_modal.dart",
+    "findings": [
+      {
+        "line": 41,
+        "type": "DateTime.now()",
+        "content": "DateTime _weekStart = _startOfWeek(DateTime.now());"
+      },
+      {
+        "line": 42,
+        "type": "DateTime.now()",
+        "content": "DateTime _visibleMonth = DateTime(DateTime.now().year, DateTime.now().month);"
+      },
+      {
+        "line": 144,
+        "type": "DateTime.now()",
+        "content": "if (!available || _slotDateTime(date, time24).isBefore(DateTime.now())) {"
+      },
+      {
+        "line": 1356,
+        "type": "Hardcoded Ratings",
+        "content": "fontSize: 14.5,"
+      },
+      {
+        "line": 1524,
+        "type": "DateTime.now()",
+        "content": "if (_slotDateTime(date, time24).isBefore(DateTime.now())) continue;"
+      },
+      {
+        "line": 1723,
+        "type": "DateTime.now()",
+        "content": "final now = DateTime.now();"
+      }
+    ]
+  },
+  {
+    "file": "\\widgets\\smart_rebook_modal.dart",
+    "findings": [
+      {
+        "line": 60,
+        "type": "DateTime.now()",
+        "content": "final now = DateTime.now();"
+      }
+    ]
+  }
+]

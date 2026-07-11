@@ -320,10 +320,16 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                           const Divider(),
                           if (reasonForVisit.isNotEmpty)
                             _buildInfoRow('Reason', reasonForVisit),
+                          
                           if (scheduledAt != null)
                             _buildInfoRow(
                               'Scheduled',
                               _formatDate(scheduledAt),
+                            ),
+                          if (_request['requestedRescheduleAt'] != null)
+                            _buildInfoRow(
+                              'Requested New Time',
+                              _formatDate(_request['requestedRescheduleAt']),
                             ),
                           if (location.isNotEmpty)
                             _buildInfoRow('Location', location),
@@ -334,7 +340,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                   ),
                   const SizedBox(height: 24),
                   // Action Buttons
-                  if (status == 'pending') ...[
+                  if (status == 'pending' || status == 'pending_reschedule') ...[
                     Row(
                       children: [
                         Expanded(
@@ -474,7 +480,11 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
   Widget _buildStatusBadge(String status) {
     Color color;
     switch (status) {
+      
       case 'pending':
+        color = AppColors.warning;
+        break;
+      case 'pending_reschedule':
         color = AppColors.warning;
         break;
       case 'confirmed':

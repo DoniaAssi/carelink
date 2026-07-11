@@ -3444,7 +3444,7 @@ router.put('/appointments/:appointmentId/reschedule', async (req, res) => {
 
   try {
     const [rows] = await db.query(
-      `SELECT status FROM servicerequest WHERE requestId = ?`,
+      `SELECT status, providerUserId FROM servicerequest WHERE requestId = ?`,
       [appointmentId]
     );
 
@@ -3453,7 +3453,9 @@ router.put('/appointments/:appointmentId/reschedule', async (req, res) => {
     }
 
     const currentStatus = (rows[0].status || '').toString().toLowerCase().trim();
-    const allowed = [
+    const providerId = rows[0].providerUserId;
+
+    const pendingAllowed = [
       'pending',
       'pending_payment',
       'payment_pending',
@@ -3462,18 +3464,49 @@ router.put('/appointments/:appointmentId/reschedule', async (req, res) => {
       'waiting_provider_response',
       'waiting response',
     ];
-    if (!allowed.includes(currentStatus)) {
+
+    const approvedAllowed = [
+      'confirmed',
+      'approved',
+      'accepted',
+      'scheduled',
+      'upcoming',
+      'provider_accepted'
+    ];
+
+    if (pendingAllowed.includes(currentStatus)) {
+      await db.execute(
+        `UPDATE servicerequest SET scheduledAt = ? WHERE requestId = ?`,
+        [scheduledAt, appointmentId]
+      );
+      res.json({ message: 'Appointment rescheduled successfully', scheduledAt });
+    } else if (approvedAllowed.includes(currentStatus)) {
+      await db.execute(
+        `UPDATE servicerequest SET requestedRescheduleAt = ?, status = 'pending_reschedule' WHERE requestId = ?`,
+        [scheduledAt, appointmentId]
+      );
+      
+      try {
+        if (providerId) {
+          const { insertNotification } = require('../notifications');
+          await insertNotification({
+            userId: providerId,
+            type: 'appointment_change',
+            title: 'Reschedule Requested',
+            body: 'A patient has requested a new time for an approved appointment. Please review.',
+            relatedRequestId: appointmentId,
+          });
+        }
+      } catch (err) {
+        console.error('Failed to notify provider about reschedule:', err);
+      }
+
+      res.json({ message: 'Reschedule request sent for approval', scheduledAt });
+    } else {
       return res.status(400).json({
-        error: 'Rescheduling is only allowed before the provider accepts or rejects the appointment.'
+        error: 'Rescheduling is not allowed for this appointment status.'
       });
     }
-
-    await db.execute(
-      `UPDATE servicerequest SET scheduledAt = ? WHERE requestId = ?`,
-      [scheduledAt, appointmentId]
-    );
-
-    res.json({ message: 'Appointment rescheduled successfully', scheduledAt });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

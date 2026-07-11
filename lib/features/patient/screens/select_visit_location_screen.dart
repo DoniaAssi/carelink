@@ -13,6 +13,7 @@ import 'package:carelink/core/app_colors.dart';
 import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/shared/models/booking_request_model.dart';
+import 'package:carelink/features/patient/utils/booking_flow_exit_helper.dart';
 import 'booking_review_screen.dart';
 import 'package:carelink/features/patient/widgets/booking_step_indicator.dart';
 import 'package:carelink/features/patient/widgets/patient_shared_widgets.dart';
@@ -269,6 +270,13 @@ class _SelectVisitLocationScreenState extends State<SelectVisitLocationScreen> {
         title: context.l10n.isArabic
             ? 'اختر الموقع'
             : context.tr('booking.location.title'),
+        actions: [
+          BookingFlowExitHelper.action(
+            context: context,
+            patientUserId: widget.request.patientId,
+            hasProgress: true,
+          ),
+        ],
       ),
       bottomNavigationBar: SafeArea(
         top: false,

@@ -75,7 +75,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         isUrgent: widget.request.isUrgent,
         urgencyLevel: widget.request.isUrgent ? 'urgent' : 'routine',
         additionalNotes: widget.request.additionalNotes,
-        paymentMethod: 'mock_card',
+        paymentMethod: 'card',
         paymentStatus: 'paid',
         status: 'pending_provider_approval',
         recommendationId: widget.request.recommendationId,
@@ -105,7 +105,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         patientId: widget.request.patientId,
         providerId: widget.request.providerId,
         amount: widget.request.totalAmount,
-        method: 'mock_card',
+        method: 'card',
       );
       debugPrint('[BookingDebug] payment ledger result: $result');
 

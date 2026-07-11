@@ -417,11 +417,6 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
                         final img = prov['profileImageUrl'];
                         final isSelected = _selectedProviderId == id;
 
-                        // Fake availability logic (or use real if availableTimeSlots exist)
-                        final hasSlots =
-                            (prov['availableTimeSlots'] as List?)?.isNotEmpty ??
-                            true;
-
                         return PatientPressable(
                           onTap: () => setState(() => _selectedProviderId = id),
                           borderRadius: BorderRadius.circular(16),
@@ -492,30 +487,7 @@ class _ChangeProviderModalState extends State<ChangeProviderModal> {
                                               color: p.inkDark,
                                             ),
                                           ),
-                                          const SizedBox(width: 12),
-                                          if (!hasSlots)
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 2,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.orange.withValues(
-                                                  alpha: 0.1,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                'Needs confirmation',
-                                                style: TextStyle(
-                                                  fontSize: 10,
-                                                  color: Colors.deepOrange,
-                                                ),
-                                              ),
-                                            ),
-                                        ],
+                                          ],
                                       ),
                                     ],
                                   ),
