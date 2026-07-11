@@ -29,10 +29,12 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
   DateTime _selectedDate = DateTime.now();
   String _appointmentFilter = 'all';
 
-  static const _pageColor = DoctorUiConstants.doctorBackground;
+  Color get _pageColor => DoctorUiConstants.pageColor(context);
   static const _primary = Color(0xFF0F8B8D);
-  static const _ink = Color(0xFF101828);
-  static const _muted = Color(0xFF667085);
+  Color get _ink => DoctorUiConstants.inkColor(context);
+  Color get _muted => DoctorUiConstants.mutedColor(context);
+  Color get _surface => DoctorUiConstants.surfaceColor(context);
+  Color get _border => DoctorUiConstants.borderColor(context);
 
   final List<String> _days = [
     'Monday',
@@ -88,7 +90,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error loading data: $e')));
+      ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
     }
   }
 
@@ -103,7 +105,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'You are now ${newStatus ? 'available' : 'unavailable'}',
+              newStatus ? context.dx('Available') : context.dx('Unavailable'),
             ),
             backgroundColor: AppColors.success,
           ),
@@ -112,7 +114,10 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(context.dxError(e)),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
         );
       }
     }
@@ -132,17 +137,22 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text(
-            editing ? 'Edit Availability Slot' : 'Add Availability Slot',
+            editing
+                ? context.dx('Edit Availability Slot')
+                : context.dx('Add Availability Slot'),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Day'),
+                decoration: InputDecoration(labelText: context.dx('Day')),
                 initialValue: selectedDay,
                 items: _days
                     .map(
-                      (day) => DropdownMenuItem(value: day, child: Text(day)),
+                      (day) => DropdownMenuItem(
+                        value: day,
+                        child: Text(_dayText(day)),
+                      ),
                     )
                     .toList(),
                 onChanged: (value) {
@@ -152,7 +162,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
               const SizedBox(height: 16),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Start Time'),
+                title: Text(context.dx('Start Time')),
                 trailing: TextButton(
                   onPressed: () async {
                     final time = await showTimePicker(
@@ -165,13 +175,15 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                     }
                   },
                   child: Text(
-                    startTime != null ? startTime!.format(context) : 'Select',
+                    startTime != null
+                        ? startTime!.format(context)
+                        : context.dx('Select'),
                   ),
                 ),
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('End Time'),
+                title: Text(context.dx('End Time')),
                 trailing: TextButton(
                   onPressed: () async {
                     final time = await showTimePicker(
@@ -184,7 +196,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                     }
                   },
                   child: Text(
-                    endTime != null ? endTime!.format(context) : 'Select',
+                    endTime != null
+                        ? endTime!.format(context)
+                        : context.dx('Select'),
                   ),
                 ),
               ),
@@ -193,7 +207,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(context.dx('Cancel')),
             ),
             ElevatedButton(
               onPressed: () {
@@ -201,7 +215,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                     startTime == null ||
                     endTime == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please fill all fields')),
+                    SnackBar(
+                      content: Text(context.dx('Please fill all fields')),
+                    ),
                   );
                   return;
                 }
@@ -209,8 +225,10 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                 final endMinutes = endTime!.hour * 60 + endTime!.minute;
                 if (endMinutes <= startMinutes) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('End time must be after start time'),
+                    SnackBar(
+                      content: Text(
+                        context.dx('End time must be after start time'),
+                      ),
                     ),
                   );
                   return;
@@ -221,7 +239,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                   'endTime': endTime,
                 });
               },
-              child: Text(editing ? 'Save' : 'Add'),
+              child: Text(editing ? context.dx('Save') : context.dx('Add')),
             ),
           ],
         ),
@@ -258,8 +276,8 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
               SnackBar(
                 content: Text(
                   editing
-                      ? 'Slot updated successfully'
-                      : 'Slot added successfully',
+                      ? context.dx('Slot updated successfully')
+                      : context.dx('Slot added successfully'),
                 ),
                 backgroundColor: AppColors.success,
               ),
@@ -268,7 +286,10 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
         } catch (e) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+              SnackBar(
+                content: Text(context.dxError(e)),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
             );
           }
         }
@@ -280,19 +301,21 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Slot'),
-        content: const Text(
-          'Are you sure you want to delete this availability slot?',
+        title: Text(context.dx('Delete Slot')),
+        content: Text(
+          context.dx('Are you sure you want to delete this availability slot?'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(context.dx('Cancel')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: Text(context.dx('Delete')),
           ),
         ],
       ),
@@ -304,8 +327,8 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
         _loadData();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Slot deleted'),
+            SnackBar(
+              content: Text(context.dx('Slot deleted')),
               backgroundColor: AppColors.success,
             ),
           );
@@ -313,7 +336,10 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text(context.dxError(e)),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
           );
         }
       }
@@ -327,19 +353,21 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Disable $day'),
-        content: const Text(
-          'All availability periods for this day will be removed.',
+        title: Text('${context.dx('Disable')} ${_dayText(day)}'),
+        content: Text(
+          context.dx('All availability periods for this day will be removed.'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(context.dx('Cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Disable'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: Text(context.dx('Disable')),
           ),
         ],
       ),
@@ -355,13 +383,18 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       }
       await _loadData();
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('$day availability disabled')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${_dayText(day)} ${context.dx('Unavailable')}'),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text(context.dxError(e)),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
       );
     }
   }
@@ -397,8 +430,8 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                 icon: const Icon(Icons.arrow_back_rounded),
                 color: _primary,
               ),
-              title: const Text(
-                'Schedule',
+              title: Text(
+                context.dx('Schedule'),
                 style: TextStyle(
                   color: _ink,
                   fontSize: 22,
@@ -407,7 +440,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
               ),
               actions: [
                 IconButton(
-                  tooltip: 'Language',
+                  tooltip: context.dx('Language'),
                   onPressed: () => localeController.toggleDoctor(),
                   icon: const Icon(Icons.language_rounded),
                   color: _primary,
@@ -451,7 +484,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       clipBehavior: Clip.none,
       children: [
         IconButton(
-          tooltip: 'Notifications',
+          tooltip: context.dx('Notifications'),
           onPressed: _doctorId.isEmpty
               ? null
               : () {
@@ -487,7 +520,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
               alignment: Alignment.center,
               child: Text(
                 count > 9 ? '9+' : '$count',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.white,
                   fontSize: 10,
                   height: 1,
@@ -504,7 +537,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [_softShadow(opacity: 0.05)],
       ),
@@ -513,12 +546,12 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
           _tabButton(
             index: 0,
             icon: Icons.calendar_month_outlined,
-            label: 'Schedule',
+            label: context.dx('Schedule'),
           ),
           _tabButton(
             index: 1,
             icon: Icons.access_time_rounded,
-            label: 'Availability',
+            label: context.dx('Availability'),
           ),
         ],
       ),
@@ -533,7 +566,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     final selected = _selectedTab == index;
     return Expanded(
       child: Material(
-        color: selected ? _primary : Colors.white,
+        color: selected ? _primary : _surface,
         borderRadius: BorderRadius.circular(20),
         elevation: selected ? 8 : 0,
         shadowColor: _primary.withValues(alpha: 0.22),
@@ -545,7 +578,13 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: selected ? Colors.white : _muted, size: 22),
+                Icon(
+                  icon,
+                  color: selected
+                      ? DoctorUiConstants.onPrimaryColor(context)
+                      : _muted,
+                  size: 22,
+                ),
                 const SizedBox(width: 9),
                 Flexible(
                   child: Text(
@@ -553,7 +592,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: selected ? Colors.white : _ink,
+                      color: selected
+                          ? DoctorUiConstants.onPrimaryColor(context)
+                          : _ink,
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
                     ),
@@ -582,7 +623,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
             Expanded(
               child: Text(
                 _selectedDateHeading,
-                style: const TextStyle(
+                style: TextStyle(
                   color: _ink,
                   fontSize: 21,
                   fontWeight: FontWeight.w900,
@@ -621,13 +662,13 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
 
   Widget _dayCard(DateTime day) {
     final selected = _isSameDay(day, _selectedDate);
-    final name = _days[day.weekday - 1].substring(0, 3);
+    final name = _dayShortText(_days[day.weekday - 1]);
 
     return SizedBox(
       width: 82,
       height: double.infinity,
       child: Material(
-        color: selected ? _primary : Colors.white,
+        color: selected ? _primary : _surface,
         borderRadius: BorderRadius.circular(18),
         elevation: selected ? 8 : 0,
         shadowColor: _primary.withValues(alpha: 0.18),
@@ -638,9 +679,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: selected ? _primary : const Color(0xFFE4E7EC),
-              ),
+              border: Border.all(color: selected ? _primary : _border),
             ),
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -655,7 +694,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                           name,
                           maxLines: 1,
                           style: TextStyle(
-                            color: selected ? Colors.white : _muted,
+                            color: selected
+                                ? DoctorUiConstants.onPrimaryColor(context)
+                                : _muted,
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
                           ),
@@ -671,7 +712,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                           '${day.day}',
                           maxLines: 1,
                           style: TextStyle(
-                            color: selected ? Colors.white : _ink,
+                            color: selected
+                                ? DoctorUiConstants.onPrimaryColor(context)
+                                : _ink,
                             fontSize: 25,
                             fontWeight: FontWeight.w900,
                           ),
@@ -683,7 +726,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                       width: 6,
                       height: 6,
                       decoration: BoxDecoration(
-                        color: selected ? Colors.white : Colors.transparent,
+                        color: selected
+                            ? DoctorUiConstants.onPrimaryColor(context)
+                            : Colors.transparent,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -701,26 +746,41 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE4E7EC)),
+        border: Border.all(color: _border),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: _appointmentFilter,
           borderRadius: BorderRadius.circular(16),
           icon: const Icon(Icons.keyboard_arrow_down_rounded, color: _primary),
-          style: const TextStyle(
+          style: TextStyle(
             color: _ink,
             fontSize: 14,
             fontWeight: FontWeight.w800,
           ),
-          items: const [
-            DropdownMenuItem(value: 'all', child: Text('All Appointments')),
-            DropdownMenuItem(value: 'upcoming', child: Text('Upcoming')),
-            DropdownMenuItem(value: 'in_progress', child: Text('In Progress')),
-            DropdownMenuItem(value: 'completed', child: Text('Completed')),
-            DropdownMenuItem(value: 'cancelled', child: Text('Cancelled')),
+          items: [
+            DropdownMenuItem(
+              value: 'all',
+              child: Text(context.dx('All Appointments')),
+            ),
+            DropdownMenuItem(
+              value: 'upcoming',
+              child: Text(context.dx('Upcoming')),
+            ),
+            DropdownMenuItem(
+              value: 'in_progress',
+              child: Text(context.dx('In Progress')),
+            ),
+            DropdownMenuItem(
+              value: 'completed',
+              child: Text(context.dx('Completed')),
+            ),
+            DropdownMenuItem(
+              value: 'cancelled',
+              child: Text(context.dx('Cancelled')),
+            ),
           ],
           onChanged: (value) {
             if (value == null) return;
@@ -735,13 +795,14 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     final appointment = rawAppointment is Map
         ? Map<String, dynamic>.from(rawAppointment)
         : <String, dynamic>{};
-    final patientName = _cleanText(appointment['patientName']) ?? 'Patient';
+    final patientName =
+        _cleanText(appointment['patientName']) ?? context.dx('Patient');
     final serviceType =
-        _cleanText(appointment['serviceType']) ?? 'Consultation';
+        _cleanText(appointment['serviceType']) ?? context.dx('Service');
     final location =
         _cleanText(appointment['visitAddress']) ??
         _cleanText(appointment['location']) ??
-        'Location not set';
+        context.dx('Not set');
     final status = _cleanText(appointment['status']) ?? 'pending';
     final scheduledAt = _appointmentDate(appointment);
     final requestId = _cleanText(appointment['requestId']);
@@ -750,10 +811,10 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [_softShadow(opacity: 0.045)],
-        border: Border.all(color: const Color(0xFFE4E7EC)),
+        border: Border.all(color: _border),
       ),
       child: Material(
         color: Colors.transparent,
@@ -780,7 +841,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                   child: Text(
                     scheduledAt == null ? '--:--' : _timeLabel(scheduledAt),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _ink,
                       fontSize: 16,
                       height: 1.35,
@@ -799,7 +860,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                         patientName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _ink,
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
@@ -810,7 +871,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                         serviceType,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _muted,
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -830,7 +891,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                               location,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _muted,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
@@ -845,7 +906,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                 const SizedBox(width: 10),
                 _statusBadge(statusStyle),
                 const SizedBox(width: 4),
-                const Icon(Icons.chevron_right_rounded, color: _muted),
+                Icon(Icons.chevron_right_rounded, color: _muted),
               ],
             ),
           ),
@@ -880,10 +941,10 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 38),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [_softShadow(opacity: 0.04)],
-        border: Border.all(color: const Color(0xFFE4E7EC)),
+        border: Border.all(color: _border),
       ),
       child: Column(
         children: [
@@ -901,8 +962,8 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
-            'No appointments',
+          Text(
+            context.dx('No appointments'),
             style: TextStyle(
               color: _ink,
               fontSize: 19,
@@ -911,9 +972,12 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Appointments for ${_selectedDateHeading.toLowerCase()} will appear here.',
+            context.dx(
+              'Appointments for {date} will appear here.',
+              args: {'date': _selectedDateHeading.toLowerCase()},
+            ),
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               color: _muted,
               fontSize: 14,
               height: 1.35,
@@ -930,8 +994,8 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       key: const ValueKey('availability-tab'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Availability Status',
+        Text(
+          context.dx('Availability Status'),
           style: TextStyle(
             color: _ink,
             fontSize: 22,
@@ -941,8 +1005,8 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
         const SizedBox(height: 12),
         _availabilityStatusCard(),
         const SizedBox(height: 24),
-        const Text(
-          'Availability Slots',
+        Text(
+          context.dx('Availability Slots'),
           style: TextStyle(
             color: _ink,
             fontSize: 22,
@@ -950,8 +1014,10 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
           ),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'Manage the time slots when you are available to accept appointments.',
+        Text(
+          context.dx(
+            'Manage the time slots when you are available to accept appointments.',
+          ),
           style: TextStyle(
             color: _muted,
             fontSize: 14,
@@ -972,10 +1038,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(18),
             ),
-            textStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-            ),
+            textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
           ),
         ),
       ],
@@ -986,7 +1049,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: _isAvailable ? const Color(0xFFE8F7EE) : const Color(0xFFFFEDEC),
+        color: _isAvailable
+            ? AppColors.success.withValues(alpha: 0.14)
+            : Theme.of(context).colorScheme.error.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(22),
         boxShadow: [_softShadow(opacity: 0.035)],
       ),
@@ -994,7 +1059,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
         children: [
           Icon(
             _isAvailable ? Icons.check_circle : Icons.cancel,
-            color: _isAvailable ? AppColors.success : Colors.red,
+            color: _isAvailable
+                ? AppColors.success
+                : Theme.of(context).colorScheme.error,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1008,7 +1075,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 16,
-                    color: _isAvailable ? AppColors.success : Colors.red,
+                    color: _isAvailable
+                        ? AppColors.success
+                        : Theme.of(context).colorScheme.error,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -1017,7 +1086,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                       ? context.dtr('doctor.schedule.accepting')
                       : context.dtr('doctor.schedule.notAccepting'),
                   style: TextStyle(
-                    color: _isAvailable ? AppColors.success : Colors.red,
+                    color: _isAvailable
+                        ? AppColors.success
+                        : Theme.of(context).colorScheme.error,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1050,10 +1121,10 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(22),
         boxShadow: [_softShadow(opacity: 0.04)],
-        border: Border.all(color: const Color(0xFFE4E7EC)),
+        border: Border.all(color: _border),
       ),
       child: Row(
         children: [
@@ -1072,8 +1143,8 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  day,
-                  style: const TextStyle(
+                  _dayText(day),
+                  style: TextStyle(
                     color: _ink,
                     fontSize: 17,
                     fontWeight: FontWeight.w900,
@@ -1086,7 +1157,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                       padding: const EdgeInsets.only(bottom: 2),
                       child: Text(
                         _slotTime(slot),
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _muted,
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -1095,8 +1166,8 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                     ),
                   )
                 else
-                  const Text(
-                    'Not available',
+                  Text(
+                    context.dx('Unavailable'),
                     style: TextStyle(
                       color: _muted,
                       fontSize: 14,
@@ -1107,7 +1178,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
             ),
           ),
           IconButton(
-            tooltip: 'Add period for $day',
+            tooltip: '${context.dx('Add')} ${_dayText(day)}',
             onPressed: () => _addSlot(day: day),
             icon: const Icon(Icons.add_circle_outline_rounded),
             color: _primary,
@@ -1120,7 +1191,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
           ),
           if (hasSlots)
             PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert_rounded, color: _muted),
+              icon: Icon(Icons.more_vert_rounded, color: _muted),
               onSelected: (action) {
                 if (action == 'add') {
                   _addSlot(day: day);
@@ -1142,11 +1213,11 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                 }
               },
               itemBuilder: (context) => [
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'add',
                   child: ListTile(
-                    leading: Icon(Icons.add_rounded),
-                    title: Text('Add another period'),
+                    leading: const Icon(Icons.add_rounded),
+                    title: Text(context.dx('Add another period')),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
@@ -1155,7 +1226,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                     value: 'edit:${(slot['slot_id'] ?? '').toString()}',
                     child: ListTile(
                       leading: const Icon(Icons.edit_outlined),
-                      title: Text('Edit ${_slotTime(slot)}'),
+                      title: Text('${context.dx('Edit')} ${_slotTime(slot)}'),
                       contentPadding: EdgeInsets.zero,
                     ),
                   ),
@@ -1163,11 +1234,11 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
                   PopupMenuItem(
                     value: 'delete:${(slot['slot_id'] ?? '').toString()}',
                     child: ListTile(
-                      leading: const Icon(
+                      leading: Icon(
                         Icons.delete_outline_rounded,
-                        color: Colors.red,
+                        color: Theme.of(context).colorScheme.error,
                       ),
-                      title: Text('Delete ${_slotTime(slot)}'),
+                      title: Text('${context.dx('Delete')} ${_slotTime(slot)}'),
                       contentPadding: EdgeInsets.zero,
                     ),
                   ),
@@ -1223,28 +1294,28 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
   _StatusStyle _appointmentStatusStyle(String rawStatus) {
     switch (_statusGroup(rawStatus)) {
       case 'completed':
-        return const _StatusStyle(
-          label: 'Completed',
+        return _StatusStyle(
+          label: context.dx('Completed'),
           color: Color(0xFF079455),
-          background: Color(0xFFE8F7EE),
+          background: Color(0xFF079455).withValues(alpha: 0.14),
         );
       case 'cancelled':
-        return const _StatusStyle(
-          label: 'Cancelled',
+        return _StatusStyle(
+          label: context.dx('Cancelled'),
           color: Color(0xFFB42318),
-          background: Color(0xFFFFEDEC),
+          background: Color(0xFFB42318).withValues(alpha: 0.14),
         );
       case 'in_progress':
-        return const _StatusStyle(
-          label: 'In Progress',
+        return _StatusStyle(
+          label: context.dx('In Progress'),
           color: Color(0xFFB54708),
-          background: Color(0xFFFFF3E6),
+          background: Color(0xFFB54708).withValues(alpha: 0.14),
         );
       default:
-        return const _StatusStyle(
-          label: 'Upcoming',
+        return _StatusStyle(
+          label: context.dx('Upcoming'),
           color: Color(0xFF1570EF),
-          background: Color(0xFFEAF4FF),
+          background: Color(0xFF1570EF).withValues(alpha: 0.14),
         );
     }
   }
@@ -1273,7 +1344,7 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
       'Nov',
       'Dec',
     ];
-    final dayName = _days[_selectedDate.weekday - 1];
+    final dayName = _dayText(_days[_selectedDate.weekday - 1]);
     return '$dayName, ${months[_selectedDate.month - 1]} ${_selectedDate.day}';
   }
 
@@ -1284,7 +1355,9 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
         ? date.hour - 12
         : date.hour;
     final minute = date.minute.toString().padLeft(2, '0');
-    final suffix = date.hour >= 12 ? 'PM' : 'AM';
+    final suffix = date.hour >= 12
+        ? context.dtr('doctor.dashboard.timePm')
+        : context.dtr('doctor.dashboard.timeAm');
     return '$hour:$minute\n$suffix';
   }
 
@@ -1293,14 +1366,14 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
     return Container(
       width: 52,
       height: 52,
-      decoration: const BoxDecoration(
-        color: Color(0xFFE8F5F2),
+      decoration: BoxDecoration(
+        color: _primary.withValues(alpha: 0.12),
         shape: BoxShape.circle,
       ),
       alignment: Alignment.center,
       child: Text(
         initial,
-        style: const TextStyle(
+        style: TextStyle(
           color: _primary,
           fontSize: 20,
           fontWeight: FontWeight.w900,
@@ -1327,11 +1400,39 @@ class _DoctorScheduleScreenState extends State<DoctorScheduleScreen> {
 
   BoxShadow _softShadow({double opacity = 0.05}) {
     return BoxShadow(
-      color: Colors.black.withValues(alpha: opacity),
+      color: DoctorUiConstants.shadowColor(context, opacity),
       blurRadius: 24,
       spreadRadius: -8,
       offset: const Offset(0, 12),
     );
+  }
+
+  String _dayText(String day) {
+    if (!localeController.isDoctorArabic) return day;
+    return switch (day) {
+      'Monday' => 'الاثنين',
+      'Tuesday' => 'الثلاثاء',
+      'Wednesday' => 'الأربعاء',
+      'Thursday' => 'الخميس',
+      'Friday' => 'الجمعة',
+      'Saturday' => 'السبت',
+      'Sunday' => 'الأحد',
+      _ => day,
+    };
+  }
+
+  String _dayShortText(String day) {
+    if (!localeController.isDoctorArabic) return day.substring(0, 3);
+    return switch (day) {
+      'Monday' => 'اثن',
+      'Tuesday' => 'ثلا',
+      'Wednesday' => 'أرب',
+      'Thursday' => 'خمي',
+      'Friday' => 'جمع',
+      'Saturday' => 'سبت',
+      'Sunday' => 'أحد',
+      _ => day,
+    };
   }
 }
 

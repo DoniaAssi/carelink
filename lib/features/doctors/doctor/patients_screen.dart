@@ -26,10 +26,10 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
   List<dynamic> _patients = [];
   String _query = '';
 
-  static const _pageColor = DoctorUiConstants.doctorBackground;
   static const _primary = Color(0xFF0F8B8D);
-  static const _textDark = Color(0xFF101828);
-  static const _textMuted = Color(0xFF667085);
+  Color get _pageColor => DoctorUiConstants.pageColor(context);
+  Color get _textDark => DoctorUiConstants.inkColor(context);
+  Color get _textMuted => DoctorUiConstants.mutedColor(context);
 
   @override
   void initState() {
@@ -109,8 +109,8 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
                         onPressed: () => Navigator.maybePop(context),
                       )
                     : null,
-                title: const Text(
-                  'My Patients',
+                title: Text(
+                  context.dx('Patients'),
                   style: TextStyle(
                     color: _textDark,
                     fontSize: 24,
@@ -163,30 +163,27 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
       child: TextField(
         controller: _searchController,
         onChanged: (value) => setState(() => _query = value),
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         decoration: InputDecoration(
           hintText: context.dtr('doctor.patients.search'),
-          hintStyle: const TextStyle(
-            color: _textMuted,
-            fontWeight: FontWeight.w600,
-          ),
-          prefixIcon: const Icon(Icons.search_rounded, color: _textMuted),
+          hintStyle: TextStyle(color: _textMuted, fontWeight: FontWeight.w600),
+          prefixIcon: Icon(Icons.search_rounded, color: _textMuted),
           suffixIcon: _query.isEmpty
               ? IconButton(
-                  tooltip: 'Filter',
+                  tooltip: context.dx('Filter'),
                   onPressed: () {},
                   icon: const Icon(Icons.filter_alt_outlined, color: _primary),
                 )
               : IconButton(
-                  tooltip: 'Clear',
+                  tooltip: context.dx('Clear'),
                   onPressed: () {
                     _searchController.clear();
                     setState(() => _query = '');
                   },
-                  icon: const Icon(Icons.close_rounded, color: _textMuted),
+                  icon: Icon(Icons.close_rounded, color: _textMuted),
                 ),
           filled: true,
-          fillColor: Colors.white,
+          fillColor: DoctorUiConstants.surfaceColor(context),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 18,
             vertical: 18,
@@ -214,9 +211,9 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
       decoration: _cardDecoration(radius: 20, opacity: 0.03),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Text(
-              'Total Patients',
+              context.dx('Total Patients'),
               style: TextStyle(
                 color: _textMuted,
                 fontSize: 17,
@@ -226,7 +223,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
           ),
           Text(
             '${_patients.length}',
-            style: const TextStyle(
+            style: TextStyle(
               color: _primary,
               fontSize: 18,
               fontWeight: FontWeight.w900,
@@ -257,7 +254,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
           Text(
             context.dtr('doctor.patients.empty'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               color: _textMuted,
               fontSize: 17,
               fontWeight: FontWeight.w800,
@@ -272,8 +269,6 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
     final patient = _mapOf(rawPatient);
     final patientId = _text(patient['patientUserId']);
     final patientName = _text(patient['patientName']) ?? 'Patient';
-    final age = _ageText(patient);
-    final gender = _text(patient['gender']) ?? _text(patient['patientGender']);
     final location = _locationText(patient);
     final totalVisits = _toInt(patient['totalVisits']);
     final nextVisit = _formatDate(_text(patient['nextVisit']));
@@ -310,27 +305,16 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
                         patientName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _textDark,
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text(
-                        _joinAvailable([age, gender]),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _textMuted,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
                       Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.location_on_outlined,
                             color: _textMuted,
                             size: 20,
@@ -341,7 +325,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
                               location ?? context.dtr('doctor.common.notSet'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _textMuted,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -363,7 +347,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
                       'Next: ${nextVisit ?? context.dtr('doctor.common.notSet')}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _textMuted,
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
@@ -395,7 +379,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           color: Color(0xFF079455),
           fontSize: 14,
           fontWeight: FontWeight.w900,
@@ -418,12 +402,12 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
     double opacity = 0.05,
   }) {
     return BoxDecoration(
-      color: Colors.white,
+      color: DoctorUiConstants.surfaceColor(context),
       borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: Colors.black.withValues(alpha: 0.035)),
+      border: Border.all(color: DoctorUiConstants.borderColor(context)),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: opacity),
+          color: DoctorUiConstants.shadowColor(context, opacity),
           blurRadius: 24,
           spreadRadius: -10,
           offset: const Offset(0, 14),
@@ -449,10 +433,10 @@ class _DoctorPatientDetailsScreenState
 
   Map<String, dynamic> _record = {};
 
-  static const _pageColor = DoctorUiConstants.doctorBackground;
   static const _primary = Color(0xFF0F8B8D);
-  static const _textDark = Color(0xFF101828);
-  static const _textMuted = Color(0xFF667085);
+  Color get _pageColor => DoctorUiConstants.pageColor(context);
+  Color get _textDark => DoctorUiConstants.inkColor(context);
+  Color get _textMuted => DoctorUiConstants.mutedColor(context);
 
   @override
   void initState() {
@@ -506,8 +490,8 @@ class _DoctorPatientDetailsScreenState
                   color: _primary,
                   onPressed: () => Navigator.maybePop(context),
                 ),
-                title: const Text(
-                  'Patient Details',
+                title: Text(
+                  context.dx('Patient Details'),
                   style: TextStyle(
                     color: _textDark,
                     fontSize: 24,
@@ -605,7 +589,7 @@ class _DoctorPatientDetailsScreenState
                   patientName,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _textDark,
                     fontSize: 27,
                     height: 1.08,
@@ -617,7 +601,7 @@ class _DoctorPatientDetailsScreenState
                   _joinAvailable([age, gender]),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _textMuted,
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
@@ -698,7 +682,7 @@ class _DoctorPatientDetailsScreenState
           value,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             color: _textDark,
             fontSize: 21,
             fontWeight: FontWeight.w900,
@@ -709,7 +693,7 @@ class _DoctorPatientDetailsScreenState
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             color: _textMuted,
             fontSize: 15,
             fontWeight: FontWeight.w800,
@@ -745,7 +729,7 @@ class _DoctorPatientDetailsScreenState
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _textDark,
                           fontSize: 21,
                           fontWeight: FontWeight.w900,
@@ -756,7 +740,7 @@ class _DoctorPatientDetailsScreenState
                         subtitle,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _textMuted,
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -788,7 +772,7 @@ class _DoctorPatientDetailsScreenState
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: _textMuted,
               fontSize: 17,
               fontWeight: FontWeight.w800,
@@ -856,12 +840,12 @@ class _DoctorPatientDetailsScreenState
     double opacity = 0.05,
   }) {
     return BoxDecoration(
-      color: Colors.white,
+      color: DoctorUiConstants.surfaceColor(context),
       borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: Colors.black.withValues(alpha: 0.035)),
+      border: Border.all(color: DoctorUiConstants.borderColor(context)),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: opacity),
+          color: DoctorUiConstants.shadowColor(context, opacity),
           blurRadius: 24,
           spreadRadius: -10,
           offset: const Offset(0, 14),
@@ -888,8 +872,8 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
   List<dynamic> _notes = [];
 
   static const _primary = Color(0xFF0F8B8D);
-  static const _textDark = Color(0xFF101828);
-  static const _textMuted = Color(0xFF667085);
+  Color get _textDark => DoctorUiConstants.inkColor(context);
+  Color get _textMuted => DoctorUiConstants.mutedColor(context);
 
   String _localNotesKey(String doctorId) =>
       'doctor_patient_notes_${doctorId}_${widget.patientId}';
@@ -948,7 +932,7 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
     final noteText = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Add Note'),
+        title: Text(context.dx('Add Note')),
         content: Form(
           key: formKey,
           child: TextFormField(
@@ -971,7 +955,7 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: Text(context.dx('Cancel')),
           ),
           FilledButton(
             onPressed: () {
@@ -979,7 +963,7 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
               Navigator.pop(dialogContext, draftNote.trim());
             },
             style: FilledButton.styleFrom(backgroundColor: _primary),
-            child: const Text('Save'),
+            child: Text(context.dx('Save')),
           ),
         ],
       ),
@@ -1005,8 +989,8 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
     if (!mounted) return;
     setState(() => _notes.insert(0, note));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Note saved successfully.'),
+      SnackBar(
+        content: Text(context.dx('Note saved successfully.')),
         backgroundColor: _primary,
       ),
     );
@@ -1084,7 +1068,7 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
                         children: [
                           Text(
                             date ?? context.dtr('doctor.common.notSet'),
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: _textDark,
                               fontSize: 17,
                               fontWeight: FontWeight.w900,
@@ -1093,7 +1077,7 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
                           const SizedBox(height: 8),
                           Text(
                             author ?? context.dtr('doctor.common.notSet'),
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: _textMuted,
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
@@ -1104,10 +1088,7 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
                     ),
                     IconButton(
                       onPressed: () {},
-                      icon: const Icon(
-                        Icons.more_horiz_rounded,
-                        color: _textMuted,
-                      ),
+                      icon: Icon(Icons.more_horiz_rounded, color: _textMuted),
                     ),
                   ],
                 ),
@@ -1116,7 +1097,7 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
                 const SizedBox(height: 16),
                 Text(
                   content ?? context.dtr('doctor.common.notSet'),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _textMuted,
                     fontSize: 16,
                     height: 1.5,
@@ -1149,8 +1130,8 @@ class _DoctorVisitHistoryScreenState extends State<DoctorVisitHistoryScreen> {
   List<dynamic> _visits = [];
 
   static const _primary = Color(0xFF0F8B8D);
-  static const _textDark = Color(0xFF101828);
-  static const _textMuted = Color(0xFF667085);
+  Color get _textDark => DoctorUiConstants.inkColor(context);
+  Color get _textMuted => DoctorUiConstants.mutedColor(context);
 
   @override
   void initState() {
@@ -1321,7 +1302,7 @@ class _DoctorVisitHistoryScreenState extends State<DoctorVisitHistoryScreen> {
                                   Text(
                                     _formatDate(dateTime) ??
                                         context.dtr('doctor.common.notSet'),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: _primary,
                                       fontSize: 18,
                                       fontWeight: FontWeight.w900,
@@ -1331,7 +1312,7 @@ class _DoctorVisitHistoryScreenState extends State<DoctorVisitHistoryScreen> {
                                   Text(
                                     _formatTime(dateTime) ??
                                         context.dtr('doctor.common.notSet'),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: _textMuted,
                                       fontSize: 16,
                                       fontWeight: FontWeight.w800,
@@ -1342,7 +1323,7 @@ class _DoctorVisitHistoryScreenState extends State<DoctorVisitHistoryScreen> {
                             ),
                             IconButton(
                               onPressed: () {},
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.more_horiz_rounded,
                                 color: _textMuted,
                               ),
@@ -1352,7 +1333,7 @@ class _DoctorVisitHistoryScreenState extends State<DoctorVisitHistoryScreen> {
                         const SizedBox(height: 16),
                         Text(
                           title,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _textDark,
                             fontSize: 19,
                             fontWeight: FontWeight.w900,
@@ -1361,7 +1342,7 @@ class _DoctorVisitHistoryScreenState extends State<DoctorVisitHistoryScreen> {
                         const SizedBox(height: 14),
                         Row(
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.person_outline_rounded,
                               color: _textMuted,
                               size: 20,
@@ -1373,7 +1354,7 @@ class _DoctorVisitHistoryScreenState extends State<DoctorVisitHistoryScreen> {
                                     context.dtr('doctor.common.notSet'),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: _textMuted,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
@@ -1385,7 +1366,7 @@ class _DoctorVisitHistoryScreenState extends State<DoctorVisitHistoryScreen> {
                         const SizedBox(height: 14),
                         Text(
                           description ?? context.dtr('doctor.common.notSet'),
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _textMuted,
                             fontSize: 16,
                             height: 1.45,
@@ -1416,12 +1397,12 @@ class _DoctorDetailScaffold extends StatelessWidget {
   final Widget action;
   final Widget child;
 
-  static const _pageColor = DoctorUiConstants.doctorBackground;
   static const _primary = Color(0xFF0F8B8D);
-  static const _textDark = Color(0xFF101828);
 
   @override
   Widget build(BuildContext context) {
+    final pageColor = DoctorUiConstants.pageColor(context);
+    final textDark = DoctorUiConstants.inkColor(context);
     return DoctorTypographyScope(
       child: ListenableBuilder(
         listenable: localeController,
@@ -1431,10 +1412,10 @@ class _DoctorDetailScaffold extends StatelessWidget {
                 ? TextDirection.rtl
                 : TextDirection.ltr,
             child: Scaffold(
-              backgroundColor: _pageColor,
+              backgroundColor: pageColor,
               appBar: AppBar(
-                backgroundColor: _pageColor,
-                surfaceTintColor: _pageColor,
+                backgroundColor: pageColor,
+                surfaceTintColor: pageColor,
                 elevation: 0,
                 centerTitle: true,
                 leading: IconButton(
@@ -1444,8 +1425,8 @@ class _DoctorDetailScaffold extends StatelessWidget {
                 ),
                 title: Text(
                   title,
-                  style: const TextStyle(
-                    color: _textDark,
+                  style: TextStyle(
+                    color: textDark,
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
                   ),
@@ -1509,7 +1490,7 @@ Widget _emptyState(IconData icon, String message) {
         Text(
           message,
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             color: Color(0xFF667085),
             fontSize: 17,
             fontWeight: FontWeight.w800,

@@ -75,8 +75,8 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       if (response['success'] == true) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Request accepted successfully'),
+            SnackBar(
+              content: Text(context.dx('Request accepted successfully')),
               backgroundColor: AppColors.success,
             ),
           );
@@ -98,7 +98,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     final reason = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Reject Request'),
+        title: Text(context.dx('Reject Request')),
         content: TextField(
           controller: reasonController,
           decoration: const InputDecoration(
@@ -110,12 +110,12 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(context.dx('Cancel')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, reasonController.text),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Reject'),
+            child: Text(context.dx('Reject')),
           ),
         ],
       ),
@@ -134,8 +134,8 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       if (response['success'] == true) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Request rejected'),
+            SnackBar(
+              content: Text(context.dx('Request rejected')),
               backgroundColor: Colors.red,
             ),
           );
@@ -160,8 +160,8 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       if (response['success'] == true) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Visit marked completed'),
+            SnackBar(
+              content: Text(context.dx('Visit marked completed')),
               backgroundColor: AppColors.success,
             ),
           );
@@ -183,8 +183,10 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     final requestData = Map<String, dynamic>.from(_request);
     if (_asBool(requestData['hasReportForVisit'])) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('A report already exists for this completed visit.'),
+        SnackBar(
+          content: Text(
+            context.dx('A report already exists for this completed visit.'),
+          ),
         ),
       );
       _loadRequestDetails();
@@ -249,9 +251,9 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
     return DoctorTypographyScope(
       child: Scaffold(
-        backgroundColor: DoctorUiConstants.doctorBackground,
+        backgroundColor: DoctorUiConstants.pageColor(context),
         appBar: AppBar(
-          title: const Text('Request Details'),
+          title: Text(context.dx('Request Details')),
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
         ),
@@ -342,7 +344,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                             child: ElevatedButton.icon(
                               onPressed: _acceptRequest,
                               icon: const Icon(Icons.check),
-                              label: const Text('Accept'),
+                              label: Text(context.dx('Accept')),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppColors.success,
                                 foregroundColor: Colors.white,
@@ -357,7 +359,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                             child: ElevatedButton.icon(
                               onPressed: _rejectRequest,
                               icon: const Icon(Icons.close),
-                              label: const Text('Reject'),
+                              label: Text(context.dx('Reject')),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.red,
                                 foregroundColor: Colors.white,
@@ -383,7 +385,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                           );
                         },
                         icon: const Icon(Icons.medical_information),
-                        label: const Text('View Medical Record'),
+                        label: Text(context.dx('View Medical Record')),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
@@ -406,7 +408,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                           );
                         },
                         icon: const Icon(Icons.directions_car_outlined),
-                        label: const Text('On The Way'),
+                        label: Text(context.dx('On The Way')),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.success,
                           foregroundColor: Colors.white,
@@ -427,7 +429,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                           );
                         },
                         icon: const Icon(Icons.medical_information),
-                        label: const Text('View Medical Record'),
+                        label: Text(context.dx('View Medical Record')),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
@@ -439,7 +441,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                         ElevatedButton.icon(
                           onPressed: _openReportForRequest,
                           icon: const Icon(Icons.description),
-                          label: const Text('Submit Medical Report'),
+                          label: Text(context.dx('Submit Medical Report')),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.info,
                             foregroundColor: Colors.white,

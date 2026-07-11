@@ -75,10 +75,10 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
   Widget build(BuildContext context) {
     return DoctorTypographyScope(
       child: Scaffold(
-        backgroundColor: DoctorUiConstants.doctorBackground,
+        backgroundColor: DoctorUiConstants.pageColor(context),
         appBar: AppBar(
-          title: const Text('Medical Record'),
-          backgroundColor: DoctorUiConstants.doctorBackground,
+          title: Text(context.dx('Medical Record')),
+          backgroundColor: DoctorUiConstants.pageColor(context),
           foregroundColor: AppColors.primary,
           elevation: 0,
         ),
@@ -438,9 +438,12 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
               ),
             ],
           ),
-          if (diagnosis.isNotEmpty) _reportText('Diagnosis', diagnosis),
-          if (notes.isNotEmpty) _reportText('Treatment / Notes', notes),
-          if (medications.isNotEmpty) _reportText('Medication', medications),
+          if (diagnosis.isNotEmpty)
+            _reportText(context.dx('Diagnosis'), diagnosis),
+          if (notes.isNotEmpty)
+            _reportText(context.dx('Treatment / Notes'), notes),
+          if (medications.isNotEmpty)
+            _reportText(context.dx('Medication'), medications),
         ],
       ),
     );
@@ -528,22 +531,29 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
               ),
             ],
           ),
-          if (diagnosis.isNotEmpty) _reportText('Diagnosis', diagnosis),
+          if (diagnosis.isNotEmpty)
+            _reportText(context.dx('Diagnosis'), diagnosis),
           if (treatmentPlan.isNotEmpty)
-            _reportText('Treatment Plan', treatmentPlan),
-          if (bloodType.isNotEmpty) _reportText('Blood Type', bloodType),
+            _reportText(context.dx('Treatment Plan'), treatmentPlan),
+          if (bloodType.isNotEmpty)
+            _reportText(context.dx('Blood Type'), bloodType),
           if (chronicDiseases.isNotEmpty)
-            _reportText('Chronic Diseases', chronicDiseases),
-          if (allergies.isNotEmpty) _reportText('Allergies', allergies),
+            _reportText(context.dx('Chronic Diseases'), chronicDiseases),
+          if (allergies.isNotEmpty)
+            _reportText(context.dx('Allergies'), allergies),
           if (currentMedications.isNotEmpty)
-            _reportText('Current Medications', currentMedications),
+            _reportText(context.dx('Current Medications'), currentMedications),
           if (previousSurgeries.isNotEmpty)
-            _reportText('Previous Surgeries', previousSurgeries),
+            _reportText(context.dx('Previous Surgeries'), previousSurgeries),
           if (chiefComplaint.isNotEmpty)
-            _reportText('Chief Complaint', chiefComplaint),
-          if (symptoms.isNotEmpty) _reportText('Symptoms', symptoms),
+            _reportText(context.dx('Chief Complaint'), chiefComplaint),
+          if (symptoms.isNotEmpty)
+            _reportText(context.dx('Symptoms'), symptoms),
           if (nursingInstructions.isNotEmpty)
-            _reportText('Nursing Instructions', nursingInstructions),
+            _reportText(
+              context.dx('Nursing Instructions'),
+              nursingInstructions,
+            ),
         ],
       ),
     );

@@ -36,7 +36,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
     'cancelled': 0,
   };
 
-  static const _pageColor = DoctorUiConstants.doctorBackground;
+  Color get _pageColor => DoctorUiConstants.pageColor(context);
   static const _primary = Color(0xFF0F8B8D);
 
   bool _asBool(dynamic value) {
@@ -275,8 +275,8 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Request accepted successfully'),
+        SnackBar(
+          content: Text(context.dx('Request accepted successfully')),
           backgroundColor: AppColors.success,
         ),
       );
@@ -311,8 +311,8 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Request rejected'),
+        SnackBar(
+          content: Text(context.dx('Request rejected')),
           backgroundColor: Colors.red,
         ),
       );
@@ -333,7 +333,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Reject Request'),
+        title: Text(context.dx('Reject Request')),
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(
@@ -345,7 +345,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(context.dx('Cancel')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, controller.text),
@@ -373,8 +373,8 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
 
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Visit marked completed'),
+        SnackBar(
+          content: Text(context.dx('Visit marked completed')),
           backgroundColor: AppColors.success,
         ),
       );
@@ -399,8 +399,10 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
     final requestData = Map<String, dynamic>.from(request);
     if (_asBool(requestData['hasReportForVisit'])) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('A report already exists for this completed visit.'),
+        SnackBar(
+          content: Text(
+            context.dx('A report already exists for this completed visit.'),
+          ),
         ),
       );
       _loadRequests();
@@ -699,7 +701,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
           child: OutlinedButton.icon(
             onPressed: isBusy ? null : () => _rejectRequest(request),
             icon: const Icon(Icons.close_rounded, size: 23),
-            label: const Text('Reject'),
+            label: Text(context.dx('Reject')),
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFFB4233A),
               disabledForegroundColor: const Color(
@@ -731,7 +733,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
                     ),
                   )
                 : const Icon(Icons.check_rounded, size: 24),
-            label: const Text('Accept'),
+            label: Text(context.dx('Accept')),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF007A5C),
               foregroundColor: Colors.white,
@@ -797,7 +799,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
                 );
               },
               icon: const Icon(Icons.medical_information_outlined, size: 18),
-              label: const Text('Records'),
+              label: Text(context.dx('Records')),
               style: OutlinedButton.styleFrom(
                 foregroundColor: _primary,
                 side: const BorderSide(color: Color(0xFFDDE7E4)),
@@ -826,7 +828,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
                       );
                     },
               icon: const Icon(Icons.directions_car_outlined, size: 18),
-              label: const Text('On The Way'),
+              label: Text(context.dx('On The Way')),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.success,
                 foregroundColor: Colors.white,
@@ -844,7 +846,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
             child: ElevatedButton.icon(
               onPressed: () => _openReportForRequest(request),
               icon: const Icon(Icons.description_outlined, size: 18),
-              label: const Text('File Report'),
+              label: Text(context.dx('File Report')),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _primary,
                 foregroundColor: Colors.white,

@@ -369,8 +369,8 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
     if (justArrived) {
       unawaited(_persistTrackingState());
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Arrival verified successfully.'),
+        SnackBar(
+          content: Text(context.dx('Arrival verified successfully.')),
           backgroundColor: AppColors.success,
         ),
       );
@@ -379,7 +379,7 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
 
   void _showArrivalRequiredMessage() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text(
           "You must be at the patient's location to start the visit.",
         ),
@@ -455,9 +455,9 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
   Widget build(BuildContext context) {
     return DoctorTypographyScope(
       child: Scaffold(
-        backgroundColor: DoctorUiConstants.doctorBackground,
+        backgroundColor: DoctorUiConstants.pageColor(context),
         appBar: AppBar(
-          backgroundColor: DoctorUiConstants.doctorBackground,
+          backgroundColor: DoctorUiConstants.pageColor(context),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           foregroundColor: _teal,
