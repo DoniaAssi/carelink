@@ -167,9 +167,9 @@ class _DoctorBookingRequestDetailsScreenState
     final palette = CarelinkPalette.of(context);
     return DoctorTypographyScope(
       child: Scaffold(
-        backgroundColor: DoctorUiConstants.doctorBackground,
+        backgroundColor: DoctorUiConstants.pageColor(context),
         appBar: AppBar(
-          title: const Text('Booking Request'),
+          title: Text(context.dx('Booking Request')),
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
         ),
@@ -230,7 +230,7 @@ class _DoctorBookingRequestDetailsScreenState
                           ? null
                           : _openPatientProfile,
                       icon: const Icon(Icons.person_search_outlined),
-                      label: const Text('View Patient Profile'),
+                      label: Text(context.dx('View Patient Profile')),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.primary,
                         side: const BorderSide(color: AppColors.primary),
@@ -243,7 +243,7 @@ class _DoctorBookingRequestDetailsScreenState
                           ? null
                           : _messagePatient,
                       icon: const Icon(Icons.chat_bubble_outline_rounded),
-                      label: const Text('Message Patient'),
+                      label: Text(context.dx('Message Patient')),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
@@ -473,7 +473,7 @@ class _ErrorState extends StatelessWidget {
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('Try Again'),
+                child: Text(context.dx('Try Again')),
               ),
             ],
           ),

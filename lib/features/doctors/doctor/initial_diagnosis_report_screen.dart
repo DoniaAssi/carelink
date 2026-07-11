@@ -46,16 +46,13 @@ class _InitialDiagnosisReportScreenState
 
   static const _primary = Color(0xFF0F8B8D);
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
-  Color get _pageColor => _isDark
-      ? Theme.of(context).scaffoldBackgroundColor
-      : DoctorUiConstants.doctorBackground;
-  Color get _surfaceColor =>
-      _isDark ? Theme.of(context).colorScheme.surface : Colors.white;
-  Color get _ink => _isDark ? Colors.white : const Color(0xFF101828);
-  Color get _muted => _isDark ? Colors.white70 : const Color(0xFF667085);
+  Color get _pageColor => DoctorUiConstants.pageColor(context);
+  Color get _surfaceColor => DoctorUiConstants.surfaceColor(context);
+  Color get _ink => DoctorUiConstants.inkColor(context);
+  Color get _muted => DoctorUiConstants.mutedColor(context);
   Color get _softPrimary =>
       _isDark ? _primary.withValues(alpha: 0.18) : const Color(0xFFE7F7F2);
-  Color get _fieldBorder => _isDark ? Colors.white24 : const Color(0xFFDDE7E5);
+  Color get _fieldBorder => DoctorUiConstants.borderColor(context);
   static const _bloodTypes = <String>[
     'A+',
     'A-',

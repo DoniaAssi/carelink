@@ -163,14 +163,14 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
         listenable: localeController,
         builder: (context, _) {
           return Scaffold(
-            backgroundColor: DoctorUiConstants.doctorBackground,
+            backgroundColor: DoctorUiConstants.pageColor(context),
             appBar: AppBar(
               title: const Text(
                 'Earnings',
                 style: TextStyle(color: Colors.black),
               ),
               centerTitle: true,
-              backgroundColor: DoctorUiConstants.doctorBackground,
+              backgroundColor: DoctorUiConstants.pageColor(context),
               foregroundColor: Colors.black,
             ),
             body: _isLoading
@@ -420,7 +420,7 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.picture_as_pdf_outlined),
-                label: const Text('Export PDF'),
+                label: Text(context.dx('Export PDF')),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.primary,
                   side: const BorderSide(color: AppColors.primary),
@@ -561,14 +561,14 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
-              columns: const [
-                DataColumn(label: Text('Patient Name')),
-                DataColumn(label: Text('Service')),
-                DataColumn(label: Text('Visit Date')),
-                DataColumn(label: Text('Agreed Rate')),
-                DataColumn(label: Text('Amount Earned')),
-                DataColumn(label: Text('Payment Status')),
-                DataColumn(label: Text('Actions')),
+              columns: [
+                DataColumn(label: Text(context.dx('Patient Name'))),
+                DataColumn(label: Text(context.dx('Service'))),
+                DataColumn(label: Text(context.dx('Visit Date'))),
+                DataColumn(label: Text(context.dx('Agreed Rate'))),
+                DataColumn(label: Text(context.dx('Amount Earned'))),
+                DataColumn(label: Text(context.dx('Payment Status'))),
+                DataColumn(label: Text(context.dx('Actions'))),
               ],
               rows: _filteredPayments.map((payment) {
                 final item = _asMap(payment);
@@ -612,7 +612,7 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
                     DataCell(_statusBadge(status)),
                     DataCell(
                       IconButton(
-                        tooltip: 'View details',
+                        tooltip: context.dx('View details'),
                         onPressed: () => _showEarningDetails(item),
                         icon: const Icon(Icons.more_vert_rounded, size: 20),
                       ),

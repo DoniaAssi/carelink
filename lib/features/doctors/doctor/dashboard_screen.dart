@@ -227,7 +227,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                     borderRadius: BorderRadius.circular(13),
                   ),
                 ),
-                child: const Text('Reject'),
+                child: Text(context.dx('Reject')),
               ),
               FilledButton(
                 onPressed: submitting
@@ -258,7 +258,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : const Text('Accept'),
+                    : Text(context.dx('Accept')),
               ),
             ],
           ),
@@ -358,15 +358,13 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
-  Color get _pageColor =>
-      _isDark ? const Color(0xFF101716) : DoctorUiConstants.doctorBackground;
+  Color get _pageColor => DoctorUiConstants.pageColor(context);
 
-  Color get _cardColor => _isDark ? const Color(0xFF182321) : Colors.white;
+  Color get _cardColor => DoctorUiConstants.surfaceColor(context);
 
-  Color get _primaryText => _isDark ? const Color(0xFFF4FAF8) : Colors.black;
+  Color get _primaryText => DoctorUiConstants.inkColor(context);
 
-  Color get _secondaryText =>
-      _isDark ? const Color(0xFFB9C8C4) : const Color(0xFF626A78);
+  Color get _secondaryText => DoctorUiConstants.mutedColor(context);
 
   Color _softColor(Color lightColor) {
     return _isDark ? AppColors.primary.withValues(alpha: 0.14) : lightColor;

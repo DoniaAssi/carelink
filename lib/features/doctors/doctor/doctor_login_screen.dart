@@ -95,7 +95,7 @@ class _DoctorLoginScreenState extends State<DoctorLoginScreen> {
   Widget build(BuildContext context) {
     return DoctorTypographyScope(
       child: Scaffold(
-        backgroundColor: DoctorUiConstants.doctorBackground,
+        backgroundColor: DoctorUiConstants.pageColor(context),
         body: SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -216,7 +216,7 @@ class _DoctorLoginScreenState extends State<DoctorLoginScreen> {
                   // Back to role selection
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Back to Role Selection'),
+                    child: Text(context.dx('Back to Role Selection')),
                   ),
                 ],
               ),

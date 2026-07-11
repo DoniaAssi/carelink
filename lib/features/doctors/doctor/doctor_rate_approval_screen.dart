@@ -86,7 +86,7 @@ class _DoctorRateApprovalScreenState extends State<DoctorRateApprovalScreen> {
 
       setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
             'Rate rejected. Please wait for the administrator to review or update it.',
           ),
@@ -123,12 +123,12 @@ class _DoctorRateApprovalScreenState extends State<DoctorRateApprovalScreen> {
       child: PopScope(
         canPop: false,
         child: Scaffold(
-          backgroundColor: DoctorUiConstants.doctorBackground,
+          backgroundColor: DoctorUiConstants.pageColor(context),
           appBar: AppBar(
             automaticallyImplyLeading: false,
-            title: const Text('Hourly Rate Approval'),
+            title: Text(context.dx('Hourly Rate Approval')),
             centerTitle: true,
-            backgroundColor: DoctorUiConstants.doctorBackground,
+            backgroundColor: DoctorUiConstants.pageColor(context),
             foregroundColor: palette.inkDark,
             elevation: 0,
           ),
@@ -270,7 +270,7 @@ class _DoctorRateApprovalScreenState extends State<DoctorRateApprovalScreen> {
                               ? null
                               : () => _submitDecision('rejected'),
                           icon: const Icon(Icons.close_rounded),
-                          label: const Text('Reject'),
+                          label: Text(context.dx('Reject')),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.red.shade700,
                             side: BorderSide(color: Colors.red.shade300),
@@ -298,7 +298,7 @@ class _DoctorRateApprovalScreenState extends State<DoctorRateApprovalScreen> {
                                   ),
                                 )
                               : const Icon(Icons.check_rounded),
-                          label: const Text('Accept Rate'),
+                          label: Text(context.dx('Accept Rate')),
                           style: FilledButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
@@ -316,7 +316,7 @@ class _DoctorRateApprovalScreenState extends State<DoctorRateApprovalScreen> {
                     TextButton.icon(
                       onPressed: _isLoading ? null : _loadRateStatus,
                       icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Check Again'),
+                      label: Text(context.dx('Check Again')),
                     ),
                   ],
                 ],
@@ -350,7 +350,7 @@ class _DoctorRateApprovalScreenState extends State<DoctorRateApprovalScreen> {
             FilledButton.icon(
               onPressed: _loadRateStatus,
               icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Try Again'),
+              label: Text(context.dx('Try Again')),
             ),
           ],
         ),

@@ -182,7 +182,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
-                  child: const Text('Save Changes'),
+                  child: Text(context.dx('Save Changes')),
                 ),
               ],
             ),
@@ -218,8 +218,8 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       _loadProfile();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profile updated successfully'),
+          SnackBar(
+            content: Text(context.dx('Profile updated successfully')),
             backgroundColor: AppColors.success,
           ),
         );
@@ -272,7 +272,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       await _loadProfile();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
               'Notification preferences are not available on this backend yet.',
             ),
@@ -318,13 +318,13 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
         listenable: localeController,
         builder: (context, _) {
           return Scaffold(
-            backgroundColor: DoctorUiConstants.doctorBackground,
+            backgroundColor: DoctorUiConstants.pageColor(context),
             appBar: AppBar(
               title: Text(
                 context.dtr('doctor.nav.profile'),
                 style: const TextStyle(color: Colors.black),
               ),
-              backgroundColor: DoctorUiConstants.doctorBackground,
+              backgroundColor: DoctorUiConstants.pageColor(context),
               foregroundColor: Colors.black,
               actions: [
                 IconButton(

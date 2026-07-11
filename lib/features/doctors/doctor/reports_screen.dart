@@ -81,7 +81,9 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
 
     if (request == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No completed visits ready for a report')),
+        SnackBar(
+          content: Text(context.dx('No completed visits ready for a report')),
+        ),
       );
       return;
     }
@@ -98,8 +100,10 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
     final requestData = Map<String, dynamic>.from(rawRequest);
     if (_asBool(requestData['hasReportForVisit'])) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('A report already exists for this completed visit.'),
+        SnackBar(
+          content: Text(
+            context.dx('A report already exists for this completed visit.'),
+          ),
         ),
       );
       _loadRequests();
@@ -157,7 +161,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
         listenable: localeController,
         builder: (context, _) {
           return Scaffold(
-            backgroundColor: DoctorUiConstants.doctorBackground,
+            backgroundColor: DoctorUiConstants.pageColor(context),
             body: SafeArea(
               child: Center(
                 child: ConstrainedBox(

@@ -117,15 +117,13 @@ class _DoctorRatingsScreenState extends State<DoctorRatingsScreen> {
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
-  Color get _pageColor =>
-      _isDark ? const Color(0xFF101716) : DoctorUiConstants.doctorBackground;
+  Color get _pageColor => DoctorUiConstants.pageColor(context);
 
-  Color get _cardColor => _isDark ? const Color(0xFF182321) : Colors.white;
+  Color get _cardColor => DoctorUiConstants.surfaceColor(context);
 
-  Color get _primaryText => _isDark ? const Color(0xFFF4FAF8) : Colors.black;
+  Color get _primaryText => DoctorUiConstants.inkColor(context);
 
-  Color get _secondaryText =>
-      _isDark ? const Color(0xFFB9C8C4) : const Color(0xFF626A78);
+  Color get _secondaryText => DoctorUiConstants.mutedColor(context);
 
   BoxShadow _softShadow({double opacity = 0.055}) {
     return BoxShadow(
@@ -444,9 +442,12 @@ class _DoctorRatingsScreenState extends State<DoctorRatingsScreen> {
               ),
               PopupMenuButton<String>(
                 icon: Icon(Icons.more_horiz_rounded, color: _secondaryText),
-                tooltip: 'Review options',
-                itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'details', child: Text('Details')),
+                tooltip: context.dx('Review options'),
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'details',
+                    child: Text(context.dx('Details')),
+                  ),
                 ],
               ),
             ],

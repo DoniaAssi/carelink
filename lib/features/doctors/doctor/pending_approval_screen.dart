@@ -52,7 +52,7 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
   Widget build(BuildContext context) {
     return DoctorTypographyScope(
       child: Scaffold(
-        backgroundColor: DoctorUiConstants.doctorBackground,
+        backgroundColor: DoctorUiConstants.pageColor(context),
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -156,7 +156,7 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                 // Logout Button
                 TextButton(
                   onPressed: () => logoutDoctorToLogin(context),
-                  child: const Text('Logout'),
+                  child: Text(context.dx('Logout')),
                 ),
               ],
             ),

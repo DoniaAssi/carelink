@@ -59,11 +59,11 @@ class _DoctorPatientProfileScreenState
 
     return DoctorTypographyScope(
       child: Scaffold(
-        backgroundColor: DoctorUiConstants.doctorBackground,
+        backgroundColor: DoctorUiConstants.pageColor(context),
         appBar: AppBar(
-          title: const Text('Patient Profile'),
+          title: Text(context.dx('Patient Profile')),
           centerTitle: true,
-          backgroundColor: DoctorUiConstants.doctorBackground,
+          backgroundColor: DoctorUiConstants.pageColor(context),
           foregroundColor: AppColors.primary,
           elevation: 0,
         ),
@@ -276,7 +276,7 @@ class _DoctorPatientProfileScreenState
             FilledButton.icon(
               onPressed: _loadProfile,
               icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Try Again'),
+              label: Text(context.dx('Try Again')),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,

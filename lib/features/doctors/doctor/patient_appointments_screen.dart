@@ -26,7 +26,7 @@ class _DoctorPatientAppointmentsScreenState
   bool _isLoading = true;
   List<dynamic> _appointments = [];
 
-  static const _pageColor = DoctorUiConstants.doctorBackground;
+  Color get _pageColor => DoctorUiConstants.pageColor(context);
   static const _primary = Color(0xFF0F8B8D);
   static const _textDark = Color(0xFF101828);
   static const _textMuted = Color(0xFF667085);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/app_colors.dart';
+
 import '../../../services/doctor_service.dart';
 import 'doctor_ui_constants.dart';
 import 'doctor_visit_tracking_screen.dart';
@@ -45,7 +46,6 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-
       _doctorId = prefs.getString('doctor_userId') ?? '';
 
       final request = await _doctorService.getRequestDetails(widget.requestId);
@@ -55,8 +55,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
         'requestId=${widget.requestId} '
         'patientId=${request['patientUserId']} '
         'doctorId=${request['providerUserId']} '
-        'hasInitialDiagnosisReport='
-        '${request['hasInitialDiagnosisReport']} '
+        'hasInitialDiagnosisReport=${request['hasInitialDiagnosisReport']} '
         'parsed=${_asBool(request['hasInitialDiagnosisReport'])}',
       );
 
@@ -73,7 +72,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error loading request: $e'),
+          content: Text('${context.dx('Error loading request')}: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -91,8 +90,8 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Request accepted successfully'),
+          SnackBar(
+            content: Text(context.dx('Request accepted successfully')),
             backgroundColor: AppColors.success,
           ),
         );
@@ -103,7 +102,10 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('${context.dx('Error')}: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -115,12 +117,12 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Reject Request'),
+          title: Text(dialogContext.dx('Reject Request')),
           content: TextField(
             controller: reasonController,
-            decoration: const InputDecoration(
-              labelText: 'Reason (optional)',
-              hintText: 'Enter reason for rejection',
+            decoration: InputDecoration(
+              labelText: dialogContext.dx('Reason (optional)'),
+              hintText: dialogContext.dx('Enter reason for rejection'),
             ),
             maxLines: 3,
           ),
@@ -129,7 +131,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
               onPressed: () {
                 Navigator.pop(dialogContext);
               },
-              child: const Text('Cancel'),
+              child: Text(dialogContext.dx('Cancel')),
             ),
             ElevatedButton(
               onPressed: () {
@@ -139,7 +141,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('Reject'),
+              child: Text(dialogContext.dx('Reject')),
             ),
           ],
         );
@@ -147,7 +149,6 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
     );
 
     final cleanReason = reason?.trim();
-
     reasonController.dispose();
 
     if (reason == null) return;
@@ -163,8 +164,8 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Request rejected'),
+          SnackBar(
+            content: Text(context.dx('Request rejected')),
             backgroundColor: Colors.red,
           ),
         );
@@ -175,7 +176,10 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('${context.dx('Error')}: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -191,21 +195,23 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
         if (!mounted) return false;
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Visit marked completed'),
+          SnackBar(
+            content: Text(context.dx('Visit marked completed')),
             backgroundColor: AppColors.success,
           ),
         );
 
         await _loadRequestDetails();
-
         return true;
       }
     } catch (e) {
       if (!mounted) return false;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('${context.dx('Error')}: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
 
@@ -217,13 +223,14 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
     if (_asBool(requestData['hasReportForVisit'])) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('A report already exists for this completed visit.'),
+        SnackBar(
+          content: Text(
+            context.dx('A report already exists for this completed visit.'),
+          ),
         ),
       );
 
       await _loadRequestDetails();
-
       return;
     }
 
@@ -249,7 +256,9 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error checking initial diagnosis: $e'),
+          content: Text(
+            '${context.dx('Error checking initial diagnosis')}: $e',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -286,8 +295,8 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
     if (patientId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Patient information is unavailable.'),
+        SnackBar(
+          content: Text(context.dx('Patient information is unavailable.')),
           backgroundColor: Colors.red,
         ),
       );
@@ -329,7 +338,8 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
     final normalizedStatus = status.toLowerCase();
 
-    final patientName = _request['patientName']?.toString() ?? 'Unavailable';
+    final patientName =
+        _request['patientName']?.toString() ?? context.dx('Unavailable');
 
     final patientPhone = _request['patientPhone']?.toString() ?? '';
 
@@ -352,9 +362,9 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
     return DoctorTypographyScope(
       child: Scaffold(
-        backgroundColor: DoctorUiConstants.doctorBackground,
+        backgroundColor: DoctorUiConstants.pageColor(context),
         appBar: AppBar(
-          title: const Text('Request Details'),
+          title: Text(context.dx('Request Details')),
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
         ),
@@ -368,81 +378,107 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // Status card
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                'Status',
-                                style: TextStyle(fontWeight: FontWeight.bold),
+                              Text(
+                                context.dx('Status'),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                               _buildStatusBadge(status),
                             ],
                           ),
                         ),
                       ),
+
                       const SizedBox(height: 16),
+
+                      // Patient information
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Patient Information',
-                                style: TextStyle(
+                              Text(
+                                context.dx('Patient Information'),
+                                style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
                                 ),
                               ),
                               const Divider(),
-                              _buildInfoRow('Name', patientName),
+                              _buildInfoRow(context.dx('Name'), patientName),
                               if (patientPhone.isNotEmpty)
-                                _buildInfoRow('Phone', patientPhone),
+                                _buildInfoRow(
+                                  context.dx('Phone'),
+                                  patientPhone,
+                                ),
                               if (patientEmail.isNotEmpty)
-                                _buildInfoRow('Email', patientEmail),
+                                _buildInfoRow(
+                                  context.dx('Email'),
+                                  patientEmail,
+                                ),
                             ],
                           ),
                         ),
                       ),
+
                       const SizedBox(height: 16),
+
+                      // Appointment details
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Appointment Details',
-                                style: TextStyle(
+                              Text(
+                                context.dx('Appointment Details'),
+                                style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
                                 ),
                               ),
                               const Divider(),
+
                               if (reasonForVisit.isNotEmpty)
-                                _buildInfoRow('Reason', reasonForVisit),
+                                _buildInfoRow(
+                                  context.dx('Reason'),
+                                  reasonForVisit,
+                                ),
+
                               if (scheduledAt != null)
                                 _buildInfoRow(
-                                  'Scheduled',
+                                  context.dx('Scheduled'),
                                   _formatDate(scheduledAt.toString()),
                                 ),
+
                               if (requestedRescheduleAt != null)
                                 _buildInfoRow(
-                                  'Requested New Time',
+                                  context.dx('Requested New Time'),
                                   _formatDate(requestedRescheduleAt.toString()),
                                 ),
+
                               if (location.isNotEmpty)
-                                _buildInfoRow('Location', location),
+                                _buildInfoRow(context.dx('Location'), location),
+
                               if (notes.isNotEmpty)
-                                _buildInfoRow('Notes', notes),
+                                _buildInfoRow(context.dx('Notes'), notes),
                             ],
                           ),
                         ),
                       ),
+
                       const SizedBox(height: 24),
+
+                      // Pending and pending reschedule
                       if (normalizedStatus == 'pending' ||
                           normalizedStatus == 'pending_reschedule') ...[
                         Row(
@@ -451,7 +487,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                               child: ElevatedButton.icon(
                                 onPressed: _acceptRequest,
                                 icon: const Icon(Icons.check),
-                                label: const Text('Accept'),
+                                label: Text(context.dx('Accept')),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.success,
                                   foregroundColor: Colors.white,
@@ -466,7 +502,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                               child: ElevatedButton.icon(
                                 onPressed: _rejectRequest,
                                 icon: const Icon(Icons.close),
-                                label: const Text('Reject'),
+                                label: Text(context.dx('Reject')),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.red,
                                   foregroundColor: Colors.white,
@@ -479,11 +515,13 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                           ],
                         ),
                       ],
+
+                      // Confirmed request
                       if (normalizedStatus == 'confirmed') ...[
                         ElevatedButton.icon(
                           onPressed: _openMedicalRecord,
                           icon: const Icon(Icons.medical_information),
-                          label: const Text('View Medical Record'),
+                          label: Text(context.dx('View Medical Record')),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
@@ -494,7 +532,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                         ElevatedButton.icon(
                           onPressed: _openVisitTracking,
                           icon: const Icon(Icons.directions_car_outlined),
-                          label: const Text('On The Way'),
+                          label: Text(context.dx('On The Way')),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.success,
                             foregroundColor: Colors.white,
@@ -502,11 +540,13 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                           ),
                         ),
                       ],
+
+                      // Completed request
                       if (normalizedStatus == 'completed') ...[
                         ElevatedButton.icon(
                           onPressed: _openMedicalRecord,
                           icon: const Icon(Icons.medical_information),
-                          label: const Text('View Medical Record'),
+                          label: Text(context.dx('View Medical Record')),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
@@ -518,7 +558,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                           ElevatedButton.icon(
                             onPressed: _openReportForRequest,
                             icon: const Icon(Icons.description),
-                            label: const Text('Submit Medical Report'),
+                            label: Text(context.dx('Submit Medical Report')),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.info,
                               foregroundColor: Colors.white,
@@ -587,7 +627,9 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
         color = Colors.grey;
     }
 
-    final displayedStatus = normalizedStatus.replaceAll('_', ' ').toUpperCase();
+    final statusKey = normalizedStatus.replaceAll('_', ' ').toUpperCase();
+
+    final displayedStatus = context.dx(statusKey);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -613,7 +655,8 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
       final minute = date.minute.toString().padLeft(2, '0');
 
       return '${date.day}/${date.month}/${date.year} '
-          'at ${date.hour}:$minute';
+          '${context.dx('at')} '
+          '${date.hour}:$minute';
     } catch (_) {
       return dateStr;
     }
