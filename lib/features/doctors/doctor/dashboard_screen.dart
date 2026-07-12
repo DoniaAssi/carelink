@@ -503,7 +503,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               Text(
                 _doctorDisplayName(name),
                 maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+                softWrap: true,
                 style: TextStyle(
                   color: _primaryText,
                   fontSize: 30,
