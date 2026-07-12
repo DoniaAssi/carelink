@@ -97,7 +97,7 @@ class _DoctorBookingRequestDetailsScreenState
     _request['patientName'],
     _request['fullName'],
     _request['name'],
-  ], fallback: 'Patient');
+  ], fallback: context.dx('Patient'));
 
   String? get _patientImageUrl {
     final url = profileImageUrlFromMap(_request);
@@ -115,7 +115,7 @@ class _DoctorBookingRequestDetailsScreenState
       _request['appointmentType'],
       _request['type'],
       _request['reasonForVisit'],
-    ], fallback: 'Service request'),
+    ], fallback: context.dx('Service')),
   );
 
   String get _status =>
@@ -126,7 +126,7 @@ class _DoctorBookingRequestDetailsScreenState
     _request['address'],
     _request['location'],
     _request['locationNote'],
-  ], fallback: 'Not specified');
+  ], fallback: context.dx('Not set'));
 
   DateTime? get _scheduledAt {
     final raw = _firstString([
@@ -146,7 +146,7 @@ class _DoctorBookingRequestDetailsScreenState
     return _firstString([
       _request['appointmentDate'],
       _request['date'],
-    ], fallback: 'Not scheduled');
+    ], fallback: context.dx('Not set'));
   }
 
   String get _timeText {
@@ -159,7 +159,7 @@ class _DoctorBookingRequestDetailsScreenState
     return _firstString([
       _request['appointmentTime'],
       _request['time'],
-    ], fallback: 'Not scheduled');
+    ], fallback: context.dx('Not set'));
   }
 
   @override
@@ -194,26 +194,26 @@ class _DoctorBookingRequestDetailsScreenState
                     const SizedBox(height: 14),
                     _SectionCard(
                       palette: palette,
-                      title: 'Appointment Details',
+                      title: context.dx('Appointment Details'),
                       children: [
                         _DetailRow(
                           icon: Icons.calendar_today_outlined,
-                          label: 'Date',
+                          label: context.dx('Date'),
                           value: _dateText,
                         ),
                         _DetailRow(
                           icon: Icons.schedule_outlined,
-                          label: 'Time',
+                          label: context.dx('Time'),
                           value: _timeText,
                         ),
                         _DetailRow(
                           icon: Icons.medical_services_outlined,
-                          label: 'Service Type',
+                          label: context.dx('Service Type'),
                           value: _serviceType,
                         ),
                         _DetailRow(
                           icon: Icons.place_outlined,
-                          label: 'Address',
+                          label: context.dx('Address'),
                           value: _address,
                         ),
                       ],
@@ -221,7 +221,7 @@ class _DoctorBookingRequestDetailsScreenState
                     const SizedBox(height: 14),
                     _SectionCard(
                       palette: palette,
-                      title: 'Request Status',
+                      title: context.dx('Request Status'),
                       children: [_StatusBadge(status: _status)],
                     ),
                     const SizedBox(height: 22),
@@ -432,7 +432,7 @@ class _StatusBadge extends StatelessWidget {
           border: Border.all(color: color.withValues(alpha: 0.24)),
         ),
         child: Text(
-          status,
+          context.dx(status),
           style: TextStyle(
             color: color,
             fontSize: 13,

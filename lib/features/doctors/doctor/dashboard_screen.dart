@@ -150,7 +150,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               ),
             ),
             title: Text(
-              'Service Rate Approval',
+              context.dx('Service Rate Approval'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: _primaryText,
@@ -161,8 +161,9 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'The administrator has assigned your service rate. '
-                  'Please review and accept it before continuing.',
+                  context.dx(
+                    'The administrator has assigned your service rate. Please review and accept it before continuing.',
+                  ),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: _secondaryText,
@@ -184,7 +185,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                   child: Column(
                     children: [
                       Text(
-                        'Assigned Rate',
+                        context.dx('Assigned Rate'),
                         style: TextStyle(
                           color: _secondaryText,
                           fontWeight: FontWeight.w700,
@@ -280,8 +281,10 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         SnackBar(
           content: Text(
             decision == 'accepted'
-                ? 'Service rate accepted. Payment is now available.'
-                : 'Service rate rejected. Please wait for administrator review.',
+                ? context.dx('Service rate accepted. Payment is now available.')
+                : context.dx(
+                    'Service rate rejected. Please wait for administrator review.',
+                  ),
           ),
         ),
       );

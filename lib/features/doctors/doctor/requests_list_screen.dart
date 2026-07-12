@@ -106,7 +106,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error loading requests: $e')));
+      ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
     }
   }
 
@@ -125,9 +125,9 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
             color: _primary,
             onPressed: () => Navigator.maybePop(context),
           ),
-          title: const Text(
-            'Requests',
-            style: TextStyle(
+          title: Text(
+            context.dx('Requests'),
+            style: const TextStyle(
               color: _textDark,
               fontSize: 25,
               fontWeight: FontWeight.w900,
@@ -225,7 +225,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
               ),
             ),
             child: Text(
-              '$label ($count)',
+              '${context.dx(label)} ($count)',
               style: TextStyle(
                 color: isSelected ? Colors.white : _textDark,
                 fontSize: 14,
@@ -245,7 +245,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
         const SizedBox(width: 12),
         Expanded(
           child: Text(
-            'Showing ${_statusLabel(_currentStatus).toLowerCase()} requests',
+            '${context.dx('Status')}: ${_statusLabel(_currentStatus)}',
             style: const TextStyle(
               color: Color(0xFF344054),
               fontSize: 18,
@@ -285,7 +285,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error accepting request: $e')));
+      ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
     } finally {
       if (mounted) setState(() => _busyRequestId = null);
     }
@@ -321,7 +321,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error rejecting request: $e')));
+      ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
     } finally {
       if (mounted) setState(() => _busyRequestId = null);
     }
@@ -336,9 +336,9 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
         title: Text(context.dx('Reject Request')),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'Reason (optional)',
-            hintText: 'Tell the patient why you declined',
+          decoration: InputDecoration(
+            labelText: context.dx('Reason'),
+            hintText: context.dx('Reason'),
           ),
           maxLines: 3,
         ),
@@ -350,7 +350,10 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, controller.text),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Reject', style: TextStyle(color: Colors.white)),
+            child: Text(
+              context.dx('Reject'),
+              style: const TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -384,7 +387,7 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error completing visit: $e')));
+        ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
       }
       return false;
     } finally {
@@ -429,9 +432,9 @@ class _RequestsListScreenState extends State<RequestsListScreen> {
       requestData['hasInitialDiagnosisReportForCase'] = hasInitial;
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error checking initial diagnosis: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
       return;
     }
 

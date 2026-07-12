@@ -66,7 +66,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error loading reports: $e')));
+      ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
     }
   }
 
@@ -131,9 +131,9 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
       requestData['hasInitialDiagnosisReportForCase'] = hasInitial;
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error checking initial diagnosis: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
       return;
     }
 
@@ -264,21 +264,21 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
             ),
           ),
           const SizedBox(width: 16),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Create and manage reports',
+                  context.dx('Create and manage reports'),
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w900,
                     color: Colors.black,
                   ),
                 ),
-                SizedBox(height: 5),
+                const SizedBox(height: 5),
                 Text(
-                  'Send medical summaries after completed visits',
+                  context.dx('Send medical summaries after completed visits'),
                   style: TextStyle(
                     fontSize: 14,
                     height: 1.35,
@@ -311,7 +311,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            'No completed visits available for reporting.',
+            context.dx('No completed visits available for reporting.'),
             style: TextStyle(
               color: Colors.grey.shade700,
               fontSize: 17,
@@ -320,7 +320,9 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'A new report can be created only after a completed visit without an existing report.',
+            context.dx(
+              'A new report can be created only after a completed visit without an existing report.',
+            ),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.grey.shade500,
@@ -396,7 +398,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
               canCreate ? Icons.add_rounded : Icons.check_rounded,
               size: 18,
             ),
-            label: Text(canCreate ? 'Report' : 'Done'),
+            label: Text(context.dx(canCreate ? 'Report' : 'Done')),
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.primary,
               side: BorderSide(

@@ -59,6 +59,7 @@ class DoctorService {
     String? shortBio,
     int? experienceYears,
     double? consultationFee,
+    String? profileImageUrl,
   }) async {
     try {
       final body = <String, dynamic>{};
@@ -68,6 +69,7 @@ class DoctorService {
       if (shortBio != null) body['shortBio'] = shortBio;
       if (experienceYears != null) body['experienceYears'] = experienceYears;
       if (consultationFee != null) body['consultationFee'] = consultationFee;
+      if (profileImageUrl != null) body['profileImageUrl'] = profileImageUrl;
 
       final response = await _apiService.put(
         '${ApiEndpoints.doctorProfile}/$userId',

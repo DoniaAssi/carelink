@@ -82,8 +82,8 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                 // Title
                 Text(
                   _status == 'approved'
-                      ? 'Account Approved!'
-                      : 'Pending Approval',
+                      ? context.dx('Account Approved!')
+                      : context.dx('Pending Approval'),
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: _status == 'approved'
@@ -96,8 +96,12 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                 // Message
                 Text(
                   _status == 'approved'
-                      ? 'Your doctor account has been approved. You can now access the system.'
-                      : 'Your doctor account is pending approval from the administrator. Please check back later.',
+                      ? context.dx(
+                          'Your doctor account has been approved. You can now access the system.',
+                        )
+                      : context.dx(
+                          'Your doctor account is pending approval from the administrator. Please check back later.',
+                        ),
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: AppColors.textSecondary,
                   ),
@@ -111,13 +115,15 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildInfoRow('Name', widget.fullName),
+                        _buildInfoRow(context.dx('Name'), widget.fullName),
                         const Divider(),
-                        _buildInfoRow('Email', widget.email),
+                        _buildInfoRow(context.dx('Email'), widget.email),
                         const Divider(),
                         _buildInfoRow(
-                          'Status',
-                          _status == 'approved' ? 'Approved' : 'Pending',
+                          context.dx('Status'),
+                          _status == 'approved'
+                              ? context.dx('Approved')
+                              : context.dx('Pending'),
                         ),
                       ],
                     ),
@@ -142,7 +148,11 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                               ),
                             )
                           : const Icon(Icons.refresh),
-                      label: Text(_isLoading ? 'Checking...' : 'Check Status'),
+                      label: Text(
+                        _isLoading
+                            ? context.dx('Checking...')
+                            : context.dx('Check Status'),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,

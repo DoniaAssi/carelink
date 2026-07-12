@@ -64,9 +64,9 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
       if (isMissingRecord) return;
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading medical record: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
       }
     }
   }
@@ -166,7 +166,7 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
                       ],
                       if (_listOf('initialDiagnosisReports').isNotEmpty) ...[
                         _buildSectionCard(
-                          'Initial Diagnosis',
+                          context.dx('Initial Diagnosis'),
                           _listOf(
                             'initialDiagnosisReports',
                           ).map((r) => _buildInitialDiagnosisRow(r)).toList(),
@@ -175,7 +175,7 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
                       ],
                       if (_listOf('visitReports').isNotEmpty) ...[
                         _buildSectionCard(
-                          'Medical Reports',
+                          context.dx('Medical Reports'),
                           _listOf(
                             'visitReports',
                           ).map((r) => _buildVisitReportRow(r)).toList(),
@@ -185,7 +185,7 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
                       // Clinical Notes
                       if (_listOf('clinicalNotes').isNotEmpty) ...[
                         _buildSectionCard(
-                          'Clinical Notes',
+                          context.dx('Clinical Notes'),
                           _listOf(
                             'clinicalNotes',
                           ).map((n) => _buildNoteRow(n)).toList(),
@@ -195,7 +195,7 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
                       // Lab Results
                       if (_listOf('labResults').isNotEmpty) ...[
                         _buildSectionCard(
-                          'Lab Results',
+                          context.dx('Lab Results'),
                           _listOf(
                             'labResults',
                           ).map((l) => _buildLabResultRow(l)).toList(),
@@ -217,7 +217,7 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
           Icon(Icons.folder_open, size: 80, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
-            'No medical record found',
+            context.dx('No medical record found'),
             style: TextStyle(fontSize: 18, color: Colors.grey[600]),
           ),
         ],
@@ -281,11 +281,11 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  allergy['allergyName'] ?? 'Unavailable',
+                  allergy['allergyName'] ?? context.dx('Unavailable'),
                   style: const TextStyle(fontWeight: FontWeight.w500),
                 ),
                 Text(
-                  '${allergy['allergyCategory'] ?? ''} - ${allergy['severity'] ?? 'Unavailable'}',
+                  '${allergy['allergyCategory'] ?? ''} - ${allergy['severity'] ?? context.dx('Unavailable')}',
                   // style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
                 ),
               ],
@@ -312,7 +312,7 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  disease['diseaseName'] ?? 'Unavailable',
+                  disease['diseaseName'] ?? context.dx('Unavailable'),
                   style: const TextStyle(fontWeight: FontWeight.w500),
                 ),
                 Text(
@@ -337,7 +337,7 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                note['authorName'] ?? 'Unavailable',
+                note['authorName'] ?? context.dx('Unavailable'),
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
               Text(
@@ -360,14 +360,14 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            result['testName'] ?? 'Unavailable',
+            result['testName'] ?? context.dx('Unavailable'),
             style: const TextStyle(fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 4),
           Row(
             children: [
               Text(
-                'Result: ${result['resultValue'] ?? 'N/A'}',
+                '${context.dx('Result')}: ${result['resultValue'] ?? 'N/A'}',
                 // style: const TextStyle(color: AppColors.textSecondary),
               ),
               if (result['unit'] != null) ...[
@@ -381,7 +381,7 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
           ),
           if (result['referenceRange'] != null)
             Text(
-              'Reference: ${result['referenceRange']}',
+              '${context.dx('Reference')}: ${result['referenceRange']}',
               // style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
         ],
@@ -391,8 +391,9 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
 
   Widget _buildVisitReportRow(dynamic report) {
     final item = report is Map ? report : <String, dynamic>{};
-    final title = (item['title'] ?? item['diagnosis'] ?? 'Visit report')
-        .toString();
+    final title =
+        (item['title'] ?? item['diagnosis'] ?? context.dx('Visit report'))
+            .toString();
     final diagnosis = (item['diagnosis'] ?? '').toString();
     final notes = (item['notes'] ?? item['treatment_plan'] ?? '').toString();
     final medications =
@@ -454,7 +455,9 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
     final date = _formatAnyDate(
       item['reportDate'] ?? item['createdAt'] ?? item['updatedAt'],
     );
-    final doctorName = (item['doctorName'] ?? 'Doctor').toString();
+    final doctorName =
+        (item['doctorName'] ?? context.dx('doctor.dashboard.defaultDoctorName'))
+            .toString();
     final diagnosis = (item['diagnosis'] ?? '').toString();
     final treatmentPlan = (item['treatmentPlan'] ?? '').toString();
     final bloodType = _firstDisplayValue([
@@ -507,9 +510,9 @@ class _MedicalRecordScreenState extends State<MedicalRecordScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Report Type: Initial Diagnosis',
-                      style: TextStyle(
+                    Text(
+                      context.dx('Report Type: Initial Diagnosis'),
+                      style: const TextStyle(
                         color: AppColors.primary,
                         fontWeight: FontWeight.w800,
                         fontSize: 15,

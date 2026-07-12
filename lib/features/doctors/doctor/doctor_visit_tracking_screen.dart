@@ -464,8 +464,8 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
           centerTitle: true,
           title: Text(
             _stage == _VisitTrackingStage.inProgress
-                ? 'Visit In Progress'
-                : 'Visit Tracking',
+                ? context.dx('Visit In Progress')
+                : context.dx('Visit Tracking'),
             style: const TextStyle(
               color: _text,
               fontWeight: FontWeight.w700,
@@ -506,7 +506,11 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
   }
 
   Widget _buildProgress() {
-    const labels = ['On The Way', 'Arrived', 'In Progress'];
+    final labels = [
+      context.dx('On The Way'),
+      context.dx('Arrived'),
+      context.dx('In Progress'),
+    ];
     const icons = [
       Icons.directions_car,
       Icons.location_on,
@@ -655,8 +659,8 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
       children: [
         _statusBanner(
           icon: Icons.directions_car,
-          title: 'On The Way',
-          subtitle: 'You are on your way to the patient',
+          title: context.dx('On The Way'),
+          subtitle: context.dx('You are on your way to the patient'),
         ),
         const SizedBox(height: 14),
         _card(
@@ -677,13 +681,13 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
                   children: [
                     _detailRow(
                       Icons.event_outlined,
-                      'Appointment',
+                      context.dx('Appointment'),
                       _formatDateTime(_scheduledAt),
                     ),
                     const Divider(height: 22),
                     _detailRow(
                       Icons.location_on_outlined,
-                      'Patient Location',
+                      context.dx('Patient Location'),
                       _patientAddress,
                     ),
                     const Divider(height: 22),
@@ -692,7 +696,7 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
                         Expanded(
                           child: _metric(
                             Icons.schedule_outlined,
-                            'Estimated time',
+                            context.dx('Estimated time'),
                             '-- min',
                           ),
                         ),
@@ -704,7 +708,7 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
                         Expanded(
                           child: _metric(
                             Icons.route_outlined,
-                            'Distance',
+                            context.dx('Distance'),
                             _distanceText,
                           ),
                         ),
@@ -723,12 +727,12 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
         ],
         _infoMessage(
           Icons.shield_outlined,
-          'Please drive safely and follow traffic rules.',
+          context.dx('Please drive safely and follow traffic rules.'),
         ),
         const SizedBox(height: 18),
         _primaryButton(
           icon: Icons.navigation_outlined,
-          label: 'Start Navigation',
+          label: context.dx('Start Navigation'),
           isLoading: _isLocating,
           onPressed: _startLocationTracking,
         ),
@@ -742,8 +746,8 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
       children: [
         _statusBanner(
           icon: Icons.check_circle,
-          title: 'Arrived Successfully',
-          subtitle: 'You have reached the patient location',
+          title: context.dx('Arrived Successfully'),
+          subtitle: context.dx('Patient Location'),
         ),
         const SizedBox(height: 14),
         _card(
@@ -777,24 +781,28 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
               const SizedBox(height: 18),
               _detailRow(
                 Icons.schedule_outlined,
-                'Arrival Time',
+                context.dx('Arrival Time'),
                 _formatTime(_arrivalTime),
               ),
               const Divider(height: 24),
-              _detailRow(Icons.my_location_outlined, 'Distance', _distanceText),
+              _detailRow(
+                Icons.my_location_outlined,
+                context.dx('Distance'),
+                _distanceText,
+              ),
             ],
           ),
         ),
         const SizedBox(height: 14),
         _infoMessage(
           Icons.verified_user_outlined,
-          'Arrival verified successfully.',
+          context.dx('Arrival verified successfully.'),
           success: true,
         ),
         const SizedBox(height: 18),
         _primaryButton(
           icon: Icons.play_arrow_rounded,
-          label: 'Start Visit',
+          label: context.dx('Start Visit'),
           onPressed:
               _distanceMeters != null &&
                   _distanceMeters! <= _arrivalThresholdMeters
@@ -811,8 +819,8 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
       children: [
         _statusBanner(
           icon: Icons.medical_services_outlined,
-          title: 'Visit In Progress',
-          subtitle: 'Consultation in progress',
+          title: context.dx('Visit In Progress'),
+          subtitle: context.dx('Consultation in progress'),
         ),
         const SizedBox(height: 14),
         _card(
@@ -820,10 +828,10 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
             children: [
               const Icon(Icons.timer_outlined, color: _teal, size: 30),
               const SizedBox(width: 14),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Visit Duration',
-                  style: TextStyle(
+                  context.dx('Visit Duration'),
+                  style: const TextStyle(
                     color: _text,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0,
@@ -893,7 +901,7 @@ class _DoctorVisitTrackingScreenState extends State<DoctorVisitTrackingScreen> {
         const SizedBox(height: 18),
         _primaryButton(
           icon: Icons.check_circle_outline,
-          label: 'Complete Visit',
+          label: context.dx('Complete Visit'),
           isLoading: _isCompleting,
           onPressed: _completeVisit,
         ),

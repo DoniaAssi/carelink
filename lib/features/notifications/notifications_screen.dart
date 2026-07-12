@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:carelink/shared/widgets/carelink_background.dart';
 
 import 'package:carelink/core/app_colors.dart';
+import 'package:carelink/core/app_localizations.dart';
 import 'package:carelink/core/carelink_palette.dart';
 import 'package:carelink/core/locale_controller.dart';
 import 'package:carelink/core/theme_controller.dart';
@@ -449,6 +450,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     notification: notification,
                     palette: palette,
                     isArabic: _isArabic,
+                    isDoctor: _isDoctor,
                     onTap: () => _open(notification),
                   ),
                 ),
@@ -531,20 +533,30 @@ class _NotificationCard extends StatelessWidget {
     required this.notification,
     required this.palette,
     required this.isArabic,
+    required this.isDoctor,
     required this.onTap,
   });
 
   final NotificationCardData notification;
   final CarelinkPalette palette;
   final bool isArabic;
+  final bool isDoctor;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     const unreadRed = Color(0xFFD93636);
     final unread = !notification.read;
-    final title = notification.displayTitle(isArabic);
-    final description = notification.displayDescription(isArabic);
+    final title = isDoctor
+        ? _doctorNotificationTitle(context, notification.title)
+        : notification.displayTitle(isArabic);
+    final description = isDoctor
+        ? _doctorNotificationDescription(context, notification.description)
+        : notification.displayDescription(isArabic);
+    final actionLabel =
+        isDoctor && notification.category == NotificationCategory.appointment
+        ? context.dtr('notifications.doctor.viewAppointment')
+        : notification.actionLabel(isArabic);
     final tint = unread
         ? Color.alphaBlend(
             notification.accent.withValues(alpha: palette.isDark ? 0.10 : 0.05),
@@ -671,7 +683,7 @@ class _NotificationCard extends StatelessWidget {
                                   if (notification.isActionable) ...[
                                     const Spacer(),
                                     Text(
-                                      notification.actionLabel(isArabic),
+                                      actionLabel,
                                       style: TextStyle(
                                         color: notification.accent,
                                         fontSize: 11.5,
@@ -702,6 +714,48 @@ class _NotificationCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _doctorNotificationTitle(BuildContext context, String title) {
+    final normalized = title.trim().toLowerCase();
+    if (normalized == 'request assigned') {
+      return context.dtr('notifications.doctor.requestAssigned');
+    }
+    if (normalized == 'new booking request') {
+      return context.dtr('notifications.doctor.newBookingRequest');
+    }
+    if (normalized == 'notification') {
+      return context.dtr('notifications.fallbackNotification');
+    }
+    return title;
+  }
+
+  String _doctorNotificationDescription(BuildContext context, String body) {
+    final text = body.trim();
+    final normalized = text.toLowerCase();
+    if (normalized == 'you accepted a patient request.' ||
+        normalized == 'you accepted a patient request') {
+      return context.dtr('notifications.doctor.acceptedPatientRequest');
+    }
+    if (normalized == 'review service requests to accept or decline.' ||
+        normalized == 'review service requests to accept or decline') {
+      return context.dtr('notifications.doctor.reviewServiceRequests');
+    }
+
+    final bookingMatch = RegExp(
+      r'^(.+?) booked Doctor at (.+?)\.? Review service requests to accept or decline\.?$',
+      caseSensitive: false,
+    ).firstMatch(text);
+    if (bookingMatch != null) {
+      return context.dtr(
+        'notifications.doctor.bookedDoctorAt',
+        args: {
+          'patient': bookingMatch.group(1)!.trim(),
+          'date': bookingMatch.group(2)!.trim(),
+        },
+      );
+    }
+    return body;
   }
 }
 

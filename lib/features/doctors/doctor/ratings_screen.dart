@@ -43,7 +43,7 @@ class _DoctorRatingsScreenState extends State<DoctorRatingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error loading ratings: $e')));
+        ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
       }
     }
   }
@@ -328,10 +328,13 @@ class _DoctorRatingsScreenState extends State<DoctorRatingsScreen> {
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          _filterChip(label: 'All ($totalReviews)', rating: null),
+          _filterChip(
+            label: '${context.dx('All')} ($totalReviews)',
+            rating: null,
+          ),
           for (var rating = 5; rating >= 1; rating--)
             _filterChip(
-              label: '$rating Stars (${counts[rating] ?? 0})',
+              label: '$rating ${context.dx('Stars')} (${counts[rating] ?? 0})',
               rating: rating,
             ),
           Container(

@@ -62,7 +62,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error loading patients: $e')));
+      ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
     }
   }
 
@@ -519,26 +519,28 @@ class _DoctorPatientDetailsScreenState
                         const SizedBox(height: 20),
                         _actionCard(
                           icon: Icons.calendar_month_outlined,
-                          title: 'Appointments',
-                          subtitle: 'View & manage appointments',
+                          title: context.dx('Appointments'),
+                          subtitle: context.dx('View & manage appointments'),
                           onTap: _openAppointments,
                         ),
                         _actionCard(
                           icon: Icons.medical_services_outlined,
-                          title: 'Medical Records',
-                          subtitle: 'View medical history and documents',
+                          title: context.dx('Medical Records'),
+                          subtitle: context.dx(
+                            'View medical history and documents',
+                          ),
                           onTap: _openMedicalRecord,
                         ),
                         _actionCard(
                           icon: Icons.medical_information_outlined,
-                          title: 'Visits History',
-                          subtitle: 'View all past visits',
+                          title: context.dx('Visits History'),
+                          subtitle: context.dx('View all past visits'),
                           onTap: _openVisitHistory,
                         ),
                         _actionCard(
                           icon: Icons.note_alt_outlined,
-                          title: 'Notes',
-                          subtitle: 'View patient notes',
+                          title: context.dx('Notes'),
+                          subtitle: context.dx('View patient notes'),
                           onTap: _openNotes,
                         ),
                       ],
@@ -645,7 +647,7 @@ class _DoctorPatientDetailsScreenState
             child: _statItem(
               icon: Icons.assignment_outlined,
               value: '$visits',
-              label: visits == 1 ? 'Visit' : 'Visits',
+              label: context.dx(visits == 1 ? 'Visit' : 'Visits'),
             ),
           ),
           _divider(),
@@ -653,7 +655,7 @@ class _DoctorPatientDetailsScreenState
             child: _statItem(
               icon: Icons.calendar_month_outlined,
               value: nextVisit,
-              label: 'Next Visit',
+              label: context.dx('Next Visit'),
             ),
           ),
           _divider(),
@@ -661,7 +663,7 @@ class _DoctorPatientDetailsScreenState
             child: _statItem(
               icon: Icons.access_time_rounded,
               value: lastVisit,
-              label: 'Last Visit',
+              label: context.dx('Last Visit'),
             ),
           ),
         ],
@@ -922,7 +924,7 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error loading notes: $e')));
+      ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
     }
   }
 
@@ -1000,7 +1002,7 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
   Widget build(BuildContext context) {
     return DoctorTypographyScope(
       child: _DoctorDetailScaffold(
-        title: 'Notes',
+        title: context.dx('Notes'),
         action: Container(
           margin: const EdgeInsetsDirectional.only(end: 12),
           width: 40,
@@ -1023,7 +1025,12 @@ class _DoctorPatientNotesScreenState extends State<DoctorPatientNotesScreen> {
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 30),
                   children: _notes.isEmpty
-                      ? [_emptyState(Icons.note_alt_outlined, 'No notes yet')]
+                      ? [
+                          _emptyState(
+                            Icons.note_alt_outlined,
+                            context.dx('No notes yet'),
+                          ),
+                        ]
                       : _notes.map(_noteCard).toList(),
                 ),
               ),
@@ -1158,7 +1165,7 @@ class _DoctorVisitHistoryScreenState extends State<DoctorVisitHistoryScreen> {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error loading visits: $e')));
+      ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
     }
   }
 
@@ -1166,7 +1173,7 @@ class _DoctorVisitHistoryScreenState extends State<DoctorVisitHistoryScreen> {
   Widget build(BuildContext context) {
     return DoctorTypographyScope(
       child: _DoctorDetailScaffold(
-        title: 'Visit History',
+        title: context.dx('Visit History'),
         action: IconButton(
           icon: const Icon(
             Icons.filter_alt_outlined,

@@ -72,7 +72,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${context.dx('Error loading request')}: $e'),
+          content: Text(context.dxError(e)),
           backgroundColor: Colors.red,
         ),
       );
@@ -103,7 +103,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${context.dx('Error')}: $e'),
+          content: Text(context.dxError(e)),
           backgroundColor: Colors.red,
         ),
       );
@@ -177,7 +177,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${context.dx('Error')}: $e'),
+          content: Text(context.dxError(e)),
           backgroundColor: Colors.red,
         ),
       );
@@ -209,7 +209,7 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${context.dx('Error')}: $e'),
+          content: Text(context.dxError(e)),
           backgroundColor: Colors.red,
         ),
       );

@@ -1,9 +1,17 @@
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MissingPluginException;
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/app_localizations.dart';
 import '../../../core/doctor_session.dart';
 import '../../../core/locale_controller.dart';
+import '../../../core/profile_avatar.dart'
+    show profileImageProvider, profileImageUrlFromMap;
 import '../../../services/doctor_service.dart';
+import '../../../shared/services/api_service.dart' as shared_api;
 import '../../../core/app_colors.dart';
 import 'doctor_ui_constants.dart';
 
@@ -23,12 +31,160 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
   String _doctorId = '';
   String _doctorName = '';
   String _doctorEmail = '';
+  String? _doctorProfileImageUrl;
   bool _isAvailable = true;
+  bool _isUploadingPhoto = false;
+  Uint8List? _pickedImageBytes;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
+  }
+
+  Map<String, dynamic>? _mapOf(Object? value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
+  }
+
+  String? get _profileImageUrl {
+    return profileImageUrlFromMap(_profile) ??
+        profileImageUrlFromMap(_mapOf(_profile['user'])) ??
+        profileImageUrlFromMap(_mapOf(_profile['profile'])) ??
+        _doctorProfileImageUrl;
+  }
+
+  String _doctorInitial(String displayName) {
+    final value = displayName.trim().isNotEmpty
+        ? displayName.trim()
+        : _doctorName.trim();
+    return value.isNotEmpty ? value[0].toUpperCase() : 'D';
+  }
+
+  String get _profileImagePrefsKey => 'doctor_profileImageUrl_$_doctorId';
+
+  Future<void> _showImageSourceSheet() async {
+    if (_isUploadingPhoto) return;
+
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: DoctorUiConstants.surfaceColor(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: DoctorUiConstants.borderColor(context),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: Text(context.dx('Choose from gallery')),
+                onTap: () => Navigator.pop(context, ImageSource.gallery),
+              ),
+              if (!kIsWeb)
+                ListTile(
+                  leading: const Icon(Icons.photo_camera_outlined),
+                  title: Text(context.dx('Take a photo')),
+                  onTap: () => Navigator.pop(context, ImageSource.camera),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source != null) {
+      await _pickProfileImage(source);
+    }
+  }
+
+  Future<void> _pickProfileImage(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final file = await picker.pickImage(
+        source: source,
+        imageQuality: 80,
+        maxWidth: 512,
+        maxHeight: 512,
+      );
+      if (file == null) return;
+
+      final bytes = await file.readAsBytes();
+      if (!mounted) return;
+      if (bytes.length > 5 * 1024 * 1024) {
+        _showSnack(context.dx('Image size must be less than 5MB'));
+        return;
+      }
+
+      setState(() => _pickedImageBytes = bytes);
+      await _uploadProfileImage(bytes);
+    } on MissingPluginException {
+      if (!mounted) return;
+      _showSnack(context.dx('Image picker needs a full app restart'));
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack(context.dx('Could not pick image. Please try again.'));
+    }
+  }
+
+  Future<void> _uploadProfileImage(Uint8List bytes) async {
+    if (_doctorId.isEmpty) {
+      _showSnack(context.dx('Doctor ID is missing'));
+      return;
+    }
+
+    setState(() => _isUploadingPhoto = true);
+    try {
+      final filename =
+          'profile_${_doctorId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final imageUrl = await shared_api.ApiService().uploadProfileImage(
+        bytes,
+        filename,
+      );
+
+      await _doctorService.updateProfile(_doctorId, profileImageUrl: imageUrl);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_profileImagePrefsKey, imageUrl);
+      if (!mounted) return;
+      setState(() => _doctorProfileImageUrl = imageUrl);
+      await _loadProfile();
+
+      if (!mounted) return;
+      setState(() => _pickedImageBytes = null);
+      _showSnack(
+        context.dx('Profile photo updated successfully'),
+        success: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack(context.dxError(e));
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingPhoto = false);
+      }
+    }
+  }
+
+  void _showSnack(String message, {bool success = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: success ? AppColors.success : Colors.red,
+      ),
+    );
   }
 
   Future<void> _loadProfile() async {
@@ -39,8 +195,18 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       _doctorId = prefs.getString('doctor_userId') ?? '';
       _doctorName = prefs.getString('doctor_fullName') ?? '';
       _doctorEmail = prefs.getString('doctor_email') ?? '';
+      _doctorProfileImageUrl = _doctorId.isEmpty
+          ? null
+          : prefs.getString(_profileImagePrefsKey);
 
       final profile = await _doctorService.getProfile(_doctorId);
+      final profileImageUrl =
+          profileImageUrlFromMap(profile) ??
+          profileImageUrlFromMap(_mapOf(profile['user'])) ??
+          profileImageUrlFromMap(_mapOf(profile['profile']));
+      if (profileImageUrl != null) {
+        await prefs.setString(_profileImagePrefsKey, profileImageUrl);
+      }
       Map<String, dynamic> availability = const {};
       try {
         availability = await _doctorService.getAvailabilityStatus(_doctorId);
@@ -58,6 +224,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       if (!mounted) return;
       setState(() {
         _profile = profile;
+        _doctorProfileImageUrl = profileImageUrl ?? _doctorProfileImageUrl;
         if (availability.containsKey('isAvailable')) {
           _isAvailable = availability['isAvailable'] == true;
         }
@@ -346,19 +513,8 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                             padding: const EdgeInsets.all(24),
                             child: Column(
                               children: [
-                                CircleAvatar(
-                                  radius: 50,
-                                  backgroundColor: AppColors.primary,
-                                  child: Text(
-                                    _doctorName.isNotEmpty
-                                        ? _doctorName[0].toUpperCase()
-                                        : 'D',
-                                    style: const TextStyle(
-                                      fontSize: 40,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
+                                _buildProfileAvatar(
+                                  (user['fullName'] ?? _doctorName).toString(),
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
@@ -544,6 +700,65 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                   ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildProfileAvatar(String displayName) {
+    final imageProvider = profileImageProvider(
+      _profileImageUrl,
+      localBytes: _pickedImageBytes,
+    );
+
+    return Semantics(
+      button: true,
+      label: context.dx('Change profile photo'),
+      child: InkWell(
+        onTap: _showImageSourceSheet,
+        customBorder: const CircleBorder(),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            CircleAvatar(
+              radius: 50,
+              backgroundColor: AppColors.primary,
+              foregroundImage: imageProvider,
+              child: imageProvider == null
+                  ? Text(
+                      _doctorInitial(displayName),
+                      style: const TextStyle(
+                        fontSize: 40,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    )
+                  : null,
+            ),
+            Positioned(
+              right: -2,
+              bottom: 4,
+              child: IgnorePointer(
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: DoctorUiConstants.surfaceColor(context),
+                      width: 2,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.camera_alt_rounded,
+                    color: Colors.white,
+                    size: 15,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

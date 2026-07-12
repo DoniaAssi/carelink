@@ -122,7 +122,7 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error loading payments: $e')));
+        ).showSnackBar(SnackBar(content: Text(context.dxError(e))));
       }
     }
   }
@@ -141,7 +141,10 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Payout request for ${_money(amount)} ILS submitted successfully.',
+            context.dx(
+              'doctor.local.request_payout_submitted',
+              args: {'amount': _money(amount)},
+            ),
           ),
           backgroundColor: AppColors.success,
         ),
@@ -165,9 +168,9 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
           return Scaffold(
             backgroundColor: DoctorUiConstants.pageColor(context),
             appBar: AppBar(
-              title: const Text(
-                'Earnings',
-                style: TextStyle(color: Colors.black),
+              title: Text(
+                context.dx('Earnings'),
+                style: const TextStyle(color: Colors.black),
               ),
               centerTitle: true,
               backgroundColor: DoctorUiConstants.pageColor(context),
@@ -232,8 +235,8 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Current Approved Rate',
+                Text(
+                  context.dx('Current Approved Rate'),
                   style: TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 13,
@@ -250,17 +253,17 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
                   ),
                 ),
                 const SizedBox(height: 5),
-                const Row(
+                Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.verified_rounded,
                       color: AppColors.success,
                       size: 17,
                     ),
-                    SizedBox(width: 5),
+                    const SizedBox(width: 5),
                     Text(
-                      'Approved by Admin',
-                      style: TextStyle(
+                      context.dx('Approved by Admin'),
+                      style: const TextStyle(
                         color: AppColors.success,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -285,32 +288,32 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
     final columns = width >= 900 ? 4 : (width >= 520 ? 2 : 1);
     final cards = [
       _EarningsStat(
-        title: 'Total Earnings',
+        title: context.dx('Total Earnings'),
         value: '${_money(_totalEarnings)} ILS',
         icon: Icons.account_balance_wallet_outlined,
         color: AppColors.success,
-        subtitle: 'All visit earnings',
+        subtitle: context.dx('All visit earnings'),
       ),
       _EarningsStat(
-        title: 'Pending Payout',
+        title: context.dx('Pending Payout'),
         value: '${_money(_pendingPayout)} ILS',
         icon: Icons.schedule_rounded,
         color: AppColors.warning,
-        subtitle: 'Not yet paid out',
+        subtitle: context.dx('Not yet paid out'),
       ),
       _EarningsStat(
-        title: 'Paid Out',
+        title: context.dx('Paid Out'),
         value: '${_money(_paidOut)} ILS',
         icon: Icons.payments_outlined,
         color: AppColors.info,
-        subtitle: 'Successfully paid',
+        subtitle: context.dx('Successfully paid'),
       ),
       _EarningsStat(
-        title: 'Completed Visits',
+        title: context.dx('Completed Visits'),
         value: '$_completedVisits',
         icon: Icons.bar_chart_rounded,
         color: const Color(0xFF7C3AED),
-        subtitle: 'Completed visits',
+        subtitle: context.dx('Completed Visits'),
       ),
     ];
 
@@ -400,13 +403,15 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
               final title = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Earnings History',
+                  Text(
+                    context.dx('Earnings History'),
                     style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    'A list of completed visit earnings and payment statuses.',
+                    context.dx(
+                      'A list of completed visit earnings and payment statuses.',
+                    ),
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                   ),
                 ],
@@ -453,7 +458,9 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
                             : Icons.account_balance_wallet_outlined,
                       ),
                 label: Text(
-                  _hasOpenPayout ? 'Payout Pending' : 'Request Payout',
+                  context.dx(
+                    _hasOpenPayout ? 'Payout Pending' : 'Request Payout',
+                  ),
                 ),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.primary,
@@ -501,7 +508,7 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
                   child: ChoiceChip(
                     selected: selected,
                     onSelected: (_) => setState(() => _selectedFilter = filter),
-                    label: Text(filter.label),
+                    label: Text(filter.label(context)),
                     avatar: filter == _EarningsFilter.all
                         ? const Icon(Icons.filter_list_rounded, size: 17)
                         : null,
@@ -599,7 +606,11 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
                     ),
                     DataCell(Text(_serviceName(item['serviceType']))),
                     DataCell(Text(_formatPaymentDate(item))),
-                    DataCell(Text('${_money(_agreedRate(item))} ILS / Visit')),
+                    DataCell(
+                      Text(
+                        '${_money(_agreedRate(item))} ILS / ${context.dx('Visit')}',
+                      ),
+                    ),
                     DataCell(
                       Text(
                         '${_money(_toMoney(item['amount']))} ILS',
@@ -647,8 +658,8 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              'No earnings found for this filter.',
+            Text(
+              context.dx('No earnings found for this filter.'),
               style: TextStyle(
                 color: AppColors.textSecondary,
                 fontWeight: FontWeight.w700,
@@ -667,14 +678,20 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
         color: AppColors.primary.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.info_outline_rounded, color: AppColors.primary, size: 19),
-          SizedBox(width: 9),
+          const Icon(
+            Icons.info_outline_rounded,
+            color: AppColors.primary,
+            size: 19,
+          ),
+          const SizedBox(width: 9),
           Expanded(
             child: Text(
-              'Earnings are calculated based on completed visits and the approved rate.',
-              style: TextStyle(
+              context.dx(
+                'Earnings are calculated based on completed visits and the approved rate.',
+              ),
+              style: const TextStyle(
                 color: AppColors.primary,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
@@ -725,24 +742,30 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Earning Details',
+              Text(
+                context.dx('Earning Details'),
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 18),
-              _detailRow('Patient', _text(item['patientName'], 'Patient')),
-              _detailRow('Service', _serviceName(item['serviceType'])),
-              _detailRow('Visit Date', _formatPaymentDate(item)),
               _detailRow(
-                'Agreed Rate',
-                '${_money(_agreedRate(item))} ILS / Visit',
+                context.dx('Patient'),
+                _text(item['patientName'], context.dx('Patient')),
               ),
               _detailRow(
-                'Amount Earned',
+                context.dx('Service'),
+                _serviceName(item['serviceType']),
+              ),
+              _detailRow(context.dx('Visit Date'), _formatPaymentDate(item)),
+              _detailRow(
+                context.dx('Agreed Rate'),
+                '${_money(_agreedRate(item))} ILS / ${context.dx('Visit')}',
+              ),
+              _detailRow(
+                context.dx('Amount Earned'),
                 '${_money(_toMoney(item['amount']))} ILS',
               ),
               _detailRow(
-                'Payment Status',
+                context.dx('Payment Status'),
                 _statusLabel(_normalizedPaymentStatus(item)),
               ),
             ],
@@ -784,10 +807,28 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
     setState(() => _isExporting = true);
 
     try {
-      final document = pw.Document(
-        title: 'CareLink Earnings Report',
-        author: 'CareLink',
+      final reportTitle = context.dx('doctor.local.carelink_earnings_report');
+      final generatedLabel = context.dx('doctor.local.generated');
+      final doctorLabel = context.dx('doctor.dashboard.defaultDoctorName');
+      final currentRateLabel = context.dx('Current Approved Rate');
+      final totalEarningsLabel = context.dx('Total Earnings');
+      final pendingPayoutLabel = context.dx('Pending Payout');
+      final paidOutLabel = context.dx('Paid Out');
+      final completedVisitsLabel = context.dx('Completed Visits');
+      final earningsHistoryLabel = context.dx('Earnings History');
+      final noEarningsLabel = context.dx('No earnings available.');
+      final patientNameLabel = context.dx('Patient Name');
+      final patientFallback = context.dx('Patient');
+      final serviceLabel = context.dx('Service');
+      final visitDateLabel = context.dx('Visit Date');
+      final agreedRateLabel = context.dx('Agreed Rate');
+      final amountEarnedLabel = context.dx('Amount Earned');
+      final paymentStatusLabel = context.dx('Payment Status');
+      final visitLabel = context.dx('Visit');
+      final noteLabel = context.dx(
+        'Earnings are calculated based on completed visits and the approved rate.',
       );
+      final document = pw.Document(title: reportTitle, author: 'CareLink');
       final generatedAt = DateTime.now();
       final teal = PdfColor.fromHex('#0F8B8D');
       final lightTeal = PdfColor.fromHex('#EAF7F5');
@@ -797,7 +838,7 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4.landscape,
           margin: const pw.EdgeInsets.all(28),
-          header: (context) => pw.Container(
+          header: (pdfContext) => pw.Container(
             padding: const pw.EdgeInsets.only(bottom: 10),
             decoration: pw.BoxDecoration(
               border: pw.Border(bottom: pw.BorderSide(color: teal, width: 1.5)),
@@ -806,7 +847,7 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'CareLink - Earnings Report',
+                  reportTitle,
                   style: pw.TextStyle(
                     color: teal,
                     fontSize: 19,
@@ -814,23 +855,29 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
                   ),
                 ),
                 pw.Text(
-                  'Generated: ${_formatDateTime(generatedAt)}',
+                  '$generatedLabel: ${_formatDateTime(generatedAt)}',
                   style: pw.TextStyle(color: grey, fontSize: 9),
                 ),
               ],
             ),
           ),
-          footer: (context) => pw.Align(
+          footer: (pdfContext) => pw.Align(
             alignment: pw.Alignment.centerRight,
             child: pw.Text(
-              'Page ${context.pageNumber} of ${context.pagesCount}',
+              context.dx(
+                'doctor.local.page_count',
+                args: {
+                  'page': pdfContext.pageNumber.toString(),
+                  'pages': pdfContext.pagesCount.toString(),
+                },
+              ),
               style: pw.TextStyle(color: grey, fontSize: 9),
             ),
           ),
-          build: (context) => [
+          build: (pdfContext) => [
             pw.SizedBox(height: 18),
             pw.Text(
-              'Doctor: $_doctorName',
+              '$doctorLabel: $_doctorName',
               style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 12),
@@ -844,14 +891,14 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text(
-                    'Current Approved Rate',
+                    currentRateLabel,
                     style: pw.TextStyle(
                       color: grey,
                       fontWeight: pw.FontWeight.bold,
                     ),
                   ),
                   pw.Text(
-                    '${_money(_approvedRate)} ILS / Visit',
+                    '${_money(_approvedRate)} ILS / $visitLabel',
                     style: pw.TextStyle(
                       color: teal,
                       fontSize: 16,
@@ -864,40 +911,40 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
             pw.SizedBox(height: 14),
             pw.Row(
               children: [
-                _pdfStat('Total Earnings', '${_money(_totalEarnings)} ILS'),
+                _pdfStat(totalEarningsLabel, '${_money(_totalEarnings)} ILS'),
                 pw.SizedBox(width: 8),
-                _pdfStat('Pending Payout', '${_money(_pendingPayout)} ILS'),
+                _pdfStat(pendingPayoutLabel, '${_money(_pendingPayout)} ILS'),
                 pw.SizedBox(width: 8),
-                _pdfStat('Paid Out', '${_money(_paidOut)} ILS'),
+                _pdfStat(paidOutLabel, '${_money(_paidOut)} ILS'),
                 pw.SizedBox(width: 8),
-                _pdfStat('Completed Visits', '$_completedVisits'),
+                _pdfStat(completedVisitsLabel, '$_completedVisits'),
               ],
             ),
             pw.SizedBox(height: 20),
             pw.Text(
-              'Earnings History',
+              earningsHistoryLabel,
               style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 8),
             if (_payments.isEmpty)
-              pw.Text('No earnings available.')
+              pw.Text(noEarningsLabel)
             else
               pw.TableHelper.fromTextArray(
-                headers: const [
-                  'Patient Name',
-                  'Service',
-                  'Visit Date',
-                  'Agreed Rate',
-                  'Amount Earned',
-                  'Payment Status',
+                headers: [
+                  patientNameLabel,
+                  serviceLabel,
+                  visitDateLabel,
+                  agreedRateLabel,
+                  amountEarnedLabel,
+                  paymentStatusLabel,
                 ],
                 data: _payments.map((payment) {
                   final item = _asMap(payment);
                   return [
-                    _text(item['patientName'], 'Patient'),
+                    _text(item['patientName'], patientFallback),
                     _serviceName(item['serviceType']),
                     _formatPaymentDate(item),
-                    '${_money(_agreedRate(item))} ILS / Visit',
+                    '${_money(_agreedRate(item))} ILS / $visitLabel',
                     '${_money(_toMoney(item['amount']))} ILS',
                     _statusLabel(_normalizedPaymentStatus(item)),
                   ];
@@ -927,7 +974,7 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
               padding: const pw.EdgeInsets.all(10),
               color: lightTeal,
               child: pw.Text(
-                'Earnings are calculated based on completed visits and the approved rate.',
+                noteLabel,
                 style: pw.TextStyle(color: teal, fontSize: 9),
               ),
             ),
@@ -944,7 +991,9 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to export earnings PDF: $error'),
+          content: Text(
+            context.dxError(error, prefix: 'Unable to export earnings PDF'),
+          ),
           backgroundColor: Colors.red.shade700,
         ),
       );
@@ -993,7 +1042,9 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
     final rate = _toMoney(_rateStatus['providerRate']);
     final message =
         (_rateStatus['reason'] ??
-                'Accept your assigned service rate before using Earnings.')
+                context.dx(
+                  'Accept your assigned service rate before using Earnings.',
+                ))
             .toString();
 
     return RefreshIndicator(
@@ -1014,7 +1065,9 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
           ),
           const SizedBox(height: 20),
           Text(
-            status == 'rejected' ? 'Rate Review Pending' : 'Earnings Locked',
+            context.dx(
+              status == 'rejected' ? 'Rate Review Pending' : 'Earnings Locked',
+            ),
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
           ),
@@ -1078,8 +1131,15 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
   }
 
   String _statusLabel(String status) {
-    if (status.isEmpty) return 'Pending';
-    return status[0].toUpperCase() + status.substring(1).replaceAll('_', ' ');
+    final normalized = status.trim().toLowerCase();
+    if (normalized.isEmpty) return context.dx('Pending');
+    return switch (normalized) {
+      'paid' => context.dx('Paid'),
+      'pending' || 'unpaid' || 'requested' => context.dx('Pending'),
+      'refunded' => context.dx('Refunded'),
+      'failed' => context.dx('Failed'),
+      _ => status[0].toUpperCase() + status.substring(1).replaceAll('_', ' '),
+    };
   }
 
   DateTime? _paymentDate(Map<String, dynamic> item) {
@@ -1152,18 +1212,18 @@ class _DoctorPaymentsScreenState extends State<DoctorPaymentsScreen> {
 enum _EarningsFilter { all, paid, pending, thisMonth, lastMonth }
 
 extension on _EarningsFilter {
-  String get label {
+  String label(BuildContext context) {
     switch (this) {
       case _EarningsFilter.all:
-        return 'All';
+        return context.dx('All');
       case _EarningsFilter.paid:
-        return 'Paid';
+        return context.dx('Paid');
       case _EarningsFilter.pending:
-        return 'Pending';
+        return context.dx('Pending');
       case _EarningsFilter.thisMonth:
-        return 'This Month';
+        return context.dx('This Month');
       case _EarningsFilter.lastMonth:
-        return 'Last Month';
+        return context.dx('Last Month');
     }
   }
 }

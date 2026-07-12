@@ -148,32 +148,32 @@ class _DoctorPatientProfileScreenState
     final rows = <_PersonalInfoRow>[
       _PersonalInfoRow(
         icon: Icons.badge_outlined,
-        label: 'Full Name',
+        label: context.dx('Full Name'),
         value: _value(['fullName', 'name'], fallback: 'Not set'),
       ),
       _PersonalInfoRow(
         icon: Icons.wc_outlined,
-        label: 'Gender',
+        label: context.dx('Gender'),
         value: _displayWord(_value(['gender', 'sex']), fallback: 'Not set'),
       ),
       _PersonalInfoRow(
         icon: Icons.cake_outlined,
-        label: 'Date of Birth',
+        label: context.dx('Date of Birth'),
         value: dateOfBirth.isEmpty ? 'Not set' : dateOfBirth,
       ),
       _PersonalInfoRow(
         icon: Icons.calendar_today_outlined,
-        label: 'Age',
+        label: context.dx('Age'),
         value: _ageText(_value(['dateOfBirth', 'date_of_birth'])),
       ),
       _PersonalInfoRow(
         icon: Icons.phone_outlined,
-        label: 'Phone Number',
+        label: context.dx('Phone Number'),
         value: _value(['phone', 'phoneNumber'], fallback: 'Not set'),
       ),
       _PersonalInfoRow(
         icon: Icons.location_on_outlined,
-        label: 'Address',
+        label: context.dx('Address'),
         value: _value([
           'addressText',
           'address',
@@ -182,7 +182,7 @@ class _DoctorPatientProfileScreenState
       ),
       _PersonalInfoRow(
         icon: Icons.email_outlined,
-        label: 'Email',
+        label: context.dx('Email'),
         value: _value(['email'], fallback: 'Not set'),
       ),
     ];

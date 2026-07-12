@@ -79,7 +79,7 @@ class _DoctorLoginScreenState extends State<DoctorLoginScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Login failed: ${e.toString()}'),
+            content: Text(context.dxError(e)),
             backgroundColor: Colors.red,
           ),
         );
