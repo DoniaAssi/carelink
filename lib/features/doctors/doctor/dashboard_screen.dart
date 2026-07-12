@@ -37,6 +37,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   List<dynamic> _requests = [];
   String _doctorName = '';
   String _doctorId = '';
+  String? _doctorProfileImageUrl;
   bool _rateDialogShown = false;
 
   @override
@@ -63,6 +64,9 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       final prefs = await SharedPreferences.getInstance();
       _doctorId = prefs.getString('doctor_userId') ?? '';
       _doctorName = prefs.getString('doctor_fullName') ?? '';
+      _doctorProfileImageUrl = _doctorId.isEmpty
+          ? null
+          : prefs.getString('doctor_profileImageUrl_$_doctorId');
 
       if (_doctorId.isNotEmpty) {
         final previousRateSetAt = _rateStatus['rateSetAt']?.toString();
@@ -77,11 +81,23 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         if (!mounted) return;
         final nextRateStatus = results[3] as Map<String, dynamic>;
         final nextRateSetAt = nextRateStatus['rateSetAt']?.toString();
+        final nextProfile = results[2] as Map<String, dynamic>;
+        final profileImageUrl =
+            profileImageUrlFromMap(nextProfile) ??
+            profileImageUrlFromMap(_mapOf(nextProfile['user'])) ??
+            profileImageUrlFromMap(_mapOf(nextProfile['profile']));
+        if (profileImageUrl != null) {
+          await prefs.setString(
+            'doctor_profileImageUrl_$_doctorId',
+            profileImageUrl,
+          );
+        }
         setState(() {
           _stats = results[0] as Map<String, dynamic>;
           _requests = results[1] as List<dynamic>;
-          _profile = results[2] as Map<String, dynamic>;
+          _profile = nextProfile;
           _rateStatus = nextRateStatus;
+          _doctorProfileImageUrl = profileImageUrl ?? _doctorProfileImageUrl;
           if (previousRateSetAt != nextRateSetAt &&
               (nextRateStatus['rateAcceptanceStatus'] ?? '')
                       .toString()
@@ -459,7 +475,8 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
             child: profileAvatarOrPlaceholder(
               imageUrl:
                   profileImageUrlFromMap(user) ??
-                  profileImageUrlFromMap(profile),
+                  profileImageUrlFromMap(profile) ??
+                  _doctorProfileImageUrl,
               size: 98,
               placeholderColor: AppColors.primary,
               placeholderIcon: Icons.medical_services_outlined,

@@ -10,6 +10,7 @@ import '../../../core/doctor_session.dart';
 import '../../../core/locale_controller.dart';
 import '../../../core/profile_avatar.dart'
     show profileImageProvider, profileImageUrlFromMap;
+import '../../../features/auth/registration/getx/signup_location_picker_screen.dart';
 import '../../../services/doctor_service.dart';
 import '../../../shared/services/api_service.dart' as shared_api;
 import '../../../core/app_colors.dart';
@@ -32,6 +33,9 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
   String _doctorName = '';
   String _doctorEmail = '';
   String? _doctorProfileImageUrl;
+  String _doctorLocationAddress = '';
+  double? _doctorGpsLat;
+  double? _doctorGpsLng;
   bool _isAvailable = true;
   bool _isUploadingPhoto = false;
   Uint8List? _pickedImageBytes;
@@ -63,6 +67,17 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
   }
 
   String get _profileImagePrefsKey => 'doctor_profileImageUrl_$_doctorId';
+
+  String get _locationAddressPrefsKey => 'doctor_locationAddress_$_doctorId';
+  String get _locationLatPrefsKey => 'doctor_locationLat_$_doctorId';
+  String get _locationLngPrefsKey => 'doctor_locationLng_$_doctorId';
+
+  String _text(Object? value) => value?.toString().trim() ?? '';
+
+  double? _asDouble(Object? value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '');
+  }
 
   Future<void> _showImageSourceSheet() async {
     if (_isUploadingPhoto) return;
@@ -198,14 +213,47 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       _doctorProfileImageUrl = _doctorId.isEmpty
           ? null
           : prefs.getString(_profileImagePrefsKey);
+      _doctorLocationAddress = _doctorId.isEmpty
+          ? ''
+          : prefs.getString(_locationAddressPrefsKey) ?? '';
+      _doctorGpsLat = _doctorId.isEmpty
+          ? null
+          : double.tryParse(prefs.getString(_locationLatPrefsKey) ?? '');
+      _doctorGpsLng = _doctorId.isEmpty
+          ? null
+          : double.tryParse(prefs.getString(_locationLngPrefsKey) ?? '');
 
       final profile = await _doctorService.getProfile(_doctorId);
+      final profileMap = _mapOf(profile['profile']);
+      final userMap = _mapOf(profile['user']);
       final profileImageUrl =
           profileImageUrlFromMap(profile) ??
-          profileImageUrlFromMap(_mapOf(profile['user'])) ??
-          profileImageUrlFromMap(_mapOf(profile['profile']));
+          profileImageUrlFromMap(userMap) ??
+          profileImageUrlFromMap(profileMap);
       if (profileImageUrl != null) {
         await prefs.setString(_profileImagePrefsKey, profileImageUrl);
+      }
+      final profileAddress = _text(profile['addressText']).isNotEmpty
+          ? _text(profile['addressText'])
+          : _text(profileMap?['addressText']).isNotEmpty
+          ? _text(profileMap?['addressText'])
+          : _text(userMap?['addressText']);
+      final profileLat =
+          _asDouble(profile['gpsLat']) ??
+          _asDouble(profileMap?['gpsLat']) ??
+          _asDouble(userMap?['gpsLat']);
+      final profileLng =
+          _asDouble(profile['gpsLng']) ??
+          _asDouble(profileMap?['gpsLng']) ??
+          _asDouble(userMap?['gpsLng']);
+      if (profileAddress.isNotEmpty) {
+        await prefs.setString(_locationAddressPrefsKey, profileAddress);
+      }
+      if (profileLat != null) {
+        await prefs.setString(_locationLatPrefsKey, profileLat.toString());
+      }
+      if (profileLng != null) {
+        await prefs.setString(_locationLngPrefsKey, profileLng.toString());
       }
       Map<String, dynamic> availability = const {};
       try {
@@ -225,6 +273,11 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       setState(() {
         _profile = profile;
         _doctorProfileImageUrl = profileImageUrl ?? _doctorProfileImageUrl;
+        if (profileAddress.isNotEmpty) {
+          _doctorLocationAddress = profileAddress;
+        }
+        _doctorGpsLat = profileLat ?? _doctorGpsLat;
+        _doctorGpsLng = profileLng ?? _doctorGpsLng;
         if (availability.containsKey('isAvailable')) {
           _isAvailable = availability['isAvailable'] == true;
         }
@@ -254,6 +307,11 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
     final phoneController = TextEditingController(
       text: _profile['user']?['phone'] ?? '',
     );
+    final locationController = TextEditingController(
+      text: _doctorLocationAddress,
+    );
+    var selectedGpsLat = _doctorGpsLat;
+    var selectedGpsLng = _doctorGpsLng;
     final specializationController = TextEditingController(
       text: _profile['profile']?['specialization'] ?? '',
     );
@@ -307,6 +365,32 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                 ),
                 const SizedBox(height: 16),
                 TextField(
+                  controller: locationController,
+                  readOnly: true,
+                  onTap: () async {
+                    final result = await Navigator.push<SignupLocationResult>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SignupLocationPickerScreen(
+                          initialAddress: locationController.text.trim(),
+                          initialLatitude: selectedGpsLat,
+                          initialLongitude: selectedGpsLng,
+                        ),
+                      ),
+                    );
+                    if (result == null) return;
+                    locationController.text = result.address;
+                    selectedGpsLat = result.latitude;
+                    selectedGpsLng = result.longitude;
+                  },
+                  decoration: const InputDecoration(
+                    labelText: 'Location',
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.location_on_outlined),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
                   controller: specializationController,
                   decoration: const InputDecoration(
                     labelText: 'Specialization',
@@ -342,6 +426,9 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                       shortBio: bioController.text,
                       experienceYears: int.tryParse(experienceController.text),
                       consultationFee: double.tryParse(feeController.text),
+                      addressText: locationController.text,
+                      gpsLat: selectedGpsLat,
+                      gpsLng: selectedGpsLng,
                     );
                   },
                   style: ElevatedButton.styleFrom(
@@ -366,6 +453,9 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
     String? shortBio,
     int? experienceYears,
     double? consultationFee,
+    String? addressText,
+    double? gpsLat,
+    double? gpsLng,
   }) async {
     try {
       await _doctorService.updateProfile(
@@ -376,11 +466,31 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
         shortBio: shortBio,
         experienceYears: experienceYears,
         consultationFee: consultationFee,
+        addressText: addressText,
+        gpsLat: gpsLat,
+        gpsLng: gpsLng,
       );
 
       // Update local storage
       final prefs = await SharedPreferences.getInstance();
       if (fullName != null) await prefs.setString('doctor_fullName', fullName);
+      final nextAddress = addressText?.trim() ?? '';
+      if (nextAddress.isNotEmpty) {
+        await prefs.setString(_locationAddressPrefsKey, nextAddress);
+      }
+      if (gpsLat != null) {
+        await prefs.setString(_locationLatPrefsKey, gpsLat.toString());
+      }
+      if (gpsLng != null) {
+        await prefs.setString(_locationLngPrefsKey, gpsLng.toString());
+      }
+      if (mounted) {
+        setState(() {
+          if (nextAddress.isNotEmpty) _doctorLocationAddress = nextAddress;
+          _doctorGpsLat = gpsLat ?? _doctorGpsLat;
+          _doctorGpsLng = gpsLng ?? _doctorGpsLng;
+        });
+      }
 
       _loadProfile();
       if (mounted) {
@@ -678,6 +788,12 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                                 _buildDetailRow(
                                   context.dtr('doctor.profile.email'),
                                   user['email'] ?? _doctorEmail,
+                                ),
+                                _buildDetailRow(
+                                  context.dx('Location'),
+                                  _doctorLocationAddress.isEmpty
+                                      ? context.dtr('doctor.common.notSet')
+                                      : _doctorLocationAddress,
                                 ),
                               ],
                             ),
