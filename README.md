@@ -22,6 +22,7 @@ CareLink combines a Flutter mobile application, a Node.js/Express.js backend, a 
 | **AI Recommendation** | AI-powered healthcare provider recommendation |
 | **User Roles** | Patient, Doctor, Nurse, Admin |
 | **Project Type** | Graduation Project |
+| **Year** | 2026 |
 
 ---
 
@@ -35,7 +36,7 @@ Healthcare providers can manage service requests, appointments, availability, pa
 
 Administrators can manage users, verify healthcare providers, manage service pricing, monitor bookings and payments, manage payouts, and access platform statistics.
 
-The system also includes an AI-based recommendation component that helps patients find suitable healthcare providers based on their healthcare needs, medical information, location, availability, specialization, ratings, and experience.
+The system also includes an AI-based recommendation component that helps patients find suitable healthcare providers based on healthcare needs, medical information, location, availability, specialization, ratings, and experience.
 
 ---
 
@@ -53,16 +54,14 @@ The system also includes an AI-based recommendation component that helps patient
 - Appointment scheduling
 - Booking and request status tracking
 - Appointment cancellation and rescheduling
-- Secure online payments
+- Secure payments
 - Payment holding and platform commission management
 - Medical records access
 - In-app messaging
-- Real-time notifications
+- Notifications
 - Provider ratings and feedback
-- Favorite healthcare providers
 - GPS-based address management
 - Arabic and English language support
-- Light and dark mode support
 
 ### 👨‍⚕️ Doctor
 
@@ -288,9 +287,6 @@ The website provides:
 - bcrypt password hashing
 - Email verification
 - Role-Based Access Control
-- Google Authentication
-- Facebook Authentication
-- Apple Authentication
 
 ### Location & Maps
 
@@ -304,7 +300,7 @@ The website provides:
 ### Communication & Services
 
 - REST APIs
-- Real-time notifications
+- Notifications
 - In-app messaging
 - SMTP email services
 
@@ -352,25 +348,48 @@ CareLink follows a multi-component architecture connecting the Flutter mobile ap
         │  MySQL   │    │      AI      │   │  External   │
         │ Database │    │Recommendation│   │  Services   │
         └──────────┘    └──────────────┘   └─────────────┘
-        CareLink implements security mechanisms to protect user accounts and system resources.
+ ```
+ ## Security
 
-JWT Authentication
-Password hashing using bcrypt
-Role-Based Access Control
-Email verification
-Secure REST API access
-Protected medical information
-Installation
-Clone the Repository
+CareLink implements security mechanisms to protect user accounts and system resources.
+
+- JWT Authentication
+- Password hashing using bcrypt
+- Role-Based Access Control
+- Email verification
+- Secure REST API access
+- Protected medical information
+
+---
+
+## Installation
+
+### Clone the Repository
+
+```bash
 git clone https://github.com/DoniaAssi/carelink.git
 cd carelink
-Backend
+```
+
+### Backend
+
+```bash
 cd backend
 npm install
 npm start
-Flutter
+```
+
+### Flutter
+
+From the project root:
+
+```bash
 flutter pub get
 flutter run
+```
+
+---
+
 ## Screenshots
 
 ### 🏠 Patient Home
@@ -378,109 +397,147 @@ flutter run
 Patient dashboard showing upcoming appointments, quick actions, and healthcare services.
 
 <img src="lib/assets/readme/screenshots/patient-home.jpeg" width="300">
-🤖 AI Recommendation
+
+### 🤖 AI Recommendation
 
 AI-powered provider recommendation based on patient healthcare needs.
 
 <img src="lib/assets/readme/screenshots/ai-recommendation-result.jpeg" width="300">
-🔍 Find Healthcare Providers
+
+### 🔍 Find Healthcare Providers
 
 Patients can search and explore available doctors and nurses.
 
 <img src="lib/assets/readme/screenshots/find-providers.jpeg" width="300">
-📅 Appointment Booking
+
+### 📅 Appointment Booking
 
 Complete booking workflow including date and time selection for healthcare services.
 
 <img src="lib/assets/readme/screenshots/booking-calendar.jpg" width="300">
-📖 My Bookings
+
+### 📖 My Bookings
 
 Patients can view and manage their upcoming and previous appointments.
 
 <img src="lib/assets/readme/screenshots/My%20Bookings.jpeg" width="300">
-💬 Messaging
+
+### 💬 Messaging
 
 Patients and healthcare providers can communicate through the in-app messaging system.
 
-<img src="lib/assets/readme/screenshots/Messages.jpeg" width="300">
-👨‍⚕️ Doctor Module
+<img src="lib/assets/readme/screenshots/messages.jpeg" width="300">
+
+### 👨‍⚕️ Doctor Module
 
 Doctors can manage service requests, medical reports, patient communication, and home visits.
 
-<img src="lib/assets/readme/screenshots/doctor-dashboard.jpeg" width="250"> <img src="lib/assets/readme/screenshots/doctor-requests.jpeg" width="250"> <img src="lib/assets/readme/screenshots/doctor-reports.png" width="250"> <img src="lib/assets/readme/screenshots/doctor-messages.jpeg" width="250"> <img src="lib/assets/readme/screenshots/doctor-visit-tracking.jpeg" width="250">
-🌐 Marketing Website
+<img src="lib/assets/readme/screenshots/doctor-dashboard.jpeg" width="250">
+<img src="lib/assets/readme/screenshots/doctor-requests.jpeg" width="250">
+<img src="lib/assets/readme/screenshots/doctor-reports.png" width="250">
+<img src="lib/assets/readme/screenshots/doctor-messages.jpeg" width="250">
+<img src="lib/assets/readme/screenshots/doctor-visit-tracking.jpeg" width="250">
+
+### 🌐 Marketing Website
 
 CareLink marketing website introducing the platform and providing access to the mobile application.
 
 <img src="lib/assets/readme/screenshots/CareLinkWebsiteHomePage.png" width="600">
-Testing
+
+---
+
+## Testing
 
 CareLink was tested across the main system modules.
 
-Testing included:
+### Patient
 
-Patient
-Home healthcare service booking
-Booking validation
-Payment workflow
-Doctor
-Service request management
-Initial diagnosis reports
-Visit reports
-Medical record management
-Duplicate diagnosis prevention
-Nurse
-Home healthcare visit workflow
-Availability management
-Visit tracking
-Visit reports
-Payout requests
-Admin
-Healthcare provider approval
-Provider verification
-Service pricing management
-Booking and payment management
-Project Status
+- Home healthcare service booking
+- Booking validation
+- Payment workflow
 
-🟢 Graduation Project Completed
+### Doctor
 
-Version: 1.0
+- Service request management
+- Initial diagnosis reports
+- Visit reports
+- Medical record management
+- Duplicate diagnosis prevention
 
-Future Improvements
+### Nurse
+
+- Home healthcare visit workflow
+- Availability management
+- Visit tracking
+- Visit reports
+- Payout requests
+
+### Admin
+
+- Healthcare provider approval
+- Provider verification
+- Service pricing management
+- Booking and payment management
+
+---
+
+## Project Status
+
+🟢 **Graduation Project Completed**
+
+**Version:** 1.0
+
+---
+
+## Future Improvements
 
 Potential future improvements include:
 
-Video consultations
-Push notifications
-AI chatbot
-Electronic prescriptions
-Wearable device integration
-Further improvements to AI provider recommendations
-Team
-Team Member	Role
-Donia Assi	CareLink Team
-Sara Ahmad	CareLink Team
-Julia Duaibes	CareLink Team
-Supervisor
+- Video consultations
+- Push notifications
+- AI chatbot
+- Electronic prescriptions
+- Wearable device integration
+- Further improvements to AI provider recommendations
 
-Dr. Ahmed Abusnaina
+---
 
-Academic Project
+## Team
 
-Project: CareLink
+| Team Member | Role |
+|---|---|
+| **Donia Assi** | CareLink Team |
+| **Sara Ahmad** | CareLink Team |
+| **Julia Duaibes** | CareLink Team |
 
-Area: Home Healthcare & Digital Health
+### Supervisor
 
-Project Type: Graduation Project
+**Dr. Ahmed Abusnaina**
 
-Year: 2026
+---
 
-Acknowledgements
+## Academic Project
+
+**Project:** CareLink
+
+**Area:** Home Healthcare & Digital Health
+
+**Project Type:** Graduation Project
+
+**Year:** 2026
+
+---
+
+## Acknowledgements
 
 The CareLink team would like to thank Birzeit University and our project supervisor, Dr. Ahmed Abusnaina, for their guidance, support, and academic supervision throughout the development of this graduation project.
 
-Developed by the CareLink Team
+---
 
-Donia Assi • Sara Ahmad •Julia Duaibes 
+## Developed By
 
-Birzeit University • 2026
+**CareLink Team**
+
+Donia Assi • Sara Ahmad • Julia Duaibes
+
+**Birzeit University • 2026**
