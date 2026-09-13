@@ -371,8 +371,9 @@ npm start
 Flutter
 flutter pub get
 flutter run
-Screenshots
-🏠 Patient Home
+## Screenshots
+
+### 🏠 Patient Home
 
 Patient dashboard showing upcoming appointments, quick actions, and healthcare services.
 
