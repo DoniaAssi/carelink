@@ -376,42 +376,42 @@ Screenshots
 
 Patient dashboard showing upcoming appointments, quick actions, and healthcare services.
 
-<img src="assets/readme/screenshots/patient-home.jpeg" width="300">
+<img src="lib/assets/readme/screenshots/patient-home.jpeg" width="300">
 🤖 AI Recommendation
 
 AI-powered provider recommendation based on patient healthcare needs.
 
-<img src="assets/readme/screenshots/ai-recommendation-result.jpeg" width="300">
+<img src="lib/assets/readme/screenshots/ai-recommendation-result.jpeg" width="300">
 🔍 Find Healthcare Providers
 
 Patients can search and explore available doctors and nurses.
 
-<img src="assets/readme/screenshots/find-providers.jpeg" width="300">
+<img src="lib/assets/readme/screenshots/find-providers.jpeg" width="300">
 📅 Appointment Booking
 
 Complete booking workflow including date and time selection for healthcare services.
 
-<img src="assets/readme/screenshots/booking-calendar.jpg" width="300">
+<img src="lib/assets/readme/screenshots/booking-calendar.jpg" width="300">
 📖 My Bookings
 
 Patients can view and manage their upcoming and previous appointments.
 
-<img src="assets/readme/screenshots/My%20Bookings.jpeg" width="300">
+<img src="lib/assets/readme/screenshots/My%20Bookings.jpeg" width="300">
 💬 Messaging
 
 Patients and healthcare providers can communicate through the in-app messaging system.
 
-<img src="assets/readme/screenshots/Messages.jpeg" width="300">
+<img src="lib/assets/readme/screenshots/Messages.jpeg" width="300">
 👨‍⚕️ Doctor Module
 
 Doctors can manage service requests, medical reports, patient communication, and home visits.
 
-<img src="assets/readme/screenshots/doctor-dashboard.jpeg" width="250"> <img src="assets/readme/screenshots/doctor-requests.jpeg" width="250"> <img src="assets/readme/screenshots/doctor-reports.png" width="250"> <img src="assets/readme/screenshots/doctor-messages.jpeg" width="250"> <img src="assets/readme/screenshots/doctor-visit-tracking.jpeg" width="250">
+<img src="lib/assets/readme/screenshots/doctor-dashboard.jpeg" width="250"> <img src="lib/assets/readme/screenshots/doctor-requests.jpeg" width="250"> <img src="lib/assets/readme/screenshots/doctor-reports.png" width="250"> <img src="lib/assets/readme/screenshots/doctor-messages.jpeg" width="250"> <img src="lib/assets/readme/screenshots/doctor-visit-tracking.jpeg" width="250">
 🌐 Marketing Website
 
 CareLink marketing website introducing the platform and providing access to the mobile application.
 
-<img src="assets/readme/screenshots/CareLinkWebsiteHomePage.png" width="600">
+<img src="lib/assets/readme/screenshots/CareLinkWebsiteHomePage.png" width="600">
 Testing
 
 CareLink was tested across the main system modules.
